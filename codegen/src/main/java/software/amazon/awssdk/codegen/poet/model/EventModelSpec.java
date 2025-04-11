@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.MemberModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
@@ -61,7 +62,9 @@ public final class EventModelSpec implements ClassSpec {
 
     @Override
     public TypeSpec poetSpec() {
-        return TypeSpec.classBuilder(className())
+        ClassName eventStreamClassName = poetExtensions.getModelClassFromShape(eventStream);
+
+        TypeSpec.Builder builder = TypeSpec.classBuilder(className())
                 .superclass(baseShapeModelSpec.className())
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addAnnotation(SdkInternalApi.class)
@@ -73,8 +76,12 @@ public final class EventModelSpec implements ClassSpec {
                 .addMethod(builderMethod())
                 .addMethods(acceptMethods())
                 .addMethod(sdkEventTypeMethodSpec())
-                .addTypes(Arrays.asList(builderSpecs.builderInterface(), builderSpecs.beanStyleBuilder()))
-                .build();
+                .addTypes(Arrays.asList(builderSpecs.builderInterface(), builderSpecs.beanStyleBuilder()));
+
+        if (eventStreamSpecHelper.legacyEventGenerationMode() == CustomizationConfig.LegacyEventGenerationMode.DISABLED) {
+            builder.addSuperinterface(eventStreamClassName);
+        }
+        return builder.build();
     }
 
     private CodeBlock classJavadoc() {
