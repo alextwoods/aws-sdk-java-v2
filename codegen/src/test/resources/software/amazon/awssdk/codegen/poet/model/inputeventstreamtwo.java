@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Set;
 import software.amazon.awssdk.annotations.Generated;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.core.SdkEventType;
 import software.amazon.awssdk.services.jsonprotocoltests.model.inputeventstreamtwo.DefaultInputEventTwo;
 import software.amazon.awssdk.utils.internal.EnumUtils;
 
@@ -24,15 +25,13 @@ public interface InputEventStreamTwo {
     /**
      * The type of this event. Corresponds to the {@code :event-type} header on the Message.
      */
-    default EventType sdkEventType() {
-        return EventType.UNKNOWN_TO_SDK_VERSION;
-    }
+    SdkEventType sdkEventType();
 
     /**
      * The known possible types of events for {@code InputEventStreamTwo}.
      */
     @Generated("software.amazon.awssdk:codegen")
-    enum EventType {
+    enum EventType implements SdkEventType {
         INPUT_EVENT_TWO("InputEventTwo"),
 
         UNKNOWN_TO_SDK_VERSION(null);
@@ -74,6 +73,11 @@ public interface InputEventStreamTwo {
             Set<EventType> knownValues = EnumSet.allOf(EventType.class);
             knownValues.remove(UNKNOWN_TO_SDK_VERSION);
             return knownValues;
+        }
+
+        @Override
+        public String id() {
+            return String.valueOf(value);
         }
     }
 }

@@ -1,49 +1,20 @@
 package software.amazon.awssdk.services.sharedeventstream.model;
 
-import java.util.Collections;
 import java.util.EnumSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import software.amazon.awssdk.annotations.Generated;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.core.SdkEventType;
-import software.amazon.awssdk.core.SdkField;
-import software.amazon.awssdk.core.SdkPojo;
-import software.amazon.awssdk.services.sharedeventstream.model.eventstream.DefaultPerson;
+import software.amazon.awssdk.services.sharedeventstream.model.streamdeathsinputeventstream.DefaultPerson;
 import software.amazon.awssdk.utils.internal.EnumUtils;
 
 /**
- * Base interface for all event types in EventStream.
+ * Base interface for all event types in StreamDeathsInputEventStream.
  */
 @Generated("software.amazon.awssdk:codegen")
 @SdkPublicApi
-public interface EventStream extends SdkPojo {
-    /**
-     * Special type of {@link EventStream} for unknown types of events that this version of the SDK does not know about
-     */
-    EventStream UNKNOWN = new EventStream() {
-        @Override
-        public List<SdkField<?>> sdkFields() {
-            return Collections.emptyList();
-        }
-
-        @Override
-        public SdkEventType sdkEventType() {
-            return EventType.UNKNOWN_TO_SDK_VERSION;
-        }
-
-        @Override
-        public void accept(StreamBirthsResponseHandler.Visitor visitor) {
-            visitor.visitDefault(this);
-        }
-
-        @Override
-        public void accept(StreamDeathsResponseHandler.Visitor visitor) {
-            visitor.visitDefault(this);
-        }
-    };
-
+public interface StreamDeathsInputEventStream {
     /**
      * Create a builder for the {@code Person} event type for this stream.
      */
@@ -57,23 +28,7 @@ public interface EventStream extends SdkPojo {
     SdkEventType sdkEventType();
 
     /**
-     * Calls the appropriate visit method depending on the subtype of {@link EventStream}.
-     *
-     * @param visitor
-     *        Visitor to invoke.
-     */
-    void accept(StreamBirthsResponseHandler.Visitor visitor);
-
-    /**
-     * Calls the appropriate visit method depending on the subtype of {@link EventStream}.
-     *
-     * @param visitor
-     *        Visitor to invoke.
-     */
-    void accept(StreamDeathsResponseHandler.Visitor visitor);
-
-    /**
-     * The known possible types of events for {@code EventStream}.
+     * The known possible types of events for {@code StreamDeathsInputEventStream}.
      */
     @Generated("software.amazon.awssdk:codegen")
     enum EventType implements SdkEventType {

@@ -60,6 +60,7 @@ import software.amazon.awssdk.codegen.poet.PoetExtension;
 import software.amazon.awssdk.codegen.poet.PoetUtils;
 import software.amazon.awssdk.codegen.poet.eventstream.EventStreamUtils;
 import software.amazon.awssdk.codegen.poet.model.TypeProvider.TypeNameOptions;
+import software.amazon.awssdk.core.SdkEventType;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.awssdk.utils.StringUtils;
@@ -71,6 +72,7 @@ import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
  */
 public class AwsServiceModel implements ClassSpec {
 
+    public static final String UNKNOWN_TO_SDK_VERSION = "UNKNOWN_TO_SDK_VERSION";
     private final IntermediateModel intermediateModel;
     private final ShapeModel shapeModel;
     private final PoetExtension poetExtensions;
@@ -169,12 +171,10 @@ public class AwsServiceModel implements ClassSpec {
                          .addType(helper.eventTypeEnumSpec());
 
 
-        ClassName eventTypeEnum = helper.eventTypeEnumClassName();
         builder.addMethod(MethodSpec.methodBuilder("sdkEventType")
-                .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
-                .returns(eventTypeEnum)
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .returns(SdkEventType.class)
                 .addJavadoc("The type of this event. Corresponds to the {@code :event-type} header on the Message.")
-                .addStatement("return $T.UNKNOWN_TO_SDK_VERSION", eventTypeEnum)
                 .build());
 
         if (!outputOperations.isEmpty()) {
@@ -209,8 +209,22 @@ public class AwsServiceModel implements ClassSpec {
     }
 
     private void addEventSupport(TypeSpec.Builder specBuilder) {
-        EventStreamUtils.getBaseEventStreamShapes(intermediateModel, shapeModel)
-                .forEach(eventStream -> addEventSupport(specBuilder, eventStream));
+        List<ShapeModel> eventStreamShapes = EventStreamUtils.getBaseEventStreamShapes(intermediateModel, shapeModel);
+        eventStreamShapes.forEach(eventStream -> addEventSupport(specBuilder, eventStream));
+
+        boolean legacyEvents = eventStreamShapes
+            .stream()
+            .anyMatch(this::useLegacyEventGenerationScheme);
+
+        if (!legacyEvents) {
+            specBuilder.addMethod(
+                MethodSpec.methodBuilder("sdkEventType")
+                          .addAnnotation(Override.class)
+                          .addModifiers(PUBLIC)
+                          .returns(SdkEventType.class)
+                          .addStatement("throw new $T($S)", UnsupportedOperationException.class, "Unknown Event")
+                          .build());
+        }
     }
 
     private void addEventSupport(TypeSpec.Builder specBuilder, ShapeModel eventStream) {
@@ -284,14 +298,19 @@ public class AwsServiceModel implements ClassSpec {
 
     private CodeBlock buildUnknownEventStreamInitializer(Collection<OperationModel> outputOperations,
                                                          ClassName eventStreamModelClass) {
+        ClassName eventTypeEnum = eventStreamModelClass.nestedClass("EventType");
         CodeBlock.Builder builder = CodeBlock.builder()
                                              .add("new $T() {\n"
                                                   + "        @Override\n"
                                                   + "        public $T<$T<?>> sdkFields() {\n"
                                                   + "            return $T.emptyList();\n"
+                                                  + "        }\n"
+                                                  + "        @Override\n"
+                                                  + "        public SdkEventType sdkEventType() {\n"
+                                                  + "            return $T.$L;\n"
                                                   + "        }\n",
                                                   eventStreamModelClass, List.class, SdkField.class,
-                                                  Collections.class
+                                                  Collections.class, eventTypeEnum, UNKNOWN_TO_SDK_VERSION
                                              );
 
         for (OperationModel opModel : outputOperations) {

@@ -13,6 +13,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import software.amazon.awssdk.annotations.Generated;
+import software.amazon.awssdk.core.SdkEventType;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.awssdk.core.protocol.MarshallLocation;
@@ -25,7 +26,8 @@ import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
 /**
  */
 @Generated("software.amazon.awssdk:codegen")
-public class Person implements SdkPojo, Serializable, ToCopyableBuilder<Person.Builder, Person>, EventStream {
+public class Person implements SdkPojo, Serializable, ToCopyableBuilder<Person.Builder, Person>, StreamBirthsInputEventStream,
+                               EventStream, StreamDeathsInputEventStream {
     private static final SdkField<String> NAME_FIELD = SdkField.<String> builder(MarshallingType.STRING).memberName("Name")
                                                                .getter(getter(Person::name)).setter(setter(Builder::name))
                                                                .traits(LocationTrait.builder().location(MarshallLocation.PAYLOAD).locationName("Name").build()).build();
@@ -178,6 +180,11 @@ public class Person implements SdkPojo, Serializable, ToCopyableBuilder<Person.B
     @Override
     public void accept(StreamDeathsResponseHandler.Visitor visitor) {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public SdkEventType sdkEventType() {
+        throw new UnsupportedOperationException("Unknown Event");
     }
 
     public interface Builder extends SdkPojo, CopyableBuilder<Builder, Person> {
