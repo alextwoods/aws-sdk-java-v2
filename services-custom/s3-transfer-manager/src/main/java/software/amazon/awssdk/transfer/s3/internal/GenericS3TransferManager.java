@@ -303,7 +303,7 @@ class GenericS3TransferManager implements S3TransferManager {
     }
 
     private GetObjectRequest attachSdkAttribute(GetObjectRequest request,
-                                                 Consumer<AwsRequestOverrideConfiguration.Builder> builderMutation) {
+                                        Consumer<AwsRequestOverrideConfiguration.Builder> builderMutation) {
         AwsRequestOverrideConfiguration modifiedRequestOverrideConfig =
             request.overrideConfiguration()
                    .map(o -> o.toBuilder().applyMutation(builderMutation).build())
@@ -367,7 +367,7 @@ class GenericS3TransferManager implements S3TransferManager {
     }
 
     @Override
-    public final FileDownload downloadFile(DownloadFileRequest downloadRequest) {
+    public FileDownload downloadFile(DownloadFileRequest downloadRequest) {
         Validate.paramNotNull(downloadRequest, "downloadFileRequest");
 
         GetObjectRequest getObjectRequestWithAttributes = attachSdkAttribute(
@@ -419,7 +419,7 @@ class GenericS3TransferManager implements S3TransferManager {
     }
 
     @Override
-    public final FileDownload resumeDownloadFile(ResumableFileDownload resumableFileDownload) {
+    public FileDownload resumeDownloadFile(ResumableFileDownload resumableFileDownload) {
         Validate.paramNotNull(resumableFileDownload, "resumableFileDownload");
 
         // check if the multipart-download was already completed and handle it gracefully.
@@ -467,7 +467,7 @@ class GenericS3TransferManager implements S3TransferManager {
                                        resumableFileDownload);
     }
 
-    private FileDownload completedDownload(ResumableFileDownload resumableFileDownload, MultipartDownloadResumeContext ctx) {
+    FileDownload completedDownload(ResumableFileDownload resumableFileDownload, MultipartDownloadResumeContext ctx) {
         CompletedFileDownload completedFileDownload = CompletedFileDownload.builder().response(ctx.response()).build();
         DefaultTransferProgressSnapshot completedProgressSnapshot =
             DefaultTransferProgressSnapshot.builder()
@@ -481,8 +481,8 @@ class GenericS3TransferManager implements S3TransferManager {
                                        resumableFileDownload);
     }
 
-    private DownloadFileRequest newOrOriginalRequestForPause(CompletableFuture<DownloadFileRequest> newDownloadFuture,
-                                                             DownloadFileRequest originalDownloadRequest) {
+    DownloadFileRequest newOrOriginalRequestForPause(CompletableFuture<DownloadFileRequest> newDownloadFuture,
+                                                     DownloadFileRequest originalDownloadRequest) {
         try {
             return newDownloadFuture.getNow(originalDownloadRequest);
         } catch (CompletionException e) {
@@ -490,10 +490,10 @@ class GenericS3TransferManager implements S3TransferManager {
         }
     }
 
-    private static void handleException(CompletableFuture<CompletedFileDownload> returnFuture,
-                                        CompletableFuture<TransferProgress> progressFuture,
-                                        CompletableFuture<DownloadFileRequest> newDownloadFileRequestFuture,
-                                        Throwable throwable) {
+    static void handleException(CompletableFuture<CompletedFileDownload> returnFuture,
+                                CompletableFuture<TransferProgress> progressFuture,
+                                CompletableFuture<DownloadFileRequest> newDownloadFileRequestFuture,
+                                Throwable throwable) {
         Throwable exceptionCause = throwable instanceof CompletionException ? throwable.getCause() : throwable;
 
         Throwable propagatedException = exceptionCause instanceof SdkException || exceptionCause instanceof Error

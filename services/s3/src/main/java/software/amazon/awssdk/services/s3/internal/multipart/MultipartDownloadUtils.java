@@ -39,6 +39,7 @@ public final class MultipartDownloadUtils {
      * @return The list of completed parts for a GetObjectRequest, or an empty list if none were found.
      */
     public static List<Integer> completedParts(GetObjectRequest request) {
+        Optional<MultipartDownloadResumeContext> mprc = multipartDownloadResumeContext(request);
         return multipartDownloadResumeContext(request)
             .map(MultipartDownloadResumeContext::completedParts)
             .orElseGet(Collections::emptyList);
