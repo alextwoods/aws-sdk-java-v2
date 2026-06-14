@@ -49,6 +49,64 @@
     </properties>
 
     <dependencies>
+        <!-- Bridge serde benchmark: smithy-java dynamic client + restJson protocol, plus
+             the in-repo v2<->smithy-java bridge module. From Maven Central / reactor. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-java-bridge</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>dynamic-client</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-restjson</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-awsjson</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-awsquery</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-restxml</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-rpcv2-cbor</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-core</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>core</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>json-codec</artifactId>
+            <version>1.4.2-rebased</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-traits</artifactId>
+            <version>1.71.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>

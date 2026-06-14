@@ -20,6 +20,10 @@
 # Maven
 target/
 
+# Gradle
+.gradle/
+build/
+
 # JEnv
 .java-version
 
@@ -35,3 +39,4 @@ bin/
 
 # Other
 .attach_pid*
+.ddb-local/

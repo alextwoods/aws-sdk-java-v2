@@ -49,6 +49,7 @@ public final class SdkField<TypeT> {
     private final Function<Object, TypeT> getter;
     private final Map<TraitType, Trait> l1Traits;
     private final Map<Class<? extends Trait>, Trait> l2Traits;
+    private final DefaultValueTrait defaultValueTrait;
 
     private SdkField(Builder<TypeT> builder) {
         this.memberName = builder.memberName;
@@ -64,6 +65,10 @@ public final class SdkField<TypeT> {
         this.location = locationTrait.location();
         this.locationName = locationTrait.locationName();
         this.unmarshallLocationName = locationTrait.unmarshallLocationName();
+
+        // Eagerly dereference the default-value trait (usually absent) so getValueOrDefault
+        // doesn't do a per-call traits-map lookup on the marshalling hot path.
+        this.defaultValueTrait = getTrait(DefaultValueTrait.class, TraitType.DEFAULT_VALUE_TRAIT);
     }
 
     /**
@@ -273,8 +278,7 @@ public final class SdkField<TypeT> {
      */
     public TypeT getValueOrDefault(Object pojo) {
         TypeT val = this.get(pojo);
-        DefaultValueTrait trait = getTrait(DefaultValueTrait.class, TraitType.DEFAULT_VALUE_TRAIT);
-        return (trait == null ? val : (TypeT) trait.resolveValue(val));
+        return (defaultValueTrait == null ? val : (TypeT) defaultValueTrait.resolveValue(val));
     }
 
     /**

@@ -186,7 +186,7 @@
         <freemarker.version>2.3.9</freemarker.version>
         <aspectj.version>1.8.2</aspectj.version>
 
-        <jre.version>1.8</jre.version>
+        <jre.version>21</jre.version>
         <httpcomponents.httpclient.version>4.5.13</httpcomponents.httpclient.version>
         <httpcomponents.httpcore.version>4.4.16</httpcomponents.httpcore.version>
         <httpcomponents.client5.version>5.6.1</httpcomponents.client5.version>
@@ -262,7 +262,7 @@
                             </goals>
                             <configuration>
                                 <detectJavaApiLink>false</detectJavaApiLink>
-                                <source>8</source>
+                                <source>21</source>
                                 <notree>true</notree>
                                 <includeDependencySources>false</includeDependencySources>
                                 <doclint>none</doclint>
@@ -797,7 +797,7 @@
                 <jdk>[11,)</jdk>
             </activation>
             <properties>
-                <maven.compiler.release>8</maven.compiler.release>
+                <maven.compiler.release>21</maven.compiler.release>
             </properties>
             <build>
                 <pluginManagement>
@@ -1186,7 +1186,7 @@
                             <!-- Whether to enable search button -->
                             <noindex>false</noindex>
                             <use>false</use>
-                            <source>8</source>
+                            <source>21</source>
                             <notree>true</notree>
                             <nodeprecatedlist>true</nodeprecatedlist>
                             <additionalJOptions>
