@@ -117,8 +117,33 @@ public final class C2jToSmithyConverter {
     /** Convert a parsed C2J model tree into a Smithy {@link Model}. */
     public static Model convert(JsonNode c2j) {
         String serviceId = c2j.path("metadata").path("serviceId").asText("Service");
-        String namespace = "com.amazonaws." + serviceId.toLowerCase(java.util.Locale.US);
+        String namespace = "com.amazonaws." + smithyNamespaceSegment(serviceId);
         return new C2jToSmithyConverter(namespace, c2j).build();
+    }
+
+    // A C2J serviceId may contain spaces/punctuation (e.g. "DynamoDB Streams", "API Gateway"); a Smithy
+    // namespace segment must be a valid identifier (letters/digits/underscore, not starting with a
+    // digit). Strip non-alphanumerics and lowercase, matching how the SDK derives package names.
+    private static String smithyNamespaceSegment(String serviceId) {
+        String cleaned = serviceId.replaceAll("[^A-Za-z0-9]", "").toLowerCase(java.util.Locale.US);
+        if (cleaned.isEmpty()) {
+            cleaned = "service";
+        } else if (Character.isDigit(cleaned.charAt(0))) {
+            cleaned = "s" + cleaned;
+        }
+        return cleaned;
+    }
+
+    // The service shape name: strip non-alphanumerics (spaces/punctuation are illegal in a Smithy
+    // identifier). The real serviceId round-trips via the preserved metadata trait, so this is lossless.
+    private static String sanitizeShapeName(String serviceId) {
+        String cleaned = serviceId.replaceAll("[^A-Za-z0-9]", "");
+        if (cleaned.isEmpty()) {
+            cleaned = "Service";
+        } else if (Character.isDigit(cleaned.charAt(0))) {
+            cleaned = "S" + cleaned;
+        }
+        return cleaned;
     }
 
     private Model build() {
@@ -456,7 +481,10 @@ public final class C2jToSmithyConverter {
     // ----- service + operations -----
 
     private ServiceShape buildService() {
-        String serviceName = metadata.path("serviceId").asText("Service");
+        // The service SHAPE name must be a valid Smithy identifier (no spaces/punctuation). The true
+        // C2J serviceId is preserved verbatim in the @com.amazonaws.c2j#metadata trait and restored
+        // from there by SmithyToServiceModel, so sanitizing the shape name here is lossless.
+        String serviceName = sanitizeShapeName(metadata.path("serviceId").asText("Service"));
         ServiceShape.Builder svc = ServiceShape.builder()
                 .id(id(serviceName))
                 .version(metadata.path("apiVersion").asText("1.0"));

@@ -34,6 +34,7 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import software.amazon.awssdk.c2j.smithy.SmithyToServiceModel;
 import software.amazon.awssdk.codegen.C2jModels;
 import software.amazon.awssdk.codegen.CodeGenerator;
 import software.amazon.awssdk.codegen.IntermediateModelBuilder;
@@ -45,7 +46,6 @@ import software.amazon.awssdk.codegen.model.rules.endpoints.EndpointTestSuiteMod
 import software.amazon.awssdk.codegen.model.service.EndpointRuleSetModel;
 import software.amazon.awssdk.codegen.model.service.Paginators;
 import software.amazon.awssdk.codegen.model.service.ServiceModel;
-import software.amazon.awssdk.c2j.smithy.SmithyToServiceModel;
 import software.amazon.awssdk.codegen.model.service.Waiters;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 import software.amazon.awssdk.codegen.validation.ModelInvalidException;
