@@ -58,6 +58,7 @@ import software.amazon.smithy.model.traits.HttpQueryTrait;
 import software.amazon.smithy.model.traits.HttpTrait;
 import software.amazon.smithy.model.traits.JsonNameTrait;
 import software.amazon.smithy.model.traits.RequiredTrait;
+import software.amazon.smithy.model.traits.StreamingTrait;
 import software.amazon.smithy.model.traits.TimestampFormatTrait;
 import software.amazon.smithy.model.traits.Trait;
 import software.amazon.smithy.model.traits.XmlNameTrait;
@@ -86,8 +87,25 @@ public final class C2jToSmithyConverter {
 
     /** Custom trait id carrying the verbatim C2J {@code metadata} block on the service shape. */
     static final ShapeId C2J_METADATA_TRAIT = ShapeId.from("com.amazonaws.c2j#metadata");
+    /** Custom trait carrying the verbatim top-level C2J {@code clientContextParams} block (service). */
+    static final ShapeId C2J_CLIENT_CONTEXT_PARAMS_TRAIT = ShapeId.from("com.amazonaws.c2j#clientContextParams");
     /** Custom trait carrying the verbatim C2J operation {@code httpChecksum} block. */
     static final ShapeId C2J_HTTP_CHECKSUM_TRAIT = ShapeId.from("com.amazonaws.c2j#httpChecksum");
+    /** Custom trait carrying the verbatim C2J operation {@code requestcompression} block. */
+    static final ShapeId C2J_REQUEST_COMPRESSION_TRAIT = ShapeId.from("com.amazonaws.c2j#requestcompression");
+    /** Carries the C2J operation {@code endpointdiscovery} block + {@code endpointoperation} flag. */
+    static final ShapeId C2J_ENDPOINT_DISCOVERY_TRAIT = ShapeId.from("com.amazonaws.c2j#endpointdiscovery");
+    static final ShapeId C2J_ENDPOINT_OPERATION_TRAIT = ShapeId.from("com.amazonaws.c2j#endpointoperation");
+    /** Carries verbatim C2J operation {@code staticContextParams} / {@code operationContextParams}
+     *  (arbitrary JSON values used by endpoint rules). */
+    static final ShapeId C2J_STATIC_CONTEXT_PARAMS_TRAIT = ShapeId.from("com.amazonaws.c2j#staticContextParams");
+    static final ShapeId C2J_OPERATION_CONTEXT_PARAMS_TRAIT = ShapeId.from("com.amazonaws.c2j#operationContextParams");
+    /** Carries a member's C2J {@code contextParam} {name} (endpoint-rules binding). */
+    static final ShapeId C2J_CONTEXT_PARAM_TRAIT = ShapeId.from("com.amazonaws.c2j#contextParam");
+    /** Carries C2J operation {@code endpoint.hostPrefix}, {@code authtype}, {@code unsignedPayload}. */
+    static final ShapeId C2J_HOST_PREFIX_TRAIT = ShapeId.from("com.amazonaws.c2j#hostPrefix");
+    static final ShapeId C2J_AUTHTYPE_TRAIT = ShapeId.from("com.amazonaws.c2j#authtype");
+    static final ShapeId C2J_UNSIGNED_PAYLOAD_TRAIT = ShapeId.from("com.amazonaws.c2j#unsignedPayload");
     /** Custom trait carrying the C2J operation {@code output.resultWrapper} (awsQuery). */
     static final ShapeId C2J_RESULT_WRAPPER_TRAIT = ShapeId.from("com.amazonaws.c2j#resultWrapper");
     /** Custom trait carrying the C2J operation {@code input} {locationName, xmlNamespace} (rest-xml). */
@@ -222,6 +240,39 @@ public final class C2jToSmithyConverter {
             op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
                     C2J_HTTP_CHECKSUM_TRAIT, Node.parse(c2j.get("httpChecksum").toString())));
         }
+        if (c2j.has("requestcompression")) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_REQUEST_COMPRESSION_TRAIT, Node.parse(c2j.get("requestcompression").toString())));
+        }
+        if (c2j.has("endpointdiscovery")) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_ENDPOINT_DISCOVERY_TRAIT, Node.parse(c2j.get("endpointdiscovery").toString())));
+        }
+        if (c2j.path("endpointoperation").asBoolean(false)) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_ENDPOINT_OPERATION_TRAIT, Node.objectNode()));
+        }
+        if (c2j.path("staticContextParams").isObject() && c2j.get("staticContextParams").size() > 0) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_STATIC_CONTEXT_PARAMS_TRAIT, Node.parse(c2j.get("staticContextParams").toString())));
+        }
+        if (c2j.path("operationContextParams").isObject() && c2j.get("operationContextParams").size() > 0) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_OPERATION_CONTEXT_PARAMS_TRAIT,
+                    Node.parse(c2j.get("operationContextParams").toString())));
+        }
+        if (c2j.path("endpoint").path("hostPrefix").isTextual()) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_HOST_PREFIX_TRAIT, Node.from(c2j.path("endpoint").path("hostPrefix").asText())));
+        }
+        if (c2j.path("authtype").isTextual()) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_AUTHTYPE_TRAIT, Node.from(c2j.path("authtype").asText())));
+        }
+        if (c2j.path("unsignedPayload").asBoolean(false)) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_UNSIGNED_PAYLOAD_TRAIT, Node.objectNode()));
+        }
         JsonNode output = c2j.path("output");
         if (output.has("resultWrapper")) {
             op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
@@ -276,6 +327,35 @@ public final class C2jToSmithyConverter {
             // C2J shape-level sensitive -> @sensitive (v2 redacts the value in toString()).
             if (c2j.path("sensitive").asBoolean(false)) {
                 shapeTraits.add(new software.amazon.smithy.model.traits.SensitiveTrait());
+            }
+            // C2J shape-level deprecated -> @deprecated(message).
+            if (c2j.path("deprecated").asBoolean(false)) {
+                shapeTraits.add(deprecatedTrait(c2j));
+            }
+            // C2J shape-level streaming -> @streaming (+ @requiresLength).
+            if (c2j.path("streaming").asBoolean(false)) {
+                shapeTraits.add(new StreamingTrait());
+                if (c2j.path("requiresLength").asBoolean(false)) {
+                    shapeTraits.add(new software.amazon.smithy.model.traits.RequiresLengthTrait());
+                }
+            }
+            // C2J shape-level xmlNamespace (uri[, prefix]) -> @xmlNamespace. v2 derives XmlAttributesTrait
+            // (xmlns:xsi / xsi:type attributes) from a referenced shape's xmlNamespace + prefix.
+            JsonNode shapeXmlns = c2j.path("xmlNamespace");
+            if (shapeXmlns.hasNonNull("uri")) {
+                software.amazon.smithy.model.traits.XmlNamespaceTrait.Builder xb =
+                        software.amazon.smithy.model.traits.XmlNamespaceTrait.builder().uri(shapeXmlns.get("uri").asText());
+                if (shapeXmlns.hasNonNull("prefix")) {
+                    xb.prefix(shapeXmlns.get("prefix").asText());
+                }
+                shapeTraits.add(xb.build());
+            }
+            // C2J shape-level retryable -> @retryable(throttling) (drives v2's isRetryableException()).
+            if (c2j.path("retryable").isObject()) {
+                software.amazon.smithy.model.traits.RetryableTrait.Builder rb =
+                        software.amazon.smithy.model.traits.RetryableTrait.builder();
+                rb.throttling(c2j.path("retryable").path("throttling").asBoolean(false));
+                shapeTraits.add(rb.build());
             }
             if (!shapeTraits.isEmpty()) {
                 AbstractShapeBuilder<?, ?> b = Shape.shapeToBuilder(shapes.get(0));
@@ -432,26 +512,12 @@ public final class C2jToSmithyConverter {
             }
         }
 
-        // A struct with an @httpPayload member requires every OTHER member to be HTTP-bound (Smithy
-        // HttpPayload rule). A reserved-header member (Content-Length, ...) can be neither bound
-        // (@httpHeader rejects it) nor unbound (payload rule) — it's unsatisfiable in a valid Smithy
-        // model, so on payload structs it must be dropped. This matches AWS's own canonical models,
-        // which omit Content-Length on @httpPayload shapes. (It's a computed value the runtime fills
-        // in, never modeled on the wire.) Non-payload structs keep the member, unbound.
-        boolean hasPayload = payloadMember != null;
-
         JsonNode members = c2j.path("members");
         Iterator<Map.Entry<String, JsonNode>> it = members.fields();
         while (it.hasNext()) {
             Map.Entry<String, JsonNode> e = it.next();
             String memberName = e.getKey();
             JsonNode m = e.getValue();
-            if (hasPayload && "header".equals(m.path("location").asText(null))) {
-                String wire = m.path("locationName").asText(memberName).toLowerCase(java.util.Locale.US);
-                if (RESERVED_HEADERS.contains(wire)) {
-                    continue;
-                }
-            }
             MemberShape.Builder mb = MemberShape.builder()
                     .id(id.withMember(memberName))
                     .target(targetId(m));
@@ -466,16 +532,30 @@ public final class C2jToSmithyConverter {
         }
         Shape shape = b.build();
         if (isException) {
-            // @error("client"/"server") from C2J senderFault, plus the verbatim C2J error block carried
-            // on a marker so the inverse restores the full ErrorTrait (code + httpStatusCode).
+            // @error("server") for a C2J server fault (top-level "fault":true, e.g. InternalServerError —
+            // drives the generated 500 status), else "client". The verbatim C2J error block is carried on
+            // a marker so the inverse restores the full ErrorTrait (code + httpStatusCode); the marker
+            // also records "fault" so Shape.fault round-trips even when there's no error block.
             JsonNode err = c2j.path("error");
-            String errorType = err.path("senderFault").asBoolean(false) ? "client" : "server";
+            boolean serverFault = c2j.path("fault").asBoolean(false)
+                                  || (err.isObject() && !err.path("senderFault").asBoolean(true));
+            String errorType = serverFault ? "server" : "client";
             StructureShape.Builder eb = ((StructureShape) shape).toBuilder()
                     .addTrait(new software.amazon.smithy.model.traits.ErrorTrait(errorType));
+            // Carry the C2J error block + fault flag verbatim (build a node even if "error" is absent).
+            software.amazon.smithy.model.node.ObjectNode.Builder errMarker =
+                    software.amazon.smithy.model.node.Node.objectNodeBuilder();
             if (err.isObject()) {
-                eb.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
-                        C2J_ERROR_TRAIT, Node.parse(err.toString())));
+                errMarker.merge(Node.parse(err.toString()).expectObjectNode());
             }
+            if (c2j.path("fault").asBoolean(false)) {
+                errMarker.withMember("fault", true);
+            }
+            // Always attach the marker for a converted C2J exception (even when empty): its presence
+            // tells the inverse this came from C2J, so it uses the marker (and leaves errorCode unset
+            // when there's no C2J error block -> the IR defaults the code to the shape name) rather
+            // than the hand-authored-Smithy fallback that would wrongly use the @error type as code.
+            eb.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(C2J_ERROR_TRAIT, errMarker.build()));
             shape = eb.build();
         }
         return one(shape);
@@ -504,14 +584,12 @@ public final class C2jToSmithyConverter {
                     }
                     break;
                 case "header":
-                    // Keep the member, but DON'T emit @httpHeader for headers Smithy reserves
-                    // (Content-Length, Connection, Transfer-Encoding): they're computed values, and
-                    // `@httpHeader("Content-Length")` is a hard Smithy validation error. The member
-                    // stays (so v2 still models it / generates getContentLength()); it's just unbound,
-                    // which is what real AWS Smithy models do.
-                    if (!RESERVED_HEADERS.contains(wire.toLowerCase(java.util.Locale.US))) {
-                        traits.add(new HttpHeaderTrait(wire));
-                    }
+                    // C2J header binding -> @httpHeader. (v2's IR build, the primary consumer, uses
+                    // Model.builder() and does not run Smithy's HTTP-binding validators, so reserved
+                    // headers like Content-Length are kept bound and round-trip exactly as legacy v2
+                    // generates them. The validating native-types path handles reserved headers via
+                    // customization excludes — see customization.config shapeModifiers.)
+                    traits.add(new HttpHeaderTrait(wire));
                     break;
                 case "querystring":
                     traits.add(new HttpQueryTrait(wire));
@@ -563,7 +641,55 @@ public final class C2jToSmithyConverter {
         if (m.path("sensitive").asBoolean(false)) {
             traits.add(new software.amazon.smithy.model.traits.SensitiveTrait());
         }
+        // C2J xmlAttribute -> @xmlAttribute (member serialized as an XML attribute, not an element).
+        if (m.path("xmlAttribute").asBoolean(false)) {
+            traits.add(new software.amazon.smithy.model.traits.XmlAttributeTrait());
+        }
+        // C2J member deprecated -> @deprecated(message).
+        if (m.path("deprecated").asBoolean(false)) {
+            traits.add(deprecatedTrait(m));
+        }
+        // C2J member contextParam {name} (endpoint-rules binding) -> marker, restored verbatim.
+        if (m.path("contextParam").isObject()) {
+            traits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_CONTEXT_PARAM_TRAIT, Node.parse(m.get("contextParam").toString())));
+        }
+        // C2J event member payload/header flags -> @eventPayload / @eventHeader.
+        if (m.path("eventpayload").asBoolean(false)) {
+            traits.add(new software.amazon.smithy.model.traits.EventPayloadTrait());
+        }
+        if (m.path("eventheader").asBoolean(false)) {
+            traits.add(new software.amazon.smithy.model.traits.EventHeaderTrait());
+        }
+        // C2J member streaming -> @streaming (+ @requiresLength).
+        if (m.path("streaming").asBoolean(false)) {
+            traits.add(new StreamingTrait());
+            if (m.path("requiresLength").asBoolean(false)) {
+                traits.add(new software.amazon.smithy.model.traits.RequiresLengthTrait());
+            }
+        }
+        // C2J member xmlNamespace -> @xmlNamespace(uri[, prefix]). The rest-xml marshaller derives the
+        // operation's root XML namespace from its members' xmlNamespace, so this must round-trip.
+        JsonNode xmlns = m.path("xmlNamespace");
+        if (xmlns.hasNonNull("uri")) {
+            software.amazon.smithy.model.traits.XmlNamespaceTrait.Builder xb =
+                    software.amazon.smithy.model.traits.XmlNamespaceTrait.builder().uri(xmlns.get("uri").asText());
+            if (xmlns.hasNonNull("prefix")) {
+                xb.prefix(xmlns.get("prefix").asText());
+            }
+            traits.add(xb.build());
+        }
         return traits;
+    }
+
+    // Build a Smithy @deprecated trait carrying the C2J deprecatedMessage (if any).
+    private static Trait deprecatedTrait(JsonNode c2j) {
+        software.amazon.smithy.model.traits.DeprecatedTrait.Builder b =
+                software.amazon.smithy.model.traits.DeprecatedTrait.builder();
+        if (c2j.hasNonNull("deprecatedMessage")) {
+            b.message(c2j.get("deprecatedMessage").asText());
+        }
+        return b.build();
     }
 
     private ShapeId targetId(JsonNode memberOrRef) {
@@ -610,6 +736,14 @@ public final class C2jToSmithyConverter {
         // (endpointPrefix, signingName, targetPrefix, signatureVersion, uid, auth, protocols, ...).
         // Smithy treats unknown traits as opaque nodes, so this round-trips losslessly.
         svc.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(C2J_METADATA_TRAIT, metadataNode()));
+
+        // Preserve the top-level clientContextParams block (drives endpoint client-context params,
+        // S3ClientContextParams, *ResolveEndpointInterceptor, client builders).
+        JsonNode ccp = service.path("clientContextParams");
+        if (ccp.isObject() && ccp.size() > 0) {
+            svc.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_CLIENT_CONTEXT_PARAMS_TRAIT, Node.parse(ccp.toString())));
+        }
 
         // The @awsQuery protocol's selector requires the service to carry @xmlNamespace.
         if (metadata.path("protocol").asText("").equals("query")) {

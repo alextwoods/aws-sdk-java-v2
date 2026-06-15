@@ -145,9 +145,12 @@ public final class SmithyToServiceModel {
         ServiceModel serviceModel = new ServiceModel();
         serviceModel.setMetadata(buildMetadata());
 
-        // Operations (skip anything outside the service's own namespace).
+        // Operations (skip anything outside the service's own namespace). Sorted by name to match the
+        // alphabetical C2J file order (see the shapes block below for why order matters).
         Map<String, Operation> operations = new LinkedHashMap<>();
-        for (OperationShape op : model.getOperationShapes()) {
+        List<OperationShape> sortedOps = new ArrayList<>(model.getOperationShapes());
+        sortedOps.sort(java.util.Comparator.comparing(o -> o.getId().getName()));
+        for (OperationShape op : sortedOps) {
             if (!ownNamespace(op.getId())) {
                 continue;
             }
@@ -157,8 +160,17 @@ public final class SmithyToServiceModel {
 
         // Shapes: structures/unions, lists, maps, and simple shapes. Skip the synthetic Unit shape
         // and any prelude shape (only emit shapes in the model's own namespace).
+        //
+        // Emit in shape-name order. AWS C2J service-2.json files list shapes alphabetically, and v2's
+        // direct path deserializes them into an insertion-ordered map; some IR steps are
+        // order-dependent (e.g. AddExceptionShapes does "last class-name wins" into a HashMap, so when
+        // two C2J shapes map to one Java class the file order decides the winner's errorCode). Sorting
+        // by name reproduces the C2J file order, keeping the IR byte-identical. Smithy model.toSet() is
+        // unordered, so we sort explicitly.
         Map<String, Shape> shapes = new LinkedHashMap<>();
-        for (software.amazon.smithy.model.shapes.Shape shape : model.toSet()) {
+        List<software.amazon.smithy.model.shapes.Shape> sorted = new ArrayList<>(model.toSet());
+        sorted.sort(java.util.Comparator.comparing(sh -> sh.getId().getName()));
+        for (software.amazon.smithy.model.shapes.Shape shape : sorted) {
             ShapeId id = shape.getId();
             if (id.equals(UNIT) || !ownNamespace(id) || shape.isMemberShape()) {
                 continue;
@@ -183,6 +195,32 @@ public final class SmithyToServiceModel {
                 if (shape.hasTrait(software.amazon.smithy.model.traits.SensitiveTrait.class)) {
                     c2j.setSensitive(true);
                 }
+                // Shape-level @deprecated -> C2J deprecated + deprecatedMessage.
+                shape.getTrait(software.amazon.smithy.model.traits.DeprecatedTrait.class).ifPresent(dt -> {
+                    c2j.setDeprecated(true);
+                    dt.getMessage().ifPresent(c2j::setDeprecatedMessage);
+                });
+                // Shape-level @streaming (+ @requiresLength) -> C2J streaming/requiresLength.
+                if (shape.hasTrait(software.amazon.smithy.model.traits.StreamingTrait.class)) {
+                    c2j.setStreaming(true);
+                }
+                if (shape.hasTrait(software.amazon.smithy.model.traits.RequiresLengthTrait.class)) {
+                    c2j.setRequiresLength(true);
+                }
+                // Shape-level @xmlNamespace -> C2J shape xmlNamespace (uri[, prefix]).
+                shape.getTrait(XmlNamespaceTrait.class).ifPresent(xn -> {
+                    XmlNamespace ns = new XmlNamespace();
+                    ns.setUri(xn.getUri());
+                    xn.getPrefix().ifPresent(ns::setPrefix);
+                    c2j.setXmlNamespace(ns);
+                });
+                // Shape-level @retryable -> C2J retryable{throttling}.
+                shape.getTrait(software.amazon.smithy.model.traits.RetryableTrait.class).ifPresent(rt -> {
+                    software.amazon.awssdk.codegen.model.service.RetryableTrait c2jRetry =
+                            new software.amazon.awssdk.codegen.model.service.RetryableTrait();
+                    c2jRetry.setThrottling(rt.getThrottling());
+                    c2j.setRetryable(c2jRetry);
+                });
                 shapes.put(id.getName(), c2j);
             }
         }
@@ -190,6 +228,21 @@ public final class SmithyToServiceModel {
 
         // Service-level documentation.
         doc(service).ifPresent(serviceModel::setDocumentation);
+
+        // Top-level clientContextParams block.
+        service.findTrait(C2jToSmithyConverter.C2J_CLIENT_CONTEXT_PARAMS_TRAIT).ifPresent(t -> {
+            Map<String, software.amazon.awssdk.codegen.model.service.ClientContextParam> ccp =
+                    new LinkedHashMap<>();
+            t.toNode().expectObjectNode().getStringMap().forEach((name, node) -> {
+                ObjectNode pn = node.expectObjectNode();
+                software.amazon.awssdk.codegen.model.service.ClientContextParam p =
+                        new software.amazon.awssdk.codegen.model.service.ClientContextParam();
+                pn.getStringMember("type").ifPresent(v -> p.setType(v.getValue()));
+                pn.getStringMember("documentation").ifPresent(v -> p.setDocumentation(v.getValue()));
+                ccp.put(name, p);
+            });
+            serviceModel.setClientContextParams(ccp);
+        });
         return serviceModel;
     }
 
@@ -234,7 +287,38 @@ public final class SmithyToServiceModel {
         node.getStringMember("uid").ifPresent(n -> metadata.setUid(n.getValue()));
         node.getArrayMember("protocols").ifPresent(a -> metadata.setProtocols(stringList(a)));
         node.getArrayMember("auth").ifPresent(a -> metadata.setAuth(stringList(a)));
+        if (node.getBooleanMemberOrDefault("resultWrapped", false)) {
+            metadata.setResultWrapped(true);
+        }
+        // awsQueryCompatible / protocolSettings are string maps; presence of awsQueryCompatible drives
+        // the IR's hasAwsQueryCompatible flag (and the generated client's .hasAwsQueryCompatible(true)).
+        node.getObjectMember("awsQueryCompatible").ifPresent(o -> metadata.setAwsQueryCompatible(stringMap(o)));
+        node.getObjectMember("protocolSettings").ifPresent(o -> metadata.setProtocolSettings(stringMap(o)));
         return metadata;
+    }
+
+    private static Map<String, String> stringMap(ObjectNode node) {
+        Map<String, String> map = new LinkedHashMap<>();
+        node.getStringMap().forEach((k, v) -> map.put(k, v.asStringNode().map(StringNode::getValue).orElse("")));
+        return map;
+    }
+
+    // C2J context-param values are deserialized by the model loader as jackson-jr JrsValue trees, and
+    // the endpoint-rules codegen casts them to JrsString/JrsBoolean/JrsArray. So restore them as
+    // jackson-jr TreeNodes (NOT databind nodes) by parsing the value's JSON through the jr tree codec.
+    private static final com.fasterxml.jackson.jr.stree.JacksonJrsTreeCodec JRS_CODEC =
+            new com.fasterxml.jackson.jr.stree.JacksonJrsTreeCodec();
+    private static final com.fasterxml.jackson.core.JsonFactory JSON_FACTORY =
+            new com.fasterxml.jackson.core.JsonFactory();
+
+    private static com.fasterxml.jackson.core.TreeNode treeNode(software.amazon.smithy.model.node.Node node) {
+        try (com.fasterxml.jackson.core.JsonParser p =
+                     JSON_FACTORY.createParser(software.amazon.smithy.model.node.Node.printJson(node))) {
+            p.nextToken();
+            return JRS_CODEC.readTree(p);
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     private static List<String> stringList(ArrayNode array) {
@@ -328,6 +412,66 @@ public final class SmithyToServiceModel {
         // httpChecksum block, preserved verbatim by the forward converter.
         op.findTrait(C2jToSmithyConverter.C2J_HTTP_CHECKSUM_TRAIT)
           .ifPresent(t -> operation.setHttpChecksum(httpChecksum(t.toNode().expectObjectNode())));
+
+        // requestcompression block, preserved verbatim.
+        op.findTrait(C2jToSmithyConverter.C2J_REQUEST_COMPRESSION_TRAIT).ifPresent(t -> {
+            software.amazon.awssdk.codegen.compression.RequestCompression rc =
+                    new software.amazon.awssdk.codegen.compression.RequestCompression();
+            t.toNode().expectObjectNode().getArrayMember("encodings")
+             .ifPresent(a -> rc.setEncodings(stringList(a)));
+            operation.setRequestcompression(rc);
+        });
+
+        // endpointdiscovery block (+ required flag) and endpointoperation flag.
+        op.findTrait(C2jToSmithyConverter.C2J_ENDPOINT_DISCOVERY_TRAIT).ifPresent(t -> {
+            software.amazon.awssdk.codegen.model.intermediate.EndpointDiscovery ed =
+                    new software.amazon.awssdk.codegen.model.intermediate.EndpointDiscovery();
+            if (t.toNode().expectObjectNode().getBooleanMemberOrDefault("required", false)) {
+                ed.setRequired(true);
+            }
+            operation.setEndpointdiscovery(ed);
+        });
+        if (op.findTrait(C2jToSmithyConverter.C2J_ENDPOINT_OPERATION_TRAIT).isPresent()) {
+            operation.setEndpointoperation(true);
+        }
+
+        // endpoint.hostPrefix, authtype, unsignedPayload.
+        op.findTrait(C2jToSmithyConverter.C2J_HOST_PREFIX_TRAIT)
+          .flatMap(t -> t.toNode().asStringNode()).ifPresent(n -> {
+              software.amazon.awssdk.codegen.model.service.EndpointTrait et =
+                      new software.amazon.awssdk.codegen.model.service.EndpointTrait();
+              et.setHostPrefix(n.getValue());
+              operation.setEndpoint(et);
+          });
+        op.findTrait(C2jToSmithyConverter.C2J_AUTHTYPE_TRAIT)
+          .flatMap(t -> t.toNode().asStringNode()).ifPresent(n -> operation.setAuthtype(n.getValue()));
+        if (op.findTrait(C2jToSmithyConverter.C2J_UNSIGNED_PAYLOAD_TRAIT).isPresent()) {
+            operation.setUnsignedPayload(true);
+        }
+
+        // staticContextParams / operationContextParams (arbitrary JSON values for endpoint rules).
+        op.findTrait(C2jToSmithyConverter.C2J_STATIC_CONTEXT_PARAMS_TRAIT).ifPresent(t -> {
+            Map<String, software.amazon.awssdk.codegen.model.service.StaticContextParam> m = new LinkedHashMap<>();
+            t.toNode().expectObjectNode().getStringMap().forEach((name, node) -> {
+                software.amazon.awssdk.codegen.model.service.StaticContextParam p =
+                        new software.amazon.awssdk.codegen.model.service.StaticContextParam();
+                // C2J shape is {"<name>": {"value": <x>}}; restore the inner "value" verbatim.
+                node.expectObjectNode().getMember("value").ifPresent(v -> p.setValue(treeNode(v)));
+                m.put(name, p);
+            });
+            operation.setStaticContextParams(m);
+        });
+        op.findTrait(C2jToSmithyConverter.C2J_OPERATION_CONTEXT_PARAMS_TRAIT).ifPresent(t -> {
+            Map<String, software.amazon.awssdk.codegen.model.service.OperationContextParam> m = new LinkedHashMap<>();
+            t.toNode().expectObjectNode().getStringMap().forEach((name, node) -> {
+                software.amazon.awssdk.codegen.model.service.OperationContextParam p =
+                        new software.amazon.awssdk.codegen.model.service.OperationContextParam();
+                // C2J shape is {"<name>": {"path": <expr>}}; restore the inner "path" value verbatim.
+                node.expectObjectNode().getMember("path").ifPresent(pathNode -> p.setPath(treeNode(pathNode)));
+                m.put(name, p);
+            });
+            operation.setOperationContextParams(m);
+        });
 
         // errors[] -> ErrorMap{shape}.
         if (!op.getErrors().isEmpty()) {
@@ -476,8 +620,15 @@ public final class SmithyToServiceModel {
             ErrorTrait c2jError = new ErrorTrait();
             Optional<ObjectNode> errNode = s.findTrait(C2jToSmithyConverter.C2J_ERROR_TRAIT)
                                             .map(t -> t.toNode().expectObjectNode());
+            boolean hasErrorBlock = false;
             if (errNode.isPresent()) {
                 ObjectNode n = errNode.get();
+                // The C2J "fault" flag (server fault -> generated 500) is carried on the marker.
+                if (n.getBooleanMemberOrDefault("fault", false)) {
+                    shape.setFault(true);
+                }
+                hasErrorBlock = n.getStringMember("code").isPresent()
+                                || n.getNumberMember("httpStatusCode").isPresent();
                 n.getStringMember("code").ifPresent(c -> c2jError.setCode(c.getValue()));
                 n.getNumberMember("httpStatusCode")
                  .ifPresent(h -> c2jError.setHttpStatusCode(h.getValue().intValue()));
@@ -485,8 +636,12 @@ public final class SmithyToServiceModel {
                 // Fallback (hand-authored Smithy, no marker): derive from @error + @httpError.
                 c2jError.setCode(errorTrait.getValue());
                 s.getTrait(HttpErrorTrait.class).ifPresent(he -> c2jError.setHttpStatusCode(he.getCode()));
+                hasErrorBlock = true;
             }
-            shape.setError(c2jError);
+            // Only attach a C2J error block if there actually was one (a bare fault has none).
+            if (hasErrorBlock) {
+                shape.setError(c2jError);
+            }
         });
 
         return shape;
@@ -597,6 +752,49 @@ public final class SmithyToServiceModel {
         if (m.hasTrait(software.amazon.smithy.model.traits.SensitiveTrait.class)) {
             member.setSensitive(true);
         }
+
+        // @xmlAttribute -> C2J member xmlAttribute.
+        if (m.hasTrait(software.amazon.smithy.model.traits.XmlAttributeTrait.class)) {
+            member.setXmlAttribute(true);
+        }
+
+        // @deprecated -> C2J member deprecated + deprecatedMessage.
+        m.getTrait(software.amazon.smithy.model.traits.DeprecatedTrait.class).ifPresent(dt -> {
+            member.setDeprecated(true);
+            dt.getMessage().ifPresent(member::setDeprecatedMessage);
+        });
+
+        // @eventPayload / @eventHeader -> C2J member eventpayload / eventheader.
+        if (m.hasTrait(software.amazon.smithy.model.traits.EventPayloadTrait.class)) {
+            member.setEventpayload(true);
+        }
+        if (m.hasTrait(software.amazon.smithy.model.traits.EventHeaderTrait.class)) {
+            member.setEventheader(true);
+        }
+
+        // @streaming (+ @requiresLength) -> C2J member streaming/requiresLength.
+        if (m.hasTrait(software.amazon.smithy.model.traits.StreamingTrait.class)) {
+            member.setStreaming(true);
+        }
+        if (m.hasTrait(software.amazon.smithy.model.traits.RequiresLengthTrait.class)) {
+            member.setRequiresLength(true);
+        }
+
+        // @xmlNamespace -> C2J member xmlNamespace (uri[, prefix]).
+        m.getTrait(XmlNamespaceTrait.class).ifPresent(xn -> {
+            XmlNamespace ns = new XmlNamespace();
+            ns.setUri(xn.getUri());
+            xn.getPrefix().ifPresent(ns::setPrefix);
+            member.setXmlNamespace(ns);
+        });
+
+        // member contextParam {name} -> C2J ContextParam.
+        m.findTrait(C2jToSmithyConverter.C2J_CONTEXT_PARAM_TRAIT).ifPresent(t -> {
+            software.amazon.awssdk.codegen.model.service.ContextParam cp =
+                    new software.amazon.awssdk.codegen.model.service.ContextParam();
+            t.toNode().expectObjectNode().getStringMember("name").ifPresent(n -> cp.setName(n.getValue()));
+            member.setContextParam(cp);
+        });
     }
 
     // Smithy @timestampFormat values -> C2J timestampFormat names (inverse of
