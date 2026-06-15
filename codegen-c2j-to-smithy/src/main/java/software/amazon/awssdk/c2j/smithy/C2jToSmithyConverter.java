@@ -102,6 +102,8 @@ public final class C2jToSmithyConverter {
     static final ShapeId C2J_OPERATION_CONTEXT_PARAMS_TRAIT = ShapeId.from("com.amazonaws.c2j#operationContextParams");
     /** Carries a member's C2J {@code contextParam} {name} (endpoint-rules binding). */
     static final ShapeId C2J_CONTEXT_PARAM_TRAIT = ShapeId.from("com.amazonaws.c2j#contextParam");
+    /** Carries a member's C2J {@code queryName} (the ec2 protocol's wire name, distinct from locationName). */
+    static final ShapeId C2J_QUERY_NAME_TRAIT = ShapeId.from("com.amazonaws.c2j#queryName");
     /** Carries C2J operation {@code endpoint.hostPrefix}, {@code authtype}, {@code unsignedPayload}. */
     static final ShapeId C2J_HOST_PREFIX_TRAIT = ShapeId.from("com.amazonaws.c2j#hostPrefix");
     static final ShapeId C2J_AUTHTYPE_TRAIT = ShapeId.from("com.amazonaws.c2j#authtype");
@@ -653,6 +655,11 @@ public final class C2jToSmithyConverter {
         if (m.path("contextParam").isObject()) {
             traits.add(new software.amazon.smithy.model.traits.DynamicTrait(
                     C2J_CONTEXT_PARAM_TRAIT, Node.parse(m.get("contextParam").toString())));
+        }
+        // C2J member queryName (ec2 protocol wire name) -> marker, restored to Member.queryName.
+        if (m.path("queryName").isTextual()) {
+            traits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_QUERY_NAME_TRAIT, Node.from(m.get("queryName").asText())));
         }
         // C2J event member payload/header flags -> @eventPayload / @eventHeader.
         if (m.path("eventpayload").asBoolean(false)) {

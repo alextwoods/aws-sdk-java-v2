@@ -795,6 +795,10 @@ public final class SmithyToServiceModel {
             t.toNode().expectObjectNode().getStringMember("name").ifPresent(n -> cp.setName(n.getValue()));
             member.setContextParam(cp);
         });
+
+        // member queryName (ec2 wire name) -> C2J Member.queryName.
+        m.findTrait(C2jToSmithyConverter.C2J_QUERY_NAME_TRAIT)
+         .flatMap(t -> t.toNode().asStringNode()).ifPresent(n -> member.setQueryName(n.getValue()));
     }
 
     // Smithy @timestampFormat values -> C2J timestampFormat names (inverse of
