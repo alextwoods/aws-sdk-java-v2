@@ -32,13 +32,17 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import software.amazon.awssdk.benchmark.serde.BenchmarkTestCaseLoader;
 import software.amazon.awssdk.bridge.smithyjava.serde.BridgeStruct;
+import software.amazon.awssdk.bridge.smithyjava.serde.SdkPojoSerializer;
+import software.amazon.awssdk.bridge.smithyjava.serde.SdkSchemaFactory;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.awssdk.protocol.reflect.ShapeModelReflector;
 import software.amazon.smithy.java.aws.client.awsjson.AwsJson1Protocol;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.schema.ApiOperation;
+import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.dynamicclient.DynamicClient;
 import software.amazon.smithy.java.io.uri.SmithyUri;
 import software.amazon.smithy.model.Model;
@@ -100,10 +104,16 @@ public class JsonRpc10BridgeMarshallBenchmark {
     // smithy-java serde state.
     private AwsJson1Protocol protocol;
     private ApiOperation<SerializableStruct, SerializableStruct> operation;
+    private Schema inputSchema;
     private Context context;
     // Pre-built wrapped input so the @Benchmark method times only createRequest (like the native
     // smithy-java serde benchmark, which pre-builds its input in @Setup).
     private BridgeStruct bridgeInput;
+    // Represents the CODEGEN output: a v2 POJO that implements SerializableStruct directly —
+    // static $SCHEMA built once via SdkSchemaFactory, serializeMembers delegating to
+    // SdkPojoSerializer. No per-call wrapper alloc, no plan lookup (exactly what the generated
+    // POJO does; see AwsServiceModel + generateSmithyJavaSerde).
+    private SerializableStruct generatedInput;
 
     @Setup
     @SuppressWarnings("unchecked")
@@ -143,12 +153,70 @@ public class JsonRpc10BridgeMarshallBenchmark {
         this.context = Context.create();
 
         // Pre-build the wrapped input once (like native smithy-java's benchmark does).
-        this.bridgeInput = BridgeStruct.of(operation.inputSchema(), request);
+        this.inputSchema = operation.inputSchema();
+        this.bridgeInput = BridgeStruct.of(inputSchema, request);
+
+        // The CODEGEN path. When json-rpc-1-0 is generated with generateSmithyJavaSerde=true, the
+        // whole object graph (request + nested AttributeValue) implements SerializableStruct, so
+        // the POJO IS the struct: cast it directly and let it serialize itself via its generated
+        // static $SCHEMA + serializeMembers — the truest measurement, top to bottom, no proxy.
+        if (request instanceof SerializableStruct) {
+            this.generatedInput = (SerializableStruct) request;
+        } else {
+            // Fallback (flag off / un-regenerated): a proxy whose $SCHEMA + serialize Plan are built
+            // once from SDK_FIELDS — same static-plan path the generated POJO uses. Faithful only
+            // for FLAT shapes, since nested stock POJOs aren't SerializableStructs.
+            SdkPojo pojo = request;
+            Schema generatedSchema = SdkSchemaFactory.structure(
+                    "com.amazonaws.sdk.benchmark#" + inputShapeName, pojo.sdkFields());
+            SdkPojoSerializer.Plan plan = SdkPojoSerializer.compile(generatedSchema, pojo.sdkFields());
+            this.generatedInput = new SerializableStruct() {
+                @Override
+                public Schema schema() {
+                    return generatedSchema;
+                }
+
+                @Override
+                public void serializeMembers(ShapeSerializer serializer) {
+                    plan.serialize(serializer, pojo);
+                }
+
+                @Override
+                public <T> T getMemberValue(Schema member) {
+                    return plan.getMemberValue(pojo, member);
+                }
+            };
+        }
     }
 
-    /** The runtime bridge: v2 SdkPojo wrapped, serialized via a precompiled field-iteration plan. */
+    /**
+     * The runtime bridge, pre-wrapped: the {@code BridgeStruct} wrapper is built in {@code @Setup},
+     * so this times only the serialize walk. Apples-to-apples with {@link #generatedStructMarshall}
+     * on dispatch quality (both walk a precompiled plan).
+     */
     @Benchmark
     public void bridgeMarshall(Blackhole bh) {
         bh.consume(protocol.createRequest(operation, bridgeInput, context, ENDPOINT));
+    }
+
+    /**
+     * The runtime bridge, wrapped per call: {@code BridgeStruct.of(...)} runs inside the timed
+     * region — the real production cost of the bridge (a {@code ClassValue} plan lookup + wrapper
+     * allocation on every request, recursively for nested structs). This is what the generated
+     * path removes.
+     */
+    @Benchmark
+    public void bridgeMarshallPerCallWrap(Blackhole bh) {
+        bh.consume(protocol.createRequest(operation, BridgeStruct.of(inputSchema, request), context, ENDPOINT));
+    }
+
+    /** The CODEGEN path: v2 POJO that IS a SerializableStruct (its own $SCHEMA + serializeMembers). */
+    @Benchmark
+    @SuppressWarnings("unchecked")
+    public void generatedStructMarshall(Blackhole bh) {
+        bh.consume(protocol.createRequest(
+                operation,
+                (software.amazon.smithy.java.core.schema.SerializableStruct) generatedInput,
+                context, ENDPOINT));
     }
 }

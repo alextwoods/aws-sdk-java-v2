@@ -58,6 +58,21 @@ public final class BridgeSchemaExtension
     public static final class BridgePlan {
         private final Map<String, Schema> memberByName;
 
+        // ClassValue can't take a per-call supplier, so back the cache with a tiny
+        // ClassValue<Holder> whose Holder lazily computes via the supplied compiler.
+        private final ClassValue<PlanHolder> serializeHolders = new ClassValue<>() {
+            @Override
+            protected PlanHolder computeValue(Class<?> type) {
+                return new PlanHolder();
+            }
+        };
+        private final ClassValue<PlanHolder> deserializeHolders = new ClassValue<>() {
+            @Override
+            protected PlanHolder computeValue(Class<?> type) {
+                return new PlanHolder();
+            }
+        };
+
         BridgePlan(Map<String, Schema> memberByName) {
             this.memberByName = memberByName;
         }
@@ -77,21 +92,6 @@ public final class BridgeSchemaExtension
         public <T> T deserializePlan(Class<?> builderClass, Function<Class<?>, T> compiler) {
             return (T) PlanHolder.get(deserializeHolders, builderClass, compiler);
         }
-
-        // ClassValue can't take a per-call supplier, so back the cache with a tiny
-        // ClassValue<Holder> whose Holder lazily computes via the supplied compiler.
-        private final ClassValue<PlanHolder> serializeHolders = new ClassValue<>() {
-            @Override
-            protected PlanHolder computeValue(Class<?> type) {
-                return new PlanHolder();
-            }
-        };
-        private final ClassValue<PlanHolder> deserializeHolders = new ClassValue<>() {
-            @Override
-            protected PlanHolder computeValue(Class<?> type) {
-                return new PlanHolder();
-            }
-        };
     }
 
     private static final class PlanHolder {

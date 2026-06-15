@@ -23,6 +23,7 @@ import static javax.lang.model.element.Modifier.STATIC;
 import static software.amazon.awssdk.codegen.internal.Utils.capitalize;
 import static software.amazon.awssdk.codegen.poet.model.DeprecationUtils.checkDeprecated;
 
+import com.squareup.javapoet.AnnotationSpec;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
@@ -48,6 +49,7 @@ import java.util.stream.Stream;
 import javax.lang.model.element.Modifier;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.codegen.docs.DocumentationBuilder;
+import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.MemberModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
@@ -114,6 +116,14 @@ public class AwsServiceModel implements ClassSpec {
                                                .addTypes(nestedModelClassTypes());
 
         shapeModelSpec.additionalMethods().forEach(specBuilder::addMethod);
+
+        if (smithyJavaSerde()) {
+            specBuilder.addField(smithySchemaField());
+            smithyMemberSchemaFields().forEach(specBuilder::addField);
+            specBuilder.addMethod(smithySchemaMethod());
+            specBuilder.addMethod(smithySerializeMembersMethod());
+            specBuilder.addMethod(smithyGetMemberValueMethod());
+        }
 
         if (shapeModel.isUnion()) {
             specBuilder.addField(unionTypeField());
@@ -402,7 +412,319 @@ public class AwsServiceModel implements ClassSpec {
                 break;
         }
 
+        if (smithyJavaSerde()) {
+            interfaces.add(ClassName.get("software.amazon.smithy.java.core.schema", "SerializableStruct"));
+        }
+
         return interfaces;
+    }
+
+    private boolean smithyJavaSerde() {
+        CustomizationConfig c = intermediateModel.getCustomizationConfig();
+        if (c == null || !c.isGenerateSmithyJavaSerde()) {
+            return false;
+        }
+        // Only structure-like shapes that have members participate.
+        switch (shapeModel.getShapeType()) {
+            case Model:
+            case Request:
+            case Response:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static final ClassName SMITHY_SCHEMA =
+        ClassName.get("software.amazon.smithy.java.core.schema", "Schema");
+    private static final ClassName SMITHY_SHAPE_SERIALIZER =
+        ClassName.get("software.amazon.smithy.java.core.serde", "ShapeSerializer");
+    private static final ClassName SDK_SCHEMA_FACTORY =
+        ClassName.get("software.amazon.awssdk.bridge.smithyjava.serde", "SdkSchemaFactory");
+    private static final ClassName SDK_POJO_SERIALIZER =
+        ClassName.get("software.amazon.awssdk.bridge.smithyjava.serde", "SdkPojoSerializer");
+    private static final ClassName SDK_AUTO_CONSTRUCT_LIST =
+        ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructList");
+    private static final ClassName SDK_AUTO_CONSTRUCT_MAP =
+        ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructMap");
+    private static final ClassName SDK_POJO_DESERIALIZER =
+        ClassName.get("software.amazon.awssdk.bridge.smithyjava.serde", "SdkPojoDeserializer");
+    private static final ClassName SDK_BYTES =
+        ClassName.get("software.amazon.awssdk.core", "SdkBytes");
+    private static final ClassName RAW_LIST = ClassName.get("java.util", "List");
+    private static final ClassName RAW_MAP = ClassName.get("java.util", "Map");
+    private static final ClassName SMITHY_SHAPE_DESERIALIZER =
+        ClassName.get("software.amazon.smithy.java.core.serde", "ShapeDeserializer");
+    private static final ClassName SMITHY_SHAPE_BUILDER =
+        ClassName.get("software.amazon.smithy.java.core.schema", "ShapeBuilder");
+    private static final ClassName SMITHY_STRUCT_MEMBER_CONSUMER =
+        ClassName.get("software.amazon.smithy.java.core.serde", "ShapeDeserializer", "StructMemberConsumer");
+
+    private String smithyShapeId() {
+        // Synthetic namespace + the shape's name; member ordering/identity is what matters for serde.
+        return "com.amazonaws." + intermediateModel.getMetadata().getServiceName().toLowerCase(java.util.Locale.US)
+               + "#" + shapeModel.getShapeName();
+    }
+
+    private FieldSpec smithySchemaField() {
+        return FieldSpec.builder(SMITHY_SCHEMA, "$SCHEMA", PUBLIC, STATIC, FINAL)
+                        .initializer("$T.structure($S, SDK_FIELDS)", SDK_SCHEMA_FACTORY, smithyShapeId())
+                        .build();
+    }
+
+    // The members that participate in serialization, in SDK_FIELDS order — which is exactly the
+    // order SdkSchemaFactory.structure(...) adds members to $SCHEMA, so member i here is member i
+    // in the schema. (Mirror of ShapeModelSpec.staticFields() / fields() filtering.)
+    private List<MemberModel> smithySerializableMembers() {
+        return shapeModel.getNonStreamingMembers().stream()
+                         .filter(m -> m.getShape() == null
+                                      || m.getShape().getShapeType() != ShapeType.Exception)
+                         .filter(m -> !m.isSynthetic())
+                         .collect(Collectors.toList());
+    }
+
+    // One static Schema per member, resolved ONCE from $SCHEMA by index. serializeMembers then
+    // references these directly — no per-call member lookup, exactly like a code-generated smithy
+    // shape's SCHEMA_<MEMBER> constants.
+    private List<FieldSpec> smithyMemberSchemaFields() {
+        List<MemberModel> members = smithySerializableMembers();
+        List<FieldSpec> fields = new ArrayList<>();
+        for (int i = 0; i < members.size(); i++) {
+            fields.add(FieldSpec.builder(SMITHY_SCHEMA, smithyMemberSchemaName(members.get(i)),
+                                         PRIVATE, STATIC, FINAL)
+                                .initializer("$$SCHEMA.member($L)", i)
+                                .build());
+        }
+        return fields;
+    }
+
+    private String smithyMemberSchemaName(MemberModel m) {
+        return "SCHEMA_" + intermediateModel.getNamingStrategy().getEnumValueName(m.getName());
+    }
+
+    private MethodSpec smithySchemaMethod() {
+        return MethodSpec.methodBuilder("schema")
+                         .addAnnotation(Override.class)
+                         .addModifiers(PUBLIC)
+                         .returns(SMITHY_SCHEMA)
+                         .addStatement("return $$SCHEMA")
+                         .build();
+    }
+
+    // Direct, monomorphic serialization: read each field straight off `this` (no SdkField getter
+    // lambda, no boxing through Object) and call the typed writeX with the member's static Schema.
+    // This is the form a hand-written / native smithy-java shape uses; it removes the getter
+    // indirection that kept the plan-based path ~2.4x off native. List/map bodies reuse the
+    // SdkPojoSerializer static helpers (which already walk the collection directly, no getters).
+    private MethodSpec smithySerializeMembersMethod() {
+        MethodSpec.Builder b = MethodSpec.methodBuilder("serializeMembers")
+                                         .addAnnotation(Override.class)
+                                         .addModifiers(PUBLIC)
+                                         .addParameter(SMITHY_SHAPE_SERIALIZER, "serializer");
+        for (MemberModel m : smithySerializableMembers()) {
+            // Direct field read — no SdkField getter lambda. Emit only when the member is "present"
+            // the same way v2's generated has*() accessors define it: non-null, and for collections
+            // not an unset auto-construct list/map (which v2 omits from the wire). This matches v2's
+            // reference JSON exactly (verified by GeneratedSerdeVerifier).
+            String field = m.getVariable().getVariableName();
+            if (m.isList()) {
+                b.beginControlFlow("if (this.$L != null && !(this.$L instanceof $T))",
+                                   field, field, SDK_AUTO_CONSTRUCT_LIST);
+            } else if (m.isMap()) {
+                b.beginControlFlow("if (this.$L != null && !(this.$L instanceof $T))",
+                                   field, field, SDK_AUTO_CONSTRUCT_MAP);
+            } else {
+                b.beginControlFlow("if (this.$L != null)", field);
+            }
+            b.addStatement(smithyWriteStatement(m, smithyMemberSchemaName(m), "this." + field))
+             .endControlFlow();
+        }
+        return b.build();
+    }
+
+    // The typed write call for one member, reading `accessor` directly (no getter indirection).
+    private CodeBlock smithyWriteStatement(MemberModel m, String schema, String accessor) {
+        switch (m.getMarshallingType()) {
+            case "STRING":
+                return CodeBlock.of("serializer.writeString($L, $L)", schema, accessor);
+            case "INTEGER":
+                return CodeBlock.of("serializer.writeInteger($L, $L)", schema, accessor);
+            case "LONG":
+                return CodeBlock.of("serializer.writeLong($L, $L)", schema, accessor);
+            case "SHORT":
+                return CodeBlock.of("serializer.writeShort($L, $L)", schema, accessor);
+            case "BYTE":
+                return CodeBlock.of("serializer.writeByte($L, $L)", schema, accessor);
+            case "FLOAT":
+                return CodeBlock.of("serializer.writeFloat($L, $L)", schema, accessor);
+            case "DOUBLE":
+                return CodeBlock.of("serializer.writeDouble($L, $L)", schema, accessor);
+            case "BIG_DECIMAL":
+                return CodeBlock.of("serializer.writeBigDecimal($L, $L)", schema, accessor);
+            case "BOOLEAN":
+                return CodeBlock.of("serializer.writeBoolean($L, $L)", schema, accessor);
+            case "INSTANT":
+                return CodeBlock.of("serializer.writeTimestamp($L, $L)", schema, accessor);
+            case "SDK_BYTES":
+                return CodeBlock.of("serializer.writeBlob($L, $L.asByteBuffer())", schema, accessor);
+            case "SDK_POJO":
+                return CodeBlock.of("serializer.writeStruct($L, $L)", schema, accessor);
+            case "LIST":
+                return CodeBlock.of("$T.writeList(serializer, $L, $L)", SDK_POJO_SERIALIZER, schema, accessor);
+            case "MAP":
+                return CodeBlock.of("$T.writeMap(serializer, $L, $L)", SDK_POJO_SERIALIZER, schema, accessor);
+            default:
+                // STREAM / DOCUMENT / NULL — uncommon in request bodies; delegate to the shared
+                // element writer, which dispatches on the runtime value type.
+                return CodeBlock.of("$T.writeElement(serializer, $L, $L)", SDK_POJO_SERIALIZER, schema, accessor);
+        }
+    }
+
+    private MethodSpec smithyGetMemberValueMethod() {
+        TypeVariableName t = TypeVariableName.get("T");
+        MethodSpec.Builder b = MethodSpec.methodBuilder("getMemberValue")
+                                         .addAnnotation(Override.class)
+                                         .addModifiers(PUBLIC)
+                                         .addTypeVariable(t)
+                                         .returns(t)
+                                         .addParameter(SMITHY_SCHEMA, "member")
+                                         .addStatement("int idx = member.memberIndex()");
+        b.beginControlFlow("switch (idx)");
+        List<MemberModel> members = smithySerializableMembers();
+        for (int i = 0; i < members.size(); i++) {
+            String field = members.get(i).getVariable().getVariableName();
+            b.addStatement("case $L: return ($T) this.$L", i, t, field);
+        }
+        b.addStatement("default: return null");
+        b.endControlFlow();
+        return b.build();
+    }
+
+    // ----- deserialize (read) path: the mirror of the write path -----
+    // Makes the generated BuilderImpl a smithy-java ShapeBuilder. deserialize() routes the wire
+    // through a single static StructMemberConsumer whose accept() is a switch(member.memberIndex())
+    // calling the builder's typed fluent setter directly with de.readX(member) — no SdkField setter
+    // lambda, no reflection. This is the form native smithy-java codegen emits.
+    private TypeSpec addSmithyDeserialize(TypeSpec builderImpl) {
+        ClassName model = className();
+        ClassName builderInterface = modelBuilderSpecs.builderInterfaceName();
+        TypeName shapeBuilderOfModel = ParameterizedTypeName.get(SMITHY_SHAPE_BUILDER, model);
+        // The consumer is typed on the Builder INTERFACE: readStruct(schema, this, INSTANCE) infers
+        // T=Builder (this BuilderImpl is-a Builder), and the interface exposes the fluent setters.
+        TypeName memberConsumerOfBuilder = ParameterizedTypeName.get(SMITHY_STRUCT_MEMBER_CONSUMER,
+                                                                     builderInterface);
+
+        // The static inner consumer: switch on memberIndex -> typed fluent setter, value read
+        // directly via de.readX(member). No SdkField setter lambda, no reflection.
+        MethodSpec.Builder accept = MethodSpec.methodBuilder("accept")
+                .addAnnotation(Override.class)
+                .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                                             .addMember("value", "$S", "unchecked").build())
+                .addModifiers(PUBLIC)
+                .addParameter(builderInterface, "builder")
+                .addParameter(SMITHY_SCHEMA, "member")
+                .addParameter(SMITHY_SHAPE_DESERIALIZER, "de");
+        accept.beginControlFlow("switch (member.memberIndex())");
+        List<MemberModel> members = smithySerializableMembers();
+        for (int i = 0; i < members.size(); i++) {
+            MemberModel m = members.get(i);
+            accept.addStatement("case $L: builder.$L($L); break",
+                                i, m.getFluentSetterMethodName(), smithyReadExpression(m, i));
+        }
+        accept.addStatement("default: break");
+        accept.endControlFlow();
+
+        ClassName consumerName = ClassName.bestGuess("SmithyMemberConsumer");
+        TypeSpec innerConsumer = TypeSpec.classBuilder("SmithyMemberConsumer")
+                .addModifiers(PRIVATE, STATIC, FINAL)
+                .addSuperinterface(memberConsumerOfBuilder)
+                .addField(FieldSpec.builder(consumerName, "INSTANCE", PRIVATE, STATIC, FINAL)
+                                   .initializer("new SmithyMemberConsumer()")
+                                   .build())
+                .addMethod(accept.build())
+                .build();
+
+        MethodSpec deserialize = MethodSpec.methodBuilder("deserialize")
+                .addAnnotation(Override.class)
+                .addModifiers(PUBLIC)
+                .returns(shapeBuilderOfModel)
+                .addParameter(SMITHY_SHAPE_DESERIALIZER, "decoder")
+                .addStatement("decoder.readStruct($$SCHEMA, this, SmithyMemberConsumer.INSTANCE)")
+                .addStatement("return this")
+                .build();
+
+        MethodSpec schema = MethodSpec.methodBuilder("schema")
+                .addAnnotation(Override.class)
+                .addModifiers(PUBLIC)
+                .returns(SMITHY_SCHEMA)
+                .addStatement("return $$SCHEMA")
+                .build();
+
+        return builderImpl.toBuilder()
+                          .addSuperinterface(shapeBuilderOfModel)
+                          .addType(innerConsumer)
+                          .addMethod(deserialize)
+                          .addMethod(schema)
+                          .build();
+    }
+
+    // The builder INTERFACE also extends ShapeBuilder<Model>, so a nested member's
+    // Type.builder() exposes deserializeMember(...).build() (the native read form).
+    private TypeSpec addSmithyBuilderInterface(TypeSpec builderInterface) {
+        return builderInterface.toBuilder()
+                               .addSuperinterface(ParameterizedTypeName.get(SMITHY_SHAPE_BUILDER, className()))
+                               .build();
+    }
+
+    // Read one member from the member deserializer `de` against the runtime member schema `member`,
+    // typed for the builder's fluent setter. List/map delegate to SdkPojoDeserializer, passing the
+    // member's v2 SdkField (SDK_FIELDS.get(idx)) so it can resolve element/value fields + nested
+    // builder constructors.
+    private CodeBlock smithyReadExpression(MemberModel m, int idx) {
+        switch (m.getMarshallingType()) {
+            case "STRING":
+                return CodeBlock.of("de.readString(member)");
+            case "INTEGER":
+                return CodeBlock.of("de.readInteger(member)");
+            case "LONG":
+                return CodeBlock.of("de.readLong(member)");
+            case "SHORT":
+                return CodeBlock.of("de.readShort(member)");
+            case "BYTE":
+                return CodeBlock.of("de.readByte(member)");
+            case "FLOAT":
+                return CodeBlock.of("de.readFloat(member)");
+            case "DOUBLE":
+                return CodeBlock.of("de.readDouble(member)");
+            case "BIG_DECIMAL":
+                return CodeBlock.of("de.readBigDecimal(member)");
+            case "BOOLEAN":
+                return CodeBlock.of("de.readBoolean(member)");
+            case "INSTANT":
+                return CodeBlock.of("de.readTimestamp(member)");
+            case "SDK_BYTES":
+                return CodeBlock.of("$T.fromByteBuffer(de.readBlob(member))", SDK_BYTES);
+            case "SDK_POJO":
+                // Nested generated shape builds itself via its own ShapeBuilder (native read form).
+                return CodeBlock.of("$T.builder().deserializeMember(de, member).build()",
+                                    smithyMemberPojoType(m));
+            case "LIST":
+                // Helper returns List<Object> with correctly-typed contents (built via the element's
+                // v2 SdkField constructor); cast to the setter's declared type.
+                return CodeBlock.of("($T) ($T) $T.readList(member, SDK_FIELDS.get($L), de)",
+                                    typeProvider.fieldType(m), RAW_LIST, SDK_POJO_DESERIALIZER, idx);
+            case "MAP":
+                return CodeBlock.of("($T) ($T) $T.readStringMap(member, SDK_FIELDS.get($L), de)",
+                                    typeProvider.fieldType(m), RAW_MAP, SDK_POJO_DESERIALIZER, idx);
+            default:
+                return CodeBlock.of("($T) $T.readElement(member, SDK_FIELDS.get($L), de)",
+                                    typeProvider.fieldType(m), SDK_POJO_DESERIALIZER, idx);
+        }
+    }
+
+    // The v2 model ClassName of a nested SDK_POJO member.
+    private ClassName smithyMemberPojoType(MemberModel m) {
+        return poetExtensions.getModelClass(m.getShape().getShapeName());
     }
 
     private TypeName modelSuperClass() {
@@ -733,8 +1055,14 @@ public class AwsServiceModel implements ClassSpec {
             case Request:
             case Response:
             case Exception:
-                nestedClasses.add(modelBuilderSpecs.builderInterface());
-                nestedClasses.add(modelBuilderSpecs.beanStyleBuilder());
+                TypeSpec builderInterface = modelBuilderSpecs.builderInterface();
+                TypeSpec builderImpl = modelBuilderSpecs.beanStyleBuilder();
+                if (smithyJavaSerde()) {
+                    builderInterface = addSmithyBuilderInterface(builderInterface);
+                    builderImpl = addSmithyDeserialize(builderImpl);
+                }
+                nestedClasses.add(builderInterface);
+                nestedClasses.add(builderImpl);
                 break;
             default:
                 break;

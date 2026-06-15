@@ -88,6 +88,11 @@ public class RpcV2CborBridgeUnmarshallBenchmark {
     private Context context;
     private TypeRegistry errorRegistry;
     private HttpResponse response;
+    // Generated read path: codec-level CBOR deserialize straight into the generated builder
+    // (a smithy ShapeBuilder). No bridge wrapper, no reflective setter.
+    private software.amazon.smithy.java.core.serde.Codec cborCodec;
+    private byte[] cborResponseBytes;
+    private java.util.function.Supplier<software.amazon.smithy.java.core.schema.ShapeBuilder<?>> generatedBuilderFactory;
 
     @Setup(Level.Trial)
     public void setup() throws Exception {
@@ -139,10 +144,31 @@ public class RpcV2CborBridgeUnmarshallBenchmark {
 
         this.context = Context.create();
         this.errorRegistry = realOp.errorRegistry();
+
+        // Generated read path setup: a CBOR codec + a supplier of fresh generated builders (each a
+        // smithy ShapeBuilder). Times only the codec read, parallel to generatedStructMarshall.
+        this.cborResponseBytes = responseBytes;
+        this.cborCodec = software.amazon.smithy.java.cbor.Rpcv2CborCodec.builder().build();
+        this.generatedBuilderFactory = () -> {
+            try {
+                Object b = builderMethod.invoke(null);
+                return b instanceof software.amazon.smithy.java.core.schema.ShapeBuilder
+                        ? (software.amazon.smithy.java.core.schema.ShapeBuilder<?>) b
+                        : null;
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        };
     }
 
     @Benchmark
     public void bridgeUnmarshall(Blackhole bh) {
         bh.consume(protocol.deserializeResponse(bridgeOperation, context, errorRegistry, null, response));
+    }
+
+    /** The CODEGEN read path: deserialize straight into the generated builder via the CBOR codec. */
+    @Benchmark
+    public void generatedStructUnmarshall(Blackhole bh) {
+        bh.consume(cborCodec.deserializeShape(cborResponseBytes, generatedBuilderFactory.get()));
     }
 }

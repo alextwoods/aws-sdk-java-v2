@@ -236,6 +236,14 @@ public class CustomizationConfig {
     private boolean delegateAsyncClientClass;
 
     /**
+     * Whether generated shape POJOs should additionally implement smithy-java's
+     * {@code SerializableStruct} (a generated {@code $SCHEMA}, {@code serializeMembers},
+     * {@code schema()}, {@code getMemberValue}) so they can serialize directly on the
+     * smithy-java runtime without the v2-to-smithy bridge wrapper. Experimental.
+     */
+    private boolean generateSmithyJavaSerde;
+
+    /**
      * Whether to generate an abstract decorator class that delegates to the sync service client
      */
     private boolean delegateSyncClientClass;
@@ -765,6 +773,14 @@ public class CustomizationConfig {
 
     public void setDelegateSyncClientClass(boolean delegateSyncClientClass) {
         this.delegateSyncClientClass = delegateSyncClientClass;
+    }
+
+    public boolean isGenerateSmithyJavaSerde() {
+        return generateSmithyJavaSerde;
+    }
+
+    public void setGenerateSmithyJavaSerde(boolean generateSmithyJavaSerde) {
+        this.generateSmithyJavaSerde = generateSmithyJavaSerde;
     }
 
     public boolean isSkipEndpointTestGeneration() {

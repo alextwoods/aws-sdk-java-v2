@@ -57,6 +57,11 @@
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codegen-c2j-to-smithy</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>dynamic-client</artifactId>
             <version>1.4.2-rebased</version>
@@ -394,6 +399,48 @@
                                     <directory>${project.build.directory}/generated-sources/sdk</directory>
                                 </resource>
                             </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Smithy-first path: convert each C2J model to a canonical Smithy model and run
+                 smithy-java's OWN type generator (JavaCodegenPlugin types mode) to emit native
+                 schema-bearing POJOs. These land in package com.amazonaws.<service> — DISTINCT from
+                 v2's software.amazon.awssdk.services.* so v2's public interfaces are untouched. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>generate-smithy-native-types</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>software.amazon.awssdk.c2j.smithy.SmithyTypesCodegenAllRunner</mainClass>
+                            <arguments>
+                                <argument>${project.basedir}/src/main/resources/codegen-resources</argument>
+                                <argument>${project.build.directory}/generated-sources/smithy-types</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-smithy-native-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.build.directory}/generated-sources/smithy-types/java</source>
+                            </sources>
                         </configuration>
                     </execution>
                 </executions>

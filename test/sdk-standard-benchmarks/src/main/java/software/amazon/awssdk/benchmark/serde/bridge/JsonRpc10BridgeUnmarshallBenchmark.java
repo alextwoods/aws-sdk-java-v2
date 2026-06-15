@@ -88,6 +88,11 @@ public class JsonRpc10BridgeUnmarshallBenchmark {
     private Context context;
     private TypeRegistry errorRegistry;
     private HttpResponse response;
+    // Generated read path: codec-level deserialize straight into the generated builder
+    // (a smithy ShapeBuilder). No bridge wrapper, no reflective setter.
+    private software.amazon.smithy.java.json.JsonCodec codec;
+    private byte[] responseBytes;
+    private java.util.function.Supplier<software.amazon.smithy.java.core.schema.ShapeBuilder<?>> generatedBuilderFactory;
 
     @Setup(Level.Trial)
     public void setup() throws Exception {
@@ -138,10 +143,32 @@ public class JsonRpc10BridgeUnmarshallBenchmark {
 
         this.context = Context.create();
         this.errorRegistry = realOp.errorRegistry();
+
+        // Generated read path setup: a JsonCodec (smithy provider) + a supplier of fresh generated
+        // builders (each is a smithy ShapeBuilder). Times only the codec read, parallel to how
+        // generatedStructMarshall times only codec write.
+        this.responseBytes = responseBytes;
+        this.codec = software.amazon.smithy.java.json.JsonCodec.builder().build();
+        this.generatedBuilderFactory = () -> {
+            try {
+                Object b = builderMethod.invoke(null);
+                return b instanceof software.amazon.smithy.java.core.schema.ShapeBuilder
+                        ? (software.amazon.smithy.java.core.schema.ShapeBuilder<?>) b
+                        : null;
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        };
     }
 
     @Benchmark
     public void bridgeUnmarshall(Blackhole bh) {
         bh.consume(protocol.deserializeResponse(bridgeOperation, context, errorRegistry, null, response));
+    }
+
+    /** The CODEGEN read path: deserialize straight into the generated builder via the JSON codec. */
+    @Benchmark
+    public void generatedStructUnmarshall(Blackhole bh) {
+        bh.consume(codec.deserializeShape(responseBytes, generatedBuilderFactory.get()));
     }
 }

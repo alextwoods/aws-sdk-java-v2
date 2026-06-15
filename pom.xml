@@ -57,6 +57,7 @@
         <module>bom</module>
         <module>bom-internal</module>
         <module>codegen</module>
+        <module>codegen-c2j-to-smithy</module>
         <module>http-client-spi</module>
         <module>http-clients</module>
         <module>codegen-maven-plugin</module>

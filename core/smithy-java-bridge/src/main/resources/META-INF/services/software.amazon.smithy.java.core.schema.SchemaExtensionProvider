@@ -1,1 +1,2 @@
 software.amazon.awssdk.bridge.smithyjava.serde.BridgeSchemaExtension
+software.amazon.awssdk.bridge.smithyjava.serde.SdkFieldsFromSchema

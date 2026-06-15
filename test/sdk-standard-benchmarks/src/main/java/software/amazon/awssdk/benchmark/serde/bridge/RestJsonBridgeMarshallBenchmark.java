@@ -158,4 +158,10 @@ public class RestJsonBridgeMarshallBenchmark {
     public void switchBridgeMarshall(Blackhole bh) {
         bh.consume(protocol.createRequest(operation, switchInput, context, ENDPOINT));
     }
+
+    /** The CODEGEN path: regenerated v2 POJO that IS a SerializableStruct (direct-write serialize). */
+    @Benchmark
+    public void generatedStructMarshall(Blackhole bh) {
+        bh.consume(protocol.createRequest(operation, (SerializableStruct) request, context, ENDPOINT));
+    }
 }

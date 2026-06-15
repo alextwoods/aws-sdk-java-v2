@@ -82,6 +82,9 @@ public class RestJsonBridgeUnmarshallBenchmark {
 
     private RestJsonClientProtocol protocol;
     private ApiOperation<SerializableStruct, ?> bridgeOperation;
+    // The CODEGEN read path: deserialize the response straight into the generated v2 builder
+    // (a smithy ShapeBuilder) via the full HTTP-binding deserializer, no BridgeOutputBuilder.
+    private ApiOperation<SerializableStruct, ?> generatedOperation;
     private Context context;
     private TypeRegistry errorRegistry;
     private HttpResponse response;
@@ -134,6 +137,16 @@ public class RestJsonBridgeUnmarshallBenchmark {
             }
         });
 
+        this.generatedOperation = new software.amazon.awssdk.bridge.smithyjava.serde.GeneratedOutputOperation(
+                realOp, () -> {
+                    try {
+                        return (software.amazon.smithy.java.core.schema.ShapeBuilder<? extends SerializableStruct>)
+                                builderMethod.invoke(null);
+                    } catch (ReflectiveOperationException e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
+
         this.context = Context.create();
         this.errorRegistry = realOp.errorRegistry();
     }
@@ -141,5 +154,11 @@ public class RestJsonBridgeUnmarshallBenchmark {
     @Benchmark
     public void bridgeUnmarshall(Blackhole bh) {
         bh.consume(protocol.deserializeResponse(bridgeOperation, context, errorRegistry, null, response));
+    }
+
+    /** The CODEGEN path: full HTTP-binding deserialize straight into the generated v2 builder. */
+    @Benchmark
+    public void generatedStructUnmarshall(Blackhole bh) {
+        bh.consume(protocol.deserializeResponse(generatedOperation, context, errorRegistry, null, response));
     }
 }
