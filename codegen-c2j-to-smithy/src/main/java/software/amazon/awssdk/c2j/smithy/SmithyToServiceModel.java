@@ -165,16 +165,42 @@ public final class SmithyToServiceModel {
             }
             Shape c2j = convertShape(shape);
             if (c2j != null) {
+                doc(shape).ifPresent(c2j::setDocumentation);   // @documentation -> C2J shape doc
+                if (shape.hasTrait(software.amazon.smithy.model.traits.XmlFlattenedTrait.class)) {
+                    c2j.setFlattened(true);                    // @xmlFlattened -> C2J shape flattened
+                }
+                // Event-stream marker traits -> C2J eventstream/event booleans (the IR reads these).
+                if (shape.findTrait(C2jToSmithyConverter.C2J_EVENTSTREAM_TRAIT).isPresent()) {
+                    c2j.setEventstream(true);
+                }
+                if (shape.findTrait(C2jToSmithyConverter.C2J_EVENT_TRAIT).isPresent()) {
+                    c2j.setEvent(true);
+                }
+                // Shape-level @timestampFormat -> C2J shape timestampFormat.
+                shape.getTrait(TimestampFormatTrait.class)
+                     .ifPresent(t -> c2j.setTimestampFormat(c2jTimestampFormat(t.getValue())));
+                // Shape-level @sensitive -> C2J shape sensitive.
+                if (shape.hasTrait(software.amazon.smithy.model.traits.SensitiveTrait.class)) {
+                    c2j.setSensitive(true);
+                }
                 shapes.put(id.getName(), c2j);
             }
         }
         serviceModel.setShapes(shapes);
 
+        // Service-level documentation.
+        doc(service).ifPresent(serviceModel::setDocumentation);
         return serviceModel;
     }
 
     private boolean ownNamespace(ShapeId id) {
         return namespace.equals(id.getNamespace());
+    }
+
+    /** The value of a Smithy {@code @documentation} trait on a shape/member, if present. */
+    private static Optional<String> doc(software.amazon.smithy.model.shapes.Shape shape) {
+        return shape.getTrait(software.amazon.smithy.model.traits.DocumentationTrait.class)
+                    .map(software.amazon.smithy.model.traits.DocumentationTrait::getValue);
     }
 
     // ----- metadata -----
@@ -255,6 +281,7 @@ public final class SmithyToServiceModel {
     private Operation buildOperation(OperationShape op) {
         Operation operation = new Operation();
         operation.setName(op.getId().getName());
+        doc(op).ifPresent(operation::setDocumentation);   // operation-level @documentation
 
         // @http trait -> Http. RPC protocols carry no @http, so default to POST "/".
         Optional<HttpTrait> http = op.getTrait(HttpTrait.class);
@@ -442,15 +469,23 @@ public final class SmithyToServiceModel {
         shape.setType("structure");
         populateMembers(shape, s.getAllMembers());
 
-        // @error trait -> exception=true + Shape.error (ErrorTrait{code, httpStatusCode}).
+        // @error -> exception=true. Restore the full C2J error block (code + httpStatusCode) from the
+        // verbatim marker the forward converter carried; the @error trait alone loses those.
         s.getTrait(software.amazon.smithy.model.traits.ErrorTrait.class).ifPresent(errorTrait -> {
             shape.setException(true);
             ErrorTrait c2jError = new ErrorTrait();
-            // The @error trait value is "client"/"server"; C2J's error.code carries this string.
-            c2jError.setCode(errorTrait.getValue());
-            // httpStatusCode is only set if an explicit @httpError trait is present (the default
-            // status code that Smithy derives from @error is not an authored C2J value).
-            s.getTrait(HttpErrorTrait.class).ifPresent(he -> c2jError.setHttpStatusCode(he.getCode()));
+            Optional<ObjectNode> errNode = s.findTrait(C2jToSmithyConverter.C2J_ERROR_TRAIT)
+                                            .map(t -> t.toNode().expectObjectNode());
+            if (errNode.isPresent()) {
+                ObjectNode n = errNode.get();
+                n.getStringMember("code").ifPresent(c -> c2jError.setCode(c.getValue()));
+                n.getNumberMember("httpStatusCode")
+                 .ifPresent(h -> c2jError.setHttpStatusCode(h.getValue().intValue()));
+            } else {
+                // Fallback (hand-authored Smithy, no marker): derive from @error + @httpError.
+                c2jError.setCode(errorTrait.getValue());
+                s.getTrait(HttpErrorTrait.class).ifPresent(he -> c2jError.setHttpStatusCode(he.getCode()));
+            }
             shape.setError(c2jError);
         });
 
@@ -485,6 +520,13 @@ public final class SmithyToServiceModel {
     private Member memberRef(MemberShape m) {
         Member member = new Member();
         member.setShape(m.getTarget().getName());
+        // Restore a list/map element's C2J locationName (the XML element/entry name) from @xmlName /
+        // @jsonName carried by the forward converter.
+        Optional<String> wire = m.getTrait(XmlNameTrait.class).map(XmlNameTrait::getValue);
+        if (!wire.isPresent()) {
+            wire = m.getTrait(JsonNameTrait.class).map(JsonNameTrait::getValue);
+        }
+        wire.ifPresent(member::setLocationName);
         return member;
     }
 
@@ -494,6 +536,10 @@ public final class SmithyToServiceModel {
                                    List<String> required) {
         if (m.hasTrait(HttpLabelTrait.class)) {
             member.setLocation("uri");
+            // Restore a divergent uri-label locationName carried on the marker trait.
+            m.findTrait(C2jToSmithyConverter.C2J_LOCATION_NAME_TRAIT)
+             .flatMap(t -> t.toNode().asStringNode())
+             .ifPresent(n -> member.setLocationName(n.getValue()));
         }
         m.getTrait(HttpHeaderTrait.class).ifPresent(t -> {
             member.setLocation("header");
@@ -532,6 +578,24 @@ public final class SmithyToServiceModel {
 
         if (m.hasTrait(RequiredTrait.class)) {
             required.add(memberName);
+        }
+
+        // Member-level @documentation -> C2J member documentation.
+        doc(m).ifPresent(member::setDocumentation);
+
+        // Member-level @xmlFlattened -> C2J member flattened.
+        if (m.hasTrait(software.amazon.smithy.model.traits.XmlFlattenedTrait.class)) {
+            member.setFlattened(true);
+        }
+
+        // @idempotencyToken -> C2J member idempotencyToken.
+        if (m.hasTrait(software.amazon.smithy.model.traits.IdempotencyTokenTrait.class)) {
+            member.setIdempotencyToken(true);
+        }
+
+        // Member-level @sensitive -> C2J member sensitive.
+        if (m.hasTrait(software.amazon.smithy.model.traits.SensitiveTrait.class)) {
+            member.setSensitive(true);
         }
     }
 

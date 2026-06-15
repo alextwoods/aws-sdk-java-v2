@@ -92,6 +92,16 @@ public final class C2jToSmithyConverter {
     static final ShapeId C2J_RESULT_WRAPPER_TRAIT = ShapeId.from("com.amazonaws.c2j#resultWrapper");
     /** Custom trait carrying the C2J operation {@code input} {locationName, xmlNamespace} (rest-xml). */
     static final ShapeId C2J_INPUT_META_TRAIT = ShapeId.from("com.amazonaws.c2j#inputMeta");
+    /** Marker traits carrying the C2J {@code eventstream}/{@code event} shape flags (the IR reads these
+     *  booleans directly; no Smithy @streaming-union semantics are needed for a lossless round-trip). */
+    static final ShapeId C2J_EVENTSTREAM_TRAIT = ShapeId.from("com.amazonaws.c2j#eventstream");
+    static final ShapeId C2J_EVENT_TRAIT = ShapeId.from("com.amazonaws.c2j#event");
+    /** Carries a member's C2J {@code locationName} when it diverges from the member name AND the binding
+     *  trait can't express it (e.g. @httpLabel uri labels are matched by member name). */
+    static final ShapeId C2J_LOCATION_NAME_TRAIT = ShapeId.from("com.amazonaws.c2j#locationName");
+    /** Carries the verbatim C2J exception {@code error} block (code/httpStatusCode/senderFault) so the
+     *  inverse restores the full C2J ErrorTrait (the @error trait alone loses code + status). */
+    static final ShapeId C2J_ERROR_TRAIT = ShapeId.from("com.amazonaws.c2j#error");
 
     private final String namespace;
     private final JsonNode service;
@@ -201,6 +211,11 @@ public final class C2jToSmithyConverter {
             }
             op.addTrait(ht.build());
         }
+        // Operation-level C2J documentation -> @documentation.
+        if (c2j.hasNonNull("documentation")) {
+            op.addTrait(new software.amazon.smithy.model.traits.DocumentationTrait(
+                    c2j.get("documentation").asText()));
+        }
         // Preserve operation-level C2J fields the protocol traits don't carry, verbatim, so the
         // inverse restores them: httpChecksum block and the awsQuery output.resultWrapper.
         if (c2j.has("httpChecksum")) {
@@ -234,6 +249,44 @@ public final class C2jToSmithyConverter {
     // ----- shape conversion -----
 
     private List<Shape> convertShape(String name, JsonNode c2j) {
+        List<Shape> shapes = convertShape0(name, c2j);
+        // Apply C2J shape-level documentation to the produced top-level shape (the first element; any
+        // nested member shapes carry their own docs via memberTraits). Smithy shapes are immutable, so
+        // re-add via toBuilder(). The doc trait must survive into codegen so generated javadoc matches.
+        if (!shapes.isEmpty()) {
+            List<Trait> shapeTraits = new ArrayList<>(2);
+            if (c2j.hasNonNull("documentation")) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.DocumentationTrait(
+                        c2j.get("documentation").asText()));
+            }
+            // C2J shape-level flattened (list/map) -> @xmlFlattened, so the marshaller emits the
+            // flattened wire form (and v2 codegen sets isFlattened(true)).
+            if (c2j.path("flattened").asBoolean(false)) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.XmlFlattenedTrait());
+            }
+            // C2J event-stream flags -> marker traits (the IR reads shape.isEventstream()/isEvent()).
+            if (c2j.path("eventstream").asBoolean(false)) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                        C2J_EVENTSTREAM_TRAIT, Node.objectNode()));
+            }
+            if (c2j.path("event").asBoolean(false)) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                        C2J_EVENT_TRAIT, Node.objectNode()));
+            }
+            // C2J shape-level sensitive -> @sensitive (v2 redacts the value in toString()).
+            if (c2j.path("sensitive").asBoolean(false)) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.SensitiveTrait());
+            }
+            if (!shapeTraits.isEmpty()) {
+                AbstractShapeBuilder<?, ?> b = Shape.shapeToBuilder(shapes.get(0));
+                shapeTraits.forEach(b::addTrait);
+                shapes.set(0, (Shape) b.build());
+            }
+        }
+        return shapes;
+    }
+
+    private List<Shape> convertShape0(String name, JsonNode c2j) {
         String type = c2j.path("type").asText();
         ShapeId id = id(name);
         switch (type) {
@@ -267,8 +320,16 @@ public final class C2jToSmithyConverter {
                 return one(numeric(BigIntegerShape.builder().id(id), c2j));
             case "bigDecimal":
                 return one(numeric(BigDecimalShape.builder().id(id), c2j));
-            case "timestamp":
-                return one(TimestampShape.builder().id(id).build());
+            case "timestamp": {
+                TimestampShape.Builder b = TimestampShape.builder().id(id);
+                // Shape-level C2J timestampFormat -> @timestampFormat (the IR resolves a member's
+                // format from its target shape when the member itself doesn't specify one).
+                if (c2j.has("timestampFormat")) {
+                    b.addTrait(new TimestampFormatTrait(
+                            smithyTimestampFormat(c2j.get("timestampFormat").asText())));
+                }
+                return one(b.build());
+            }
             default:
                 throw new IllegalArgumentException("Unsupported C2J shape type '" + type + "' for " + name);
         }
@@ -290,21 +351,34 @@ public final class C2jToSmithyConverter {
     }
 
     private List<Shape> list(ShapeId id, JsonNode c2j) {
-        MemberShape member = MemberShape.builder()
+        MemberShape.Builder member = MemberShape.builder()
                 .id(id.withMember("member"))
-                .target(targetId(c2j.path("member")))
-                .build();
-        ListShape.Builder b = ListShape.builder().id(id).member(member);
+                .target(targetId(c2j.path("member")));
+        collectionMemberWireName(member, c2j.path("member"));   // list member element wire name
+        ListShape.Builder b = ListShape.builder().id(id).member(member.build());
         lengthTrait(c2j).ifPresent(b::addTrait);   // C2J min/max on a list -> @length
         return one(b.build());
     }
 
+    // A C2J list/map element ref may carry its own locationName (the XML element/entry name, e.g. a
+    // non-flattened list of "Change" elements). Smithy carries it via @xmlName (+ @jsonName for
+    // symmetry); the inverse restores Member.locationName so generated marshalling metadata matches.
+    private static void collectionMemberWireName(MemberShape.Builder member, JsonNode ref) {
+        String locationName = ref.path("locationName").asText(null);
+        if (locationName != null) {
+            member.addTrait(new XmlNameTrait(locationName));
+            member.addTrait(new JsonNameTrait(locationName));
+        }
+    }
+
     private List<Shape> map(ShapeId id, JsonNode c2j) {
-        MemberShape key = MemberShape.builder().id(id.withMember("key"))
-                .target(targetId(c2j.path("key"))).build();
-        MemberShape value = MemberShape.builder().id(id.withMember("value"))
-                .target(targetId(c2j.path("value"))).build();
-        MapShape.Builder b = MapShape.builder().id(id).key(key).value(value);
+        MemberShape.Builder key = MemberShape.builder().id(id.withMember("key"))
+                .target(targetId(c2j.path("key")));
+        collectionMemberWireName(key, c2j.path("key"));
+        MemberShape.Builder value = MemberShape.builder().id(id.withMember("value"))
+                .target(targetId(c2j.path("value")));
+        collectionMemberWireName(value, c2j.path("value"));
+        MapShape.Builder b = MapShape.builder().id(id).key(key.build()).value(value.build());
         lengthTrait(c2j).ifPresent(b::addTrait);   // C2J min/max on a map -> @length
         return one(b.build());
     }
@@ -392,10 +466,17 @@ public final class C2jToSmithyConverter {
         }
         Shape shape = b.build();
         if (isException) {
-            // Re-add with @error trait (structure only).
-            shape = ((StructureShape) shape).toBuilder()
-                    .addTrait(new software.amazon.smithy.model.traits.ErrorTrait("client"))
-                    .build();
+            // @error("client"/"server") from C2J senderFault, plus the verbatim C2J error block carried
+            // on a marker so the inverse restores the full ErrorTrait (code + httpStatusCode).
+            JsonNode err = c2j.path("error");
+            String errorType = err.path("senderFault").asBoolean(false) ? "client" : "server";
+            StructureShape.Builder eb = ((StructureShape) shape).toBuilder()
+                    .addTrait(new software.amazon.smithy.model.traits.ErrorTrait(errorType));
+            if (err.isObject()) {
+                eb.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                        C2J_ERROR_TRAIT, Node.parse(err.toString())));
+            }
+            shape = eb.build();
         }
         return one(shape);
     }
@@ -413,6 +494,14 @@ public final class C2jToSmithyConverter {
             switch (location) {
                 case "uri":
                     traits.add(new HttpLabelTrait());
+                    // @httpLabel matches the URI placeholder by MEMBER name, so a divergent C2J
+                    // locationName (e.g. member "Name" bound to "{LexiconName}") can't be expressed by
+                    // the trait — carry it on a marker so the inverse restores Member.locationName.
+                    if (locationName != null && !locationName.equals(memberName)) {
+                        traits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                                C2J_LOCATION_NAME_TRAIT,
+                                software.amazon.smithy.model.node.Node.from(locationName)));
+                    }
                     break;
                 case "header":
                     // Keep the member, but DON'T emit @httpHeader for headers Smithy reserves
@@ -457,6 +546,23 @@ public final class C2jToSmithyConverter {
         if (required) {
             traits.add(new RequiredTrait());
         }
+        // Member-level C2J documentation -> @documentation on the member.
+        if (m.hasNonNull("documentation")) {
+            traits.add(new software.amazon.smithy.model.traits.DocumentationTrait(
+                    m.get("documentation").asText()));
+        }
+        // Member-level C2J flattened -> @xmlFlattened on the member.
+        if (m.path("flattened").asBoolean(false)) {
+            traits.add(new software.amazon.smithy.model.traits.XmlFlattenedTrait());
+        }
+        // C2J idempotencyToken -> @idempotencyToken (v2 emits DefaultValueTrait.idempotencyToken()).
+        if (m.path("idempotencyToken").asBoolean(false)) {
+            traits.add(new software.amazon.smithy.model.traits.IdempotencyTokenTrait());
+        }
+        // Member-level C2J sensitive -> @sensitive.
+        if (m.path("sensitive").asBoolean(false)) {
+            traits.add(new software.amazon.smithy.model.traits.SensitiveTrait());
+        }
         return traits;
     }
 
@@ -491,6 +597,12 @@ public final class C2jToSmithyConverter {
 
         for (Trait t : protocolTraits()) {
             svc.addTrait(t);
+        }
+
+        // Service-level C2J documentation (top-level service.documentation) -> @documentation.
+        if (service.hasNonNull("documentation")) {
+            svc.addTrait(new software.amazon.smithy.model.traits.DocumentationTrait(
+                    service.get("documentation").asText()));
         }
 
         // Preserve the FULL C2J metadata block verbatim as a custom node trait, so the inverse
