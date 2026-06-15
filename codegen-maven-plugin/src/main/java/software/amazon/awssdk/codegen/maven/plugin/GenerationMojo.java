@@ -45,6 +45,7 @@ import software.amazon.awssdk.codegen.model.rules.endpoints.EndpointTestSuiteMod
 import software.amazon.awssdk.codegen.model.service.EndpointRuleSetModel;
 import software.amazon.awssdk.codegen.model.service.Paginators;
 import software.amazon.awssdk.codegen.model.service.ServiceModel;
+import software.amazon.awssdk.c2j.smithy.SmithyToServiceModel;
 import software.amazon.awssdk.codegen.model.service.Waiters;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 import software.amazon.awssdk.codegen.validation.ModelInvalidException;
@@ -198,8 +199,20 @@ public class GenerationMojo extends AbstractMojo {
                                .orElse(CustomizationConfig.create());
     }
 
+    /**
+     * Load the service model that seeds the codegen IR.
+     *
+     * <p>Smithy-first front-end: the C2J {@code service-2.json} is converted to a canonical Smithy
+     * model and the {@link ServiceModel} is then derived back from it
+     * ({@code C2J -> Smithy -> ServiceModel}), so the IR is sourced from Smithy. This is verified
+     * byte-identical to the legacy direct C2J parse. Set {@code -Dawssdk.codegen.legacyC2jIr=true}
+     * to bypass the Smithy round-trip (escape hatch for debugging only).
+     */
     private ServiceModel loadServiceModel(Path root) {
-        return loadRequiredModel(ServiceModel.class, root.resolve(MODEL_FILE));
+        if (Boolean.getBoolean("awssdk.codegen.legacyC2jIr")) {
+            return loadRequiredModel(ServiceModel.class, root.resolve(MODEL_FILE));
+        }
+        return SmithyToServiceModel.fromC2jViaSmithy(root.resolve(MODEL_FILE));
     }
 
     private Waiters loadWaiterModel(Path root) {

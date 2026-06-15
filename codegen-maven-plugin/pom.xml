@@ -57,6 +57,14 @@
             <groupId>software.amazon.awssdk</groupId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- Smithy-first front-end: C2J service models are converted to Smithy and the codegen IR is
+             seeded from the Smithy model (C2J -> Smithy -> ServiceModel -> IntermediateModel),
+             verified byte-identical to the legacy direct C2J -> IR path. -->
+        <dependency>
+            <artifactId>codegen-c2j-to-smithy</artifactId>
+            <groupId>software.amazon.awssdk</groupId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <artifactId>utils</artifactId>
             <groupId>software.amazon.awssdk</groupId>
