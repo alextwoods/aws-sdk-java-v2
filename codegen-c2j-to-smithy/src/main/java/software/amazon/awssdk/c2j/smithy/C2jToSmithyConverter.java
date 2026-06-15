@@ -79,6 +79,10 @@ import software.amazon.smithy.model.traits.XmlNameTrait;
 public final class C2jToSmithyConverter {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    // Headers Smithy reserves: they cannot carry @httpHeader (hard validation error) — computed by
+    // the runtime, never modeled as bindings. The member is still emitted, just unbound.
+    private static final java.util.Set<String> RESERVED_HEADERS =
+            java.util.Set.of("connection", "content-length", "transfer-encoding");
 
     /** Custom trait id carrying the verbatim C2J {@code metadata} block on the service shape. */
     static final ShapeId C2J_METADATA_TRAIT = ShapeId.from("com.amazonaws.c2j#metadata");
@@ -329,12 +333,26 @@ public final class C2jToSmithyConverter {
             }
         }
 
+        // A struct with an @httpPayload member requires every OTHER member to be HTTP-bound (Smithy
+        // HttpPayload rule). A reserved-header member (Content-Length, ...) can be neither bound
+        // (@httpHeader rejects it) nor unbound (payload rule) — it's unsatisfiable in a valid Smithy
+        // model, so on payload structs it must be dropped. This matches AWS's own canonical models,
+        // which omit Content-Length on @httpPayload shapes. (It's a computed value the runtime fills
+        // in, never modeled on the wire.) Non-payload structs keep the member, unbound.
+        boolean hasPayload = payloadMember != null;
+
         JsonNode members = c2j.path("members");
         Iterator<Map.Entry<String, JsonNode>> it = members.fields();
         while (it.hasNext()) {
             Map.Entry<String, JsonNode> e = it.next();
             String memberName = e.getKey();
             JsonNode m = e.getValue();
+            if (hasPayload && "header".equals(m.path("location").asText(null))) {
+                String wire = m.path("locationName").asText(memberName).toLowerCase(java.util.Locale.US);
+                if (RESERVED_HEADERS.contains(wire)) {
+                    continue;
+                }
+            }
             MemberShape.Builder mb = MemberShape.builder()
                     .id(id.withMember(memberName))
                     .target(targetId(m));
@@ -372,7 +390,14 @@ public final class C2jToSmithyConverter {
                     traits.add(new HttpLabelTrait());
                     break;
                 case "header":
-                    traits.add(new HttpHeaderTrait(wire));
+                    // Keep the member, but DON'T emit @httpHeader for headers Smithy reserves
+                    // (Content-Length, Connection, Transfer-Encoding): they're computed values, and
+                    // `@httpHeader("Content-Length")` is a hard Smithy validation error. The member
+                    // stays (so v2 still models it / generates getContentLength()); it's just unbound,
+                    // which is what real AWS Smithy models do.
+                    if (!RESERVED_HEADERS.contains(wire.toLowerCase(java.util.Locale.US))) {
+                        traits.add(new HttpHeaderTrait(wire));
+                    }
                     break;
                 case "querystring":
                     traits.add(new HttpQueryTrait(wire));

@@ -71,7 +71,13 @@ public final class SmithyIrParityRunner {
     }
 
     private static boolean compareOne(Path serviceJson) {
-        CustomizationConfig custom = CustomizationConfig.create();
+        // Load the REAL per-service customization.config so both paths apply the same customizations
+        // (e.g. a shapeModifiers exclude of Content-Length on payload shapes) — exactly what the
+        // product build does. Both IRs are then built with that same config.
+        CustomizationConfig custom = ModelLoaderUtils.loadOptionalModel(
+                CustomizationConfig.class,
+                serviceJson.resolveSibling("customization.config").toFile(), true)
+                .orElseGet(CustomizationConfig::create);
 
         // Path 1: direct C2J -> IR (today's behavior).
         ServiceModel directModel = ModelLoaderUtils.loadModel(ServiceModel.class, serviceJson.toFile());
