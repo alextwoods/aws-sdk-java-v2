@@ -16,6 +16,8 @@
 # Env:
 #   SERVICES="s3 dynamodb sqs ..."  services to generate (default: protocol-spanning sample below)
 #   ALL=1                           generate ALL services that have codegen-resources (slow, full gate)
+#   CODEGEN_FLAGS="-Dawssdk.codegen.legacyC2jIr=true"   extra -D flags for the regen (e.g. to snapshot
+#                                   the legacy direct-C2J path for a legacy-vs-smithy generated-code diff)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,8 +48,9 @@ regen_service() {
     local svc="$1"
     local moddir="$ROOT/services/$svc"
     [[ -d "$moddir" ]] || { echo "  SKIP $svc (no module)"; return 0; }
-    # Regenerate just this module's sources via the real plugin.
-    ( cd "$moddir" && mvn $MAVEN_OPTS_COMMON clean generate-sources ) >/dev/null 2>&1 \
+    # Regenerate just this module's sources via the real plugin. CODEGEN_FLAGS lets the caller pick the
+    # path (default: Smithy front-end; -Dawssdk.codegen.legacyC2jIr=true for the legacy direct path).
+    ( cd "$moddir" && mvn $MAVEN_OPTS_COMMON ${CODEGEN_FLAGS:-} clean generate-sources ) >/dev/null 2>&1 \
         && echo "  ok   $svc ($(find "$moddir/target/generated-sources/sdk" -name '*.java' 2>/dev/null | wc -l | tr -d ' ') files)" \
         || echo "  FAIL $svc"
 }
