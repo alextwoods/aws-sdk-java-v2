@@ -104,12 +104,36 @@ public final class C2jToSmithyConverter {
     static final ShapeId C2J_CONTEXT_PARAM_TRAIT = ShapeId.from("com.amazonaws.c2j#contextParam");
     /** Carries a member's C2J {@code queryName} (the ec2 protocol's wire name, distinct from locationName). */
     static final ShapeId C2J_QUERY_NAME_TRAIT = ShapeId.from("com.amazonaws.c2j#queryName");
+    /** Marks a member with the C2J {@code jsonvalue} flag (base64 JSON value). */
+    static final ShapeId C2J_JSON_VALUE_TRAIT = ShapeId.from("com.amazonaws.c2j#jsonvalue");
+    /** Carries a structure's C2J {@code required} array verbatim, to preserve its declaration order. */
+    static final ShapeId C2J_REQUIRED_TRAIT = ShapeId.from("com.amazonaws.c2j#required");
+    /** Carries a C2J operation's {@code name} field when it differs from the operations-map key (e.g.
+     *  cloudfront "AssociateAlias" key but name "AssociateAlias2020_05_31" — the wire action). */
+    static final ShapeId C2J_OPERATION_NAME_TRAIT = ShapeId.from("com.amazonaws.c2j#operationName");
+    /** Carries an operation's C2J {@code errors} array verbatim. The Smithy @http error set dedupes and
+     *  reorders, but v2's IR keeps the exact declared sequence (some C2J models even list a shape twice,
+     *  e.g. appsync CreateApiKey lists LimitExceededException both before and after the common errors). */
+    static final ShapeId C2J_ERRORS_TRAIT = ShapeId.from("com.amazonaws.c2j#errors");
+    /** Carries the verbatim C2J operation {@code http} block (method/requestUri/responseCode). The
+     *  Smithy @http trait can't represent every C2J URI (e.g. hyphenated labels like {resource-arn}),
+     *  so the IR's requestUri is restored from this marker, not from @http. */
+    static final ShapeId C2J_HTTP_TRAIT = ShapeId.from("com.amazonaws.c2j#http");
     /** Carries C2J operation {@code endpoint.hostPrefix}, {@code authtype}, {@code unsignedPayload}. */
     static final ShapeId C2J_HOST_PREFIX_TRAIT = ShapeId.from("com.amazonaws.c2j#hostPrefix");
     static final ShapeId C2J_AUTHTYPE_TRAIT = ShapeId.from("com.amazonaws.c2j#authtype");
     static final ShapeId C2J_UNSIGNED_PAYLOAD_TRAIT = ShapeId.from("com.amazonaws.c2j#unsignedPayload");
     /** Custom trait carrying the C2J operation {@code output.resultWrapper} (awsQuery). */
     static final ShapeId C2J_RESULT_WRAPPER_TRAIT = ShapeId.from("com.amazonaws.c2j#resultWrapper");
+    /** Carries the ref-level {@code documentation} on a C2J operation {@code output} (drives the IR's
+     *  returnType javadoc; distinct from the output shape's own documentation). */
+    static final ShapeId C2J_OUTPUT_DOC_TRAIT = ShapeId.from("com.amazonaws.c2j#outputDoc");
+    /** Marks a C2J structure with the shape-level {@code wrapper:true} flag (query/rest-xml result
+     *  wrapping). No native Smithy equivalent; v2's IR carries it through to the (un)marshaller. */
+    static final ShapeId C2J_WRAPPER_TRAIT = ShapeId.from("com.amazonaws.c2j#wrapper");
+    /** Marks a C2J structure with {@code synthetic:true} (a shape SDK-synthesized rather than modeled,
+     *  e.g. some event-stream exception members). No Smithy analog; carried through to the IR. */
+    static final ShapeId C2J_SYNTHETIC_TRAIT = ShapeId.from("com.amazonaws.c2j#synthetic");
     /** Custom trait carrying the C2J operation {@code input} {locationName, xmlNamespace} (rest-xml). */
     static final ShapeId C2J_INPUT_META_TRAIT = ShapeId.from("com.amazonaws.c2j#inputMeta");
     /** Marker traits carrying the C2J {@code eventstream}/{@code event} shape flags (the IR reads these
@@ -211,36 +235,71 @@ public final class C2jToSmithyConverter {
 
     private OperationShape buildOperation(String name, JsonNode c2j) {
         ShapeId unit = ShapeId.from("smithy.api#Unit");
-        OperationShape.Builder op = OperationShape.builder().id(id(name));
+        OperationShape.Builder op = OperationShape.builder().id(operationId(name));
+        // Carry the operations-map key (= the C2J name field, which the IR uses as the marshaller
+        // action, e.g. cloudfront "AssociateAlias2020_05_31") whenever it can't be recovered verbatim
+        // from the Smithy op-shape id: either the name field diverges from the key, OR the id was
+        // suffixed to avoid an operation/shape name collision.
+        String c2jName = c2j.path("name").asText(name);
+        if (!c2jName.equals(name) || shapes.has(name)) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_OPERATION_NAME_TRAIT, Node.from(c2jName)));
+        }
         op.input(c2j.path("input").has("shape") ? id(c2j.path("input").path("shape").asText()) : unit);
         op.output(c2j.path("output").has("shape") ? id(c2j.path("output").path("shape").asText()) : unit);
         for (JsonNode err : c2j.path("errors")) {
             op.addError(id(err.path("shape").asText()));
         }
+        // Carry the verbatim C2J errors[] so the IR's exception list round-trips in exact declared order
+        // (Smithy's error set dedupes/reorders; v2's IR preserves duplicates and sequence).
+        if (c2j.path("errors").isArray() && c2j.get("errors").size() > 0) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_ERRORS_TRAIT, Node.parse(c2j.get("errors").toString())));
+        }
+        // Carry the verbatim C2J http block so the IR's requestUri/method/responseCode round-trip
+        // independently of the Smithy @http trait (which can't represent every C2J URI).
+        JsonNode http = c2j.path("http");
+        if (http.isObject() && http.size() > 0) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_HTTP_TRAIT, Node.parse(http.toString())));
+        }
         // @http trait — ONLY for HTTP-binding protocols (restJson/restXml). RPC-style protocols
         // (awsJson, awsQuery, rpcv2Cbor) have no per-operation URI: C2J gives them all requestUri
         // "/", which would be a URI conflict and is semantically meaningless for those protocols.
-        JsonNode http = c2j.path("http");
+        // Skip if the URI has labels Smithy's UriPattern can't parse (e.g. hyphenated {resource-arn});
+        // the IR doesn't need @http (it uses the marker above) and the native path tolerates the gap.
         if (isHttpBindingProtocol() && http.has("requestUri")) {
-            HttpTrait.Builder ht = HttpTrait.builder()
-                    .method(http.path("method").asText("POST"))
-                    .uri(software.amazon.smithy.model.pattern.UriPattern.parse(
-                            http.path("requestUri").asText("/")));
-            if (http.has("responseCode")) {
-                ht.code(http.path("responseCode").asInt(200));
+            try {
+                HttpTrait.Builder ht = HttpTrait.builder()
+                        .method(http.path("method").asText("POST"))
+                        .uri(software.amazon.smithy.model.pattern.UriPattern.parse(
+                                http.path("requestUri").asText("/")));
+                if (http.has("responseCode")) {
+                    ht.code(http.path("responseCode").asInt(200));
+                }
+                op.addTrait(ht.build());
+            } catch (RuntimeException e) {
+                // Unparseable URI pattern (hyphenated label, etc.) — @http omitted; marker carries it.
             }
-            op.addTrait(ht.build());
         }
         // Operation-level C2J documentation -> @documentation.
         if (c2j.hasNonNull("documentation")) {
             op.addTrait(new software.amazon.smithy.model.traits.DocumentationTrait(
                     c2j.get("documentation").asText()));
         }
+        // Operation-level C2J deprecated -> @deprecated(message).
+        if (c2j.path("deprecated").asBoolean(false)) {
+            op.addTrait(deprecatedTrait(c2j));
+        }
         // Preserve operation-level C2J fields the protocol traits don't carry, verbatim, so the
         // inverse restores them: httpChecksum block and the awsQuery output.resultWrapper.
         if (c2j.has("httpChecksum")) {
             op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
                     C2J_HTTP_CHECKSUM_TRAIT, Node.parse(c2j.get("httpChecksum").toString())));
+        }
+        // Legacy boolean httpChecksumRequired (distinct from the httpChecksum block) -> @httpChecksumRequired.
+        if (c2j.path("httpChecksumRequired").asBoolean(false)) {
+            op.addTrait(new software.amazon.smithy.model.traits.HttpChecksumRequiredTrait());
         }
         if (c2j.has("requestcompression")) {
             op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
@@ -280,10 +339,16 @@ public final class C2jToSmithyConverter {
             op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
                     C2J_RESULT_WRAPPER_TRAIT, Node.from(output.path("resultWrapper").asText())));
         }
-        // Operation input wire metadata (rest-xml request wrapper name + xmlNamespace) that lives on
-        // the C2J input ref, not the input shape itself.
+        // ref-level documentation on the C2J output ref (distinct from the output shape's own doc;
+        // drives the generated operation's returnType javadoc). Carried verbatim.
+        if (output.hasNonNull("documentation")) {
+            op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_OUTPUT_DOC_TRAIT, Node.from(output.path("documentation").asText())));
+        }
+        // Operation input wire metadata (rest-xml request wrapper name + xmlNamespace + ref doc) that
+        // lives on the C2J input ref, not the input shape itself.
         JsonNode input = c2j.path("input");
-        if (input.has("locationName") || input.has("xmlNamespace")) {
+        if (input.has("locationName") || input.has("xmlNamespace") || input.hasNonNull("documentation")) {
             op.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
                     C2J_INPUT_META_TRAIT, Node.parse(input.toString())));
         }
@@ -297,6 +362,16 @@ public final class C2jToSmithyConverter {
 
     private ShapeId id(String name) {
         return ShapeId.fromParts(namespace, name);
+    }
+
+    // C2J allows an operation and a shape to share a name (e.g. pinpoint CreateRecommenderConfiguration);
+    // Smithy shape ids must be unique, so give a colliding operation a distinct id. The real C2J
+    // operation name round-trips via C2J_OPERATION_NAME_TRAIT, and the adapter strips this suffix to
+    // recover the operations-map key.
+    static final String OP_ID_SUFFIX = "C2jOperation";
+
+    private ShapeId operationId(String name) {
+        return shapes.has(name) ? id(name + OP_ID_SUFFIX) : id(name);
     }
 
     // ----- shape conversion -----
@@ -330,6 +405,14 @@ public final class C2jToSmithyConverter {
             if (c2j.path("sensitive").asBoolean(false)) {
                 shapeTraits.add(new software.amazon.smithy.model.traits.SensitiveTrait());
             }
+            // Carry the C2J required[] array verbatim to preserve its DECLARATION ORDER (v2's IR keeps
+            // it; @required per-member would come back in member-iteration order instead). Emitted even
+            // when empty so an explicit required:[] round-trips as [] rather than null (e.g.
+            // pinpointsmsvoice CallInstructionsMessageType).
+            if (c2j.path("required").isArray()) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                        C2J_REQUIRED_TRAIT, Node.parse(c2j.get("required").toString())));
+            }
             // C2J shape-level deprecated -> @deprecated(message).
             if (c2j.path("deprecated").asBoolean(false)) {
                 shapeTraits.add(deprecatedTrait(c2j));
@@ -359,6 +442,16 @@ public final class C2jToSmithyConverter {
                 rb.throttling(c2j.path("retryable").path("throttling").asBoolean(false));
                 shapeTraits.add(rb.build());
             }
+            // C2J shape-level wrapper:true -> marker (query/rest-xml result wrapping; no Smithy analog).
+            if (c2j.path("wrapper").asBoolean(false)) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                        C2J_WRAPPER_TRAIT, Node.from(true)));
+            }
+            // C2J shape-level synthetic:true -> marker (no Smithy analog).
+            if (c2j.path("synthetic").asBoolean(false)) {
+                shapeTraits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                        C2J_SYNTHETIC_TRAIT, Node.from(true)));
+            }
             if (!shapeTraits.isEmpty()) {
                 AbstractShapeBuilder<?, ?> b = Shape.shapeToBuilder(shapes.get(0));
                 shapeTraits.forEach(b::addTrait);
@@ -373,6 +466,12 @@ public final class C2jToSmithyConverter {
         ShapeId id = id(name);
         switch (type) {
             case "structure":
+                // C2J models the open "document" type as a memberless structure with document:true.
+                // Smithy has a native document shape; v2's IR maps it back to the Document SDK type
+                // (variableType software.amazon.awssdk.core.document.Document, marshallingType DOCUMENT).
+                if (c2j.path("document").asBoolean(false)) {
+                    return one(software.amazon.smithy.model.shapes.DocumentShape.builder().id(id).build());
+                }
                 return c2j.has("exception") && c2j.path("exception").asBoolean()
                         ? structure(id, c2j, true)
                         : structure(id, c2j, false);
@@ -442,14 +541,24 @@ public final class C2jToSmithyConverter {
         return one(b.build());
     }
 
-    // A C2J list/map element ref may carry its own locationName (the XML element/entry name, e.g. a
-    // non-flattened list of "Change" elements). Smithy carries it via @xmlName (+ @jsonName for
-    // symmetry); the inverse restores Member.locationName so generated marshalling metadata matches.
+    // A C2J list/map element ref carries its own metadata: locationName (the XML element/entry name,
+    // e.g. a non-flattened list of "Change" elements) and documentation. Smithy carries the name via
+    // @xmlName (+ @jsonName for symmetry) and docs via @documentation; the inverse restores
+    // Member.locationName / Member.documentation so generated metadata + javadoc match.
     private static void collectionMemberWireName(MemberShape.Builder member, JsonNode ref) {
         String locationName = ref.path("locationName").asText(null);
         if (locationName != null) {
             member.addTrait(new XmlNameTrait(locationName));
             member.addTrait(new JsonNameTrait(locationName));
+        }
+        if (ref.hasNonNull("documentation")) {
+            member.addTrait(new software.amazon.smithy.model.traits.DocumentationTrait(
+                    ref.get("documentation").asText()));
+        }
+        // C2J jsonvalue on a list/map element (e.g. pricing PriceListJsonItems' member) -> marker.
+        if (ref.path("jsonvalue").asBoolean(false)) {
+            member.addTrait(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_JSON_VALUE_TRAIT, Node.objectNode()));
         }
     }
 
@@ -661,6 +770,11 @@ public final class C2jToSmithyConverter {
             traits.add(new software.amazon.smithy.model.traits.DynamicTrait(
                     C2J_QUERY_NAME_TRAIT, Node.from(m.get("queryName").asText())));
         }
+        // C2J member jsonvalue flag -> marker, restored to Member.jsonvalue.
+        if (m.path("jsonvalue").asBoolean(false)) {
+            traits.add(new software.amazon.smithy.model.traits.DynamicTrait(
+                    C2J_JSON_VALUE_TRAIT, Node.objectNode()));
+        }
         // C2J event member payload/header flags -> @eventPayload / @eventHeader.
         if (m.path("eventpayload").asBoolean(false)) {
             traits.add(new software.amazon.smithy.model.traits.EventPayloadTrait());
@@ -724,6 +838,14 @@ public final class C2jToSmithyConverter {
         // C2J serviceId is preserved verbatim in the @com.amazonaws.c2j#metadata trait and restored
         // from there by SmithyToServiceModel, so sanitizing the shape name here is lossless.
         String serviceName = sanitizeShapeName(metadata.path("serviceId").asText("Service"));
+        // Avoid a service/shape id collision: some serviceIds match a modeled shape name (e.g. the
+        // Budgets service has a "Budgets" list shape). Smithy ids must be unique, and a clobbered list
+        // shape would make members targeting it unresolvable. The adapter finds the service via
+        // model.getServiceShapes() (not by name) and restores the real serviceId from the metadata
+        // trait, so suffixing the internal shape id here is lossless.
+        if (shapes.has(serviceName)) {
+            serviceName = serviceName + "C2jService";
+        }
         ServiceShape.Builder svc = ServiceShape.builder()
                 .id(id(serviceName))
                 .version(metadata.path("apiVersion").asText("1.0"));
@@ -766,7 +888,7 @@ public final class C2jToSmithyConverter {
             // The operations are added to the model separately; here we only wire the service to
             // reference them. We accumulate and add them via a side list.
             Map.Entry<String, JsonNode> e = it.next();
-            svc.addOperation(id(e.getKey()));
+            svc.addOperation(operationId(e.getKey()));
         }
         // Operations themselves are added in buildOperations(); but ServiceShape only needs IDs.
         return svc.build();

@@ -145,18 +145,19 @@ public final class SmithyToServiceModel {
         ServiceModel serviceModel = new ServiceModel();
         serviceModel.setMetadata(buildMetadata());
 
-        // Operations (skip anything outside the service's own namespace). Sorted by name to match the
-        // alphabetical C2J file order (see the shapes block below for why order matters).
-        Map<String, Operation> operations = new LinkedHashMap<>();
-        List<OperationShape> sortedOps = new ArrayList<>(model.getOperationShapes());
-        sortedOps.sort(java.util.Comparator.comparing(o -> o.getId().getName()));
-        for (OperationShape op : sortedOps) {
+        // Operations (skip anything outside the service's own namespace). The operations-map KEY is the
+        // original C2J key — recovered from the operation-name marker when the Smithy op-shape id was
+        // suffixed to avoid an operation/shape name collision (else the id name). Sorted by that key to
+        // match the alphabetical C2J file order (see the shapes block below for why order matters).
+        Map<String, Operation> operations = new java.util.TreeMap<>();
+        for (OperationShape op : model.getOperationShapes()) {
             if (!ownNamespace(op.getId())) {
                 continue;
             }
-            operations.put(op.getId().getName(), buildOperation(op));
+            Operation c2jOp = buildOperation(op);
+            operations.put(operationKey(op), c2jOp);
         }
-        serviceModel.setOperations(operations);
+        serviceModel.setOperations(new LinkedHashMap<>(operations));
 
         // Shapes: structures/unions, lists, maps, and simple shapes. Skip the synthetic Unit shape
         // and any prelude shape (only emit shapes in the model's own namespace).
@@ -194,6 +195,14 @@ public final class SmithyToServiceModel {
                 // Shape-level @sensitive -> C2J shape sensitive.
                 if (shape.hasTrait(software.amazon.smithy.model.traits.SensitiveTrait.class)) {
                     c2j.setSensitive(true);
+                }
+                // Shape-level wrapper marker -> C2J wrapper:true (query/rest-xml result wrapping).
+                if (shape.findTrait(C2jToSmithyConverter.C2J_WRAPPER_TRAIT).isPresent()) {
+                    c2j.setWrapper(true);
+                }
+                // Shape-level synthetic marker -> C2J synthetic:true.
+                if (shape.findTrait(C2jToSmithyConverter.C2J_SYNTHETIC_TRAIT).isPresent()) {
+                    c2j.setSynthetic(true);
                 }
                 // Shape-level @deprecated -> C2J deprecated + deprecatedMessage.
                 shape.getTrait(software.amazon.smithy.model.traits.DeprecatedTrait.class).ifPresent(dt -> {
@@ -248,6 +257,18 @@ public final class SmithyToServiceModel {
 
     private boolean ownNamespace(ShapeId id) {
         return namespace.equals(id.getNamespace());
+    }
+
+    // The C2J operations-map key for a Smithy operation shape: the shape-id name with the
+    // collision-avoidance suffix stripped (the converter appends it only when an operation and shape
+    // share a name). NOT the operation-name marker — that carries the C2J "name" field (the wire
+    // action), which can differ from the map key (e.g. cloudfront key AssociateAlias vs name
+    // AssociateAlias2020_05_31).
+    private static String operationKey(OperationShape op) {
+        String n = op.getId().getName();
+        return n.endsWith(C2jToSmithyConverter.OP_ID_SUFFIX)
+                ? n.substring(0, n.length() - C2jToSmithyConverter.OP_ID_SUFFIX.length())
+                : n;
     }
 
     /** The value of a Smithy {@code @documentation} trait on a shape/member, if present. */
@@ -364,20 +385,41 @@ public final class SmithyToServiceModel {
 
     private Operation buildOperation(OperationShape op) {
         Operation operation = new Operation();
-        operation.setName(op.getId().getName());
+        // Operation name: the C2J "name" field if it diverged from the map key (carried on a marker),
+        // else the shape-id name (which equals the map key).
+        // Operation-level @deprecated -> C2J deprecated + deprecatedMessage.
+        op.getTrait(software.amazon.smithy.model.traits.DeprecatedTrait.class).ifPresent(dt -> {
+            operation.setDeprecated(true);
+            dt.getMessage().ifPresent(operation::setDeprecatedMessage);
+        });
+        operation.setName(op.findTrait(C2jToSmithyConverter.C2J_OPERATION_NAME_TRAIT)
+                            .flatMap(t -> t.toNode().asStringNode())
+                            .map(software.amazon.smithy.model.node.StringNode::getValue)
+                            .orElse(op.getId().getName()));
         doc(op).ifPresent(operation::setDocumentation);   // operation-level @documentation
 
-        // @http trait -> Http. RPC protocols carry no @http, so default to POST "/".
-        Optional<HttpTrait> http = op.getTrait(HttpTrait.class);
+        // C2J http block. Prefer the verbatim marker (round-trips every URI, incl. ones the Smithy
+        // @http trait can't represent); fall back to @http, then to the RPC default POST "/".
         Http c2jHttp = new Http();
-        if (http.isPresent()) {
-            HttpTrait ht = http.get();
-            c2jHttp.setMethod(ht.getMethod());
-            c2jHttp.setRequestUri(ht.getUri().toString());
-            c2jHttp.setResponseCode(Integer.toString(ht.getCode()));
+        Optional<ObjectNode> httpMarker = op.findTrait(C2jToSmithyConverter.C2J_HTTP_TRAIT)
+                                            .map(t -> t.toNode().expectObjectNode());
+        if (httpMarker.isPresent()) {
+            ObjectNode h = httpMarker.get();
+            c2jHttp.setMethod(h.getStringMemberOrDefault("method", "POST"));
+            h.getStringMember("requestUri").ifPresent(n -> c2jHttp.setRequestUri(n.getValue()));
+            h.getNumberMember("responseCode")
+             .ifPresent(n -> c2jHttp.setResponseCode(String.valueOf(n.getValue().intValue())));
         } else {
-            c2jHttp.setMethod("POST");
-            c2jHttp.setRequestUri("/");
+            Optional<HttpTrait> http = op.getTrait(HttpTrait.class);
+            if (http.isPresent()) {
+                HttpTrait ht = http.get();
+                c2jHttp.setMethod(ht.getMethod());
+                c2jHttp.setRequestUri(ht.getUri().toString());
+                c2jHttp.setResponseCode(Integer.toString(ht.getCode()));
+            } else {
+                c2jHttp.setMethod("POST");
+                c2jHttp.setRequestUri("/");
+            }
         }
         operation.setHttp(c2jHttp);
 
@@ -385,11 +427,12 @@ public final class SmithyToServiceModel {
         op.getInput().filter(id -> !id.equals(UNIT)).ifPresent(id -> {
             Input input = new Input();
             input.setShape(id.getName());
-            // rest-xml request wrapper name + xmlNamespace on the C2J input ref, preserved verbatim.
+            // rest-xml request wrapper name + xmlNamespace + ref doc on the C2J input ref, verbatim.
             op.findTrait(C2jToSmithyConverter.C2J_INPUT_META_TRAIT)
               .map(t -> t.toNode().expectObjectNode())
               .ifPresent(node -> {
                   node.getStringMember("locationName").ifPresent(n -> input.setLocationName(n.getValue()));
+                  node.getStringMember("documentation").ifPresent(n -> input.setDocumentation(n.getValue()));
                   node.getObjectMember("xmlNamespace").ifPresent(xn -> {
                       XmlNamespace ns = new XmlNamespace();
                       xn.getStringMember("uri").ifPresent(u -> ns.setUri(u.getValue()));
@@ -406,12 +449,21 @@ public final class SmithyToServiceModel {
             op.findTrait(C2jToSmithyConverter.C2J_RESULT_WRAPPER_TRAIT)
               .flatMap(t -> t.toNode().asStringNode())
               .ifPresent(n -> output.setResultWrapper(n.getValue()));
+            // ref-level documentation on the C2J output ref (drives returnType javadoc).
+            op.findTrait(C2jToSmithyConverter.C2J_OUTPUT_DOC_TRAIT)
+              .flatMap(t -> t.toNode().asStringNode())
+              .ifPresent(n -> output.setDocumentation(n.getValue()));
             operation.setOutput(output);
         });
 
         // httpChecksum block, preserved verbatim by the forward converter.
         op.findTrait(C2jToSmithyConverter.C2J_HTTP_CHECKSUM_TRAIT)
           .ifPresent(t -> operation.setHttpChecksum(httpChecksum(t.toNode().expectObjectNode())));
+
+        // Legacy boolean @httpChecksumRequired -> C2J httpChecksumRequired.
+        if (op.hasTrait(software.amazon.smithy.model.traits.HttpChecksumRequiredTrait.class)) {
+            operation.setHttpChecksumRequired(true);
+        }
 
         // requestcompression block, preserved verbatim.
         op.findTrait(C2jToSmithyConverter.C2J_REQUEST_COMPRESSION_TRAIT).ifPresent(t -> {
@@ -473,8 +525,23 @@ public final class SmithyToServiceModel {
             operation.setOperationContextParams(m);
         });
 
-        // errors[] -> ErrorMap{shape}.
-        if (!op.getErrors().isEmpty()) {
+        // errors[] -> ErrorMap{shape}. Prefer the verbatim C2J marker (exact declared order, keeps
+        // duplicates); fall back to the Smithy error set (deduped) for hand-authored models.
+        Optional<ArrayNode> errMarker = op.findTrait(C2jToSmithyConverter.C2J_ERRORS_TRAIT)
+                                          .map(t -> t.toNode().expectArrayNode());
+        if (errMarker.isPresent()) {
+            List<ErrorMap> errors = new ArrayList<>();
+            for (Node e : errMarker.get().getElements()) {
+                ObjectNode eo = e.expectObjectNode();
+                ErrorMap map = new ErrorMap();
+                map.setShape(eo.expectStringMember("shape").getValue());
+                // ref-level documentation on the C2J errors[] entry (distinct from the shape's own doc;
+                // drives the generated operation javadoc's @throws text).
+                eo.getStringMember("documentation").ifPresent(d -> map.setDocumentation(d.getValue()));
+                errors.add(map);
+            }
+            operation.setErrors(errors);
+        } else if (!op.getErrors().isEmpty()) {
             List<ErrorMap> errors = new ArrayList<>();
             for (ShapeId err : op.getErrors()) {
                 ErrorMap map = new ErrorMap();
@@ -552,6 +619,14 @@ public final class SmithyToServiceModel {
         if (shape instanceof TimestampShape) {
             return simple("timestamp");
         }
+        if (shape instanceof software.amazon.smithy.model.shapes.DocumentShape) {
+            // Smithy document -> C2J memberless structure with document:true (v2 maps this to the
+            // Document SDK type). Shape-level doc/sensitive are restored by the caller's wrapper.
+            Shape shape0 = new Shape();
+            shape0.setType("structure");
+            shape0.setDocument(true);
+            return shape0;
+        }
         // Service/operation/member/resource shapes are handled elsewhere or not represented as C2J
         // shapes; skip them.
         return null;
@@ -611,7 +686,7 @@ public final class SmithyToServiceModel {
     private Shape structure(StructureShape s) {
         Shape shape = new Shape();
         shape.setType("structure");
-        populateMembers(shape, s.getAllMembers());
+        populateMembers(shape, s.getAllMembers(), s);
 
         // @error -> exception=true. Restore the full C2J error block (code + httpStatusCode) from the
         // verbatim marker the forward converter carried; the @error trait alone loses those.
@@ -651,11 +726,12 @@ public final class SmithyToServiceModel {
         Shape shape = new Shape();
         shape.setType("structure");
         shape.setUnion(true);
-        populateMembers(shape, s.getAllMembers());
+        populateMembers(shape, s.getAllMembers(), s);
         return shape;
     }
 
-    private void populateMembers(Shape shape, Map<String, MemberShape> members) {
+    private void populateMembers(Shape shape, Map<String, MemberShape> members,
+                                 software.amazon.smithy.model.shapes.Shape smithyShape) {
         Map<String, Member> c2jMembers = new LinkedHashMap<>();
         List<String> required = new ArrayList<>();
         for (Map.Entry<String, MemberShape> e : members.entrySet()) {
@@ -667,7 +743,13 @@ public final class SmithyToServiceModel {
             c2jMembers.put(memberName, member);
         }
         shape.setMembers(c2jMembers);
-        if (!required.isEmpty()) {
+        // Prefer the verbatim C2J required[] (declaration order) carried on the marker; fall back to
+        // the @required-derived list (member-iteration order) for hand-authored Smithy.
+        Optional<List<String>> markerRequired = smithyShape.findTrait(C2jToSmithyConverter.C2J_REQUIRED_TRAIT)
+                .map(t -> stringList(t.toNode().expectArrayNode()));
+        if (markerRequired.isPresent()) {
+            shape.setRequired(markerRequired.get());
+        } else if (!required.isEmpty()) {
             shape.setRequired(required);
         }
     }
@@ -682,6 +764,10 @@ public final class SmithyToServiceModel {
             wire = m.getTrait(JsonNameTrait.class).map(JsonNameTrait::getValue);
         }
         wire.ifPresent(member::setLocationName);
+        doc(m).ifPresent(member::setDocumentation);   // list/map element documentation
+        if (m.findTrait(C2jToSmithyConverter.C2J_JSON_VALUE_TRAIT).isPresent()) {
+            member.setJsonvalue(true);                 // list/map element jsonvalue
+        }
         return member;
     }
 
@@ -799,6 +885,11 @@ public final class SmithyToServiceModel {
         // member queryName (ec2 wire name) -> C2J Member.queryName.
         m.findTrait(C2jToSmithyConverter.C2J_QUERY_NAME_TRAIT)
          .flatMap(t -> t.toNode().asStringNode()).ifPresent(n -> member.setQueryName(n.getValue()));
+
+        // member jsonvalue flag -> C2J Member.jsonvalue.
+        if (m.hasTrait(C2jToSmithyConverter.C2J_JSON_VALUE_TRAIT)) {
+            member.setJsonvalue(true);
+        }
     }
 
     // Smithy @timestampFormat values -> C2J timestampFormat names (inverse of

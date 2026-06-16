@@ -168,13 +168,81 @@ path count held at 92 because those files have *other* remaining diffs too. Cumu
 ~92.5% closed.** Each gap = same "preserve what C2J carries" pattern (forward trait + inverse read-back),
 verified by re-running codegen-diff.sh.
 
-REMAINING ~92 (the hard tail, concentrated): (1) `requestcompression` op-level field still dropped;
-(2) s3 SelectObjectContent + polly event-stream CLIENT wiring (DefaultS3Client etc. — large structural
-diffs); (3) cloudwatch `LimitExceededFault` vs `LimitExceededException` — the C2J model has BOTH shapes
-and legacy vs Smithy collapse/dedupe them differently (a shape-identity/ordering issue, not a dropped
-attribute — needs investigation); (4) scattered javapoet line-wrapping deltas that are secondary effects
-of trait-count changes. These have diminishing per-fix returns; (1) and (2) are bounded, (3) needs real
-investigation.
+REMAINING ~92 (the hard tail) — ALL FOUR CLOSED. Final state: **0 differing paths** across all 6 sample
+services (s3/dynamodb/sqs/cloudwatch/polly/route53), all 5 protocols, including S3's heavy customizations.
+codegen-diff.sh legacy-vs-smithy = IDENTICAL; SmithyIrParityRunner = PARITY OK (all 5 benchmark services).
+
+## FULL FLEET PARITY: 422/422 services byte-identical IR (100%)
+
+The `SmithyIrParityRunner` sweep over **every** service-2.json in the repo (422 services) now reports
+**422 OK / 0 DIFF / 0 ERROR** — the C2J→Smithy→IR path produces a byte-identical `IntermediateModel`
+to the legacy direct C2J→IR path for the entire AWS surface. Progression this session: 325 OK / 95 DIFF
+/ 2 ERROR → 355/65/2 → 420/0/2 → **422/0/0**.
+
+Final cluster of gaps closed (each = forward trait + inverse read-back, re-measured by the full sweep):
+- **operation-level `deprecated`(+message)** — was only handled at shape/member level (appconfig et al.).
+- **verbatim operation `errors[]`** (`com.amazonaws.c2j#errors`) — Smithy's error set dedupes/reorders;
+  v2's IR keeps the exact declared sequence INCLUDING duplicates (appsync CreateApiKey lists
+  LimitExceededException twice). Marker preserves order + dupes + ref-level doc.
+- **document type** — C2J models the open document as a memberless `structure` with `document:true`;
+  mapped to Smithy's native `DocumentShape` ↔ IR's `software.amazon.awssdk.core.document.Document`
+  (variableType/marshallingType DOCUMENT). Cleared the single biggest cluster (18 services:
+  bedrockruntime, cognitoidentityprovider, glue, securityhub, …).
+- **shape-level `wrapper:true`** (`com.amazonaws.c2j#wrapper`) — query/rest-xml result wrapping
+  (docdb/elasticache/neptune/rds/redshift, ~100 shapes).
+- **ref-level `documentation`** on operation `output`/`input` refs (`com.amazonaws.c2j#outputDoc` +
+  fold into input-meta) and on `errors[]` entries — distinct from the target shape's own doc; drives
+  the IR's returnType / @throws javadoc (mq/kafka/amplifybackend/apigatewayv2, ~300 ops).
+- **boolean `httpChecksumRequired`** → `@httpChecksumRequired` (s3control, 37 ops; distinct from the
+  httpChecksum block).
+- **list/map element `jsonvalue`** — was carried for struct members but not collection elements
+  (pricing PriceListJsonItems).
+- **empty `required:[]`** — now emitted as `[]` not null (pinpointsmsvoice).
+- **shape-level `synthetic:true`** (`com.amazonaws.c2j#synthetic`) — SDK-synthesized event-stream
+  exception members (polly/sagemakerruntime).
+- **service/shape id collision** — a serviceId matching a modeled shape name (Budgets service has a
+  `Budgets` list shape) clobbered the shape; service shape id now suffixed `C2jService` (lossless —
+  real serviceId round-trips via the metadata trait; adapter finds the service via getServiceShapes()).
+
+Two prior "ERROR" services were a **harness gap, not converter bugs**: the parity runner built
+`C2jModels` without the sibling models, so services whose customization.config references endpoint
+parameters (s3) NPEd on a null endpointRuleSet on BOTH paths. The runner now loads waiters / paginators /
+endpoint-rule-set / endpoint-tests exactly like the maven plugin (`buildIr` helper). Added a `--dump
+<svc> <dir>` mode for full-IR structural diffing.
+
+Gaps closed to reach byte-identical (each = forward trait + inverse read-back, re-measured):
+documentation; flattened; eventstream/event; uri-label locationName; list/map element locationName;
+idempotencyToken; shape-level timestampFormat; sensitive; exception error block (code+httpStatusCode);
+shape ORDER (sort by name = C2J alphabetical file order — fixed the LimitExceededFault/Exception dedup,
+which was an order-dependent "last-class-name-wins" in AddExceptionShapes, NOT a separate bug);
+awsQueryCompatible/protocolSettings/resultWrapped metadata; xmlAttribute; deprecated(+message);
+member xmlNamespace; requestcompression; endpointdiscovery+endpointoperation; retryable(throttling);
+eventpayload/eventheader; streaming(+requiresLength); shape-level xmlNamespace (drives XmlAttributesTrait);
+clientContextParams; staticContextParams/operationContextParams (as jackson-jr JrsValue TreeNodes, NOT
+databind — the endpoint codegen casts to JrsBoolean/JrsString/JrsArray); member contextParam;
+endpoint.hostPrefix; authtype; unsignedPayload; ContentLength kept (IR path doesn't validate; reserved
+headers bound).
+
+The 4 specifically-named concerns resolved: (1) requestcompression — verbatim op marker; (2) event-stream
+client wiring — fell out once eventstream/streaming/eventpayload + member xmlNamespace were carried;
+(3) cloudwatch dup-shape — was the missing error.code/httpStatusCode + shape ordering, now identical;
+(4) line-wrapping — was secondary to trait-count, gone once traits matched.
+
+## Expanded coverage: 8 feature-diverse services (ec2/glacier/transcribestreaming/cloudfront/sts/iam/
+apigateway/kinesis, ~8000 files, incl. the unique ec2 protocol)
+
+Ran the harness on a second, feature-diverse batch. Result after fixes: only the cloudfront
+paginator false-positive remains (see below). One real gap found + fixed:
+- **ec2 member `queryName`** (the ec2 protocol's wire name, distinct from locationName — e.g.
+  Ipv6Addresses has locationName "ipv6AddressesSet" but queryName "Ipv6Addresses"). Carried via a
+  com.amazonaws.c2j#queryName marker -> Member.queryName. ec2 now byte-identical.
+
+KNOWN FALSE POSITIVE (not a smithy-path gap): cloudfront generates 0 paginators under the
+`-Dawssdk.codegen.legacyC2jIr=true` ESCAPE HATCH but 186 under the smithy path. Verified this reproduces
+on the COMMITTED code (before any uncommitted changes), so the escape hatch itself is buggy for
+cloudfront — the shipping smithy path (186, matching real cloudfront) is CORRECT. The diff oracle's
+"legacy" baseline is therefore unreliable for this service; the 2 cloudfront diffs are oracle noise, not
+a front-end defect. (Root cause in the hatch not chased — debug-only flag.)
 
 - **documentation: DONE.** Forward maps C2J `documentation` → `@documentation` (service via ServiceShape,
   op via OperationShape, shape via `Shape.shapeToBuilder().addTrait()`, member via memberTraits); inverse

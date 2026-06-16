@@ -22,7 +22,11 @@ import software.amazon.awssdk.codegen.IntermediateModelBuilder;
 import software.amazon.awssdk.codegen.internal.Jackson;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
+import software.amazon.awssdk.codegen.model.rules.endpoints.EndpointTestSuiteModel;
+import software.amazon.awssdk.codegen.model.service.EndpointRuleSetModel;
+import software.amazon.awssdk.codegen.model.service.Paginators;
 import software.amazon.awssdk.codegen.model.service.ServiceModel;
+import software.amazon.awssdk.codegen.model.service.Waiters;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 
 /**
@@ -49,7 +53,13 @@ public final class SmithyIrParityRunner {
 
     public static void main(String[] args) {
         if (args.length == 0) {
-            throw new IllegalArgumentException("Usage: SmithyIrParityRunner <service-2.json> ...");
+            throw new IllegalArgumentException("Usage: SmithyIrParityRunner [--dump <dir>] <service-2.json> ...");
+        }
+        // --dump <dir>: write both IRs (<svc>.direct.json / <svc>.smithy.json) to <dir> for one service
+        // and exit, instead of diffing. Lets the caller inspect full IR with shape-name context.
+        if (args.length >= 3 && "--dump".equals(args[0])) {
+            dump(Path.of(args[1]), Path.of(args[2]));
+            return;
         }
         int failures = 0;
         for (String arg : args) {
@@ -70,24 +80,69 @@ public final class SmithyIrParityRunner {
         }
     }
 
-    private static boolean compareOne(Path serviceJson) {
-        // Load the REAL per-service customization.config so both paths apply the same customizations
-        // (e.g. a shapeModifiers exclude of Content-Length on payload shapes) — exactly what the
-        // product build does. Both IRs are then built with that same config.
-        CustomizationConfig custom = ModelLoaderUtils.loadOptionalModel(
+    // Load the per-service customization.config (empty if absent) — both paths must apply the same one.
+    private static CustomizationConfig loadCustom(Path serviceJson) {
+        return ModelLoaderUtils.loadOptionalModel(
                 CustomizationConfig.class,
                 serviceJson.resolveSibling("customization.config").toFile(), true)
                 .orElseGet(CustomizationConfig::create);
+    }
+
+    // Build the IR from a ServiceModel, loading the SAME sibling models (waiters/paginators/endpoint
+    // rule set + tests) the maven plugin loads — so services whose customization references endpoint
+    // parameters (e.g. s3) build instead of NPEing on a null endpointRuleSet.
+    private static IntermediateModel buildIr(ServiceModel serviceModel, Path serviceJson,
+                                             CustomizationConfig custom) {
+        Path dir = serviceJson.getParent();
+        Waiters waiters = ModelLoaderUtils.loadOptionalModel(
+                Waiters.class, dir.resolve("waiters-2.json").toFile()).orElse(Waiters.none());
+        Paginators paginators = ModelLoaderUtils.loadOptionalModel(
+                Paginators.class, dir.resolve("paginators-1.json").toFile()).orElse(Paginators.none());
+        EndpointRuleSetModel ruleSet = ModelLoaderUtils.loadOptionalModel(
+                EndpointRuleSetModel.class, dir.resolve("endpoint-rule-set.json").toFile()).orElse(null);
+        EndpointTestSuiteModel tests = ModelLoaderUtils.loadOptionalModel(
+                EndpointTestSuiteModel.class, dir.resolve("endpoint-tests.json").toFile()).orElse(null);
+        return new IntermediateModelBuilder(
+                C2jModels.builder()
+                         .serviceModel(serviceModel)
+                         .customizationConfig(custom)
+                         .waitersModel(waiters)
+                         .paginatorsModel(paginators)
+                         .endpointRuleSetModel(ruleSet)
+                         .endpointTestSuiteModel(tests)
+                         .build()).build();
+    }
+
+    private static void dump(Path serviceJson, Path outDir) {
+        CustomizationConfig custom = loadCustom(serviceJson);
+        ServiceModel directModel = ModelLoaderUtils.loadModel(ServiceModel.class, serviceJson.toFile());
+        IntermediateModel directIr = buildIr(directModel, serviceJson, custom);
+        ServiceModel viaSmithy = SmithyToServiceModel.fromC2jViaSmithy(serviceJson);
+        IntermediateModel smithyIr = buildIr(viaSmithy, serviceJson, custom);
+        String svc = serviceJson.getParent().getParent().getParent().getParent().getParent()
+                                .getFileName().toString();
+        try {
+            java.nio.file.Files.writeString(outDir.resolve(svc + ".direct.json"), toJson(directIr));
+            java.nio.file.Files.writeString(outDir.resolve(svc + ".smithy.json"), toJson(smithyIr));
+            System.out.println("dumped " + svc + " to " + outDir);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static boolean compareOne(Path serviceJson) {
+        // Load the REAL per-service customization.config so both paths apply the same customizations
+        // (e.g. a shapeModifiers exclude of Content-Length on payload shapes) — exactly what the
+        // product build does. Both IRs are then built with that same config + sibling models.
+        CustomizationConfig custom = loadCustom(serviceJson);
 
         // Path 1: direct C2J -> IR (today's behavior).
         ServiceModel directModel = ModelLoaderUtils.loadModel(ServiceModel.class, serviceJson.toFile());
-        IntermediateModel directIr = new IntermediateModelBuilder(
-                C2jModels.builder().serviceModel(directModel).customizationConfig(custom).build()).build();
+        IntermediateModel directIr = buildIr(directModel, serviceJson, custom);
 
         // Path 2: C2J -> Smithy -> ServiceModel -> IR (the new on-ramp), IntermediateModelBuilder unchanged.
         ServiceModel viaSmithy = SmithyToServiceModel.fromC2jViaSmithy(serviceJson);
-        IntermediateModel smithyIr = new IntermediateModelBuilder(
-                C2jModels.builder().serviceModel(viaSmithy).customizationConfig(custom).build()).build();
+        IntermediateModel smithyIr = buildIr(viaSmithy, serviceJson, custom);
 
         String directJson = toJson(directIr);
         String smithyJson = toJson(smithyIr);
