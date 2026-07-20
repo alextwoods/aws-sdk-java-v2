@@ -49,6 +49,11 @@
     <dependencies>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-java-bridge</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-json-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
@@ -82,6 +87,12 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>retries</artifactId>
             <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-awsjson</artifactId>
+            <version>1.4.2-rebased</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

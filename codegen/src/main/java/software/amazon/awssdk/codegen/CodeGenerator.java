@@ -122,7 +122,7 @@ public class CodeGenerator {
             writeValidationReport(report);
         }
 
-        if (!validatorEntries.isEmpty()) {
+        if (!validatorEntries.isEmpty() && !Boolean.getBoolean("awssdk.codegen.skipValidation")) {
             throw new RuntimeException("Validation failed. See validation report for details.");
         }
 

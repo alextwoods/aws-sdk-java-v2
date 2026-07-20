@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 import software.amazon.awssdk.codegen.emitters.GeneratorTask;
 import software.amazon.awssdk.codegen.emitters.GeneratorTaskParams;
 import software.amazon.awssdk.codegen.emitters.PoetGeneratorTask;
+import software.amazon.awssdk.codegen.internal.Utils;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.MemberModel;
 import software.amazon.awssdk.codegen.model.intermediate.Metadata;
@@ -31,6 +32,8 @@ import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.poet.ClassSpec;
 import software.amazon.awssdk.codegen.poet.common.EnumClass;
+import software.amazon.awssdk.codegen.poet.model.ApiOperationSpec;
+import software.amazon.awssdk.codegen.poet.model.ApiServiceSpec;
 import software.amazon.awssdk.codegen.poet.model.AwsServiceBaseRequestSpec;
 import software.amazon.awssdk.codegen.poet.model.AwsServiceBaseResponseSpec;
 import software.amazon.awssdk.codegen.poet.model.AwsServiceModel;
@@ -68,6 +71,18 @@ class ModelClassGeneratorTasks extends BaseGeneratorTasks {
                 .forEach(tasks::add);
 
         tasks.add(new PoetGeneratorTask(modelClassDir, model.getFileHeader(), new ResponseMetadataSpec(model)));
+
+        // Generate ApiOperation and ApiService classes for smithy-java bridge serde.
+        if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
+            String operationsDir = modelClassDir.replace("/model", "/operations");
+            tasks.add(new PoetGeneratorTask(operationsDir, model.getFileHeader(), new ApiServiceSpec(model)));
+            model.getOperations().values().stream()
+                .filter(op -> op.getInputShape() != null && op.getOutputShape() != null)
+                .forEach(op ->
+                    tasks.add(new PoetGeneratorTask(operationsDir, model.getFileHeader(),
+                                                    new ApiOperationSpec(model, op)))
+                );
+        }
 
         return tasks;
     }

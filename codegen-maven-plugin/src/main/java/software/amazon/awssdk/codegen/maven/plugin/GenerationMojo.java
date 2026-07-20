@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +59,7 @@ import software.amazon.awssdk.utils.StringUtils;
 @Mojo(name = "generate")
 public class GenerationMojo extends AbstractMojo {
     private static final String MODEL_FILE = "service-2.json";
+    private static final String SMITHY_MODEL_FILE = "smithy-model.json";
     private static final String CUSTOMIZATION_CONFIG_FILE = "customization.config";
     private static final String WAITERS_FILE = "waiters-2.json";
     private static final String PAGINATORS_FILE = "paginators-1.json";
@@ -158,12 +160,23 @@ public class GenerationMojo extends AbstractMojo {
 
     private Stream<ModelRoot> findModelRoots() throws MojoExecutionException {
         try {
-            return Files.find(codeGenResources.toPath(), 10, this::isModelFile)
-                        .map(Path::getParent)
+            // Collect all model files, then deduplicate by parent directory. If a directory contains
+            // both a smithy-model.json and a service-2.json, the smithy model wins.
+            Map<Path, Path> parentToModelFile = new LinkedHashMap<>();
+            Files.find(codeGenResources.toPath(), 10, this::isModelFile)
+                 .forEach(p -> {
+                     Path parent = p.getParent();
+                     Path existing = parentToModelFile.get(parent);
+                     // Prefer smithy-model.json over service-2.json
+                     if (existing == null || p.toString().endsWith(SMITHY_MODEL_FILE)) {
+                         parentToModelFile.put(parent, p);
+                     }
+                 });
+            return parentToModelFile.keySet().stream()
                         .map(p -> new ModelRoot(p, loadCustomizationConfig(p)))
                         .sorted(this::modelSharersLast);
         } catch (IOException e) {
-            throw new MojoExecutionException("Failed to find '" + MODEL_FILE + "' files in " + codeGenResources, e);
+            throw new MojoExecutionException("Failed to find model files in " + codeGenResources, e);
         }
     }
 
@@ -172,7 +185,7 @@ public class GenerationMojo extends AbstractMojo {
     }
 
     private boolean isModelFile(Path p, BasicFileAttributes a) {
-        return p.toString().endsWith(MODEL_FILE);
+        return p.toString().endsWith(MODEL_FILE) || p.toString().endsWith(SMITHY_MODEL_FILE);
     }
 
     private void generateCode(GenerationParams params) {
@@ -202,13 +215,19 @@ public class GenerationMojo extends AbstractMojo {
     /**
      * Load the service model that seeds the codegen IR.
      *
-     * <p>Smithy-first front-end: the C2J {@code service-2.json} is converted to a canonical Smithy
-     * model and the {@link ServiceModel} is then derived back from it
-     * ({@code C2J -> Smithy -> ServiceModel}), so the IR is sourced from Smithy. This is verified
+     * <p>Smithy-first front-end: if a {@code smithy-model.json} file is present, it is loaded
+     * directly as a canonical Smithy JSON AST. Otherwise, the C2J {@code service-2.json} is
+     * converted to a canonical Smithy model and the {@link ServiceModel} is then derived back from
+     * it ({@code C2J -> Smithy -> ServiceModel}), so the IR is sourced from Smithy. This is verified
      * byte-identical to the legacy direct C2J parse. Set {@code -Dawssdk.codegen.legacyC2jIr=true}
      * to bypass the Smithy round-trip (escape hatch for debugging only).
      */
     private ServiceModel loadServiceModel(Path root) {
+        Path smithyModel = root.resolve(SMITHY_MODEL_FILE);
+        if (Files.exists(smithyModel)) {
+            getLog().info("Loading canonical Smithy model: " + smithyModel);
+            return SmithyToServiceModel.fromSmithyModel(smithyModel);
+        }
         if (Boolean.getBoolean("awssdk.codegen.legacyC2jIr")) {
             return loadRequiredModel(ServiceModel.class, root.resolve(MODEL_FILE));
         }

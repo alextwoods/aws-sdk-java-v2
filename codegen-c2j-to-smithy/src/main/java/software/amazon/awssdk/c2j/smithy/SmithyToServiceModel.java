@@ -141,6 +141,23 @@ public final class SmithyToServiceModel {
         return convert(C2jToSmithyConverter.convert(serviceJson));
     }
 
+    /**
+     * Load a canonical Smithy JSON AST model file directly and convert it to a C2J {@link ServiceModel}.
+     *
+     * <p>This is the "Smithy-first" path: the model file is a Smithy JSON AST (the canonical model
+     * format, not a C2J service-2.json), and we load it directly with a {@code ModelAssembler} and
+     * then convert it to the C2J ServiceModel POJO that the existing codegen IR pipeline expects.
+     */
+    public static ServiceModel fromSmithyModel(Path smithyModelJson) {
+        Model model = Model.assembler(SmithyToServiceModel.class.getClassLoader())
+                .discoverModels(SmithyToServiceModel.class.getClassLoader())
+                .putProperty(software.amazon.smithy.model.loader.ModelAssembler.ALLOW_UNKNOWN_TRAITS, true)
+                .addImport(smithyModelJson)
+                .assemble()
+                .unwrap();
+        return convert(model);
+    }
+
     private ServiceModel build() {
         ServiceModel serviceModel = new ServiceModel();
         serviceModel.setMetadata(buildMetadata());
@@ -353,9 +370,25 @@ public final class SmithyToServiceModel {
     // Fallback when no preserved metadata trait exists: derive from standard traits + defaults.
     private ServiceMetadata metadataFromTraits() {
         ServiceMetadata metadata = new ServiceMetadata();
-        String serviceId = service.getId().getName();
+
+        // Use aws.api#service trait for service identity when available.
+        Optional<software.amazon.smithy.aws.traits.ServiceTrait> awsService =
+                service.getTrait(software.amazon.smithy.aws.traits.ServiceTrait.class);
+        String serviceId = awsService.map(software.amazon.smithy.aws.traits.ServiceTrait::getSdkId)
+                .orElse(service.getId().getName());
         metadata.setServiceId(serviceId);
         metadata.setApiVersion(service.getVersion());
+
+        // Endpoint prefix: prefer aws.api#service.endpointPrefix, fallback to lowercase serviceId.
+        String endpointPrefix = awsService
+                .map(t -> t.getEndpointPrefix())
+                .orElse(serviceId.toLowerCase(Locale.US));
+        metadata.setEndpointPrefix(endpointPrefix);
+
+        // Service full name / abbreviation from aws.api#service.
+        // Use @title trait for serviceFullName if available.
+        service.getTrait(software.amazon.smithy.model.traits.TitleTrait.class)
+                .ifPresent(t -> metadata.setServiceFullName(t.getValue()));
 
         if (service.hasTrait(RestJson1Trait.class)) {
             metadata.setProtocol("rest-json");
@@ -371,12 +404,22 @@ public final class SmithyToServiceModel {
             metadata.setProtocol("query");
         }
 
-        String lower = serviceId.toLowerCase(Locale.US);
-        metadata.setEndpointPrefix(lower);
-        metadata.setSigningName(lower);
-        if ("json".equals(metadata.getProtocol())) {
-            metadata.setTargetPrefix(serviceId);
+        // Signing name and signature version from aws.auth#sigv4 trait.
+        Optional<software.amazon.smithy.aws.traits.auth.SigV4Trait> sigv4 =
+                service.getTrait(software.amazon.smithy.aws.traits.auth.SigV4Trait.class);
+        if (sigv4.isPresent()) {
+            metadata.setSigningName(sigv4.get().getName());
+            metadata.setSignatureVersion("v4");
+        } else {
+            metadata.setSigningName(endpointPrefix);
         }
+
+        // Target prefix for JSON-RPC protocols (awsJson1_0, awsJson1_1).
+        if ("json".equals(metadata.getProtocol())) {
+            // DynamoDB: "DynamoDB_20120810" from service shape name
+            metadata.setTargetPrefix(service.getId().getName());
+        }
+
         service.getTrait(XmlNamespaceTrait.class).ifPresent(t -> metadata.setXmlNamespace(t.getUri()));
         return metadata;
     }

@@ -429,6 +429,7 @@ public class AwsServiceModel implements ClassSpec {
             case Model:
             case Request:
             case Response:
+            case Exception:
                 return true;
             default:
                 return false;
