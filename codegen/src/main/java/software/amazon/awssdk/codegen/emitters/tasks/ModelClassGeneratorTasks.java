@@ -77,7 +77,7 @@ class ModelClassGeneratorTasks extends BaseGeneratorTasks {
             String operationsDir = modelClassDir.replace("/model", "/operations");
             tasks.add(new PoetGeneratorTask(operationsDir, model.getFileHeader(), new ApiServiceSpec(model)));
             model.getOperations().values().stream()
-                .filter(op -> op.getInputShape() != null && op.getOutputShape() != null)
+                .filter(op -> op.getInputShape() != null)
                 .forEach(op ->
                     tasks.add(new PoetGeneratorTask(operationsDir, model.getFileHeader(),
                                                     new ApiOperationSpec(model, op)))

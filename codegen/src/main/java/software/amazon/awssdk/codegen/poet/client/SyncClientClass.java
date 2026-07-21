@@ -123,6 +123,21 @@ public class SyncClientClass extends SyncClientInterface {
             .addField(SyncClientHandler.class, "clientHandler", PRIVATE, FINAL)
             .addField(protocolSpec.protocolFactory(model))
             .addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
+
+        if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
+            type.addField(FieldSpec.builder(
+                    ClassName.get("software.amazon.smithy.java.aws.client.awsjson", "AwsJson1Protocol"),
+                    "smithyProtocol", PRIVATE, FINAL).build())
+                .addField(FieldSpec.builder(
+                    ParameterizedTypeName.get(
+                        ClassName.get("software.amazon.smithy.java.client.core", "ClientTransport"),
+                        ClassName.get("software.amazon.smithy.java.http.api", "HttpRequest"),
+                        ClassName.get("software.amazon.smithy.java.http.api", "HttpResponse")),
+                    "smithyTransport", PRIVATE, FINAL).build())
+                .addField(FieldSpec.builder(
+                    ClassName.get("software.amazon.smithy.java.io.uri", "SmithyUri"),
+                    "smithyEndpoint", PRIVATE, FINAL).build());
+        }
     }
 
     @Override
@@ -222,6 +237,23 @@ public class SyncClientClass extends SyncClientInterface {
             }
 
             builder.endControlFlow();
+        }
+
+        if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
+            ClassName shapeId = ClassName.get("software.amazon.smithy.model.shapes", "ShapeId");
+            ClassName awsJson1Protocol = ClassName.get("software.amazon.smithy.java.aws.client.awsjson", "AwsJson1Protocol");
+            ClassName v2TransportBridge = ClassName.get("software.amazon.awssdk.bridge.smithyjava.transport", "V2TransportBridge");
+            ClassName smithyUri = ClassName.get("software.amazon.smithy.java.io.uri", "SmithyUri");
+            String serviceShapeId = "com.amazonaws." + model.getMetadata().getEndpointPrefix() + "#"
+                + model.getMetadata().getServiceId().replace(" ", "")
+                + "_" + model.getMetadata().getApiVersion().replace("-", "");
+            builder.addStatement("this.smithyProtocol = new $T($T.from($S))",
+                                 awsJson1Protocol, shapeId, serviceShapeId);
+            builder.addStatement("this.smithyTransport = new $T(clientConfiguration.option($T.SYNC_HTTP_CLIENT))",
+                                 v2TransportBridge, SdkClientOption.class);
+            builder.addStatement("this.smithyEndpoint = $T.of(clientConfiguration.option($T.CLIENT_ENDPOINT_PROVIDER)"
+                                 + ".clientEndpoint().toString())",
+                                 smithyUri, SdkClientOption.class);
         }
 
         return builder.build();

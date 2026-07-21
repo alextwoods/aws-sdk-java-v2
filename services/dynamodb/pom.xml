@@ -93,7 +93,6 @@
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>aws-client-awsjson</artifactId>
             <version>1.4.2-rebased</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

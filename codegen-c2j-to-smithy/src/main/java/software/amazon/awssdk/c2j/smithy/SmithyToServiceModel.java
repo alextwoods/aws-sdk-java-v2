@@ -174,6 +174,46 @@ public final class SmithyToServiceModel {
             Operation c2jOp = buildOperation(op);
             operations.put(operationKey(op), c2jOp);
         }
+
+        // Standard Smithy endpoint discovery traits (aws.api#clientEndpointDiscovery on the service,
+        // aws.api#clientDiscoveredEndpoint on operations). These are the canonical Smithy way to express
+        // endpoint discovery; the C2J marker traits (com.amazonaws.c2j#endpointdiscovery/endpointoperation)
+        // are only present when the model was converted from C2J. For Smithy-first models we must handle
+        // the standard traits as a fallback.
+        ShapeId clientEndpointDiscoveryId = ShapeId.from("aws.api#clientEndpointDiscovery");
+        service.findTrait(clientEndpointDiscoveryId).ifPresent(trait -> {
+            trait.toNode().asObjectNode().ifPresent(node -> {
+                node.getStringMember("operation").ifPresent(opRef -> {
+                    String opName = ShapeId.from(opRef.getValue()).getName();
+                    Operation endpointOp = operations.get(opName);
+                    if (endpointOp != null && !endpointOp.isEndpointoperation()) {
+                        endpointOp.setEndpointoperation(true);
+                    }
+                });
+            });
+        });
+
+        ShapeId clientDiscoveredEndpointId = ShapeId.from("aws.api#clientDiscoveredEndpoint");
+        for (OperationShape op : model.getOperationShapes()) {
+            if (!ownNamespace(op.getId())) {
+                continue;
+            }
+            op.findTrait(clientDiscoveredEndpointId).ifPresent(trait -> {
+                Operation c2jOp = operations.get(operationKey(op));
+                if (c2jOp != null && c2jOp.getEndpointdiscovery() == null) {
+                    trait.toNode().asObjectNode().ifPresent(node -> {
+                        boolean required = node.getBooleanMemberOrDefault("required", false);
+                        software.amazon.awssdk.codegen.model.intermediate.EndpointDiscovery ed =
+                                new software.amazon.awssdk.codegen.model.intermediate.EndpointDiscovery();
+                        if (required) {
+                            ed.setRequired(true);
+                        }
+                        c2jOp.setEndpointdiscovery(ed);
+                    });
+                }
+            });
+        }
+
         serviceModel.setOperations(new LinkedHashMap<>(operations));
 
         // Shapes: structures/unions, lists, maps, and simple shapes. Skip the synthetic Unit shape

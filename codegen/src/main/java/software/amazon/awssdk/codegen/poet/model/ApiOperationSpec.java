@@ -63,7 +63,7 @@ public class ApiOperationSpec implements ClassSpec {
             : ClassName.get("software.amazon.smithy.java.core.schema", "SerializableStruct");
         this.outputType = operationModel.getOutputShape() != null
             ? poetExtensions.getModelClass(operationModel.getOutputShape().getShapeName())
-            : ClassName.get("software.amazon.smithy.java.core.schema", "SerializableStruct");
+            : poetExtensions.getModelClass(operationModel.getOperationName() + "Response");
     }
 
     @Override

@@ -205,6 +205,13 @@ public class JsonProtocolSpec implements ProtocolSpec {
 
     @Override
     public CodeBlock executionHandler(OperationModel opModel) {
+        // When smithy-java serde is enabled, use the smithy-java protocol directly instead of
+        // the v2 ClientExecutionParams + Marshaller pipeline.
+        if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()
+            && !opModel.hasStreamingInput() && !opModel.hasStreamingOutput()) {
+            return smithyJavaExecutionHandler(opModel);
+        }
+
         TypeName responseType = getPojoResponseType(opModel, poetExtensions);
         ClassName requestType = poetExtensions.getModelClass(opModel.getInput().getVariableType());
         ClassName marshaller = poetExtensions.getRequestTransformClass(opModel.getInputShape().getShapeName() + "Marshaller");
@@ -242,6 +249,54 @@ public class JsonProtocolSpec implements ProtocolSpec {
 
         return codeBlock.add("$L);", opModel.hasStreamingOutput() ? ", responseTransformer" : "")
                         .build();
+    }
+
+    /**
+     * Generates the smithy-java execution path: serialize → transport → deserialize.
+     * Bypasses the v2 ClientExecutionParams pipeline entirely.
+     */
+    @SuppressWarnings("unchecked")
+    private CodeBlock smithyJavaExecutionHandler(OperationModel opModel) {
+        TypeName responseType = getPojoResponseType(opModel, poetExtensions);
+        String inputVar = opModel.getInput().getVariableName();
+
+        // The generated ApiOperation class for this operation
+        String operationsPackage = model.getMetadata().getFullModelPackageName().replace(".model", ".operations");
+        ClassName operationClass = ClassName.get(operationsPackage, opModel.getOperationName() + "Operation");
+        ClassName serializableStruct = ClassName.get("software.amazon.smithy.java.core.schema", "SerializableStruct");
+        ClassName context = ClassName.get("software.amazon.smithy.java.context", "Context");
+        ClassName callException = ClassName.get("software.amazon.smithy.java.core.error", "CallException");
+        ClassName apiOperation = ClassName.get("software.amazon.smithy.java.core.schema", "ApiOperation");
+
+        CodeBlock.Builder code = CodeBlock.builder();
+        code.add("\n\n");
+        code.addStatement("$T smithyContext = $T.create()", context, context);
+        // Cast operation to raw ApiOperation to avoid generic type inference issues
+        code.addStatement("@SuppressWarnings(\"unchecked\") $T<$T, $T> op = ($T) $T.instance()",
+                          apiOperation, serializableStruct, serializableStruct,
+                          apiOperation, operationClass);
+        code.addStatement("$T httpRequest = smithyProtocol.createRequest(\n"
+                          + "    op, ($T) $L, smithyContext, smithyEndpoint)",
+                          ClassName.get("software.amazon.smithy.java.http.api", "HttpRequest"),
+                          serializableStruct, inputVar);
+        code.addStatement("$T httpResponse = smithyTransport.send(smithyContext, httpRequest)",
+                          ClassName.get("software.amazon.smithy.java.http.api", "HttpResponse"));
+        code.beginControlFlow("try");
+        code.addStatement("return ($T) smithyProtocol.deserializeResponse(\n"
+                          + "    op, smithyContext,\n"
+                          + "    op.errorRegistry(),\n"
+                          + "    httpRequest, httpResponse)",
+                          responseType);
+        code.nextControlFlow("catch ($T e)", callException);
+        // smithy-java CallException wraps the modeled error — extract the cause if it's a v2 exception
+        code.addStatement("if (e.getCause() instanceof $T) throw ($T) e.getCause()",
+                          ClassName.get("software.amazon.awssdk.core.exception", "SdkServiceException"),
+                          ClassName.get("software.amazon.awssdk.core.exception", "SdkServiceException"));
+        code.addStatement("throw $T.builder().message(e.getMessage()).cause(e).build()",
+                          ClassName.get("software.amazon.awssdk.services.dynamodb.model", "DynamoDbException"));
+        code.endControlFlow();
+
+        return code.build();
     }
 
     @Override
