@@ -75,6 +75,24 @@
             <artifactId>annotations</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- v2 auth: AwsCredentialsProvider for the credentials bridge. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- v2 aws-core: AwsServiceException, AwsClientOption, etc. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- v2 regions: Region class. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
 
         <!-- smithy-java runtime the bridges target. -->
         <dependency>
@@ -107,6 +125,60 @@
             <artifactId>core</artifactId>
             <version>${smithy.java.version}</version>
         </dependency>
+        <!-- AWS protocol implementations for the smithy-java pipeline. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-awsjson</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-restjson</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-restxml</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-rpcv2</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-rpcv2-cbor</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <!-- SigV4 signing and AWS auth for the smithy-java pipeline. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-sigv4</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-auth-api</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <!-- AWS client core: settings, RegionSetting, etc. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-core</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <!-- Endpoint rules engine for the smithy-java pipeline. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-rulesengine</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-rulesengine</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
         <!-- smithy-model: HttpPayloadTrait, for choosing the zero-alloc payload write path. -->
         <dependency>
             <groupId>software.amazon.smithy</groupId>
@@ -123,6 +195,18 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>1.9.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>${mockito.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

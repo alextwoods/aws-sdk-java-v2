@@ -63,6 +63,9 @@ import software.amazon.awssdk.codegen.poet.model.ServiceClientConfigurationUtils
 import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
+import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
+import software.amazon.awssdk.core.client.handler.SdkPipeline;
+import software.amazon.awssdk.core.client.handler.SdkPipelineLoader;
 import software.amazon.awssdk.core.client.handler.SyncClientHandler;
 import software.amazon.awssdk.core.endpointdiscovery.EndpointDiscoveryRefreshCache;
 import software.amazon.awssdk.core.endpointdiscovery.EndpointDiscoveryRequest;
@@ -122,7 +125,8 @@ public class SyncClientClass extends SyncClientInterface {
             .addField(protocolMetadata())
             .addField(SyncClientHandler.class, "clientHandler", PRIVATE, FINAL)
             .addField(protocolSpec.protocolFactory(model))
-            .addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
+            .addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL)
+            .addField(FieldSpec.builder(SdkPipeline.class, "sdkPipeline", PRIVATE, FINAL).build());
 
         if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
             type.addField(FieldSpec.builder(
@@ -209,7 +213,9 @@ public class SyncClientClass extends SyncClientInterface {
                                       SdkClientOption.class,
                                       transformServiceId(model.getMetadata().getServiceId()),
                                       ClassName.get(model.getMetadata().getFullClientInternalPackageName(),
-                                                    "ServiceVersionInfo"));
+                                                    "ServiceVersionInfo"))
+                        .addStatement("this.sdkPipeline = $T.instance().loadPipeline(this.clientConfiguration).orElse(null)",
+                                      SdkPipelineLoader.class);
 
         FieldSpec protocolFactoryField = protocolSpec.protocolFactory(model);
         if (model.getMetadata().isJsonProtocol()) {
@@ -361,6 +367,27 @@ public class SyncClientClass extends SyncClientInterface {
         addS3ArnableFieldCode(opModel, model).ifPresent(method::addCode);
         method.addCode(ClientClassUtils.addEndpointTraitCode(opModel));
 
+        // SPI pipeline delegation: if an alternative pipeline is available and supports this
+        // operation, delegate to it. Otherwise fall through to the default v2 handler path.
+        ClassName requestType = poetExtensions.getModelClass(opModel.getInput().getVariableType());
+        ClassName responseType = poetExtensions.getModelClass(opModel.getReturnType().getReturnType());
+        if (!opModel.hasStreamingInput() && !opModel.hasStreamingOutput()
+            && !opModel.hasEventStreamInput() && !opModel.hasEventStreamOutput()) {
+            method.addStatement("$T<$T, $T> pipelineExecutionParams = new $T<$T, $T>()\n"
+                                + ".withOperationName($S)\n"
+                                + ".withProtocolMetadata(protocolMetadata)\n"
+                                + ".withInput($L)\n"
+                                + ".withMetricCollector(apiCallMetricCollector)\n"
+                                + ".withRequestConfiguration(clientConfiguration)",
+                                ClientExecutionParams.class, requestType, responseType,
+                                ClientExecutionParams.class, requestType, responseType,
+                                opModel.getOperationName(),
+                                opModel.getInput().getVariableName());
+            method.beginControlFlow("if (sdkPipeline != null && sdkPipeline.supportsOperation(pipelineExecutionParams))")
+                  .addStatement("return sdkPipeline.execute(pipelineExecutionParams, clientConfiguration)")
+                  .endControlFlow();
+        }
+
         method.addCode(protocolSpec.executionHandler(opModel))
               .endControlFlow()
               .beginControlFlow("finally")
@@ -397,6 +424,9 @@ public class SyncClientClass extends SyncClientInterface {
         MethodSpec method = MethodSpec.methodBuilder("close")
                                       .addAnnotation(Override.class)
                                       .addModifiers(PUBLIC)
+                                      .beginControlFlow("if ($N != null)", "sdkPipeline")
+                                      .addStatement("$N.close()", "sdkPipeline")
+                                      .endControlFlow()
                                       .addStatement("$N.close()", "clientHandler")
                                       .build();
 

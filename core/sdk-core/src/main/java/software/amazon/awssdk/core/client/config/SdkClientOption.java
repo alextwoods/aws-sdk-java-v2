@@ -30,6 +30,7 @@ import software.amazon.awssdk.core.SdkClient;
 import software.amazon.awssdk.core.ServiceConfiguration;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
+import software.amazon.awssdk.core.client.handler.SdkPipeline;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.internal.useragent.SdkClientUserAgentProperties;
@@ -390,6 +391,17 @@ public final class SdkClientOption<T> extends ClientOption<T> {
      * {@link SdkAdvancedClientOption#USER_AGENT_SUFFIX} and should be used instead of those options.
      */
     public static final SdkClientOption<String> USER_AGENT_APP_ID = new SdkClientOption<>(String.class);
+
+    /**
+     * An explicit {@link SdkPipeline} instance to use for this client. When set, bypasses the
+     * {@link software.amazon.awssdk.core.client.handler.SdkPipelineLoader} ServiceLoader discovery
+     * and uses this pipeline directly.
+     * Set to {@code null} (the default) to use the standard ServiceLoader-based discovery.
+     *
+     * <p>This is primarily useful for testing and benchmarking scenarios where you want to
+     * explicitly control which pipeline implementation is used.
+     */
+    public static final SdkClientOption<SdkPipeline> SDK_PIPELINE = new SdkClientOption<>(SdkPipeline.class);
 
     /**
      * Option to specify a reference to the SDK client in use.
