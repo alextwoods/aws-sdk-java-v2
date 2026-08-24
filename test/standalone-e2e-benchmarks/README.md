@@ -51,6 +51,16 @@ canned ones, so don't compare those numbers against mock-server runs).
 
 - **JDK 21+** (smithy-java requires 21; tested on 25)
 - **Maven**
+- **SDK V2 installed locally** — the benchmark pom uses a `-SNAPSHOT` version that must be in
+  your `~/.m2/repository`. If you're prototyping optimizations, build the modules you changed:
+
+  ```bash
+  # From the repo root; builds just the DDB client and its transitive deps:
+  mvn install -pl :dynamodb,:apache-client,:aws-crt-client -P quick --am
+  ```
+
+  The `scripts/collect.sh` script auto-detects the version from the repo root pom and patches
+  the benchmark pom if they drift apart, so you generally don't have to think about it.
 - The generated smithy-java DynamoDB client published to `~/.m2` (one-time):
 
   ```bash
@@ -249,9 +259,11 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   Numbers are pipeline overhead, not end-to-end AWS latency. Client and server share the host's
   cores; on a small machine consider running the server on separate cores (`taskset`/separate
   host with `--no-server --endpoint`).
-- **Dependency pins.** V2 2.54.2 and smithy-java 1.5.1 from Maven Central; V1 via the monolithic
-  `com.amazonaws:aws-java-sdk:1.12.797` artifact (as requested — the first build downloads the
-  full V1 module set; swap to `aws-java-sdk-dynamodb` for a leaner tree, runtime behavior is
+- **Dependency pins.** V2 uses the local `-SNAPSHOT` version from the repo (the `<aws.sdk.v2.version>`
+  property in the benchmark pom must match the repo root's `<version>`; `scripts/collect.sh` patches
+  it automatically). smithy-java 1.5.1 from Maven Central; V1 via the monolithic
+  `com.amazonaws:aws-java-sdk:1.12.797` artifact (as customers use it — the first build downloads
+  the full V1 module set; swap to `aws-java-sdk-dynamodb` for a leaner tree, runtime behavior is
   identical). The smithy-java client comes from mavenLocal (see prerequisites). Netty is pinned
   to 4.2.0.Final for smithy-java compatibility.
 - **No uber-jar.** Because of the V1 monolith, the build writes the resolved classpath to

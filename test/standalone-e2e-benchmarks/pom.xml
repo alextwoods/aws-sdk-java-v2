@@ -18,7 +18,10 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
-        <aws.sdk.v2.version>2.54.2</aws.sdk.v2.version>
+        <!-- V2 version: must match the locally-built repo version (mvn install from the repo root).
+             When prototyping SDK optimizations, the benchmark runs against your working tree's
+             artifacts in ~/.m2/repository. Keep this in sync with the root pom.xml <version>. -->
+        <aws.sdk.v2.version>2.54.4-SNAPSHOT</aws.sdk.v2.version>
         <aws.sdk.v1.version>1.12.797</aws.sdk.v1.version>
         <smithy.java.version>1.5.1</smithy.java.version>
         <netty.version>4.2.0.Final</netty.version>

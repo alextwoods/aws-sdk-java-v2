@@ -60,6 +60,15 @@ mkdir -p "$RUNDIR"
 
 # ---- Build up front so compile time is not inside any run ----
 echo "Building..."
+# Detect the local SDK V2 version from the repo's root pom and patch the benchmark pom if needed,
+# so the benchmarks always run against the locally-installed SDK artifacts.
+LOCAL_SDK_VERSION="$(grep -m1 '<version>' "$REPO/pom.xml" | sed 's/.*<version>//;s/<\/version>.*//')"
+CURRENT_SDK_VERSION="$(grep 'aws.sdk.v2.version' "$DIR/pom.xml" | sed 's/.*<aws.sdk.v2.version>//;s/<\/aws.sdk.v2.version>.*//')"
+if [[ "$LOCAL_SDK_VERSION" != "$CURRENT_SDK_VERSION" ]]; then
+    echo "Updating aws.sdk.v2.version in benchmark pom: $CURRENT_SDK_VERSION -> $LOCAL_SDK_VERSION"
+    sed -i.bak "s|<aws.sdk.v2.version>$CURRENT_SDK_VERSION</aws.sdk.v2.version>|<aws.sdk.v2.version>$LOCAL_SDK_VERSION</aws.sdk.v2.version>|" "$DIR/pom.xml"
+    rm -f "$DIR/pom.xml.bak"
+fi
 (cd "$DIR" && mvn -q package)
 
 # ---- Manifest header ----
@@ -88,6 +97,7 @@ cat > "$MANIFEST" <<EOF
 - Hardware: $HW_CPU, $HW_CORES logical cores, $HW_MEM
 - Java: $(java -version 2>&1 | head -1)
 - Git: branch \`$GIT_BRANCH\`, commit \`$GIT_COMMIT\`, dirty files: $GIT_DIRTY
+- SDK V2 version: $LOCAL_SDK_VERSION (from repo root pom)
 - Benchmark module: test/standalone-e2e-benchmarks
 
 ## Parameters
