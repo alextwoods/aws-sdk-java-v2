@@ -1,0 +1,35 @@
+{
+    "version": "1.0",
+    "projections": {
+        "s3-client": {
+            "transforms": [
+                {
+                    "name": "includeServices",
+                    "args": {
+                        "services": ["com.amazonaws.s3#AmazonS3"]
+                    }
+                },
+                {
+                    "name": "removeUnusedShapes"
+                }
+            ],
+            "plugins": {
+                "java-codegen": {
+                    "service": "com.amazonaws.s3#AmazonS3",
+                    "name": "S3",
+                    "namespace": "software.amazon.awssdk.benchmark.smithyjava.s3",
+                    "protocol": "aws.protocols#restXml",
+                    "transport": {
+                        "http-java": {}
+                    },
+                    "modes": ["client"],
+                    "runtimeTraits": [
+                        "smithy.rules#contextParam",
+                        "smithy.rules#staticContextParams",
+                        "smithy.rules#operationContextParams"
+                    ]
+                }
+            }
+        }
+    }
+}

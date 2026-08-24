@@ -1,0 +1,8 @@
+{
+  "Item": {
+    "pk": {"S": "test-key"},
+    "sk": {"N": "42"},
+    "name": {"S": "test-item"},
+    "active": {"BOOL": true}
+  }
+}

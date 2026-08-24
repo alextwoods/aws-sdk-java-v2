@@ -1,0 +1,169 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "software.amazon.awssdk.benchmark",
+    "module": "smithy-java-cloudwatch-client",
+    "version": "1.0-SNAPSHOT",
+    "attributes": {
+      "org.gradle.status": "integration"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.5.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "smithy-java-cloudwatch-client-1.0-SNAPSHOT.jar",
+          "url": "smithy-java-cloudwatch-client-1.0-SNAPSHOT.jar",
+          "size": 1479844,
+          "sha512": "db693d8c241a7e68e352543211259470586ce6c8ef673f7cd73b557027c6c279f91b72169f51d22d00098de7e722b12ce9e4d6ec2fdc8f01a342d3c09b986cf8",
+          "sha256": "81e7584064189e4b90bf1d564e3c8b21d2094fa9b4473b218baeb306f6a286cc",
+          "sha1": "098136b786cc69e2cce567cb2aca57928f013129",
+          "md5": "76526c9df3ca942b33933b5b10b2f525"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "software.amazon.api.models",
+          "module": "cloudwatch",
+          "version": {
+            "requires": "1.0.17"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-aws-traits",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-rules-engine",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-waiters",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-awsquery",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-sigv4",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-credential-chain",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-credentials-imds",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-http-smithy",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "http-client",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-rulesengine",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-waiters",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "smithy-java-cloudwatch-client-1.0-SNAPSHOT.jar",
+          "url": "smithy-java-cloudwatch-client-1.0-SNAPSHOT.jar",
+          "size": 1479844,
+          "sha512": "db693d8c241a7e68e352543211259470586ce6c8ef673f7cd73b557027c6c279f91b72169f51d22d00098de7e722b12ce9e4d6ec2fdc8f01a342d3c09b986cf8",
+          "sha256": "81e7584064189e4b90bf1d564e3c8b21d2094fa9b4473b218baeb306f6a286cc",
+          "sha1": "098136b786cc69e2cce567cb2aca57928f013129",
+          "md5": "76526c9df3ca942b33933b5b10b2f525"
+        }
+      ]
+    }
+  ]
+}

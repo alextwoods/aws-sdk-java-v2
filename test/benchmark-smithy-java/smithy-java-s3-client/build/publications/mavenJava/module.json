@@ -1,0 +1,176 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "software.amazon.awssdk.benchmark",
+    "module": "smithy-java-s3-client",
+    "version": "1.0-SNAPSHOT",
+    "attributes": {
+      "org.gradle.status": "integration"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.5.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "smithy-java-s3-client-1.0-SNAPSHOT.jar",
+          "url": "smithy-java-s3-client-1.0-SNAPSHOT.jar",
+          "size": 3590355,
+          "sha512": "12e1e55d19ee9dabe2d6f8c3187ee6fc0040da4a695f079e001e9c8120cbaf77ecd815a3fbe6bc936b712d108cefc11cf0c0d9543991718e53a58e19204ec4d6",
+          "sha256": "def51960437e4cf8e122fba545353d37084cbdfef01fe83d4fbb4f8556a6f038",
+          "sha1": "c713126239d2ec1edff83a01a1c9454bac0a2b59",
+          "md5": "70f96a1e59b5a9112a1dd95b00a083df"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "software.amazon.api.models",
+          "module": "s3",
+          "version": {
+            "requires": "1.0.21"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-aws-traits",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-rules-engine",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-waiters",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-restxml",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-s3",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-sigv4",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-credential-chain",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-credentials-imds",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-http-smithy",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "http-client",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-rulesengine",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-waiters",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "smithy-java-s3-client-1.0-SNAPSHOT.jar",
+          "url": "smithy-java-s3-client-1.0-SNAPSHOT.jar",
+          "size": 3590355,
+          "sha512": "12e1e55d19ee9dabe2d6f8c3187ee6fc0040da4a695f079e001e9c8120cbaf77ecd815a3fbe6bc936b712d108cefc11cf0c0d9543991718e53a58e19204ec4d6",
+          "sha256": "def51960437e4cf8e122fba545353d37084cbdfef01fe83d4fbb4f8556a6f038",
+          "sha1": "c713126239d2ec1edff83a01a1c9454bac0a2b59",
+          "md5": "70f96a1e59b5a9112a1dd95b00a083df"
+        }
+      ]
+    }
+  ]
+}

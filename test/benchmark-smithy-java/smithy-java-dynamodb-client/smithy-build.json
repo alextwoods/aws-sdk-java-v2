@@ -1,0 +1,35 @@
+{
+    "version": "1.0",
+    "projections": {
+        "dynamodb-client": {
+            "transforms": [
+                {
+                    "name": "includeServices",
+                    "args": {
+                        "services": ["com.amazonaws.dynamodb#DynamoDB_20120810"]
+                    }
+                },
+                {
+                    "name": "removeUnusedShapes"
+                }
+            ],
+            "plugins": {
+                "java-codegen": {
+                    "service": "com.amazonaws.dynamodb#DynamoDB_20120810",
+                    "name": "DynamoDB",
+                    "namespace": "software.amazon.awssdk.benchmark.smithyjava.dynamodb",
+                    "protocol": "aws.protocols#awsJson1_0",
+                    "transport": {
+                        "http-java": {}
+                    },
+                    "modes": ["client"],
+                    "runtimeTraits": [
+                        "smithy.rules#contextParam",
+                        "smithy.rules#staticContextParams",
+                        "smithy.rules#operationContextParams"
+                    ]
+                }
+            }
+        }
+    }
+}

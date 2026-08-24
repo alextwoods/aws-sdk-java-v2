@@ -1,0 +1,169 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "software.amazon.awssdk.benchmark",
+    "module": "smithy-java-dynamodb-client",
+    "version": "1.0-SNAPSHOT",
+    "attributes": {
+      "org.gradle.status": "integration"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.5.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "smithy-java-dynamodb-client-1.0-SNAPSHOT.jar",
+          "url": "smithy-java-dynamodb-client-1.0-SNAPSHOT.jar",
+          "size": 2548180,
+          "sha512": "7a8c295f032d8cfe873b63523330de32d9ac7d604b3deb0bd5298dfe47652615059040baf5b58650e2a754e0d72a71f202f1e3ee2a04030ccd9e6e1fd0856bb9",
+          "sha256": "0ab62c390653e6d693b7791b4a1008ad3205e6fc27a6640075238b2051bc18dc",
+          "sha1": "09b38672626d69238ba7b71837aaa83d4b78a9a5",
+          "md5": "99f85263872ae85572211d73d49ef5df"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "software.amazon.api.models",
+          "module": "dynamodb",
+          "version": {
+            "requires": "1.0.14"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-aws-traits",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-rules-engine",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy",
+          "module": "smithy-waiters",
+          "version": {
+            "requires": "1.54.0"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-awsjson",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-sigv4",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-credential-chain",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-credentials-imds",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-http-smithy",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "http-client",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "aws-client-rulesengine",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-waiters",
+          "version": {
+            "requires": "1.5.1"
+          }
+        },
+        {
+          "group": "software.amazon.smithy.java",
+          "module": "client-core",
+          "version": {
+            "requires": "1.5.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "smithy-java-dynamodb-client-1.0-SNAPSHOT.jar",
+          "url": "smithy-java-dynamodb-client-1.0-SNAPSHOT.jar",
+          "size": 2548180,
+          "sha512": "7a8c295f032d8cfe873b63523330de32d9ac7d604b3deb0bd5298dfe47652615059040baf5b58650e2a754e0d72a71f202f1e3ee2a04030ccd9e6e1fd0856bb9",
+          "sha256": "0ab62c390653e6d693b7791b4a1008ad3205e6fc27a6640075238b2051bc18dc",
+          "sha1": "09b38672626d69238ba7b71837aaa83d4b78a9a5",
+          "md5": "99f85263872ae85572211d73d49ef5df"
+        }
+      ]
+    }
+  ]
+}

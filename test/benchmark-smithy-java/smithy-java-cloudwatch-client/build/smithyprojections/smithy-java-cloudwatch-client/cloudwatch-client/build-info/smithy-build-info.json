@@ -1,0 +1,787 @@
+{
+    "metadata": {
+        "suppressions": [
+            {
+                "id": "HttpMethodSemantics",
+                "namespace": "*"
+            },
+            {
+                "id": "HttpResponseCodeSemantics",
+                "namespace": "*"
+            },
+            {
+                "id": "PaginatedTrait",
+                "namespace": "*"
+            },
+            {
+                "id": "HttpHeaderTrait",
+                "namespace": "*"
+            },
+            {
+                "id": "HttpUriConflict",
+                "namespace": "*"
+            },
+            {
+                "id": "Service",
+                "namespace": "*"
+            },
+            {
+                "id": "QueryErrorCode",
+                "namespace": "*"
+            }
+        ]
+    },
+    "operationShapeIds": [
+        "com.amazonaws.cloudwatch#AssociateDatasetKmsKey",
+        "com.amazonaws.cloudwatch#DeleteAlarmMuteRule",
+        "com.amazonaws.cloudwatch#DeleteAlarms",
+        "com.amazonaws.cloudwatch#DeleteAnomalyDetector",
+        "com.amazonaws.cloudwatch#DeleteDashboards",
+        "com.amazonaws.cloudwatch#DeleteInsightRules",
+        "com.amazonaws.cloudwatch#DeleteMetricStream",
+        "com.amazonaws.cloudwatch#DescribeAlarmContributors",
+        "com.amazonaws.cloudwatch#DescribeAlarmHistory",
+        "com.amazonaws.cloudwatch#DescribeAlarms",
+        "com.amazonaws.cloudwatch#DescribeAlarmsForMetric",
+        "com.amazonaws.cloudwatch#DescribeAnomalyDetectors",
+        "com.amazonaws.cloudwatch#DescribeInsightRules",
+        "com.amazonaws.cloudwatch#DisableAlarmActions",
+        "com.amazonaws.cloudwatch#DisableInsightRules",
+        "com.amazonaws.cloudwatch#DisassociateDatasetKmsKey",
+        "com.amazonaws.cloudwatch#EnableAlarmActions",
+        "com.amazonaws.cloudwatch#EnableInsightRules",
+        "com.amazonaws.cloudwatch#GetAlarmMuteRule",
+        "com.amazonaws.cloudwatch#GetDashboard",
+        "com.amazonaws.cloudwatch#GetDataset",
+        "com.amazonaws.cloudwatch#GetInsightRuleReport",
+        "com.amazonaws.cloudwatch#GetMetricData",
+        "com.amazonaws.cloudwatch#GetMetricStatistics",
+        "com.amazonaws.cloudwatch#GetMetricStream",
+        "com.amazonaws.cloudwatch#GetMetricWidgetImage",
+        "com.amazonaws.cloudwatch#GetOTelEnrichment",
+        "com.amazonaws.cloudwatch#ListAlarmMuteRules",
+        "com.amazonaws.cloudwatch#ListDashboards",
+        "com.amazonaws.cloudwatch#ListManagedInsightRules",
+        "com.amazonaws.cloudwatch#ListMetrics",
+        "com.amazonaws.cloudwatch#ListMetricStreams",
+        "com.amazonaws.cloudwatch#ListTagsForResource",
+        "com.amazonaws.cloudwatch#PutAlarmMuteRule",
+        "com.amazonaws.cloudwatch#PutAnomalyDetector",
+        "com.amazonaws.cloudwatch#PutCompositeAlarm",
+        "com.amazonaws.cloudwatch#PutDashboard",
+        "com.amazonaws.cloudwatch#PutInsightRule",
+        "com.amazonaws.cloudwatch#PutLogAlarm",
+        "com.amazonaws.cloudwatch#PutManagedInsightRules",
+        "com.amazonaws.cloudwatch#PutMetricAlarm",
+        "com.amazonaws.cloudwatch#PutMetricData",
+        "com.amazonaws.cloudwatch#PutMetricStream",
+        "com.amazonaws.cloudwatch#SetAlarmState",
+        "com.amazonaws.cloudwatch#StartMetricStreams",
+        "com.amazonaws.cloudwatch#StartOTelEnrichment",
+        "com.amazonaws.cloudwatch#StopMetricStreams",
+        "com.amazonaws.cloudwatch#StopOTelEnrichment",
+        "com.amazonaws.cloudwatch#TagResource",
+        "com.amazonaws.cloudwatch#UntagResource"
+    ],
+    "projection": {
+        "abstract": false,
+        "imports": [],
+        "plugins": {
+            "java-codegen": {
+                "service": "com.amazonaws.cloudwatch#GraniteServiceVersion20100801",
+                "name": "CloudWatch",
+                "namespace": "software.amazon.awssdk.benchmark.smithyjava.cloudwatch",
+                "protocol": "aws.protocols#awsQuery",
+                "transport": {
+                    "http-java": {}
+                },
+                "modes": [
+                    "client"
+                ],
+                "runtimeTraits": [
+                    "smithy.rules#contextParam",
+                    "smithy.rules#staticContextParams",
+                    "smithy.rules#operationContextParams"
+                ]
+            }
+        },
+        "transforms": [
+            {
+                "args": {
+                    "services": [
+                        "com.amazonaws.cloudwatch#GraniteServiceVersion20100801"
+                    ]
+                },
+                "name": "includeServices"
+            },
+            {
+                "args": {},
+                "name": "removeUnusedShapes"
+            }
+        ]
+    },
+    "projectionName": "cloudwatch-client",
+    "resourceShapeIds": [],
+    "serviceShapeIds": [
+        "com.amazonaws.cloudwatch#GraniteServiceVersion20100801"
+    ],
+    "traitDefNames": [
+        "aws.api#service",
+        "aws.auth#sigv4",
+        "aws.protocols#awsJson1_0",
+        "aws.protocols#awsQuery",
+        "aws.protocols#awsQueryCompatible",
+        "aws.protocols#awsQueryError",
+        "smithy.api#addedDefault",
+        "smithy.api#auth",
+        "smithy.api#authDefinition",
+        "smithy.api#box",
+        "smithy.api#clientOptional",
+        "smithy.api#cors",
+        "smithy.api#default",
+        "smithy.api#deprecated",
+        "smithy.api#documentation",
+        "smithy.api#endpoint",
+        "smithy.api#enum",
+        "smithy.api#enumValue",
+        "smithy.api#error",
+        "smithy.api#eventHeader",
+        "smithy.api#eventPayload",
+        "smithy.api#examples",
+        "smithy.api#externalDocumentation",
+        "smithy.api#hostLabel",
+        "smithy.api#http",
+        "smithy.api#httpApiKeyAuth",
+        "smithy.api#httpBasicAuth",
+        "smithy.api#httpBearerAuth",
+        "smithy.api#httpChecksumRequired",
+        "smithy.api#httpDigestAuth",
+        "smithy.api#httpError",
+        "smithy.api#httpHeader",
+        "smithy.api#httpLabel",
+        "smithy.api#httpPayload",
+        "smithy.api#httpPrefixHeaders",
+        "smithy.api#httpQuery",
+        "smithy.api#httpQueryParams",
+        "smithy.api#httpResponseCode",
+        "smithy.api#idempotencyToken",
+        "smithy.api#idempotent",
+        "smithy.api#idRef",
+        "smithy.api#input",
+        "smithy.api#internal",
+        "smithy.api#jsonName",
+        "smithy.api#length",
+        "smithy.api#longPoll",
+        "smithy.api#mediaType",
+        "smithy.api#metadata",
+        "smithy.api#mixin",
+        "smithy.api#nestedProperties",
+        "smithy.api#noReplace",
+        "smithy.api#notProperty",
+        "smithy.api#optionalAuth",
+        "smithy.api#output",
+        "smithy.api#paginated",
+        "smithy.api#pattern",
+        "smithy.api#private",
+        "smithy.api#property",
+        "smithy.api#protocolDefinition",
+        "smithy.api#range",
+        "smithy.api#readonly",
+        "smithy.api#recommended",
+        "smithy.api#references",
+        "smithy.api#requestCompression",
+        "smithy.api#required",
+        "smithy.api#requiresLength",
+        "smithy.api#resourceIdentifier",
+        "smithy.api#retryable",
+        "smithy.api#sensitive",
+        "smithy.api#since",
+        "smithy.api#sparse",
+        "smithy.api#streaming",
+        "smithy.api#suppress",
+        "smithy.api#tags",
+        "smithy.api#timestampFormat",
+        "smithy.api#title",
+        "smithy.api#trait",
+        "smithy.api#traitValidators",
+        "smithy.api#uniqueItems",
+        "smithy.api#unitType",
+        "smithy.api#unstable",
+        "smithy.api#xmlAttribute",
+        "smithy.api#xmlFlattened",
+        "smithy.api#xmlName",
+        "smithy.api#xmlNamespace",
+        "smithy.protocols#rpcv2Cbor",
+        "smithy.rules#endpointBdd",
+        "smithy.rules#endpointRuleSet",
+        "smithy.rules#endpointTests",
+        "smithy.test#smokeTests",
+        "smithy.waiters#waitable"
+    ],
+    "traitNames": [
+        "aws.api#service",
+        "aws.auth#sigv4",
+        "aws.protocols#awsJson1_0",
+        "aws.protocols#awsQuery",
+        "aws.protocols#awsQueryCompatible",
+        "aws.protocols#awsQueryError",
+        "smithy.api#authDefinition",
+        "smithy.api#box",
+        "smithy.api#clientOptional",
+        "smithy.api#default",
+        "smithy.api#deprecated",
+        "smithy.api#documentation",
+        "smithy.api#enumValue",
+        "smithy.api#error",
+        "smithy.api#externalDocumentation",
+        "smithy.api#httpError",
+        "smithy.api#idempotent",
+        "smithy.api#idRef",
+        "smithy.api#input",
+        "smithy.api#length",
+        "smithy.api#mediaType",
+        "smithy.api#metadata",
+        "smithy.api#mixin",
+        "smithy.api#notProperty",
+        "smithy.api#output",
+        "smithy.api#paginated",
+        "smithy.api#pattern",
+        "smithy.api#private",
+        "smithy.api#protocolDefinition",
+        "smithy.api#range",
+        "smithy.api#readonly",
+        "smithy.api#requestCompression",
+        "smithy.api#required",
+        "smithy.api#suppress",
+        "smithy.api#tags",
+        "smithy.api#title",
+        "smithy.api#trait",
+        "smithy.api#traitValidators",
+        "smithy.api#uniqueItems",
+        "smithy.api#unitType",
+        "smithy.api#unstable",
+        "smithy.api#xmlNamespace",
+        "smithy.protocols#rpcv2Cbor",
+        "smithy.rules#endpointBdd",
+        "smithy.rules#endpointRuleSet",
+        "smithy.rules#endpointTests",
+        "smithy.test#smokeTests",
+        "smithy.waiters#waitable"
+    ],
+    "validationEvents": [
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#Statistic$SampleCount",
+            "message": "The name `SampleCount` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8492,
+            "column": 24
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#Statistic$Average",
+            "message": "The name `Average` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8498,
+            "column": 20
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#Statistic$Sum",
+            "message": "The name `Sum` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8504,
+            "column": 16
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#Statistic$Minimum",
+            "message": "The name `Minimum` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8510,
+            "column": 20
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#Statistic$Maximum",
+            "message": "The name `Maximum` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8516,
+            "column": 20
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#HistoryItemType$ConfigurationUpdate",
+            "message": "The name `ConfigurationUpdate` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 4581,
+            "column": 32
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#HistoryItemType$StateUpdate",
+            "message": "The name `StateUpdate` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 4587,
+            "column": 24
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#HistoryItemType$Action",
+            "message": "The name `Action` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 4593,
+            "column": 19
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#HistoryItemType$AlarmContributorStateUpdate",
+            "message": "The name `AlarmContributorStateUpdate` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 4599,
+            "column": 40
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#HistoryItemType$AlarmContributorAction",
+            "message": "The name `AlarmContributorAction` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 4605,
+            "column": 35
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ComparisonOperator$GreaterThanOrEqualToThreshold",
+            "message": "The name `GreaterThanOrEqualToThreshold` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 711,
+            "column": 42
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ComparisonOperator$GreaterThanThreshold",
+            "message": "The name `GreaterThanThreshold` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 717,
+            "column": 33
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ComparisonOperator$LessThanThreshold",
+            "message": "The name `LessThanThreshold` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 723,
+            "column": 30
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ComparisonOperator$LessThanOrEqualToThreshold",
+            "message": "The name `LessThanOrEqualToThreshold` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 729,
+            "column": 39
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ComparisonOperator$LessThanLowerOrGreaterThanUpperThreshold",
+            "message": "The name `LessThanLowerOrGreaterThanUpperThreshold` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 735,
+            "column": 53
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ComparisonOperator$LessThanLowerThreshold",
+            "message": "The name `LessThanLowerThreshold` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 741,
+            "column": 35
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ComparisonOperator$GreaterThanUpperThreshold",
+            "message": "The name `GreaterThanUpperThreshold` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 747,
+            "column": 38
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#AlarmType$CompositeAlarm",
+            "message": "The name `CompositeAlarm` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 371,
+            "column": 27
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#AlarmType$MetricAlarm",
+            "message": "The name `MetricAlarm` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 377,
+            "column": 24
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#AlarmType$LogAlarm",
+            "message": "The name `LogAlarm` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 383,
+            "column": 21
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Seconds",
+            "message": "The name `Seconds` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8200,
+            "column": 20
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Microseconds",
+            "message": "The name `Microseconds` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8206,
+            "column": 25
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Milliseconds",
+            "message": "The name `Milliseconds` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8212,
+            "column": 25
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Bytes",
+            "message": "The name `Bytes` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8218,
+            "column": 18
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Kilobytes",
+            "message": "The name `Kilobytes` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8224,
+            "column": 22
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Megabytes",
+            "message": "The name `Megabytes` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8230,
+            "column": 22
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Gigabytes",
+            "message": "The name `Gigabytes` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8236,
+            "column": 22
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Terabytes",
+            "message": "The name `Terabytes` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8242,
+            "column": 22
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Bits",
+            "message": "The name `Bits` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8248,
+            "column": 17
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Kilobits",
+            "message": "The name `Kilobits` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8254,
+            "column": 21
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Megabits",
+            "message": "The name `Megabits` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8260,
+            "column": 21
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Gigabits",
+            "message": "The name `Gigabits` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8266,
+            "column": 21
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Terabits",
+            "message": "The name `Terabits` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8272,
+            "column": 21
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Percent",
+            "message": "The name `Percent` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8278,
+            "column": 20
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Count",
+            "message": "The name `Count` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8284,
+            "column": 18
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Bytes_Second",
+            "message": "The name `Bytes_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8290,
+            "column": 25
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Kilobytes_Second",
+            "message": "The name `Kilobytes_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8296,
+            "column": 29
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Megabytes_Second",
+            "message": "The name `Megabytes_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8302,
+            "column": 29
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Gigabytes_Second",
+            "message": "The name `Gigabytes_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8308,
+            "column": 29
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Terabytes_Second",
+            "message": "The name `Terabytes_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8314,
+            "column": 29
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Bits_Second",
+            "message": "The name `Bits_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8320,
+            "column": 24
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Kilobits_Second",
+            "message": "The name `Kilobits_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8326,
+            "column": 28
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Megabits_Second",
+            "message": "The name `Megabits_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8332,
+            "column": 28
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Gigabits_Second",
+            "message": "The name `Gigabits_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8338,
+            "column": 28
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Terabits_Second",
+            "message": "The name `Terabits_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8344,
+            "column": 28
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$Count_Second",
+            "message": "The name `Count_Second` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8350,
+            "column": 25
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#StandardUnit$None",
+            "message": "The name `None` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 8356,
+            "column": 17
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ActionsSuppressedBy$WaitPeriod",
+            "message": "The name `WaitPeriod` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 66,
+            "column": 23
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ActionsSuppressedBy$ExtensionPeriod",
+            "message": "The name `ExtensionPeriod` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 72,
+            "column": 28
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#ActionsSuppressedBy$Alarm",
+            "message": "The name `Alarm` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 78,
+            "column": 18
+        },
+        {
+            "id": "QueryErrorCode",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.cloudwatch#GraniteServiceVersion20100801",
+            "message": "Multiple error shapes with the error code `ResourceNotFound` found: [com.amazonaws.cloudwatch#DashboardNotFoundError, com.amazonaws.cloudwatch#ResourceNotFound]. This error code ambiguity will result in the wrong error shape being deserialized when running the query protocol. This pain will be carried forward when migrating to a new protocol when using the awsQueryCompatible trait.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 3428,
+            "column": 63
+        },
+        {
+            "id": "DeprecatedTrait",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#GraniteServiceVersion20100801",
+            "message": "This shape applies a trait that is deprecated: aws.protocols#awsQuery",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 3596,
+            "column": 35
+        },
+        {
+            "id": "PatternTrait",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#Namespace",
+            "message": "A pattern trait is applied without a trailing '$', meaning only part of the string must match the regular expression. Explicitly anchoring regular expressions is preferable because it is more restrictive by default and does not require modelers to understand that Smithy patterns are not automatically anchored.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 6710,
+            "column": 31
+        },
+        {
+            "id": "PatternTrait",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#AnomalyDetectorMetricTimezone",
+            "message": "A pattern trait is applied without a leading '^' and trailing '$', meaning only part of the string must match the regular expression. Explicitly anchoring regular expressions is preferable because it is more restrictive by default and does not require modelers to understand that Smithy patterns are not automatically anchored.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 551,
+            "column": 31
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#endpointBdd",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#GraniteServiceVersion20100801",
+            "message": "This shape applies a trait that is unstable: smithy.rules#endpointBdd",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 3604,
+            "column": 37
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#endpointRuleSet",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#GraniteServiceVersion20100801",
+            "message": "This shape applies a trait that is unstable: smithy.rules#endpointRuleSet",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 3807,
+            "column": 41
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#endpointTests",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.cloudwatch#GraniteServiceVersion20100801",
+            "message": "This shape applies a trait that is unstable: smithy.rules#endpointTests",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/cloudwatch/1.0.17/e952d8bbd017d22cd7c2c02f63427525a1d3a727/cloudwatch-1.0.17.jar!/META-INF/smithy/2010-08-01/cloudwatch-2010-08-01.json",
+            "line": 4237,
+            "column": 39
+        }
+    ],
+    "version": "1.0"
+}

@@ -1,0 +1,947 @@
+{
+    "metadata": {
+        "suppressions": [
+            {
+                "id": "HttpMethodSemantics",
+                "namespace": "*"
+            },
+            {
+                "id": "HttpResponseCodeSemantics",
+                "namespace": "*"
+            },
+            {
+                "id": "PaginatedTrait",
+                "namespace": "*"
+            },
+            {
+                "id": "HttpHeaderTrait",
+                "namespace": "*"
+            },
+            {
+                "id": "HttpUriConflict",
+                "namespace": "*"
+            },
+            {
+                "id": "Service",
+                "namespace": "*"
+            },
+            {
+                "id": "RuleSetAwsBuiltIn.AWS::Auth::AccountIdEndpointMode",
+                "namespace": "*"
+            },
+            {
+                "id": "RuleSetAwsBuiltIn.AWS::Auth::AccountId",
+                "namespace": "*"
+            }
+        ]
+    },
+    "operationShapeIds": [
+        "com.amazonaws.dynamodb#BatchExecuteStatement",
+        "com.amazonaws.dynamodb#BatchGetItem",
+        "com.amazonaws.dynamodb#BatchWriteItem",
+        "com.amazonaws.dynamodb#CreateBackup",
+        "com.amazonaws.dynamodb#CreateGlobalTable",
+        "com.amazonaws.dynamodb#CreateTable",
+        "com.amazonaws.dynamodb#DeleteBackup",
+        "com.amazonaws.dynamodb#DeleteItem",
+        "com.amazonaws.dynamodb#DeleteResourcePolicy",
+        "com.amazonaws.dynamodb#DeleteTable",
+        "com.amazonaws.dynamodb#DescribeBackup",
+        "com.amazonaws.dynamodb#DescribeContinuousBackups",
+        "com.amazonaws.dynamodb#DescribeContributorInsights",
+        "com.amazonaws.dynamodb#DescribeEndpoints",
+        "com.amazonaws.dynamodb#DescribeExport",
+        "com.amazonaws.dynamodb#DescribeGlobalTable",
+        "com.amazonaws.dynamodb#DescribeGlobalTableSettings",
+        "com.amazonaws.dynamodb#DescribeImport",
+        "com.amazonaws.dynamodb#DescribeKinesisStreamingDestination",
+        "com.amazonaws.dynamodb#DescribeLimits",
+        "com.amazonaws.dynamodb#DescribeTable",
+        "com.amazonaws.dynamodb#DescribeTableReplicaAutoScaling",
+        "com.amazonaws.dynamodb#DescribeTimeToLive",
+        "com.amazonaws.dynamodb#DisableKinesisStreamingDestination",
+        "com.amazonaws.dynamodb#EnableKinesisStreamingDestination",
+        "com.amazonaws.dynamodb#ExecuteStatement",
+        "com.amazonaws.dynamodb#ExecuteTransaction",
+        "com.amazonaws.dynamodb#ExportTableToPointInTime",
+        "com.amazonaws.dynamodb#GetItem",
+        "com.amazonaws.dynamodb#GetResourcePolicy",
+        "com.amazonaws.dynamodb#ImportTable",
+        "com.amazonaws.dynamodb#ListBackups",
+        "com.amazonaws.dynamodb#ListContributorInsights",
+        "com.amazonaws.dynamodb#ListExports",
+        "com.amazonaws.dynamodb#ListGlobalTables",
+        "com.amazonaws.dynamodb#ListImports",
+        "com.amazonaws.dynamodb#ListTables",
+        "com.amazonaws.dynamodb#ListTagsOfResource",
+        "com.amazonaws.dynamodb#PutItem",
+        "com.amazonaws.dynamodb#PutResourcePolicy",
+        "com.amazonaws.dynamodb#Query",
+        "com.amazonaws.dynamodb#RestoreTableFromBackup",
+        "com.amazonaws.dynamodb#RestoreTableToPointInTime",
+        "com.amazonaws.dynamodb#Scan",
+        "com.amazonaws.dynamodb#SearchVectors",
+        "com.amazonaws.dynamodb#TagResource",
+        "com.amazonaws.dynamodb#TransactGetItems",
+        "com.amazonaws.dynamodb#TransactWriteItems",
+        "com.amazonaws.dynamodb#UntagResource",
+        "com.amazonaws.dynamodb#UpdateContinuousBackups",
+        "com.amazonaws.dynamodb#UpdateContributorInsights",
+        "com.amazonaws.dynamodb#UpdateGlobalTable",
+        "com.amazonaws.dynamodb#UpdateGlobalTableSettings",
+        "com.amazonaws.dynamodb#UpdateItem",
+        "com.amazonaws.dynamodb#UpdateKinesisStreamingDestination",
+        "com.amazonaws.dynamodb#UpdateTable",
+        "com.amazonaws.dynamodb#UpdateTableReplicaAutoScaling",
+        "com.amazonaws.dynamodb#UpdateTimeToLive"
+    ],
+    "projection": {
+        "abstract": false,
+        "imports": [],
+        "plugins": {
+            "java-codegen": {
+                "service": "com.amazonaws.dynamodb#DynamoDB_20120810",
+                "name": "DynamoDB",
+                "namespace": "software.amazon.awssdk.benchmark.smithyjava.dynamodb",
+                "protocol": "aws.protocols#awsJson1_0",
+                "transport": {
+                    "http-java": {}
+                },
+                "modes": [
+                    "client"
+                ],
+                "runtimeTraits": [
+                    "smithy.rules#contextParam",
+                    "smithy.rules#staticContextParams",
+                    "smithy.rules#operationContextParams"
+                ]
+            }
+        },
+        "transforms": [
+            {
+                "args": {
+                    "services": [
+                        "com.amazonaws.dynamodb#DynamoDB_20120810"
+                    ]
+                },
+                "name": "includeServices"
+            },
+            {
+                "args": {},
+                "name": "removeUnusedShapes"
+            }
+        ]
+    },
+    "projectionName": "dynamodb-client",
+    "resourceShapeIds": [],
+    "serviceShapeIds": [
+        "com.amazonaws.dynamodb#DynamoDB_20120810"
+    ],
+    "traitDefNames": [
+        "aws.api#clientDiscoveredEndpoint",
+        "aws.api#clientEndpointDiscovery",
+        "aws.api#service",
+        "aws.auth#sigv4",
+        "aws.protocols#awsJson1_0",
+        "aws.protocols#awsQueryError",
+        "smithy.api#addedDefault",
+        "smithy.api#auth",
+        "smithy.api#authDefinition",
+        "smithy.api#box",
+        "smithy.api#clientOptional",
+        "smithy.api#cors",
+        "smithy.api#default",
+        "smithy.api#deprecated",
+        "smithy.api#documentation",
+        "smithy.api#endpoint",
+        "smithy.api#enum",
+        "smithy.api#enumValue",
+        "smithy.api#error",
+        "smithy.api#eventHeader",
+        "smithy.api#eventPayload",
+        "smithy.api#examples",
+        "smithy.api#externalDocumentation",
+        "smithy.api#hostLabel",
+        "smithy.api#http",
+        "smithy.api#httpApiKeyAuth",
+        "smithy.api#httpBasicAuth",
+        "smithy.api#httpBearerAuth",
+        "smithy.api#httpChecksumRequired",
+        "smithy.api#httpDigestAuth",
+        "smithy.api#httpError",
+        "smithy.api#httpHeader",
+        "smithy.api#httpLabel",
+        "smithy.api#httpPayload",
+        "smithy.api#httpPrefixHeaders",
+        "smithy.api#httpQuery",
+        "smithy.api#httpQueryParams",
+        "smithy.api#httpResponseCode",
+        "smithy.api#idempotencyToken",
+        "smithy.api#idempotent",
+        "smithy.api#idRef",
+        "smithy.api#input",
+        "smithy.api#internal",
+        "smithy.api#jsonName",
+        "smithy.api#length",
+        "smithy.api#longPoll",
+        "smithy.api#mediaType",
+        "smithy.api#metadata",
+        "smithy.api#mixin",
+        "smithy.api#nestedProperties",
+        "smithy.api#noReplace",
+        "smithy.api#notProperty",
+        "smithy.api#optionalAuth",
+        "smithy.api#output",
+        "smithy.api#paginated",
+        "smithy.api#pattern",
+        "smithy.api#private",
+        "smithy.api#property",
+        "smithy.api#protocolDefinition",
+        "smithy.api#range",
+        "smithy.api#readonly",
+        "smithy.api#recommended",
+        "smithy.api#references",
+        "smithy.api#requestCompression",
+        "smithy.api#required",
+        "smithy.api#requiresLength",
+        "smithy.api#resourceIdentifier",
+        "smithy.api#retryable",
+        "smithy.api#sensitive",
+        "smithy.api#since",
+        "smithy.api#sparse",
+        "smithy.api#streaming",
+        "smithy.api#suppress",
+        "smithy.api#tags",
+        "smithy.api#timestampFormat",
+        "smithy.api#title",
+        "smithy.api#trait",
+        "smithy.api#traitValidators",
+        "smithy.api#uniqueItems",
+        "smithy.api#unitType",
+        "smithy.api#unstable",
+        "smithy.api#xmlAttribute",
+        "smithy.api#xmlFlattened",
+        "smithy.api#xmlName",
+        "smithy.api#xmlNamespace",
+        "smithy.rules#contextParam",
+        "smithy.rules#endpointBdd",
+        "smithy.rules#endpointRuleSet",
+        "smithy.rules#endpointTests",
+        "smithy.rules#operationContextParams",
+        "smithy.rules#staticContextParams",
+        "smithy.test#smokeTests",
+        "smithy.waiters#waitable"
+    ],
+    "traitNames": [
+        "aws.api#clientDiscoveredEndpoint",
+        "aws.api#clientEndpointDiscovery",
+        "aws.api#service",
+        "aws.auth#sigv4",
+        "aws.protocols#awsJson1_0",
+        "aws.protocols#awsQueryError",
+        "smithy.api#authDefinition",
+        "smithy.api#box",
+        "smithy.api#default",
+        "smithy.api#deprecated",
+        "smithy.api#documentation",
+        "smithy.api#enumValue",
+        "smithy.api#error",
+        "smithy.api#examples",
+        "smithy.api#externalDocumentation",
+        "smithy.api#httpError",
+        "smithy.api#httpHeader",
+        "smithy.api#idempotencyToken",
+        "smithy.api#idRef",
+        "smithy.api#input",
+        "smithy.api#length",
+        "smithy.api#mediaType",
+        "smithy.api#metadata",
+        "smithy.api#mixin",
+        "smithy.api#notProperty",
+        "smithy.api#output",
+        "smithy.api#paginated",
+        "smithy.api#pattern",
+        "smithy.api#private",
+        "smithy.api#protocolDefinition",
+        "smithy.api#range",
+        "smithy.api#recommended",
+        "smithy.api#required",
+        "smithy.api#retryable",
+        "smithy.api#suppress",
+        "smithy.api#tags",
+        "smithy.api#title",
+        "smithy.api#trait",
+        "smithy.api#uniqueItems",
+        "smithy.api#unitType",
+        "smithy.api#unstable",
+        "smithy.api#xmlNamespace",
+        "smithy.rules#contextParam",
+        "smithy.rules#endpointBdd",
+        "smithy.rules#endpointRuleSet",
+        "smithy.rules#endpointTests",
+        "smithy.rules#operationContextParams",
+        "smithy.rules#staticContextParams",
+        "smithy.test#smokeTests",
+        "smithy.waiters#waitable"
+    ],
+    "validationEvents": [
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$ConditionalCheckFailed",
+            "message": "The name `ConditionalCheckFailed` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1037,
+            "column": 35
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$ItemCollectionSizeLimitExceeded",
+            "message": "The name `ItemCollectionSizeLimitExceeded` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1043,
+            "column": 44
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$RequestLimitExceeded",
+            "message": "The name `RequestLimitExceeded` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1049,
+            "column": 33
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$ValidationError",
+            "message": "The name `ValidationError` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1055,
+            "column": 28
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$ProvisionedThroughputExceeded",
+            "message": "The name `ProvisionedThroughputExceeded` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1061,
+            "column": 42
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$TransactionConflict",
+            "message": "The name `TransactionConflict` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1067,
+            "column": 32
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$ThrottlingError",
+            "message": "The name `ThrottlingError` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1073,
+            "column": 28
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$InternalServerError",
+            "message": "The name `InternalServerError` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1079,
+            "column": 32
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$ResourceNotFound",
+            "message": "The name `ResourceNotFound` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1085,
+            "column": 29
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$AccessDenied",
+            "message": "The name `AccessDenied` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1091,
+            "column": 25
+        },
+        {
+            "id": "EnumShape",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchStatementErrorCodeEnum$DuplicateItem",
+            "message": "The name `DuplicateItem` does not match the recommended enum name format of beginning with an uppercase letter, followed by any number of uppercase letters, numbers, or underscores.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1097,
+            "column": 26
+        },
+        {
+            "id": "RuleSetAwsBuiltIn.AWS::Auth::AccountId",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#DynamoDB_20120810",
+            "message": "The `AWS::Auth::AccountId` built-in used requires additional consideration of the rules that use it.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 5012,
+            "column": 26
+        },
+        {
+            "id": "RuleSetAwsBuiltIn.AWS::Auth::AccountIdEndpointMode",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#DynamoDB_20120810",
+            "message": "The `AWS::Auth::AccountIdEndpointMode` built-in used requires additional consideration of the rules that use it.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 5018,
+            "column": 38
+        },
+        {
+            "id": "RuleSetAwsBuiltIn.AWS::Auth::AccountId",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#DynamoDB_20120810",
+            "message": "The `AWS::Auth::AccountId` built-in used requires additional consideration of the rules that use it.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 4251,
+            "column": 26
+        },
+        {
+            "id": "RuleSetAwsBuiltIn.AWS::Auth::AccountIdEndpointMode",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#DynamoDB_20120810",
+            "message": "The `AWS::Auth::AccountIdEndpointMode` built-in used requires additional consideration of the rules that use it.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 4257,
+            "column": 38
+        },
+        {
+            "id": "PaginatedTrait.WrongShapeType.inputToken",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#Scan",
+            "message": "paginated trait `inputToken` member `ExclusiveStartKey` targets a map shape, but this is not recommended. One of [`string`] SHOULD be targeted.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 27622,
+            "column": 33
+        },
+        {
+            "id": "PaginatedTrait.WrongShapeType.outputToken",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#Scan",
+            "message": "paginated trait `outputToken` member `LastEvaluatedKey` targets a map shape, but this is not recommended. One of [`string`] SHOULD be targeted.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 27622,
+            "column": 33
+        },
+        {
+            "id": "PaginatedTrait.WrongShapeType.inputToken",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#Query",
+            "message": "paginated trait `inputToken` member `ExclusiveStartKey` targets a map shape, but this is not recommended. One of [`string`] SHOULD be targeted.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 26015,
+            "column": 33
+        },
+        {
+            "id": "PaginatedTrait.WrongShapeType.outputToken",
+            "severity": "SUPPRESSED",
+            "shapeId": "com.amazonaws.dynamodb#Query",
+            "message": "paginated trait `outputToken` member `LastEvaluatedKey` targets a map shape, but this is not recommended. One of [`string`] SHOULD be targeted.",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 26015,
+            "column": 33
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#operationContextParams",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#TransactGetItems",
+            "message": "This shape applies a trait that is unstable: smithy.rules#operationContextParams",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29077,
+            "column": 48
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#operationContextParams",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ImportTable",
+            "message": "This shape applies a trait that is unstable: smithy.rules#operationContextParams",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 23683,
+            "column": 48
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#operationContextParams",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchGetItem",
+            "message": "This shape applies a trait that is unstable: smithy.rules#operationContextParams",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 931,
+            "column": 48
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#operationContextParams",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#BatchWriteItem",
+            "message": "This shape applies a trait that is unstable: smithy.rules#operationContextParams",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1261,
+            "column": 48
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#operationContextParams",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#TransactWriteItems",
+            "message": "This shape applies a trait that is unstable: smithy.rules#operationContextParams",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29211,
+            "column": 48
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ScanInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 27641,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DeleteTableInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 2954,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DeleteBackupInput$BackupArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 2546,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#RestoreTableToPointInTimeInput$TargetTableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 27162,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeTimeToLiveInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3907,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateKinesisStreamingDestinationInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 30058,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeGlobalTableSettingsInput$GlobalTableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3443,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeBackupInput$BackupArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3032,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateContributorInsightsInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29517,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DeleteItemInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 2678,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateTableReplicaAutoScalingInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 30354,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeKinesisStreamingDestinationInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3621,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ListTagsOfResourceInput$ResourceArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 24997,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateTableInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 30204,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ListExportsInput$TableArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 24654,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#CreateGlobalTableInput$GlobalTableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 2085,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeTableReplicaAutoScalingInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3849,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#KinesisStreamingDestinationInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 24375,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeContinuousBackupsInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3090,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeContributorInsightsInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3169,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#RestoreTableFromBackupInput$TargetTableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 27031,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateItemInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29896,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#CreateBackupInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 1967,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeImportInput$ImportArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3535,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#TagResourceInput$ResourceArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 28842,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#GetItemInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 22871,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#PutItemInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 25746,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateGlobalTableSettingsInput$GlobalTableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29734,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ExportTableToPointInTimeInput$TableArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 22579,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeTableInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3795,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeGlobalTableInput$GlobalTableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3385,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DescribeExportInput$ExportArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 3327,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ListContributorInsightsInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 24570,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateTimeToLiveInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 30427,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ListImportsInput$TableArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 24803,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateContinuousBackupsInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29458,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#QueryInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 26034,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DeleteResourcePolicyInput$ResourceArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 2862,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#GetResourcePolicyInput$ResourceArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 22974,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#CreateTableInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 2234,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#SearchVectorsInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 28005,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#ListBackupsInput$TableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 24478,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UntagResourceInput$ResourceArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29351,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#UpdateGlobalTableInput$GlobalTableName",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 29657,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#contextParam",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#PutResourcePolicyInput$ResourceArn",
+            "message": "This shape applies a trait that is unstable: smithy.rules#contextParam",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 25909,
+            "column": 42
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#endpointTests",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DynamoDB_20120810",
+            "message": "This shape applies a trait that is unstable: smithy.rules#endpointTests",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 6922,
+            "column": 39
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#endpointRuleSet",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DynamoDB_20120810",
+            "message": "This shape applies a trait that is unstable: smithy.rules#endpointRuleSet",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 4983,
+            "column": 41
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#endpointBdd",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#DynamoDB_20120810",
+            "message": "This shape applies a trait that is unstable: smithy.rules#endpointBdd",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 4222,
+            "column": 37
+        },
+        {
+            "id": "UnstableTrait.smithy.rules#staticContextParams",
+            "severity": "WARNING",
+            "shapeId": "com.amazonaws.dynamodb#SearchVectors",
+            "message": "This shape applies a trait that is unstable: smithy.rules#staticContextParams",
+            "filename": "jar:file:/Users/alexwoo/.gradle/caches/modules-2/files-2.1/software.amazon.api.models/dynamodb/1.0.14/b5ad5feb3668b50ab8b5318ab3cfe377b095b0f5/dynamodb-1.0.14.jar!/META-INF/smithy/2012-08-10/dynamodb-2012-08-10.json",
+            "line": 27990,
+            "column": 45
+        }
+    ],
+    "version": "1.0"
+}

@@ -1,0 +1,35 @@
+{
+    "version": "1.0",
+    "projections": {
+        "cloudwatch-client": {
+            "transforms": [
+                {
+                    "name": "includeServices",
+                    "args": {
+                        "services": ["com.amazonaws.cloudwatch#GraniteServiceVersion20100801"]
+                    }
+                },
+                {
+                    "name": "removeUnusedShapes"
+                }
+            ],
+            "plugins": {
+                "java-codegen": {
+                    "service": "com.amazonaws.cloudwatch#GraniteServiceVersion20100801",
+                    "name": "CloudWatch",
+                    "namespace": "software.amazon.awssdk.benchmark.smithyjava.cloudwatch",
+                    "protocol": "aws.protocols#awsQuery",
+                    "transport": {
+                        "http-java": {}
+                    },
+                    "modes": ["client"],
+                    "runtimeTraits": [
+                        "smithy.rules#contextParam",
+                        "smithy.rules#staticContextParams",
+                        "smithy.rules#operationContextParams"
+                    ]
+                }
+            }
+        }
+    }
+}

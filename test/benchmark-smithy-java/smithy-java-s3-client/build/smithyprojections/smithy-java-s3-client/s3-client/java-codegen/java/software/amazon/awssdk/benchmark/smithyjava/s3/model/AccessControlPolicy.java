@@ -1,0 +1,203 @@
+package software.amazon.awssdk.benchmark.smithyjava.s3.model;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.SchemaUtils;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.schema.ShapeBuilder;
+import software.amazon.smithy.java.core.serde.ShapeDeserializer;
+import software.amazon.smithy.java.core.serde.ShapeSerializer;
+import software.amazon.smithy.java.core.serde.ToStringSerializer;
+import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.utils.SmithyGenerated;
+
+/**
+ * Contains the elements that set the ACL permissions for an object per grantee.
+ */
+@SmithyGenerated
+public final class AccessControlPolicy implements SerializableStruct {
+
+    public static final Schema $SCHEMA = Schemas.ACCESS_CONTROL_POLICY;
+    private static final Schema $SCHEMA_GRANTS = $SCHEMA.member("Grants");
+    private static final Schema $SCHEMA_OWNER = $SCHEMA.member("Owner");
+
+    public static final ShapeId $ID = $SCHEMA.id();
+
+    private final transient List<Grant> grants;
+    private final transient Owner owner;
+
+    private AccessControlPolicy(Builder builder) {
+        this.grants = builder.grants == null ? null : Collections.unmodifiableList(builder.grants);
+        this.owner = builder.owner;
+    }
+
+    /**
+     * A list of grants.
+     */
+    public List<Grant> getGrants() {
+        if (grants == null) {
+            return Collections.emptyList();
+        }
+        return grants;
+    }
+
+    public boolean hasGrants() {
+        return grants != null;
+    }
+
+    /**
+     * Container for the bucket owner's display name and ID.
+     */
+    public Owner getOwner() {
+        return owner;
+    }
+
+    @Override
+    public String toString() {
+        return ToStringSerializer.serialize(this);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (other == this) {
+            return true;
+        }
+        if (other == null || getClass() != other.getClass()) {
+            return false;
+        }
+        AccessControlPolicy that = (AccessControlPolicy) other;
+        return Objects.equals(this.owner, that.owner)
+               && Objects.equals(this.grants, that.grants);
+    }
+
+    @Override
+    public int hashCode() {
+        int $hc = Objects.hashCode(grants);
+        $hc = 31 * $hc + Objects.hashCode(owner);
+        return $hc;
+    }
+
+    @Override
+    public Schema schema() {
+        return $SCHEMA;
+    }
+
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        if (grants != null) {
+            serializer.writeList($SCHEMA_GRANTS, grants, grants.size(), SharedSerde.GrantsSerializer.INSTANCE);
+        }
+        if (owner != null) {
+            serializer.writeStruct($SCHEMA_OWNER, owner);
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        return switch (member.memberIndex()) {
+            case 0 -> (T) SchemaUtils.validateSameMember($SCHEMA_GRANTS, member, grants);
+            case 1 -> (T) SchemaUtils.validateSameMember($SCHEMA_OWNER, member, owner);
+            default -> throw new IllegalArgumentException("Attempted to get non-existent member: " + member.id());
+        };
+    }
+
+    /**
+     * Create a new builder containing all the current property values of this object.
+     *
+     * <p><strong>Note:</strong> This method performs only a shallow copy of the original properties.
+     *
+     * @return a builder for {@link AccessControlPolicy}.
+     */
+    public Builder toBuilder() {
+        var builder = new Builder();
+        builder.grants(this.grants);
+        builder.owner(this.owner);
+        return builder;
+    }
+
+    /**
+     * @return returns a new Builder.
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Builder for {@link AccessControlPolicy}.
+     */
+    public static final class Builder implements ShapeBuilder<AccessControlPolicy> {
+        private List<Grant> grants;
+        private Owner owner;
+
+        private Builder() {}
+
+        @Override
+        public Schema schema() {
+            return $SCHEMA;
+        }
+
+        /**
+         * A list of grants.
+         *
+         * @return this builder.
+         */
+        public Builder grants(List<Grant> grants) {
+            this.grants = grants;
+            return this;
+        }
+
+        /**
+         * Container for the bucket owner's display name and ID.
+         *
+         * @return this builder.
+         */
+        public Builder owner(Owner owner) {
+            this.owner = owner;
+            return this;
+        }
+
+        @Override
+        public AccessControlPolicy build() {
+            return new AccessControlPolicy(this);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public void setMemberValue(Schema member, Object value) {
+            switch (member.memberIndex()) {
+                case 0 -> grants((List<Grant>) SchemaUtils.validateSameMember($SCHEMA_GRANTS, member, value));
+                case 1 -> owner((Owner) SchemaUtils.validateSameMember($SCHEMA_OWNER, member, value));
+                default -> ShapeBuilder.super.setMemberValue(member, value);
+            }
+        }
+
+        @Override
+        public Builder deserialize(ShapeDeserializer decoder) {
+            decoder.readStruct($SCHEMA, this, $InnerDeserializer.INSTANCE);
+            return this;
+        }
+
+        @Override
+        public Builder deserializeMember(ShapeDeserializer decoder, Schema schema) {
+            decoder.readStruct(schema.assertMemberTargetIs($SCHEMA), this, $InnerDeserializer.INSTANCE);
+            return this;
+        }
+
+        private static final class $InnerDeserializer implements ShapeDeserializer.StructMemberConsumer<Builder> {
+            private static final $InnerDeserializer INSTANCE = new $InnerDeserializer();
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public void accept(Builder builder, Schema member, ShapeDeserializer de) {
+                switch (member.memberIndex()) {
+                    case 0 -> builder.grants(SharedSerde.deserializeGrants(member, de));
+                    case 1 -> builder.owner(Owner.builder().deserializeMember(de, member).build());
+                    default -> throw new IllegalArgumentException("Unexpected member: " + member.memberName());
+                }
+            }
+        }
+    }
+}
