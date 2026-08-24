@@ -32,6 +32,7 @@ public final class BenchmarkRunner {
           --metrics             collect SDK-internal metrics and print a per-scenario summary
           --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
           --progress-seconds N  progress/ETA print interval, 0 disables (default: 5)
+          --cpu-source X        auto, oshi, procfs, mxbean (default: auto; probes in that order)
           --help                print this message
         """;
 
@@ -87,6 +88,7 @@ public final class BenchmarkRunner {
         boolean metrics = false;
         Path metricsFile = null;
         int progressSeconds = 5;
+        String cpuSourceName = "auto";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -122,6 +124,9 @@ public final class BenchmarkRunner {
                 case "--progress-seconds":
                     progressSeconds = Integer.parseInt(args[++i]);
                     break;
+                case "--cpu-source":
+                    cpuSourceName = args[++i];
+                    break;
                 case "--help":
                     System.out.print(USAGE);
                     return;
@@ -140,6 +145,7 @@ public final class BenchmarkRunner {
             warmup = Math.min(2000, iterations);
         }
 
+        CpuTimeSource cpuSource = CpuTimeSources.bind(cpuSourceName);
         waitForServer(endpoint);
 
         PrintStream metricsOut = metricsFile == null
@@ -151,13 +157,14 @@ public final class BenchmarkRunner {
                           client, names(scenarios), iterations, warmup, endpoint,
                           metrics ? (metricsFile == null ? "on" : "on -> " + metricsFile) : "off",
                           ProcessHandle.current().pid());
-        System.out.println("=== cpu-time source: " + ProcessCpu.source());
+        System.out.printf("=== cpu-time source: %s user/system split: %s%n",
+                          cpuSource.name(), cpuSource.hasUserSystemSplit() ? "yes" : "no");
 
         long suiteStart = System.nanoTime();
         try (Workloads.Workload workload = Workloads.create(client, endpoint, metrics)) {
             for (Scenario scenario : scenarios) {
                 runScenario(workload, client, scenario, iterations, warmup, progressSeconds,
-                            metrics, metricsOut);
+                            metrics, metricsOut, cpuSource);
             }
         }
         System.out.printf("DONE total_wall_s=%.1f%n", (System.nanoTime() - suiteStart) / 1e9);
@@ -168,14 +175,15 @@ public final class BenchmarkRunner {
 
     private static void runScenario(Workloads.Workload workload, String client, Scenario scenario,
                                     int iterations, int warmup, int progressSeconds,
-                                    boolean metrics, PrintStream metricsOut) throws Exception {
+                                    boolean metrics, PrintStream metricsOut,
+                                    CpuTimeSource cpuSource) throws Exception {
         for (int i = 0; i < warmup; i++) {
             scenario.run(workload);
         }
         workload.resetMetrics();
 
         long progressIntervalNanos = progressSeconds > 0 ? progressSeconds * 1_000_000_000L : Long.MAX_VALUE;
-        ProcessCpu.Snapshot cpuBefore = ProcessCpu.snapshot();
+        CpuTimeSource.Snapshot cpuBefore = cpuSource.snapshot();
         long start = System.nanoTime();
         long nextProgress = start + progressIntervalNanos;
 
@@ -195,16 +203,17 @@ public final class BenchmarkRunner {
         }
 
         long wallNanos = System.nanoTime() - start;
-        ProcessCpu.Snapshot cpu = ProcessCpu.snapshot().minus(cpuBefore);
+        CpuTimeSource.Snapshot cpu = cpuSource.snapshot().minus(cpuBefore);
 
         double wallSec = wallNanos / 1e9;
         double cpuSec = cpu.totalNanos() / 1e9;
-        double userSec = cpu.userNanos() / 1e9;
-        String cpuSplit = cpu.splitAvailable()
+        boolean split = cpuSource.hasUserSystemSplit();
+        double userSec = split ? cpu.userNanos() / 1e9 : 0.0;
+        String cpuSplit = split
                           ? String.format(Locale.US, " cpu_user_ms=%.0f cpu_sys_ms=%.0f",
                                           cpu.userNanos() / 1e6, cpu.systemNanos() / 1e6)
                           : "";
-        String userRate = cpu.splitAvailable()
+        String userRate = split
                           ? String.format(Locale.US, " ops_per_user_cpu_sec=%.1f",
                                           userSec > 0 ? iterations / userSec : 0.0)
                           : "";

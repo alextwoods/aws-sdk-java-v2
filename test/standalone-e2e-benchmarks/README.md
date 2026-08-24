@@ -106,6 +106,7 @@ structurally identical data.
 --metrics             collect SDK-internal metrics, print per-scenario summary to stdout
 --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
 --progress-seconds N  progress/ETA print interval; 0 disables (default: 5)
+--cpu-source X        auto | oshi | procfs | mxbean (default: auto)
 ```
 
 ### Launcher-only options (`scripts/benchmark.sh`)
@@ -147,12 +148,18 @@ RESULT client=v2-sync scenario=small-get iterations=100000 wall_ms=12000 ops_per
 - `ops_per_cpu_sec` — iterations / **whole-process** CPU seconds (user + system, all threads
   including event loops, GC and JIT), which is the right measure when SDKs differ in thread
   usage. `ops_per_user_cpu_sec` uses user time only.
-- CPU time comes from [OSHI](https://github.com/oshi/oshi) (`OSProcess` user/kernel time), which
-  provides the user/system split on both Linux (`/proc/self/stat` with the real `USER_HZ`) and
-  macOS (`proc_pidinfo`), at millisecond resolution. If OSHI's native path fails, the runner
-  falls back to a direct `/proc/self/stat` parse (Linux) and then to
-  `OperatingSystemMXBean.getProcessCpuTime()` (no split). The source in use is printed in the
-  run header.
+- CPU time is read through the `CpuTimeSource` interface; exactly one implementation is probed
+  and bound at startup (`--cpu-source`, default `auto` = first available of):
+  - `oshi` — [OSHI](https://github.com/oshi/oshi) `OSProcess` user/kernel time. User/system
+    split on both Linux (`/proc/self/stat` with the real `USER_HZ`) and macOS (`proc_pidinfo`),
+    millisecond resolution.
+  - `procfs` — direct `/proc/self/stat` parse (Linux only). Useful to cross-check oshi:
+    `--cpu-source procfs` on the same workload should agree with the default.
+  - `mxbean` — `OperatingSystemMXBean.getProcessCpuTime()`. Total only, no user/system split
+    (`ops_per_user_cpu_sec` and the split fields are omitted).
+
+  The bound source and whether it provides the split are printed in the run header. Forcing an
+  unavailable source (e.g. `procfs` on macOS) fails fast at startup.
 
 With `--metrics`, each SDK's native metric facility reports per-phase timings as `METRIC` lines
 (V2 `MetricPublisher` CoreMetrics, V1 `AWSRequestMetrics`, smithy-java OTel
@@ -198,11 +205,11 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   so misrouted calls fail loudly.
 - **No `x-amz-crc32` response header.** V1 validates it when present but V2/smithy-java do not,
   so omitting it keeps response handling symmetric.
-- **CPU-time measurement.** OSHI snapshots are taken only at scenario boundaries (twice per
-  scenario), so measurement overhead is negligible, but resolution is milliseconds — use runs of
-  at least several seconds. Process CPU includes GC/JIT during the measured window; use generous
-  warmup and iteration counts for stable numbers. The direct-procfs fallback assumes 100 ticks/s
-  (override with `--jvm-args "-DclkTck=N"`).
+- **CPU-time measurement.** Snapshots are taken only at scenario boundaries (twice per
+  scenario), so measurement overhead is negligible, but resolution is milliseconds (oshi) or
+  10 ms ticks (procfs) — use runs of at least several seconds. Process CPU includes GC/JIT
+  during the measured window; use generous warmup and iteration counts for stable numbers. The
+  procfs source assumes 100 ticks/s (override with `--jvm-args "-DclkTck=N"`).
 - **Localhost transport.** All traffic is plain HTTP over loopback: no DNS, TLS, or real network.
   Numbers are pipeline overhead, not end-to-end AWS latency. Client and server share the host's
   cores; on a small machine consider running the server on separate cores (`taskset`/separate
