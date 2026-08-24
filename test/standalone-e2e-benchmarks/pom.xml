@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>software.amazon.awssdk.benchmark</groupId>
+    <artifactId>standalone-e2e-benchmarks</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Standalone E2E DynamoDB Benchmarks</name>
+    <description>
+        Fixed-iteration DynamoDB benchmarks comparing AWS SDK for Java V1, V2 (sync and async),
+        and smithy-java against an out-of-process mock HTTP server.
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>21</maven.compiler.release>
+        <aws.sdk.v2.version>2.54.2</aws.sdk.v2.version>
+        <aws.sdk.v1.version>1.12.797</aws.sdk.v1.version>
+        <smithy.java.version>1.5.1</smithy.java.version>
+        <netty.version>4.2.0.Final</netty.version>
+        <jetty.version>9.4.45.v20220203</jetty.version>
+        <otel.version>1.64.0</otel.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Pin Netty to 4.2.x for smithy-java compatibility -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- ==================== AWS SDK V1 (monolithic artifact, as customers use it) ==================== -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk</artifactId>
+            <version>${aws.sdk.v1.version}</version>
+        </dependency>
+
+        <!-- ==================== AWS SDK V2 ==================== -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+        <!-- Default sync HTTP client (Apache), declared explicitly for clarity -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+        <!-- Recommended async HTTP client (CRT) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-crt-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+
+        <!-- ==================== Smithy-Java ==================== -->
+        <!-- Generated DynamoDB client; built and published to mavenLocal by
+             test/benchmark-smithy-java/smithy-java-dynamodb-client (./gradlew publishToMavenLocal) -->
+        <dependency>
+            <groupId>software.amazon.awssdk.benchmark</groupId>
+            <artifactId>smithy-java-dynamodb-client</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-core</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-core</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-http-smithy</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>http-client</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-auth-api</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>retries-api</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <!-- Full retry strategy implementations (StandardRetryStrategy) so smithy-java runs
+             retries equivalent to SDK V2's default RetryMode.STANDARD (fairness fix #1). -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>retries</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>rulesengine</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-rulesengine</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <!-- Needed at runtime by smithy-java endpoint resolution -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-rules-engine</artifactId>
+            <version>1.73.0</version>
+        </dependency>
+
+        <!-- Smithy-java client metrics plugin + in-memory OTel pipeline (only used in metrics mode) -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-metrics-otel</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+            <version>${otel.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-testing</artifactId>
+            <version>${otel.version}</version>
+        </dependency>
+
+        <!-- ==================== Mock HTTP server (Jetty) ==================== -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-servlet</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+
+        <!-- Silence SDK logging so stdout stays clean -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>2.0.9</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <!-- No uber-jar: the V1 monolith pulls in every service module, so shading would be
+                 slow and enormous. Instead we write the resolved runtime classpath to a file that
+                 the bin/ scripts consume: java -cp "target/classes:$(cat target/classpath.txt)" -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>build-classpath</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <outputFile>${project.build.directory}/classpath.txt</outputFile>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
