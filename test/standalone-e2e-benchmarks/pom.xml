@@ -157,6 +157,13 @@
             <version>${jetty.version}</version>
         </dependency>
 
+        <!-- Cross-platform process CPU time with user/system split (Linux procfs, macOS proc_pidinfo) -->
+        <dependency>
+            <groupId>com.github.oshi</groupId>
+            <artifactId>oshi-core</artifactId>
+            <version>7.6.0</version>
+        </dependency>
+
         <!-- Silence SDK logging so stdout stays clean -->
         <dependency>
             <groupId>org.slf4j</groupId>

@@ -199,15 +199,20 @@ public final class BenchmarkRunner {
 
         double wallSec = wallNanos / 1e9;
         double cpuSec = cpu.totalNanos() / 1e9;
+        double userSec = cpu.userNanos() / 1e9;
         String cpuSplit = cpu.splitAvailable()
                           ? String.format(Locale.US, " cpu_user_ms=%.0f cpu_sys_ms=%.0f",
                                           cpu.userNanos() / 1e6, cpu.systemNanos() / 1e6)
                           : "";
+        String userRate = cpu.splitAvailable()
+                          ? String.format(Locale.US, " ops_per_user_cpu_sec=%.1f",
+                                          userSec > 0 ? iterations / userSec : 0.0)
+                          : "";
         System.out.printf(Locale.US,
                           "RESULT client=%s scenario=%s iterations=%d wall_ms=%.0f ops_per_wall_sec=%.1f"
-                          + " cpu_ms=%.0f%s ops_per_cpu_sec=%.1f avg_us_per_op=%.1f%n",
+                          + " cpu_ms=%.0f%s ops_per_cpu_sec=%.1f%s avg_us_per_op=%.1f%n",
                           client, scenario.cliName, iterations, wallSec * 1e3, iterations / wallSec,
-                          cpuSec * 1e3, cpuSplit, cpuSec > 0 ? iterations / cpuSec : 0.0,
+                          cpuSec * 1e3, cpuSplit, cpuSec > 0 ? iterations / cpuSec : 0.0, userRate,
                           wallNanos / 1e3 / iterations);
 
         if (metrics) {

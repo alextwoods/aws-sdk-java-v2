@@ -139,15 +139,20 @@ One `RESULT` line per scenario:
 
 ```
 RESULT client=v2-sync scenario=small-get iterations=100000 wall_ms=12000 ops_per_wall_sec=8333.3 \
-       cpu_ms=9500 cpu_user_ms=9000 cpu_sys_ms=500 ops_per_cpu_sec=10526.3 avg_us_per_op=120.0
+       cpu_ms=9500 cpu_user_ms=9000 cpu_sys_ms=500 ops_per_cpu_sec=10526.3 \
+       ops_per_user_cpu_sec=11111.1 avg_us_per_op=120.0
 ```
 
 - `ops_per_wall_sec` — iterations / elapsed wall clock.
-- `ops_per_cpu_sec` — iterations / **whole-process** CPU seconds. On Linux this reads
-  `/proc/self/stat` (utime + stime, all threads including event loops, GC and JIT), which is the
-  right measure when SDKs differ in thread usage. On macOS it falls back to
-  `OperatingSystemMXBean.getProcessCpuTime()` (no user/sys split). The source in use is printed
-  in the run header.
+- `ops_per_cpu_sec` — iterations / **whole-process** CPU seconds (user + system, all threads
+  including event loops, GC and JIT), which is the right measure when SDKs differ in thread
+  usage. `ops_per_user_cpu_sec` uses user time only.
+- CPU time comes from [OSHI](https://github.com/oshi/oshi) (`OSProcess` user/kernel time), which
+  provides the user/system split on both Linux (`/proc/self/stat` with the real `USER_HZ`) and
+  macOS (`proc_pidinfo`), at millisecond resolution. If OSHI's native path fails, the runner
+  falls back to a direct `/proc/self/stat` parse (Linux) and then to
+  `OperatingSystemMXBean.getProcessCpuTime()` (no split). The source in use is printed in the
+  run header.
 
 With `--metrics`, each SDK's native metric facility reports per-phase timings as `METRIC` lines
 (V2 `MetricPublisher` CoreMetrics, V1 `AWSRequestMetrics`, smithy-java OTel
@@ -193,10 +198,11 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   so misrouted calls fail loudly.
 - **No `x-amz-crc32` response header.** V1 validates it when present but V2/smithy-java do not,
   so omitting it keeps response handling symmetric.
-- **CPU-time ticks.** `/proc/self/stat` values are in clock ticks, assumed 100/s (the value on
-  all mainstream Linux builds). Override with `--jvm-args "-DclkTck=N"` for a kernel built with a
-  different HZ. Process CPU includes GC/JIT during the measured window; use generous warmup and
-  iteration counts for stable numbers.
+- **CPU-time measurement.** OSHI snapshots are taken only at scenario boundaries (twice per
+  scenario), so measurement overhead is negligible, but resolution is milliseconds — use runs of
+  at least several seconds. Process CPU includes GC/JIT during the measured window; use generous
+  warmup and iteration counts for stable numbers. The direct-procfs fallback assumes 100 ticks/s
+  (override with `--jvm-args "-DclkTck=N"`).
 - **Localhost transport.** All traffic is plain HTTP over loopback: no DNS, TLS, or real network.
   Numbers are pipeline overhead, not end-to-end AWS latency. Client and server share the host's
   cores; on a small machine consider running the server on separate cores (`taskset`/separate
