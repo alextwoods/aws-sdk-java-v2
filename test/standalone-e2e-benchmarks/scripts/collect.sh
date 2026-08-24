@@ -63,7 +63,7 @@ echo "Building..."
 # Detect the local SDK V2 version from the repo's root pom and patch the benchmark pom if needed,
 # so the benchmarks always run against the locally-installed SDK artifacts.
 LOCAL_SDK_VERSION="$(grep -m1 '<version>' "$REPO/pom.xml" | sed 's/.*<version>//;s/<\/version>.*//')"
-CURRENT_SDK_VERSION="$(grep 'aws.sdk.v2.version' "$DIR/pom.xml" | sed 's/.*<aws.sdk.v2.version>//;s/<\/aws.sdk.v2.version>.*//')"
+CURRENT_SDK_VERSION="$(grep -m1 '<aws.sdk.v2.version>' "$DIR/pom.xml" | sed 's/.*<aws.sdk.v2.version>//;s/<\/aws.sdk.v2.version>.*//')"
 if [[ "$LOCAL_SDK_VERSION" != "$CURRENT_SDK_VERSION" ]]; then
     echo "Updating aws.sdk.v2.version in benchmark pom: $CURRENT_SDK_VERSION -> $LOCAL_SDK_VERSION"
     sed -i.bak "s|<aws.sdk.v2.version>$CURRENT_SDK_VERSION</aws.sdk.v2.version>|<aws.sdk.v2.version>$LOCAL_SDK_VERSION</aws.sdk.v2.version>|" "$DIR/pom.xml"
