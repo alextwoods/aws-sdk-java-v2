@@ -71,9 +71,10 @@ cd test/standalone-e2e-benchmarks
 # Robust run of one scenario
 ./scripts/benchmark.sh --client smithy --scenario small-get --iterations 200000
 
-# All clients, for a comparison table
+# All clients, collected into one CSV for a comparison table
 for c in v1 v2-sync v2-async smithy; do
-  ./scripts/benchmark.sh --client $c --iterations 100000 | grep RESULT
+  ./scripts/benchmark.sh --client $c --iterations 100000 \
+      --append-to-results-file results.csv | grep RESULT
 done
 ```
 
@@ -107,6 +108,9 @@ structurally identical data.
 --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
 --progress-seconds N  progress/ETA print interval; 0 disables (default: 5)
 --cpu-source X        auto | oshi | procfs | mxbean (default: auto)
+--append-to-results-file PATH
+                      append one CSV row per RESULT line to PATH; creates the file
+                      with a header row if it doesn't exist
 ```
 
 ### Launcher-only options (`scripts/benchmark.sh`)
@@ -160,6 +164,10 @@ RESULT client=v2-sync scenario=small-get iterations=100000 wall_ms=12000 ops_per
 
   The bound source and whether it provides the split are printed in the run header. Forcing an
   unavailable source (e.g. `procfs` on macOS) fails fast at startup.
+
+With `--append-to-results-file PATH`, each RESULT line is also appended to a CSV file (columns
+mirror the RESULT fields; the header row is written when the file is first created). Runs with a
+no-split CPU source leave the `cpu_user_ms`/`cpu_sys_ms`/`ops_per_user_cpu_sec` cells empty.
 
 With `--metrics`, each SDK's native metric facility reports per-phase timings as `METRIC` lines
 (V2 `MetricPublisher` CoreMetrics, V1 `AWSRequestMetrics`, smithy-java OTel

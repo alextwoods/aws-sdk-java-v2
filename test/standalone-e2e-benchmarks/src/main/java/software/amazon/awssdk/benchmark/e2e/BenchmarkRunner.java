@@ -1,5 +1,6 @@
 package software.amazon.awssdk.benchmark.e2e;
 
+import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -7,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +35,9 @@ public final class BenchmarkRunner {
           --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
           --progress-seconds N  progress/ETA print interval, 0 disables (default: 5)
           --cpu-source X        auto, oshi, procfs, mxbean (default: auto; probes in that order)
+          --append-to-results-file PATH
+                                append one CSV row per RESULT line to PATH; the file (and a
+                                header row) is created if it does not exist
           --help                print this message
         """;
 
@@ -89,6 +94,7 @@ public final class BenchmarkRunner {
         Path metricsFile = null;
         int progressSeconds = 5;
         String cpuSourceName = "auto";
+        Path resultsFile = null;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -127,6 +133,9 @@ public final class BenchmarkRunner {
                 case "--cpu-source":
                     cpuSourceName = args[++i];
                     break;
+                case "--append-to-results-file":
+                    resultsFile = Path.of(args[++i]);
+                    break;
                 case "--help":
                     System.out.print(USAGE);
                     return;
@@ -164,7 +173,7 @@ public final class BenchmarkRunner {
         try (Workloads.Workload workload = Workloads.create(client, endpoint, metrics)) {
             for (Scenario scenario : scenarios) {
                 runScenario(workload, client, scenario, iterations, warmup, progressSeconds,
-                            metrics, metricsOut, cpuSource);
+                            metrics, metricsOut, cpuSource, resultsFile);
             }
         }
         System.out.printf("DONE total_wall_s=%.1f%n", (System.nanoTime() - suiteStart) / 1e9);
@@ -176,7 +185,7 @@ public final class BenchmarkRunner {
     private static void runScenario(Workloads.Workload workload, String client, Scenario scenario,
                                     int iterations, int warmup, int progressSeconds,
                                     boolean metrics, PrintStream metricsOut,
-                                    CpuTimeSource cpuSource) throws Exception {
+                                    CpuTimeSource cpuSource, Path resultsFile) throws Exception {
         for (int i = 0; i < warmup; i++) {
             scenario.run(workload);
         }
@@ -224,11 +233,44 @@ public final class BenchmarkRunner {
                           cpuSec * 1e3, cpuSplit, cpuSec > 0 ? iterations / cpuSec : 0.0, userRate,
                           wallNanos / 1e3 / iterations);
 
+        if (resultsFile != null) {
+            appendResultsCsv(resultsFile, client, scenario, iterations, wallNanos, cpu, split);
+        }
+
         if (metrics) {
             metricsOut.printf("--- metrics client=%s scenario=%s iterations=%,d ---%n",
                               client, scenario.cliName, iterations);
             workload.printMetrics(metricsOut);
         }
+    }
+
+    private static final String CSV_HEADER =
+        "client,scenario,iterations,wall_ms,ops_per_wall_sec,cpu_ms,cpu_user_ms,cpu_sys_ms,"
+        + "ops_per_cpu_sec,ops_per_user_cpu_sec,avg_us_per_op";
+
+    /**
+     * Append one CSV row per RESULT line to {@code file}, creating it with a header row first if
+     * it does not exist (or is empty). Columns mirror the RESULT fields; the user/system columns
+     * are left empty when the bound CPU source has no split.
+     */
+    private static void appendResultsCsv(Path file, String client, Scenario scenario, int iterations,
+                                         long wallNanos, CpuTimeSource.Snapshot cpu, boolean split)
+            throws IOException {
+        double wallSec = wallNanos / 1e9;
+        double cpuSec = cpu.totalNanos() / 1e9;
+        double userSec = split ? cpu.userNanos() / 1e9 : 0.0;
+        String row = String.format(Locale.US, "%s,%s,%d,%.0f,%.1f,%.0f,%s,%s,%.1f,%s,%.1f",
+                                   client, scenario.cliName, iterations,
+                                   wallSec * 1e3, iterations / wallSec, cpuSec * 1e3,
+                                   split ? String.format(Locale.US, "%.0f", cpu.userNanos() / 1e6) : "",
+                                   split ? String.format(Locale.US, "%.0f", cpu.systemNanos() / 1e6) : "",
+                                   cpuSec > 0 ? iterations / cpuSec : 0.0,
+                                   split && userSec > 0
+                                       ? String.format(Locale.US, "%.1f", iterations / userSec) : "",
+                                   wallNanos / 1e3 / iterations);
+        boolean needsHeader = !Files.exists(file) || Files.size(file) == 0;
+        String content = needsHeader ? CSV_HEADER + "\n" + row + "\n" : row + "\n";
+        Files.writeString(file, content, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 
     /** Poll the readiness endpoint so a just-launched server has time to come up. */
