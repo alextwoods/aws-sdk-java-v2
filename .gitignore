@@ -35,3 +35,6 @@ bin/
 
 # Other
 .attach_pid*
+
+# Raw benchmark collection data (test/standalone-e2e-benchmarks/scripts/collect.sh)
+/pipeline_benchmark2/raw/

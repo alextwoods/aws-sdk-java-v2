@@ -123,6 +123,33 @@ structurally identical data.
 --jvm-args "..."    extra JVM args for the client JVM
 ```
 
+### Full collection (`scripts/collect.sh`)
+
+Runs the whole matrix (every client x every scenario) and writes raw data to
+`pipeline_benchmark2/raw/<runid>/` (runid = `yyyymmdd-HHMM`, directory is gitignored):
+
+```bash
+./scripts/collect.sh                      # defaults: 200k iterations, 20k warmup, 3 timing reps
+./scripts/collect.sh --iterations 1000 --warmup 200 --reps 1   # quick smoke collection
+```
+
+Per case (`<client>_<scenario>`, e.g. `smithy_small-get`), four kinds of isolated JVM runs:
+
+| Kind | Output | Notes |
+|------|--------|-------|
+| clean timing (x reps) | rows in shared `results.csv`, `<caseid>/timing-rep<N>.log` | the only runs that feed results.csv |
+| async-profiler CPU | `<caseid>/cpu.jfr`, `cpu.log` | JFR format; convert with `asprof`/`jfrconv` |
+| async-profiler alloc | `<caseid>/alloc.jfr`, `alloc.log` | |
+| SDK metrics | `<caseid>/metrics.txt`, `metrics.log` | |
+
+Timing reps are interleaved (rep 1 of every case, then rep 2, ...) so machine drift spreads
+across cases rather than accumulating on one client. Profiler and metrics runs are separate JVMs
+because they perturb timing — never compare their RESULT lines against `results.csv`.
+`manifest.md` in the run directory records the commit, environment, parameters, and the exact
+command, timestamps and status of every run.
+
+Options: `--iterations`, `--warmup`, `--reps`, `--clients`, `--scenarios`, `--port`, `--out`.
+
 ### Standalone server
 
 ```bash

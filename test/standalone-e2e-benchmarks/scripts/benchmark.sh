@@ -5,11 +5,13 @@
 # Usage: scripts/benchmark.sh --client <v1|v2-sync|v2-async|smithy> [runner options] [launcher options]
 #
 # Launcher-only options (everything else is passed through to BenchmarkRunner):
-#   --port N            port for the auto-launched mock server (default: 19080)
-#   --no-server         do not launch a server; requires --endpoint pointing at a running one
-#   --profile MODE      jfr | cpu | alloc | wall  (cpu/alloc/wall need async-profiler)
-#   --profile-out DIR   profiler output directory (default: ./profiles)
-#   --jvm-args "..."    extra JVM args for the client JVM
+#   --port N              port for the auto-launched mock server (default: 19080)
+#   --no-server           do not launch a server; requires --endpoint pointing at a running one
+#   --profile MODE        jfr | cpu | alloc | wall  (cpu/alloc/wall need async-profiler)
+#   --profile-format FMT  html | jfr — output format for cpu/alloc/wall modes (default: html)
+#   --profile-file PATH   exact profiler output path (default: <profile-out>/<client>-<mode>-<ts>.<ext>)
+#   --profile-out DIR     profiler output directory (default: ./profiles)
+#   --jvm-args "..."      extra JVM args for the client JVM
 #
 # Environment:
 #   ASYNC_PROFILER_LIB  path to libasyncProfiler (auto-detected from common install locations)
@@ -20,6 +22,8 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT=19080
 LAUNCH_SERVER=1
 PROFILE=""
+PROFILE_FORMAT="html"
+PROFILE_FILE=""
 PROFILE_OUT="$DIR/profiles"
 EXTRA_JVM_ARGS=""
 ENDPOINT=""
@@ -30,8 +34,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --port)        PORT="$2"; shift 2 ;;
         --no-server)   LAUNCH_SERVER=0; shift ;;
-        --profile)     PROFILE="$2"; shift 2 ;;
-        --profile-out) PROFILE_OUT="$2"; shift 2 ;;
+        --profile)        PROFILE="$2"; shift 2 ;;
+        --profile-format) PROFILE_FORMAT="$2"; shift 2 ;;
+        --profile-file)   PROFILE_FILE="$2"; shift 2 ;;
+        --profile-out)    PROFILE_OUT="$2"; shift 2 ;;
         --jvm-args)    EXTRA_JVM_ARGS="$2"; shift 2 ;;
         --endpoint)    ENDPOINT="$2"; LAUNCH_SERVER=0; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         --client)      CLIENT="$2"; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
@@ -96,11 +102,11 @@ find_async_profiler() {
 
 JVM_ARGS=(--enable-native-access=ALL-UNNAMED)
 if [[ -n "$PROFILE" ]]; then
-    mkdir -p "$PROFILE_OUT"
     STAMP="$(date +%Y%m%d-%H%M%S)"
     case "$PROFILE" in
         jfr)
-            OUT="$PROFILE_OUT/$CLIENT-$STAMP.jfr"
+            OUT="${PROFILE_FILE:-$PROFILE_OUT/$CLIENT-$STAMP.jfr}"
+            mkdir -p "$(dirname "$OUT")"
             JVM_ARGS+=("-XX:StartFlightRecording=filename=$OUT,settings=profile,dumponexit=true")
             ;;
         cpu|alloc|wall)
@@ -108,7 +114,16 @@ if [[ -n "$PROFILE" ]]; then
                 echo "error: async-profiler library not found; set ASYNC_PROFILER_LIB" >&2
                 exit 1
             }
-            OUT="$PROFILE_OUT/$CLIENT-$PROFILE-$STAMP.html"
+            case "$PROFILE_FORMAT" in
+                html|jfr) ;;
+                *)
+                    echo "error: unknown --profile-format '$PROFILE_FORMAT' (html|jfr)" >&2
+                    exit 2
+                    ;;
+            esac
+            # async-profiler picks the output format from the file extension (.html/.jfr).
+            OUT="${PROFILE_FILE:-$PROFILE_OUT/$CLIENT-$PROFILE-$STAMP.$PROFILE_FORMAT}"
+            mkdir -p "$(dirname "$OUT")"
             JVM_ARGS+=("-agentpath:$LIB=start,event=$PROFILE,file=$OUT")
             ;;
         *)
