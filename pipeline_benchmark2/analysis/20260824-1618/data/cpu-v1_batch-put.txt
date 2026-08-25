@@ -1,0 +1,39 @@
+TOTAL 7009 samples
+
+CATEGORIES (deepest-frame match, whole-process):
+   31.10%           2,180  socket-syscall
+   27.81%           1,949  marshall
+   20.63%           1,446  json
+    7.43%             521  jit-compiler
+    4.55%             319  http-client
+    3.89%             273  crypto
+    1.44%             101  signing
+    1.17%              82  benchmark-harness
+    0.87%              61  gc-vm
+    0.70%              49  retry
+    0.19%              13  unmarshall
+    0.09%               6  other
+    0.09%               6  thread-sync
+    0.04%               3  pipeline-framework
+
+TOP 20 SELF FRAMES:
+   24.71%       1,732  write
+    9.00%         631  com/fasterxml/jackson/core/json/UTF8JsonGenerator._writeStringSegment
+    4.87%         341  java/util/HashMap.getNode
+    3.78%         265  sha256_implCompressMB
+    3.25%         228  read
+    3.14%         220  poll
+    2.70%         189  com/amazonaws/protocol/json/internal/MarshallerRegistry.getMarshaller
+    2.55%         179  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$1.marshall
+    2.24%         157  java/util/HashMap.hash
+    2.14%         150  com/amazonaws/protocol/MarshallingInfo.defaultValueSupplier
+    1.93%         135  com/fasterxml/jackson/core/json/UTF8JsonGenerator.writeFieldName
+    1.85%         130  itable stub
+    1.77%         124  java/lang/String.charAt
+    1.63%         114  com/amazonaws/protocol/MarshallingInfo.marshallingType
+    1.53%         107  copy_byte_f
+    1.31%          92  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$14.marshall
+    1.23%          86  com/amazonaws/protocol/json/internal/JsonProtocolMarshaller.resolveValue
+    1.16%          81  java/util/HashMap.get
+    1.01%          71  com/fasterxml/jackson/core/json/UTF8JsonGenerator.writeEndObject
+    0.97%          68  com/fasterxml/jackson/core/json/UTF8JsonGenerator.writeStartObject

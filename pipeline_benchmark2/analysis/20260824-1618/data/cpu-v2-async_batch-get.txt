@@ -1,0 +1,40 @@
+TOTAL 7047 samples
+
+CATEGORIES (deepest-frame match, whole-process):
+   47.01%           3,313  socket-syscall
+   10.44%             736  thread-sync
+    9.69%             683  unmarshall
+    9.20%             648  jit-compiler
+    8.00%             564  json
+    3.69%             260  pipeline-framework
+    3.02%             213  signing
+    2.65%             187  other
+    2.07%             146  http-client
+    1.09%              77  gc-vm
+    0.94%              66  marshall
+    0.74%              52  endpoint-rules
+    0.71%              50  benchmark-harness
+    0.44%              31  retry
+    0.30%              21  crypto
+
+TOP 20 SELF FRAMES:
+   19.00%       1,339  kevent
+   18.23%       1,285  __sendto
+   10.06%         709  __psynch_cvwait
+    6.02%         424  read
+    3.76%         265  write
+    1.40%          99  java/util/HashMap.putVal
+    1.28%          90  pthread_jit_write_protect_np
+    1.16%          82  software/amazon/awssdk/services/dynamodb/model/AttributeValue.<init>
+    1.02%          72  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser.nextToken
+    1.02%          72  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.<init>
+    0.99%          70  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._finishAndReturnString
+    0.64%          45  software/amazon/awssdk/thirdparty/jackson/core/sym/ByteQuadsCanonicalizer.findName
+    0.58%          41  software/amazon/awssdk/thirdparty/jackson/core/base/ParserMinimalBase._updateToken
+    0.54%          38  copy_byte_f
+    0.51%          36  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.valueFor
+    0.50%          35  vtable stub
+    0.43%          30  java/util/LinkedHashMap.newNode
+    0.40%          28  Arena::contains
+    0.40%          28  java/lang/StringUTF16.compress
+    0.38%          27  semaphore_wait_trap

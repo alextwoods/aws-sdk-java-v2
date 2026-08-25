@@ -1,0 +1,40 @@
+TOTAL 6431 samples
+
+CATEGORIES (deepest-frame match, whole-process):
+   37.33%           2,401  marshall
+   21.74%           1,398  socket-syscall
+   19.19%           1,234  json
+    9.95%             640  jit-compiler
+    2.15%             138  thread-sync
+    1.91%             123  pipeline-framework
+    1.82%             117  crypto
+    1.59%             102  other
+    1.42%              91  http-client
+    0.78%              50  signing
+    0.75%              48  benchmark-harness
+    0.53%              34  gc-vm
+    0.45%              29  unmarshall
+    0.31%              20  endpoint-rules
+    0.09%               6  retry
+
+TOP 20 SELF FRAMES:
+   13.06%         840  kevent
+    8.51%         547  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator._writeStringSegment
+    4.04%         260  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.marshallPayloadField
+    3.79%         244  itable stub
+    3.25%         209  java/util/Arrays$ArrayItr.next
+    3.05%         196  write
+    2.99%         192  __sendto
+    2.64%         170  read
+    2.60%         167  software/amazon/awssdk/core/SdkField.getTrait
+    2.52%         162  java/util/Arrays$ArrayItr.hasNext
+    2.38%         153  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator.writeFieldName
+    2.05%         132  java/util/EnumMap.get
+    1.97%         127  software/amazon/awssdk/core/SdkField.get
+    1.73%         111  sha256_implCompressMB
+    1.66%         107  software/amazon/awssdk/services/dynamodb/model/AttributeValue.lambda$getter$0
+    1.57%         101  __psynch_cvwait
+    1.49%          96  java/lang/String.charAt
+    1.20%          77  software/amazon/awssdk/core/SdkField.locationName
+    1.18%          76  copy_byte_f
+    1.18%          76  software/amazon/awssdk/thirdparty/jackson/core/json/JsonWriteContext.writeFieldName

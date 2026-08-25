@@ -1,0 +1,40 @@
+TOTAL 1538 samples
+
+CATEGORIES (deepest-frame match, whole-process):
+   52.21%             803  socket-syscall
+   24.19%             372  jit-compiler
+    9.82%             151  http-client
+    4.62%              71  benchmark-harness
+    2.41%              37  signing
+    2.21%              34  json
+    1.37%              21  pipeline-framework
+    1.04%              16  endpoint-rules
+    0.59%               9  retry
+    0.46%               7  crypto
+    0.39%               6  marshall
+    0.26%               4  gc-vm
+    0.20%               3  unmarshall
+    0.13%               2  other
+    0.13%               2  thread-sync
+
+TOP 20 SELF FRAMES:
+   35.24%         542  write
+    9.04%         139  poll
+    7.93%         122  read
+    2.54%          39  pthread_jit_write_protect_np
+    1.43%          22  Arena::contains
+    1.30%          20  __fcntl
+    0.78%          12  PhaseChaitin::Split
+    0.72%          11  Node::set_req_X
+    0.65%          10  PhaseIterGVN::subsume_node
+    0.59%           9  java/io/PrintStream.write
+    0.59%           9  mach_absolute_time
+    0.59%           9  ConnectionGraph::add_fields_to_worklist
+    0.59%           9  PhaseChaitin::build_ifg_physical
+    0.59%           9  IndexSetIterator::advance_and_next
+    0.46%           7  itable stub
+    0.39%           6  jbyte_disjoint_arraycopy
+    0.39%           6  java/util/zip/ZipFile$Source.getEntryPos
+    0.39%           6  __psynch_cvwait
+    0.39%           6  PhaseLive::compute
+    0.33%           5  java/lang/String.charAt

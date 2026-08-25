@@ -1,0 +1,40 @@
+TOTAL 5538 samples
+
+CATEGORIES (deepest-frame match, whole-process):
+   24.65%           1,365  unmarshall
+   22.07%           1,222  json
+   19.75%           1,094  socket-syscall
+   14.61%             809  jit-compiler
+    8.60%             476  pipeline-framework
+    2.08%             115  signing
+    1.97%             109  marshall
+    1.84%             102  gc-vm
+    1.82%             101  http-client
+    1.46%              81  benchmark-harness
+    0.58%              32  endpoint-rules
+    0.23%              13  retry
+    0.16%               9  crypto
+    0.13%               7  other
+    0.05%               3  thread-sync
+
+TOP 20 SELF FRAMES:
+   10.06%         557  write
+    4.93%         273  read
+    4.77%         264  poll
+    3.86%         214  java/util/HashMap.putVal
+    3.43%         190  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser.nextToken
+    2.94%         163  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._finishAndReturnString
+    2.62%         145  software/amazon/awssdk/services/dynamodb/model/AttributeValue.<init>
+    2.22%         123  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.<init>
+    1.81%         100  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.valueFor
+    1.57%          87  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._skipWS
+    1.46%          81  software/amazon/awssdk/thirdparty/jackson/core/sym/ByteQuadsCanonicalizer.findName
+    1.37%          76  vtable stub
+    1.37%          76  software/amazon/awssdk/thirdparty/jackson/core/base/ParserMinimalBase._updateToken
+    1.23%          68  java/lang/StringUTF16.compress
+    1.16%          64  java/lang/String.hashCode
+    1.14%          63  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser.getText
+    1.10%          61  java/util/HashMap.resize
+    1.05%          58  java/util/LinkedHashMap.afterNodeInsertion
+    1.01%          56  java/util/LinkedHashMap.newNode
+    0.98%          54  itable stub

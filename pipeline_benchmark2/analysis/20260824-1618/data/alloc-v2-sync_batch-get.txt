@@ -1,0 +1,57 @@
+TOTAL 118274002027 bytes
+
+CATEGORIES (deepest-frame match, whole-process):
+   68.64%  81,177,453,358  unmarshall
+   13.10%  15,497,399,433  json
+   12.51%  14,794,854,853  pipeline-framework
+    3.95%   4,667,727,161  signing
+    0.69%     815,888,269  benchmark-harness
+    0.44%     523,762,713  endpoint-rules
+    0.35%     414,186,730  marshall
+    0.26%     306,707,895  retry
+    0.06%      73,400,180  crypto
+    0.00%       2,621,435  other
+
+TOP 20 ALLOCATED TYPES:
+   28.36%  33,537,590,816  java.util.LinkedHashMap$Entry
+   15.76%  18,639,975,711  software.amazon.awssdk.services.dynamodb.model.AttributeValue$BuilderImpl
+   13.82%  16,344,647,225  software.amazon.awssdk.services.dynamodb.model.AttributeValue
+   11.18%  13,226,285,846  byte[]
+    7.81%   9,237,412,653  java.util.RegularEnumSet
+    7.14%   8,444,166,422  java.util.HashMap$Node[]
+    5.89%   6,969,347,091  java.lang.String
+    1.90%   2,244,996,934  java.util.LinkedHashMap
+    1.28%   1,516,238,004  java.lang.Object[]
+    0.64%     751,303,271  java.util.Collections$UnmodifiableMap
+    0.48%     569,899,969  java.util.ArrayList
+    0.31%     362,282,317  java.util.TreeMap$Entry
+    0.26%     307,756,469  char[]
+    0.26%     301,989,312  java.util.HashMap
+    0.24%     285,736,415  java.util.HashMap$Node
+    0.24%     279,969,258  java.util.Collections$UnmodifiableRandomAccessList
+    0.13%     155,188,952  java.util.Arrays$ArrayItr
+    0.12%     145,227,499  software.amazon.awssdk.utils.AttributeMap$ExpectCachedLazyValueSource
+    0.12%     140,508,916  java.util.ArrayList$Itr
+    0.11%     134,741,759  java.util.stream.ReferencePipeline$Head
+
+TOP 20 ALLOCATION SITES (nearest non-JDK caller):
+   22.29%  26,360,101,786  software/amazon/awssdk/services/dynamodb/model/BatchGetResponseMapCopier.lambda$copy$2
+   15.76%  18,640,499,998  software/amazon/awssdk/services/dynamodb/model/AttributeValue.builder
+   13.82%  16,344,647,225  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.build
+   12.59%  14,887,653,652  software/amazon/awssdk/thirdparty/jackson/core/util/TextBuffer.setCurrentAndReturn
+   11.44%  13,525,031,739  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.parseMap
+    7.81%   9,237,412,653  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.<init>
+    2.21%   2,608,327,825  software/amazon/awssdk/services/dynamodb/model/MapAttributeValueCopier.lambda$copy$0
+    1.32%   1,563,423,834  software/amazon/awssdk/services/dynamodb/model/BatchGetResponseMapCopier.lambda$copy$1
+    0.76%     896,530,770  software/amazon/awssdk/http/auth/aws/internal/signer/util/ChecksumUtil.lambda$readAll$0
+    0.74%     877,132,151  org/apache/hc/core5/http/io/entity/InputStreamEntity.writeTo
+    0.50%     589,822,875  software/amazon/awssdk/services/dynamodb/model/ListAttributeValueCopier.copy
+    0.47%     553,122,785  software/amazon/awssdk/http/auth/aws/internal/signer/V4CanonicalRequest.getCanonicalHeadersString
+    0.45%     530,578,444  software/amazon/awssdk/utils/CollectionUtils.lambda$deepCopyMap$1
+    0.44%     521,665,565  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.parseList
+    0.43%     513,276,973  software/amazon/awssdk/services/dynamodb/model/MapAttributeValueCopier.copy
+    0.30%     359,136,595  software/amazon/awssdk/benchmark/e2e/BenchmarkRunner.runScenario
+    0.29%     342,883,698  software/amazon/awssdk/http/apache5/internal/impl/Apache5HttpRequestFactory.lambda$addHeadersToRequest$0
+    0.22%     260,046,352  software/amazon/awssdk/http/auth/aws/internal/signer/V4RequestSigner.lambda$header$0
+    0.19%     228,064,845  software/amazon/awssdk/core/interceptor/ExecutionAttributes.<init>
+    0.19%     219,151,966  software/amazon/awssdk/http/auth/spi/internal/scheme/DefaultAuthSchemeOption$BuilderImpl.<init>

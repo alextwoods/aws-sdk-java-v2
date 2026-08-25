@@ -1,0 +1,57 @@
+TOTAL 58703992553 bytes
+
+CATEGORIES (deepest-frame match, whole-process):
+   59.33%  34,831,006,845  unmarshall
+   26.56%  15,590,722,519  json
+    5.59%   3,284,133,768  signing
+    5.57%   3,267,356,584  http-client
+    1.04%     610,895,805  benchmark-harness
+    0.92%     542,637,045  retry
+    0.85%     498,596,937  marshall
+    0.07%      38,797,238  crypto
+    0.06%      37,224,377  pipeline-framework
+    0.00%       2,621,435  other
+
+TOP 20 ALLOCATED TYPES:
+   27.69%  16,257,091,296  com.amazonaws.services.dynamodbv2.model.AttributeValue
+   22.11%  12,980,923,283  byte[]
+   13.19%   7,743,718,990  java.util.HashMap$Node
+   12.29%   7,214,713,407  java.lang.String
+   10.11%   5,934,928,840  com.amazonaws.transform.JsonUnmarshallerContextImpl$JsonFieldTokenPair
+    5.49%   3,223,316,476  java.util.HashMap$Node[]
+    1.88%   1,102,051,274  java.lang.Object[]
+    1.03%     602,930,050  java.util.HashMap
+    0.59%     347,077,994  java.util.ArrayList
+    0.45%     265,289,222  char[]
+    0.29%     168,296,127  java.util.TreeMap$Entry
+    0.26%     154,140,378  java.util.concurrent.ConcurrentHashMap$Node
+    0.25%     147,848,934  com.amazonaws.transform.MapUnmarshaller
+    0.22%     131,071,750  java.lang.StringBuilder
+    0.21%     125,828,880  java.util.KeyValueHolder
+    0.20%     117,964,575  java.util.ImmutableCollections$Set12$1
+    0.20%     117,440,288  java.util.ImmutableCollections$Set12
+    0.17%      98,565,956  com.fasterxml.jackson.core.json.JsonReadContext
+    0.16%      92,798,799  java.util.Formatter$FormatSpecifier
+    0.15%      89,653,077  com.amazonaws.transform.ListUnmarshaller
+
+TOP 20 ALLOCATION SITES (nearest non-JDK caller):
+   28.06%  16,475,194,688  com/amazonaws/services/dynamodbv2/model/transform/AttributeValueJsonUnmarshaller.unmarshall
+   25.26%  14,829,982,082  com/fasterxml/jackson/core/util/TextBuffer.setCurrentAndReturn
+   19.25%  11,299,433,424  com/amazonaws/transform/MapUnmarshaller.unmarshall
+   10.11%   5,934,928,840  com/amazonaws/transform/JsonUnmarshallerContextImpl.updateContext
+    1.51%     886,569,317  org/apache/http/entity/InputStreamEntity.writeTo
+    0.96%     561,511,377  com/amazonaws/transform/ListUnmarshaller.unmarshallJsonToList
+    0.85%     500,169,798  com/amazonaws/auth/AWS4Signer.createCanonicalRequest
+    0.80%     469,761,152  com/amazonaws/auth/AWS4Signer.buildAuthorizationHeader
+    0.72%     419,953,887  com/amazonaws/services/dynamodbv2/model/AttributeValue.setL
+    0.69%     405,273,851  software/amazon/awssdk/benchmark/e2e/BenchmarkRunner.runScenario
+    0.62%     361,233,743  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$14.marshall
+    0.47%     276,823,536  com/amazonaws/auth/AWS4Signer.getSignedHeadersString
+    0.45%     266,862,083  com/amazonaws/util/StringUtils.appendCompactedString
+    0.39%     227,016,271  com/amazonaws/auth/AbstractAWSSigner.hash
+    0.37%     219,151,966  com/amazonaws/protocol/json/SdkJsonGenerator.<init>
+    0.37%     216,530,531  com/amazonaws/util/StringUtils.lowerCase
+    0.36%     211,811,948  org/apache/http/protocol/BasicHttpContext.setAttribute
+    0.36%     208,666,226  com/amazonaws/auth/AWS4Signer.shouldExcludeHeaderFromSigning
+    0.28%     167,247,553  org/apache/http/util/CharArrayBuffer.substringTrimmed
+    0.28%     163,053,257  com/amazonaws/auth/AbstractAWSSigner.doHash

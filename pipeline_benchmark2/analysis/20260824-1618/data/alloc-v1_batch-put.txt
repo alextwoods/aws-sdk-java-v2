@@ -1,0 +1,57 @@
+TOTAL 42432217468 bytes
+
+CATEGORIES (deepest-frame match, whole-process):
+   79.91%  33,907,213,151  json
+    7.83%   3,324,503,867  http-client
+    7.83%   3,323,979,580  signing
+    1.45%     614,037,774  benchmark-harness
+    1.27%     539,491,323  retry
+    1.16%     492,829,780  marshall
+    0.32%     136,838,907  unmarshall
+    0.12%      49,807,265  crypto
+    0.10%      40,894,386  pipeline-framework
+    0.01%       2,621,435  other
+
+TOP 20 ALLOCATED TYPES:
+   89.41%  37,938,029,304  byte[]
+    1.34%     569,375,682  java.lang.String
+    0.97%     411,041,008  java.lang.Object[]
+    0.84%     354,418,012  java.util.LinkedHashMap$LinkedEntryIterator
+    0.76%     320,863,644  char[]
+    0.40%     169,868,988  java.util.TreeMap$Entry
+    0.37%     157,286,100  java.lang.StringBuilder
+    0.35%     146,800,360  java.util.HashMap$Node
+    0.26%     111,148,844  java.util.concurrent.ConcurrentHashMap$Node
+    0.24%     102,235,965  com.fasterxml.jackson.core.json.JsonWriteContext
+    0.23%      98,041,669  java.util.ArrayList
+    0.19%      79,167,337  java.util.Formatter$FormatSpecifier
+    0.18%      77,594,476  java.util.HashMap$Node[]
+    0.17%      73,400,180  org.apache.http.message.BasicHeader
+    0.13%      55,050,135  java.util.HashMap
+    0.12%      51,380,126  org.joda.time.format.DateTimeParserBucket$SavedField
+    0.12%      50,855,839  int[]
+    0.12%      49,807,265  com.fasterxml.jackson.core.json.JsonReadContext
+    0.12%      49,282,978  java.util.concurrent.ConcurrentHashMap$Node[]
+    0.11%      44,564,395  com.fasterxml.jackson.core.json.UTF8StreamJsonParser
+
+TOP 20 ALLOCATION SITES (nearest non-JDK caller):
+   59.41%  25,210,864,682  com/fasterxml/jackson/core/json/UTF8JsonGenerator._flushBuffer
+   19.15%   8,125,399,926  com/amazonaws/protocol/json/SdkJsonGenerator.getBytes
+    2.14%     909,113,658  org/apache/http/entity/InputStreamEntity.writeTo
+    1.17%     494,402,641  com/amazonaws/auth/AWS4Signer.buildAuthorizationHeader
+    1.11%     469,236,865  com/amazonaws/auth/AWS4Signer.createCanonicalRequest
+    0.92%     388,496,667  software/amazon/awssdk/benchmark/e2e/BenchmarkRunner.runScenario
+    0.87%     368,573,761  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$14.marshall
+    0.68%     289,406,424  com/amazonaws/util/StringUtils.appendCompactedString
+    0.57%     241,696,307  com/amazonaws/auth/AbstractAWSSigner.hash
+    0.56%     237,502,011  com/amazonaws/util/StringUtils.lowerCase
+    0.54%     230,686,280  com/amazonaws/auth/AWS4Signer.getSignedHeadersString
+    0.54%     227,540,558  com/amazonaws/protocol/json/SdkJsonGenerator.<init>
+    0.47%     200,277,634  com/amazonaws/auth/AWS4Signer.shouldExcludeHeaderFromSigning
+    0.45%     190,316,181  com/amazonaws/util/CodecUtils.toStringDirect
+    0.43%     180,879,015  org/apache/http/util/CharArrayBuffer.<init>
+    0.40%     168,820,414  com/amazonaws/auth/AbstractAWSSigner.doHash
+    0.38%     163,053,257  org/apache/http/protocol/BasicHttpContext.setAttribute
+    0.37%     156,761,813  com/amazonaws/util/SdkHttpUtils.urlEncode
+    0.37%     155,188,952  com/amazonaws/auth/AWS4Signer.createStringToSign
+    0.36%     150,994,656  com/amazonaws/auth/AWS4Signer.getCanonicalizedHeaderString

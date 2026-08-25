@@ -1,0 +1,40 @@
+TOTAL 7327 samples
+
+CATEGORIES (deepest-frame match, whole-process):
+   34.79%           2,549  marshall
+   28.44%           2,084  socket-syscall
+   11.70%             857  json
+    9.95%             729  jit-compiler
+    4.68%             343  pipeline-framework
+    4.01%             294  crypto
+    1.77%             130  signing
+    1.53%             112  http-client
+    1.16%              85  benchmark-harness
+    0.64%              47  gc-vm
+    0.55%              40  endpoint-rules
+    0.48%              35  unmarshall
+    0.12%               9  retry
+    0.11%               8  other
+    0.07%               5  thread-sync
+
+TOP 20 SELF FRAMES:
+   22.16%       1,624  write
+    4.94%         362  java/util/Arrays$ArrayItr.next
+    4.80%         352  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator._writeStringSegment
+    4.64%         340  java/util/Arrays$ArrayItr.hasNext
+    3.88%         284  sha256_implCompressMB
+    3.71%         272  poll
+    3.60%         264  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.marshallPayloadField
+    2.72%         199  itable stub
+    2.55%         187  read
+    2.46%         180  software/amazon/awssdk/core/SdkField.getTrait
+    1.88%         138  software/amazon/awssdk/core/SdkField.get
+    1.79%         131  java/lang/String.charAt
+    1.65%         121  copy_byte_f
+    1.32%          97  java/util/Collections$UnmodifiableCollection$1.next
+    1.13%          83  java/util/EnumMap.get
+    1.04%          76  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.doMarshall
+    0.89%          65  java/util/Collections$UnmodifiableCollection$1.hasNext
+    0.89%          65  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator.writeFieldName
+    0.79%          58  pthread_jit_write_protect_np
+    0.74%          54  java/util/EnumMap.unmaskNull
