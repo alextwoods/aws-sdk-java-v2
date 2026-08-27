@@ -213,7 +213,8 @@ class DefaultSdkHttpFullResponse implements SdkHttpFullResponse {
         public SdkHttpFullResponse.Builder appendHeader(String headerName, String headerValue) {
             Validate.paramNotNull(headerName, "headerName");
             Validate.paramNotNull(headerValue, "headerValue");
-            this.headers.forInternalWrite().computeIfAbsent(headerName, k -> new ArrayList<>()).add(headerValue);
+            this.headers.forInternalWriteWithListMutation()
+                        .computeIfAbsent(headerName, k -> new ArrayList<>()).add(headerValue);
             return this;
         }
 

@@ -326,7 +326,8 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
         @Override
         public SdkHttpFullRequest.Builder appendRawQueryParameter(String paramName, String paramValue) {
-            this.queryParameters.forInternalWrite().computeIfAbsent(paramName, k -> new ArrayList<>()).add(paramValue);
+            this.queryParameters.forInternalWriteWithListMutation()
+                                .computeIfAbsent(paramName, k -> new ArrayList<>()).add(paramValue);
             return this;
         }
 
@@ -372,7 +373,8 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
         @Override
         public SdkHttpFullRequest.Builder appendHeader(String headerName, String headerValue) {
-            this.headers.forInternalWrite().computeIfAbsent(headerName, k -> new ArrayList<>()).add(headerValue);
+            this.headers.forInternalWriteWithListMutation()
+                        .computeIfAbsent(headerName, k -> new ArrayList<>()).add(headerValue);
             return this;
         }
 
