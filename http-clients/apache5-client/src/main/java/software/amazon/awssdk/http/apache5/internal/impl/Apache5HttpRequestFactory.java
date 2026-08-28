@@ -15,9 +15,12 @@
 
 package software.amazon.awssdk.http.apache5.internal.impl;
 
+import static software.amazon.awssdk.http.Header.CHUNKED;
+import static software.amazon.awssdk.http.Header.TRANSFER_ENCODING;
 import static software.amazon.awssdk.utils.NumericUtils.saturatedCast;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -31,9 +34,12 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpHeaders;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.HttpExecuteRequest;
 import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.http.SdkHttpRequest;
@@ -146,6 +152,12 @@ public class Apache5HttpRequestFactory {
          * return incorrect validation result.
          */
         if (request.contentStreamProvider().isPresent()) {
+            HttpEntity bufferedEntity = bufferBackedEntityOrNull(request);
+            if (bufferedEntity != null) {
+                entityEnclosingRequest.setEntity(bufferedEntity);
+                return entityEnclosingRequest;
+            }
+
             HttpEntity entity = new RepeatableInputStreamRequestEntity(request);
             if (!request.httpRequest().firstMatchingHeader(HttpHeaders.CONTENT_LENGTH).isPresent() && !entity.isChunked()) {
                 entity = Apache5Utils.newBufferedHttpEntity(entity);
@@ -154,6 +166,60 @@ public class Apache5HttpRequestFactory {
         }
 
         return entityEnclosingRequest;
+    }
+
+    /**
+     * When the request body is already buffered in memory (a marshalled, non-streaming body whose provider exposes
+     * {@link ContentStreamProvider#contentAsByteBufferOrNull()}), write it with a {@link ByteArrayEntity}: a single
+     * {@code write(array, offset, length)} to the socket instead of {@link org.apache.hc.core5.http.io.entity
+     * .InputStreamEntity}'s 4 KiB copy-buffer loop. The entity is also natively repeatable, so retries re-send the
+     * same bytes without any stream mark/reset bookkeeping.
+     *
+     * <p>Deliberately conservative: falls back to the stream path (returns {@code null}) unless the request is
+     * non-chunked, the buffer is heap-backed, and the {@code Content-Length} header is present and exactly matches
+     * the buffer, so wire framing is byte-identical to the previous behavior in every mismatch case.
+     */
+    private HttpEntity bufferBackedEntityOrNull(HttpExecuteRequest request) {
+        if (request.httpRequest().matchingHeaders(TRANSFER_ENCODING).contains(CHUNKED)) {
+            return null;
+        }
+
+        ByteBuffer content = request.contentStreamProvider().get().contentAsByteBufferOrNull();
+        if (content == null || !content.hasArray()) {
+            return null;
+        }
+
+        Long declaredLength = request.httpRequest().firstMatchingHeader(HttpHeaders.CONTENT_LENGTH)
+                                     .map(Apache5HttpRequestFactory::parseContentLengthOrNull)
+                                     .orElse(null);
+        if (declaredLength == null || declaredLength != content.remaining()) {
+            return null;
+        }
+
+        ContentType contentType = request.httpRequest().firstMatchingHeader(HttpHeaders.CONTENT_TYPE)
+                                         .map(Apache5HttpRequestFactory::parseContentTypeOrNull)
+                                         .orElse(null);
+
+        return new ByteArrayEntity(content.array(),
+                                   content.arrayOffset() + content.position(),
+                                   content.remaining(),
+                                   contentType);
+    }
+
+    private static Long parseContentLengthOrNull(String contentLength) {
+        try {
+            return Long.parseLong(contentLength);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static ContentType parseContentTypeOrNull(String contentType) {
+        try {
+            return ContentType.parse(contentType);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

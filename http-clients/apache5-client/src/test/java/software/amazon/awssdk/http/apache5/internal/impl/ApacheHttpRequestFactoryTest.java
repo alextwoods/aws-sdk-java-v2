@@ -32,8 +32,10 @@ import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.io.entity.BufferedHttpEntity;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.HttpExecuteRequest;
 import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.http.SdkHttpRequest;
@@ -132,6 +134,107 @@ class ApacheHttpRequestFactoryTest {
         assertThat(httpEntity.isChunked()).isTrue();
         assertThat(httpEntity).isNotInstanceOf(BufferedHttpEntity.class);
         assertThat(httpEntity).isInstanceOf(RepeatableInputStreamRequestEntity.class);
+    }
+
+    @Test
+    public void postRequest_withBufferBackedProviderAndMatchingContentLength_usesByteArrayEntity() throws Exception {
+        byte[] body = "{\"TableName\":\"foo\"}".getBytes(StandardCharsets.UTF_8);
+        HttpExecuteRequest request = HttpExecuteRequest.builder()
+                                                       .request(postRequest(b -> b
+                                                           .putHeader("Content-Length", Integer.toString(body.length))
+                                                           .putHeader("Content-Type", "application/x-amz-json-1.0")))
+                                                       .contentStreamProvider(
+                                                           ContentStreamProvider.fromByteArrayUnsafe(body))
+                                                       .build();
+
+        HttpEntity entity = entityOf(instance.create(request, requestConfig));
+
+        assertThat(entity).isInstanceOf(ByteArrayEntity.class);
+        assertThat(entity.isRepeatable()).isTrue();
+        assertThat(entity.isChunked()).isFalse();
+        assertThat(entity.getContentLength()).isEqualTo(body.length);
+        assertThat(drain(entity)).isEqualTo(body);
+        // Repeatable: a second write must produce the same bytes (the retry case).
+        assertThat(drain(entity)).isEqualTo(body);
+    }
+
+    @Test
+    public void postRequest_withBufferBackedProviderButMismatchedContentLength_fallsBackToStreamEntity() {
+        byte[] body = "TestStream".getBytes(StandardCharsets.UTF_8);
+        HttpExecuteRequest request = HttpExecuteRequest.builder()
+                                                       .request(postRequest(b -> b
+                                                           .putHeader("Content-Length", Integer.toString(body.length - 1))))
+                                                       .contentStreamProvider(
+                                                           ContentStreamProvider.fromByteArrayUnsafe(body))
+                                                       .build();
+
+        HttpEntity entity = entityOf(instance.create(request, requestConfig));
+
+        assertThat(entity).isInstanceOf(RepeatableInputStreamRequestEntity.class);
+    }
+
+    @Test
+    public void postRequest_withBufferBackedProviderButNoContentLength_fallsBackToBufferedEntity() {
+        byte[] body = "TestStream".getBytes(StandardCharsets.UTF_8);
+        HttpExecuteRequest request = HttpExecuteRequest.builder()
+                                                       .request(postRequest(b -> {}))
+                                                       .contentStreamProvider(
+                                                           ContentStreamProvider.fromByteArrayUnsafe(body))
+                                                       .build();
+
+        HttpEntity entity = entityOf(instance.create(request, requestConfig));
+
+        assertThat(entity).isNotInstanceOf(ByteArrayEntity.class);
+    }
+
+    @Test
+    public void postRequest_withBufferBackedProviderAndChunkedEncoding_fallsBackToStreamEntity() {
+        byte[] body = "TestStream".getBytes(StandardCharsets.UTF_8);
+        HttpExecuteRequest request = HttpExecuteRequest.builder()
+                                                       .request(postRequest(b -> b
+                                                           .putHeader("Content-Length", Integer.toString(body.length))
+                                                           .putHeader("Transfer-Encoding", "chunked")))
+                                                       .contentStreamProvider(
+                                                           ContentStreamProvider.fromByteArrayUnsafe(body))
+                                                       .build();
+
+        HttpEntity entity = entityOf(instance.create(request, requestConfig));
+
+        assertThat(entity).isInstanceOf(RepeatableInputStreamRequestEntity.class);
+        assertThat(entity.isChunked()).isTrue();
+    }
+
+    @Test
+    public void postRequest_withPlainStreamProvider_keepsStreamEntity() {
+        byte[] body = "TestStream".getBytes(StandardCharsets.UTF_8);
+        HttpExecuteRequest request = HttpExecuteRequest.builder()
+                                                       .request(postRequest(b -> b
+                                                           .putHeader("Content-Length", Integer.toString(body.length))))
+                                                       .contentStreamProvider(() -> new ByteArrayInputStream(body))
+                                                       .build();
+
+        HttpEntity entity = entityOf(instance.create(request, requestConfig));
+
+        assertThat(entity).isInstanceOf(RepeatableInputStreamRequestEntity.class);
+    }
+
+    private static SdkHttpRequest postRequest(java.util.function.Consumer<SdkHttpRequest.Builder> overrides) {
+        SdkHttpRequest.Builder builder = SdkHttpRequest.builder()
+                                                       .uri(URI.create("http://localhost:12345/"))
+                                                       .method(SdkHttpMethod.POST);
+        overrides.accept(builder);
+        return builder.build();
+    }
+
+    private static HttpEntity entityOf(HttpUriRequestBase apacheRequest) {
+        assertThat(apacheRequest).isInstanceOf(HttpEntityContainer.class);
+        return ((HttpEntityContainer) apacheRequest).getEntity();
+    }
+
+    private static byte[] drain(HttpEntity entity) throws Exception {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        entity.writeTo(out);
+        return out.toByteArray();
     }
 
     @Test
