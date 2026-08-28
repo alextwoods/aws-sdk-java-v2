@@ -222,3 +222,193 @@ allocation reduction, no e2e CPU change of this size would be resolvable here an
 signer still does `source.toBuilder()` → 5 × `putHeader` → `build()`, and the first `putHeader`
 after the builder/buildable share triggers a full `deepCopyMap` (TreeMap + one `ArrayList` per
 header). That is exactly what phase B targets.
+
+---
+
+## Phase B (part 1) — shallow header copy-on-write
+
+- Commit: `b283db70db0`
+- Raw data: `raw/phaseB-mutability/20260827-1754/`
+- Analysis: `analysis/racecar/timing-phaseB.md`
+
+### What was intended vs what was done
+
+The plan was "move the immutability barrier to after signing" so the signer mutates the request in
+place instead of round-tripping through a builder. **That turned out to be blocked**, so this phase
+delivers the other half of option B instead. The blocker is worth recording:
+
+`MakeRequestImmutableStage` sits *outside* the retry loop, and `RetryableStage` re-executes
+`SigningStage` with the same input on every attempt. If that input became a mutable builder, attempt
+2 would be handed the builder already carrying attempt 1's `Authorization`, `X-Amz-Date` and
+`X-Amz-Content-Sha256`. `authorization` is **not** in either signer's canonicalization ignore list
+(`V4CanonicalRequest.HEADERS_TO_IGNORE_IN_LOWER_CASE` at `V4CanonicalRequest.java:46`, mirrored in
+`FastV4HeaderSigner.IGNORED_HEADERS_LOWERCASE`), so the stale `Authorization` would be folded into
+the canonical request and every retry would be signed wrongly.
+
+smithy-java avoids this deliberately — its `isIgnoredHeader` excludes `authorization` with the
+comment that "ignoring it keeps re-signing a reused request idempotent". V2 gets away without that
+exclusion today only because the request handed to the signer is freshly derived from an immutable
+pre-signing request on every attempt.
+
+So moving the barrier requires a prerequisite: **make re-signing idempotent** by excluding the
+signer-managed headers from canonicalization. That is a signing-behavior change needing its own
+justification and test matrix (including a real multi-attempt retry test), so it is deliberately
+not bundled here. Tracked as phase B part 2 below.
+
+### What changed
+
+`LowCopyListMap` shares its map between a builder and the object it builds, and deep-copied on the
+first write after sharing — a new `TreeMap` **plus a new `ArrayList` per header**. That copy runs
+once per signing, per attempt.
+
+Most mutations don't need the value lists copied: `putHeader`/`putRawQueryParameter` replace an
+entry's list wholesale, and `remove`/`clear` only touch the map. Only `appendHeader`/
+`appendRawQueryParameter` mutate an existing list in place. The copy-on-write is now split
+accordingly:
+
+- `forInternalWrite()` — copies the map only, leaving value lists shared (put, remove, clear).
+- `forInternalWriteWithListMutation()` — also privatizes the value lists (the append mutators).
+
+Two share flags are tracked rather than one, because a shallow map copy leaves the lists shared: a
+put followed by an append still has to privatize them.
+
+### Correctness
+
+No behavior change is intended, and the risk is entirely aliasing, so the tests target that:
+
+- `LowCopyListMapTest` (14 tests) — the storage layer: put/replace/remove/clear/append after
+  sharing, append-after-put, two builders from one buildable, external-map ownership.
+- `SdkHttpRequestResponseAliasingTest` (11 tests) — the same contract through the public
+  `SdkHttpFullRequest`/`SdkHttpFullResponse` builder API, which is what catches a mutator wired to
+  the wrong path.
+
+Mutation-tested: reverting `appendHeader` to the shallow path fails 3 of the new tests, while the
+pre-existing `SdkHttpRequestResponseTest` stays green — i.e. without the new tests this bug would
+have shipped.
+
+`http-client-spi`: 91 tests pass, checkstyle and spotbugs clean. `http-auth-aws`: 268 JUnit + 166
+TestNG pass. **Not verified:** `sdk-core`'s suite could not be run — 136 test classes fail
+identically with and without this change (`ObjenesisException` from Mockito under JDK 25 in a
+partial reactor), so it is environmental, but it does mean sdk-core coverage is currently missing
+for these phases. Worth fixing before phase G.
+
+### Allocation (authoritative), phase F → phase B
+
+| client | scenario | phase F | phase B | delta |
+|--------|----------|--------:|--------:|------:|
+| v2-sync | small-get | 44,922 | 44,421 | −1.1% |
+| v2-sync | small-put | 37,803 | 37,520 | −0.8% |
+| v2-sync | batch-get | 517,121 | 515,968 | −0.2% |
+| v2-sync | batch-put | 191,024 | 187,566 | −1.8% |
+| v2-async | small-get | 55,184 | 52,753 | **−4.4%** |
+| v2-async | small-put | 46,759 | 45,401 | −2.9% |
+| v2-async | batch-get | 725,353 | 725,008 | −0.0% |
+| v2-async | batch-put | 356,448 | 355,498 | −0.3% |
+
+The targeted site is gone completely, but is partly replaced:
+
+| site (v2-sync small-get) | phase F | phase B |
+|--------------------------|--------:|--------:|
+| `CollectionUtils.lambda$deepCopyMap$1` | 1,756 | **0** |
+| `LowCopyListMap.shallowCopyMap` | – | 925 |
+
+So the per-header `ArrayList` allocations are eliminated (−1,756 B/op) and replaced by a map-only
+copy (+925 B/op), for a net ~830 B/op — consistent with the ~500 B/op measured at the total level
+once category re-attribution is accounted for. **The remaining 925 B/op is the `TreeMap` and its
+`Entry` nodes**, which this change cannot remove: eliminating it needs either the barrier move
+(part 2) or a strided-array header representation like smithy-java's `ArrayHttpHeaders`.
+
+Async benefits ~4× more than sync (−4.4% vs −1.1% on small-get), with `pipeline-framework` down
+7.7% and `retry` down 10.4% — the async path does more builder round-trips per call, so it was
+paying the copy more often.
+
+### Internal control for the rebuild
+
+Phase B required rebuilding `dynamodb` (see below), so untouched allocation categories were checked
+against phase F to confirm the two builds are comparable: `unmarshall` 7,154 → 7,157 (+0.0%),
+`marshall` 1,268 → 1,258 (−0.8%), `pipeline-framework` 24,680 → 24,768 (+0.4%). The build sets are
+equivalent, so the deltas above are attributable to the change.
+
+### e2e CPU (inconclusive, as before)
+
+user-CPU ops/s vs the phase 0 baseline: v2-async small-get −9.7%, small-put +3.8%, batch-get +1.2%,
+batch-put −2.7%, against baseline spreads of 6–31%. Still noise-dominated; not used for acceptance.
+
+### Verdict
+
+**Accepted, but a small win.** Removes the header-list deep copy entirely and is a prerequisite for
+cleaner header handling later, but nets only ~1% of total allocation on sync and ~4% on async. The
+larger prize in this area is still on the table.
+
+### Follow-ups identified
+
+1. **Phase B part 2 — move the barrier.** Requires excluding signer-managed headers from
+   canonicalization first, to make re-signing idempotent. Needs a multi-attempt retry test.
+2. **Header storage.** The residual 925 B/op per copy plus
+   `Apache5HttpRequestFactory.lambda$addHeadersToRequest$0` (1,268 B/op restating headers for
+   Apache) and `DefaultSdkHttpFullRequest$Builder.putHeader` (841 B/op) all point at the
+   `Map<String, List<String>>` representation itself.
+
+### Environment issue hit during this phase (and how it was resolved)
+
+The first phase B collection produced **48/48 failed runs** with
+`VerifyError: AwsAdvancedClientOption is not assignable to AttributeMap$Key`. Cause: while debugging
+an unrelated build failure I rebuilt and installed `utils` on its own, desynchronizing `~/.m2` — the
+previously installed `dynamodb` and `aws-core` jars had been compiled against a different
+`AttributeMap`. The baseline and phase F runs were unaffected because all their jars were mutually
+consistent.
+
+Resolution: rebuild the full set consistently, excluding only the module that cannot build under
+JDK 25:
+
+```bash
+mvn clean install -pl ':dynamodb,:apache-client,:aws-crt-client,!:codegen-maven-plugin' \
+    --am -P quick -Dmaven.test.skip=true
+```
+
+`codegen-maven-plugin` is excluded from the reactor and resolved from `~/.m2` instead (its source is
+unchanged); this sidesteps the `maven-plugin-plugin:3.6.0:descriptor` /
+`Unsupported class file major version 61` failure. **This is now the standard build command for
+every subsequent phase** — always install a mutually consistent set, and smoke-test with
+`./scripts/benchmark.sh --client v2-sync --scenario small-get --iterations 300` before starting a
+collection.
+
+---
+
+## Cumulative result so far (phase 0 → phase B)
+
+Allocation, bytes/op, client code:
+
+| client | scenario | phase 0 | phase B | total delta |
+|--------|----------|--------:|--------:|-----------:|
+| v2-sync | small-get | 61,387 | 44,421 | **−27.6%** |
+| v2-sync | small-put | 54,509 | 37,520 | **−31.2%** |
+| v2-sync | batch-get | 533,097 | 515,968 | −3.2% |
+| v2-sync | batch-put | 204,272 | 187,566 | −8.2% |
+| v2-async | small-get | 69,702 | 52,753 | **−24.3%** |
+| v2-async | small-put | 61,797 | 45,401 | **−26.5%** |
+| v2-async | batch-get | 742,955 | 725,008 | −2.4% |
+| v2-async | batch-put | 371,884 | 355,498 | −4.4% |
+
+For reference, smithy-java on the same workloads allocates 10,062 B/op (small-get) and
+121,708 B/op (batch-put). v2-sync small-get has gone from 6.1× to 4.4× smithy; batch-put from
+1.68× to 1.54×.
+
+### Next targets, ranked by current allocation (v2-sync small-get, bytes/op)
+
+Straight from the phase B profile, so this is where the remaining headroom actually is:
+
+| bytes/op | site | option |
+|---------:|------|--------|
+| 4,161 | `org/apache/hc/core5 InputStreamEntity.writeTo` | A — body materialized once, written without a stream copy |
+| 1,597 | `AttributeMapCopier.lambda$copy$0` | D — generated response copier re-copying parser output |
+| 1,268 | `Apache5HttpRequestFactory.lambda$addHeadersToRequest$0` | B/header storage |
+| 1,015 | `ExecutionAttributes.<init>` (`IdentityHashMap(64)`) | D — typed dense-key attribute store |
+| 941 | `SdkByteArrayOutputStream.<init>` | E — size the marshalling buffer from a per-operation hint |
+| 939 | `DefaultAuthSchemeOption$BuilderImpl.<init>` | D — cache the constant auth-scheme option per client |
+| 925 | `LowCopyListMap.shallowCopyMap` | B part 2 / header storage |
+| 841 | `DefaultSdkHttpFullRequest$Builder.putHeader` | header storage |
+
+Option A is the single largest remaining item and is the one that generalizes the
+`SimpleHttpContentPublisher` fix into a pipeline-wide "the body is already bytes" contract, so it is
+the natural next phase.
