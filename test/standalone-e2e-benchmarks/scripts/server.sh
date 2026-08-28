@@ -30,4 +30,5 @@ else
     CP="$DIR/target/classes:$(cat "$DIR/target/classpath.txt")"
 fi
 
-exec java -cp "$CP" software.amazon.awssdk.benchmark.e2e.MockDdbServer ${ARGS[@]+"${ARGS[@]}"}
+exec java --enable-native-access=ALL-UNNAMED -cp "$CP" \
+    software.amazon.awssdk.benchmark.e2e.MockDdbServer ${ARGS[@]+"${ARGS[@]}"}

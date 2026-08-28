@@ -82,7 +82,10 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ $LAUNCH_SERVER -eq 1 ]]; then
-    java -cp "$CP" software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" &
+    # --enable-native-access silences the JNA warning oshi triggers when the server reads its own
+    # CPU for /stats. Four lines per server start is four lines times every run in a collection.
+    java --enable-native-access=ALL-UNNAMED -cp "$CP" \
+        software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" &
     SERVER_PID=$!
     ENDPOINT="http://127.0.0.1:$PORT"
     RUNNER_ARGS+=(--endpoint "$ENDPOINT")

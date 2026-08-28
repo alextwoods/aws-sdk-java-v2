@@ -28,12 +28,10 @@ public final class BenchmarkRunner {
 
         Options:
           --client X            SDK under test (required):
-                                  v1              V1, Apache 4.x
-                                  v2-sync         V2 sync, Apache5
-                                  v2-sync-apache4 V2 sync, Apache 4.x
-                                  v2-async        V2 async, CRT
-                                  v2-async-netty  V2 async, Netty
-                                  smithy          smithy-java, HTTP/1.1
+                                  v1        V1, Apache 4.x
+                                  v2-sync   V2 sync, Apache5
+                                  v2-async  V2 async, CRT
+                                  smithy    smithy-java, HTTP/1.1
           --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
           --iterations N        measured operations per scenario (default: 10000)
           --warmup N            warmup operations per scenario, unmeasured (default: min(2000, iterations))
@@ -49,7 +47,9 @@ public final class BenchmarkRunner {
           --endpoint URL        server endpoint (default: http://127.0.0.1:19080)
           --metrics             collect SDK-internal metrics and print a per-scenario summary
           --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
-          --progress-seconds N  progress/ETA print interval, 0 disables (default: 5)
+          --progress-seconds N  progress/ETA print interval, 0 disables (default: 10). Values
+                                between 1 and 9 are raised to 10: progress output is for watching a
+                                long run, and a collection's logs are worth keeping small.
           --cpu-source X        auto, oshi, procfs, mxbean (default: auto; probes in that order)
           --append-to-results-file PATH
                                 append one CSV row per RESULT line to PATH; the file (and a
@@ -115,6 +115,14 @@ public final class BenchmarkRunner {
         }
     }
 
+    /**
+     * Floor for the progress interval, and its default. Progress output exists to watch a long run,
+     * not to log the run: a full collection is hundreds of JVM invocations, and anything printed per
+     * few seconds across all of them adds up to log files nobody reads. {@code --progress-seconds 0}
+     * turns it off entirely, which is what {@code collect.sh} does.
+     */
+    private static final int MIN_PROGRESS_SECONDS = 10;
+
     private BenchmarkRunner() {
     }
 
@@ -126,7 +134,7 @@ public final class BenchmarkRunner {
         URI endpoint = URI.create("http://127.0.0.1:" + MockDdbServer.DEFAULT_PORT);
         boolean metrics = false;
         Path metricsFile = null;
-        int progressSeconds = 5;
+        int progressSeconds = MIN_PROGRESS_SECONDS;
         String cpuSourceName = "auto";
         Path resultsFile = null;
         int concurrency = 1;
@@ -202,6 +210,11 @@ public final class BenchmarkRunner {
         if (!"inflight".equals(asyncModeName) && !"join".equals(asyncModeName)) {
             System.err.println("--async-mode must be inflight or join");
             System.exit(2);
+        }
+        if (progressSeconds > 0 && progressSeconds < MIN_PROGRESS_SECONDS) {
+            System.err.printf("note: raising --progress-seconds %d to %d; use 0 to disable%n",
+                              progressSeconds, MIN_PROGRESS_SECONDS);
+            progressSeconds = MIN_PROGRESS_SECONDS;
         }
 
         CpuTimeSource cpuSource = CpuTimeSources.bind(cpuSourceName);
