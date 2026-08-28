@@ -38,11 +38,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 COMMIT="$(git -C "$REPO" rev-parse --short=11 HEAD)"
-DIRTY_COUNT="$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+# "dirty" means tracked files differ from the commit, i.e. the jar does not correspond to
+# $COMMIT and is not reproducible from it. Untracked files are reported separately: scratch
+# files at the repo root are normal and do not affect the build, but an untracked file under a
+# module's src/ does get compiled in, so it is worth seeing.
+DIRTY_COUNT="$(git -C "$REPO" status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
 SUFFIX=""
 if [[ "$DIRTY_COUNT" != "0" ]]; then
     SUFFIX="-dirty"
-    echo "WARNING: working tree has $DIRTY_COUNT modified/untracked files; jar will be marked dirty." >&2
+    echo "WARNING: $DIRTY_COUNT tracked file(s) modified; jar will not be reproducible from $COMMIT." >&2
+fi
+UNTRACKED_SRC="$(git -C "$REPO" status --porcelain | awk '/^\?\?/ {print $2}' | grep -c '/src/' || true)"
+if [[ "$UNTRACKED_SRC" != "0" ]]; then
+    echo "NOTE: $UNTRACKED_SRC untracked file(s) under a module src/ directory; these are compiled in." >&2
 fi
 
 if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
