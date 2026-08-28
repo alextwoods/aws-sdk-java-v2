@@ -61,7 +61,8 @@ interface Workloads {
          * column. Reported because it has been a silent variable: with several {@code SdkHttpService}
          * implementations on the classpath, V2's default resolution picks by an internal priority
          * table, and this benchmark's classpath resolved to Apache5 while its README claimed Apache
-         * 4.x. Every client here now pins its transport explicitly and says which one it used.
+         * 4.x. Every client pins its transport explicitly and records which one it used, so a results
+         * file can never leave the question open.
          */
         String transport();
 
@@ -108,12 +109,8 @@ interface Workloads {
                 return v1(endpoint, metrics, concurrency);
             case "v2-sync":
                 return v2Sync(endpoint, metrics, concurrency);
-            case "v2-sync-apache4":
-                return v2SyncApache4(endpoint, metrics, concurrency);
             case "v2-async":
-                return v2AsyncCrt(endpoint, metrics, concurrency);
-            case "v2-async-netty":
-                return v2AsyncNetty(endpoint, metrics, concurrency);
+                return v2Async(endpoint, metrics, concurrency);
             case "smithy":
                 return smithy(endpoint, metrics, concurrency);
             default:
@@ -250,38 +247,22 @@ interface Workloads {
             .build();
     }
 
-    // ==================== V2 sync ====================
+    // ==================== V2 sync (Apache5) ====================
     //
-    // The transport is pinned rather than resolved from the classpath. `dynamodb` pulls in both
-    // apache5-client and netty-nio-client transitively, so three SdkHttpService implementations are
-    // present here (Apache5, Apache 4.x, CRT) and V2 picks by an internal priority table in
-    // ClasspathSdkHttpServiceProvider — Apache5 wins at priority 1. That is a silent variable in a
-    // benchmark: the winner changes if the table changes or another artifact appears on the
-    // classpath. `v2-sync` therefore pins Apache5 (which is what was actually being measured before
-    // this was pinned), and `v2-sync-apache4` exists to make the Apache 4.x comparison available
-    // instead of implied.
+    // Apache5 is the transport V2 sync is standardizing on, so it is the one worth measuring. It is
+    // pinned rather than resolved from the classpath: `dynamodb` pulls in apache5-client and
+    // netty-nio-client transitively, so several SdkHttpService implementations can be present at
+    // once and V2 picks by an internal priority table (ClasspathSdkHttpServiceProvider) instead of
+    // failing. That made the transport an invisible variable — this module's README claimed Apache
+    // 4.x for `v2-sync` while Apache5 was in fact what ran. Naming it here means the priority table,
+    // and anything new that lands on the classpath, cannot change what is under test.
 
     private static Workload v2Sync(URI endpoint, boolean metrics, int concurrency) {
-        return v2SyncWith(endpoint, metrics,
-                          software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
-                                                                               .maxConnections(concurrency),
-                          "apache5");
-    }
-
-    private static Workload v2SyncApache4(URI endpoint, boolean metrics, int concurrency) {
-        return v2SyncWith(endpoint, metrics,
-                          software.amazon.awssdk.http.apache.ApacheHttpClient.builder()
-                                                                             .maxConnections(concurrency),
-                          "apache4");
-    }
-
-    private static Workload v2SyncWith(URI endpoint, boolean metrics,
-                                       software.amazon.awssdk.http.SdkHttpClient.Builder<?> httpBuilder,
-                                       String transport) {
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
-            .httpClientBuilder(httpBuilder)
+            .httpClientBuilder(software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
+                                                                                   .maxConnections(concurrency))
             .overrideConfiguration(v2Override(metrics, publisher))
             .build();
 
@@ -308,7 +289,7 @@ interface Workloads {
             }
 
             public String transport() {
-                return transport;
+                return "apache5";
             }
 
             public void resetMetrics() {
@@ -325,33 +306,18 @@ interface Workloads {
         };
     }
 
-    // ==================== V2 async ====================
+    // ==================== V2 async (CRT) ====================
     //
-    // Two transports, both pinned. CRT was the only async option here previously, but Netty is what
-    // V2's default resolution picks (priority 1) and so is what most async users actually run — and
-    // comparing a Netty-based sync-vs-async story against a CRT measurement conflated the
-    // programming model with the transport.
+    // CRT is the transport V2 async is standardizing on, so it is the one worth measuring, and it is
+    // pinned for the same reason as the sync side. Note that V2's *current* default resolution would
+    // pick Netty (priority 1 in ClasspathSdkHttpServiceProvider's async table), so this benchmark is
+    // deliberately measuring the intended long-term default rather than today's fallback.
 
-    private static Workload v2AsyncCrt(URI endpoint, boolean metrics, int concurrency) {
-        return v2AsyncWith(endpoint, metrics,
-                           AwsCrtAsyncHttpClient.builder().maxConcurrency(concurrency).build(),
-                           "crt");
-    }
-
-    private static Workload v2AsyncNetty(URI endpoint, boolean metrics, int concurrency) {
-        return v2AsyncWith(endpoint, metrics,
-                           software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
-                               .builder().maxConcurrency(concurrency).build(),
-                           "netty");
-    }
-
-    private static Workload v2AsyncWith(URI endpoint, boolean metrics,
-                                        software.amazon.awssdk.http.async.SdkAsyncHttpClient httpClient,
-                                        String transport) {
+    private static Workload v2Async(URI endpoint, boolean metrics, int concurrency) {
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
-            .httpClient(httpClient)
+            .httpClient(AwsCrtAsyncHttpClient.builder().maxConcurrency(concurrency).build())
             .overrideConfiguration(v2Override(metrics, publisher))
             .build();
 
@@ -398,7 +364,7 @@ interface Workloads {
             }
 
             public String transport() {
-                return transport;
+                return "crt";
             }
 
             public void resetMetrics() {
