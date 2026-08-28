@@ -26,6 +26,7 @@ PROFILE_FORMAT="html"
 PROFILE_FILE=""
 PROFILE_OUT="$DIR/profiles"
 EXTRA_JVM_ARGS=""
+JAR=""
 ENDPOINT=""
 RUNNER_ARGS=()
 CLIENT="client"
@@ -39,6 +40,7 @@ while [[ $# -gt 0 ]]; do
         --profile-file)   PROFILE_FILE="$2"; shift 2 ;;
         --profile-out)    PROFILE_OUT="$2"; shift 2 ;;
         --jvm-args)    EXTRA_JVM_ARGS="$2"; shift 2 ;;
+        --jar)         JAR="$2"; shift 2 ;;
         --endpoint)    ENDPOINT="$2"; LAUNCH_SERVER=0; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         --client)      CLIENT="$2"; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         *)             RUNNER_ARGS+=("$1"); shift ;;
@@ -50,12 +52,24 @@ if [[ $LAUNCH_SERVER -eq 0 && -z "$ENDPOINT" ]]; then
     exit 2
 fi
 
-# ---- Build if needed ----
-if [[ ! -f "$DIR/target/classpath.txt" || ! -d "$DIR/target/classes" ]]; then
-    echo "Building (first run)..."
-    (cd "$DIR" && mvn -q package)
+# ---- Resolve what to run: a self-contained shaded jar, or the local build's classpath ----
+# With --jar, everything (both SDKs, smithy-java, the mock server and the runner) comes from that
+# one file, so no build is needed and nothing is read from the local Maven repo. This is how
+# benchmarks run on a remote host, and how two variants are compared back-to-back without
+# reinstalling artifacts between runs.
+if [[ -n "$JAR" ]]; then
+    if [[ ! -f "$JAR" ]]; then
+        echo "error: --jar $JAR not found" >&2
+        exit 2
+    fi
+    CP="$JAR"
+else
+    if [[ ! -f "$DIR/target/classpath.txt" || ! -d "$DIR/target/classes" ]]; then
+        echo "Building (first run)..."
+        (cd "$DIR" && mvn -q package)
+    fi
+    CP="$DIR/target/classes:$(cat "$DIR/target/classpath.txt")"
 fi
-CP="$DIR/target/classes:$(cat "$DIR/target/classpath.txt")"
 
 # ---- Start the mock server out-of-process ----
 SERVER_PID=""

@@ -168,6 +168,7 @@ public final class BenchmarkRunner {
                           ProcessHandle.current().pid());
         System.out.printf("=== cpu-time source: %s user/system split: %s%n",
                           cpuSource.name(), cpuSource.hasUserSystemSplit() ? "yes" : "no");
+        System.out.printf("=== build: %s%n", BuildProvenance.get().summary());
 
         long suiteStart = System.nanoTime();
         try (Workloads.Workload workload = Workloads.create(client, endpoint, metrics)) {
@@ -246,7 +247,7 @@ public final class BenchmarkRunner {
 
     private static final String CSV_HEADER =
         "client,scenario,iterations,wall_ms,ops_per_wall_sec,cpu_ms,cpu_user_ms,cpu_sys_ms,"
-        + "ops_per_cpu_sec,ops_per_user_cpu_sec,avg_us_per_op";
+        + "ops_per_cpu_sec,ops_per_user_cpu_sec,avg_us_per_op,phase,commit";
 
     /**
      * Append one CSV row per RESULT line to {@code file}, creating it with a header row first if
@@ -259,7 +260,8 @@ public final class BenchmarkRunner {
         double wallSec = wallNanos / 1e9;
         double cpuSec = cpu.totalNanos() / 1e9;
         double userSec = split ? cpu.userNanos() / 1e9 : 0.0;
-        String row = String.format(Locale.US, "%s,%s,%d,%.0f,%.1f,%.0f,%s,%s,%.1f,%s,%.1f",
+        BuildProvenance provenance = BuildProvenance.get();
+        String row = String.format(Locale.US, "%s,%s,%d,%.0f,%.1f,%.0f,%s,%s,%.1f,%s,%.1f,%s,%s",
                                    client, scenario.cliName, iterations,
                                    wallSec * 1e3, iterations / wallSec, cpuSec * 1e3,
                                    split ? String.format(Locale.US, "%.0f", cpu.userNanos() / 1e6) : "",
@@ -267,7 +269,8 @@ public final class BenchmarkRunner {
                                    cpuSec > 0 ? iterations / cpuSec : 0.0,
                                    split && userSec > 0
                                        ? String.format(Locale.US, "%.1f", iterations / userSec) : "",
-                                   wallNanos / 1e3 / iterations);
+                                   wallNanos / 1e3 / iterations,
+                                   provenance.phase(), provenance.shortCommit());
         boolean needsHeader = !Files.exists(file) || Files.size(file) == 0;
         String content = needsHeader ? CSV_HEADER + "\n" + row + "\n" : row + "\n";
         Files.writeString(file, content, StandardOpenOption.CREATE, StandardOpenOption.APPEND);

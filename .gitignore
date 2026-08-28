@@ -38,3 +38,6 @@ bin/
 
 # Raw benchmark collection data (test/standalone-e2e-benchmarks/scripts/collect.sh)
 /pipeline_benchmark2/raw/
+
+# Archived benchmark uber-jars (test/standalone-e2e-benchmarks/scripts/build-jar.sh) — ~64 MB each
+/pipeline_benchmark2/jars/

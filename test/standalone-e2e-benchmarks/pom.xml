@@ -27,6 +27,21 @@
         <netty.version>4.2.0.Final</netty.version>
         <jetty.version>9.4.45.v20220203</jetty.version>
         <otel.version>1.64.0</otel.version>
+
+        <!-- Provenance stamped into the jar. `benchmark.phase` is the human label for what this
+             build represents; override it per build, e.g.
+                 mvn package -Dbenchmark.phase=phaseA
+             The git values are filled in by git-commit-id-maven-plugin; the defaults here apply
+             when git metadata is unavailable. -->
+        <benchmark.phase>unspecified</benchmark.phase>
+        <benchmark.git.commit>${git.commit.id}</benchmark.git.commit>
+        <benchmark.git.branch>${git.branch}</benchmark.git.branch>
+        <benchmark.git.dirty>${git.dirty}</benchmark.git.dirty>
+        <benchmark.build.time>${maven.build.timestamp}</benchmark.build.time>
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <!-- Shaded jar name; keeps the phase label and commit in the filename so an archive of
+             these is browsable, while the embedded provenance remains authoritative. -->
+        <benchmark.jar.name>racecar-${benchmark.phase}</benchmark.jar.name>
     </properties>
 
     <dependencyManagement>
@@ -43,10 +58,14 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- ==================== AWS SDK V1 (monolithic artifact, as customers use it) ==================== -->
+        <!-- ==================== AWS SDK V1 ====================
+             The DynamoDB module (which pulls aws-java-sdk-core transitively) rather than the
+             monolithic `aws-java-sdk` artifact. The benchmark only touches dynamodbv2 plus core
+             (ClientConfiguration, auth, metrics), so runtime behavior is identical, and the leaner
+             tree is what makes a shaded uber-jar practical. -->
         <dependency>
             <groupId>com.amazonaws</groupId>
-            <artifactId>aws-java-sdk</artifactId>
+            <artifactId>aws-java-sdk-dynamodb</artifactId>
             <version>${aws.sdk.v1.version}</version>
         </dependency>
 
@@ -176,6 +195,24 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Only the provenance file is filtered; everything else is copied verbatim so binary
+                 resources cannot be corrupted by filtering. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>benchmark-provenance.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>benchmark-provenance.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -185,9 +222,107 @@
                     <release>21</release>
                 </configuration>
             </plugin>
-            <!-- No uber-jar: the V1 monolith pulls in every service module, so shading would be
-                 slow and enormous. Instead we write the resolved runtime classpath to a file that
-                 the bin/ scripts consume: java -cp "target/classes:$(cat target/classpath.txt)" -->
+            <!-- Stamp the build's git provenance into a filtered resource, so the shaded jar is
+                 self-describing: an archived artifact can be traced to a commit after being renamed
+                 or copied to another host. Failures here are non-fatal (the properties fall back to
+                 "unknown") so a benchmark run never depends on git being available. -->
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>7.0.0</version>
+                <executions>
+                    <execution>
+                        <id>resolve-git-properties</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
+                    <generateGitPropertiesFile>false</generateGitPropertiesFile>
+                    <injectAllReactorProjects>true</injectAllReactorProjects>
+                    <dirty>-dirty</dirty>
+                    <includeOnlyProperties>
+                        <property>^git.commit.id$</property>
+                        <property>^git.branch$</property>
+                        <property>^git.dirty$</property>
+                    </includeOnlyProperties>
+                </configuration>
+            </plugin>
+            <!-- Shaded uber-jar. Switching V1 from the monolithic `aws-java-sdk` artifact to
+                 `aws-java-sdk-dynamodb` is what makes this practical: one file to scp to a
+                 benchmark host, and one file per phase to keep in an archive for re-runs. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+                            <finalName>${benchmark.jar.name}</finalName>
+                            <!-- Nothing is relocated on purpose. There are no package collisions
+                                 (V2 already relocates its Jackson to
+                                 software.amazon.awssdk.thirdparty.jackson, smithy-java uses
+                                 upstream Jackson, and V1/V2 packages are disjoint), and relocating
+                                 would risk breaking reflection and ServiceLoader lookups. -->
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>software.amazon.awssdk.benchmark.e2e.BenchmarkRunner</mainClass>
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                                <!-- MANDATORY: V2 discovers SdkHttpService/SdkAsyncHttpService (and
+                                     smithy-java its ClientTransportFactory) through META-INF/services.
+                                     Without merging, HTTP client resolution fails at runtime with a
+                                     "no HTTP client found" style error rather than a build error. -->
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- V2's global execution interceptors live in a newline-delimited
+                                     resource that is NOT under META-INF/services and appears in
+                                     multiple jars. Shade's default would keep one copy and silently
+                                     drop the rest, changing pipeline behavior. -->
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>software/amazon/awssdk/global/handlers/execution.interceptors</resource>
+                                </transformer>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <!-- Signed jars fail verification once repackaged. -->
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/INDEX.LIST</exclude>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- The resolved runtime classpath is still written out, so runs can be done without
+                 the uber-jar (java -cp "target/classes:$(cat target/classpath.txt)"). Kept as the
+                 reference path for validating the shaded jar against. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>

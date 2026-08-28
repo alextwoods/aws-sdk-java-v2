@@ -23,6 +23,9 @@
 #   --scenarios LIST  comma-separated (default: small-get,small-put,batch-get,batch-put)
 #   --port N          mock server port (default: 19080)
 #   --out DIR         output root (default: <repo>/pipeline_benchmark2/raw)
+#   --jar PATH        run everything from a shaded benchmark jar instead of the local build. The
+#                     jar carries its own SDK and provenance stamp, so a collection is reproducible
+#                     from the archived artifact alone and does not depend on ~/.m2 state.
 set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,6 +38,7 @@ CLIENTS="v1,v2-sync,v2-async,smithy"
 SCENARIOS="small-get,small-put,batch-get,batch-put"
 PORT=19080
 OUT="$REPO/pipeline_benchmark2/raw"
+JAR=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -45,9 +49,19 @@ while [[ $# -gt 0 ]]; do
         --scenarios)  SCENARIOS="$2"; shift 2 ;;
         --port)       PORT="$2"; shift 2 ;;
         --out)        OUT="$2"; shift 2 ;;
+        --jar)        JAR="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
+
+JAR_ARGS=()
+if [[ -n "$JAR" ]]; then
+    if [[ ! -f "$JAR" ]]; then
+        echo "error: --jar $JAR not found" >&2
+        exit 2
+    fi
+    JAR_ARGS=(--jar "$JAR")
+fi
 
 IFS=',' read -r -a CLIENT_ARR <<< "$CLIENTS"
 IFS=',' read -r -a SCENARIO_ARR <<< "$SCENARIOS"
@@ -58,18 +72,28 @@ MANIFEST="$RUNDIR/manifest.md"
 RESULTS="$RUNDIR/results.csv"
 mkdir -p "$RUNDIR"
 
-# ---- Build up front so compile time is not inside any run ----
-echo "Building..."
-# Detect the local SDK V2 version from the repo's root pom and patch the benchmark pom if needed,
-# so the benchmarks always run against the locally-installed SDK artifacts.
-LOCAL_SDK_VERSION="$(grep -m1 '<version>' "$REPO/pom.xml" | sed 's/.*<version>//;s/<\/version>.*//')"
-CURRENT_SDK_VERSION="$(grep -m1 '<aws.sdk.v2.version>' "$DIR/pom.xml" | sed 's/.*<aws.sdk.v2.version>//;s/<\/aws.sdk.v2.version>.*//')"
-if [[ "$LOCAL_SDK_VERSION" != "$CURRENT_SDK_VERSION" ]]; then
-    echo "Updating aws.sdk.v2.version in benchmark pom: $CURRENT_SDK_VERSION -> $LOCAL_SDK_VERSION"
-    sed -i.bak "s|<aws.sdk.v2.version>$CURRENT_SDK_VERSION</aws.sdk.v2.version>|<aws.sdk.v2.version>$LOCAL_SDK_VERSION</aws.sdk.v2.version>|" "$DIR/pom.xml"
-    rm -f "$DIR/pom.xml.bak"
+# ---- Resolve the artifact under test up front, so no build time lands inside a run ----
+if [[ -n "$JAR" ]]; then
+    # The jar is self-contained and carries its own provenance; nothing to build or version-patch.
+    PROVENANCE_RAW="$(unzip -p "$JAR" benchmark-provenance.properties 2>/dev/null)"
+    LOCAL_SDK_VERSION="$(printf '%s\n' "$PROVENANCE_RAW" | sed -n 's/^sdk.v2.version=//p')"
+    JAR_PROVENANCE="$(printf '%s\n' "$PROVENANCE_RAW" | grep -v '^[#[:space:]]*$\|^#' | tr '\n' ' ')"
+    echo "Using jar: $JAR"
+    echo "  provenance: $JAR_PROVENANCE"
+else
+    echo "Building..."
+    # Detect the local SDK V2 version from the repo's root pom and patch the benchmark pom if needed,
+    # so the benchmarks always run against the locally-installed SDK artifacts.
+    LOCAL_SDK_VERSION="$(grep -m1 '<version>' "$REPO/pom.xml" | sed 's/.*<version>//;s/<\/version>.*//')"
+    CURRENT_SDK_VERSION="$(grep -m1 '<aws.sdk.v2.version>' "$DIR/pom.xml" | sed 's/.*<aws.sdk.v2.version>//;s/<\/aws.sdk.v2.version>.*//')"
+    if [[ "$LOCAL_SDK_VERSION" != "$CURRENT_SDK_VERSION" ]]; then
+        echo "Updating aws.sdk.v2.version in benchmark pom: $CURRENT_SDK_VERSION -> $LOCAL_SDK_VERSION"
+        sed -i.bak "s|<aws.sdk.v2.version>$CURRENT_SDK_VERSION</aws.sdk.v2.version>|<aws.sdk.v2.version>$LOCAL_SDK_VERSION</aws.sdk.v2.version>|" "$DIR/pom.xml"
+        rm -f "$DIR/pom.xml.bak"
+    fi
+    (cd "$DIR" && mvn -q package)
+    JAR_PROVENANCE="(local build, not a shaded jar)"
 fi
-(cd "$DIR" && mvn -q package)
 
 # ---- Manifest header ----
 GIT_COMMIT="$(git -C "$REPO" rev-parse HEAD)"
@@ -97,7 +121,9 @@ cat > "$MANIFEST" <<EOF
 - Hardware: $HW_CPU, $HW_CORES logical cores, $HW_MEM
 - Java: $(java -version 2>&1 | head -1)
 - Git: branch \`$GIT_BRANCH\`, commit \`$GIT_COMMIT\`, dirty files: $GIT_DIRTY
-- SDK V2 version: $LOCAL_SDK_VERSION (from repo root pom)
+- SDK V2 version: $LOCAL_SDK_VERSION
+- Artifact under test: ${JAR:-local build (target/classes + classpath.txt)}
+- Artifact provenance: $JAR_PROVENANCE
 - Benchmark module: test/standalone-e2e-benchmarks
 
 ## Parameters
@@ -143,7 +169,7 @@ run_one() {
 
     local cmd=(scripts/benchmark.sh --client "${caseid%%_*}" --scenario "${caseid#*_}"
                --iterations "$ITERATIONS" --warmup "$WARMUP" --progress-seconds 0
-               --cpu-source auto --port "$PORT" "$@")
+               --cpu-source auto --port "$PORT" ${JAR_ARGS[@]+"${JAR_ARGS[@]}"} "$@")
     echo "[$RUN_NO/$TOTAL_RUNS] $caseid $kind"
 
     local start_ts status

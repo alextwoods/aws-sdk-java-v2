@@ -55,9 +55,16 @@ canned ones, so don't compare those numbers against mock-server runs).
   your `~/.m2/repository`. If you're prototyping optimizations, build the modules you changed:
 
   ```bash
-  # From the repo root; builds just the DDB client and its transitive deps:
-  mvn install -pl :dynamodb,:apache-client,:aws-crt-client -P quick --am
+  # From the repo root; builds the DDB client, the HTTP clients, and their transitive deps.
+  # codegen-maven-plugin is excluded from the reactor (its descriptor goal fails on recent JDKs)
+  # and resolved from ~/.m2 instead.
+  mvn clean install -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
+      --am -P quick -Dmaven.test.skip=true
   ```
+
+  Install a *consistent* module set: installing a single core module on its own can leave `~/.m2`
+  desynchronized and produce `VerifyError`s at benchmark runtime. `scripts/build-jar.sh` runs
+  exactly this command for you.
 
   The `scripts/collect.sh` script auto-detects the version from the repo root pom and patches
   the benchmark pom if they drift apart, so you generally don't have to think about it.
@@ -131,6 +138,8 @@ structurally identical data.
 --profile MODE      jfr | cpu | alloc | wall
 --profile-out DIR   profiler output directory (default: ./profiles)
 --jvm-args "..."    extra JVM args for the client JVM
+--jar PATH          run from a shaded benchmark jar instead of the local build; skips the
+                    build entirely and reads nothing from ~/.m2 (see "Reproducible jars")
 ```
 
 ### Full collection (`scripts/collect.sh`)
@@ -158,16 +167,68 @@ because they perturb timing — never compare their RESULT lines against `result
 `manifest.md` in the run directory records the commit, environment, parameters, and the exact
 command, timestamps and status of every run.
 
-Options: `--iterations`, `--warmup`, `--reps`, `--clients`, `--scenarios`, `--port`, `--out`.
+Options: `--iterations`, `--warmup`, `--reps`, `--clients`, `--scenarios`, `--port`, `--out`, `--jar`.
+
+With `--jar`, no build runs at all and the jar's embedded provenance (phase, commit, SDK versions)
+is recorded in `manifest.md` under *Artifact provenance* — so a collection can be reproduced from
+the archived jar alone.
 
 ### Standalone server
 
 ```bash
-./scripts/server.sh [--port N]     # foreground; prints "READY port=N pid=..." when up
+./scripts/server.sh [--jar PATH] [--port N]   # foreground; prints "READY port=N pid=..." when up
 ```
 
 Useful for running the server on a separate machine/core set, or keeping one server up across
 many client runs (`benchmark.sh --no-server --endpoint http://host:port`).
+
+## Reproducible jars
+
+`scripts/build-jar.sh` produces a single self-contained, provenance-stamped uber-jar containing
+both SDKs, smithy-java, the mock server and the runner. That makes the jar the unit of
+measurement: one file to `scp` to a benchmark host, and one file per phase kept in an archive so
+any earlier measurement can be re-run later without rebuilding the SDK.
+
+```bash
+# Rebuild + install the SDK modules, then shade everything into a phase-labelled jar
+./scripts/build-jar.sh phaseD
+#   built:    target/racecar-phaseD.jar
+#   archived: ../../pipeline_benchmark2/jars/racecar-phaseD-<commit>[-dirty].jar
+
+./scripts/build-jar.sh phaseD --skip-sdk-build       # use whatever is already in ~/.m2
+./scripts/build-jar.sh phaseD --archive /tmp/jars    # archive somewhere else
+
+# Run anything from the jar; no build, no ~/.m2 involvement
+./scripts/benchmark.sh --jar target/racecar-phaseD.jar --client v2-sync --scenario small-get
+./scripts/collect.sh   --jar target/racecar-phaseD.jar --clients v2-sync,v2-async
+./scripts/server.sh    --jar target/racecar-phaseD.jar
+```
+
+The SDK modules are rebuilt by default because the benchmark resolves the SDK from `~/.m2` at
+*build* time — baking a stale SDK into a phase-labelled jar is the easiest way to record a wrong
+measurement. `build-jar.sh` builds a consistent module set
+(`:dynamodb,:apache-client,:apache5-client,:aws-crt-client`, excluding `:codegen-maven-plugin`);
+installing a single core module on its own has previously desynchronized `~/.m2` and produced
+runtime `VerifyError`s.
+
+Every jar embeds `benchmark-provenance.properties` (phase label, git commit/branch/dirty flag,
+build timestamp, and the V2/V1/smithy-java versions), so a renamed or copied artifact can still be
+traced to a commit:
+
+```bash
+unzip -p target/racecar-phaseD.jar benchmark-provenance.properties
+```
+
+The same values are printed in the run header (`=== build: phase=... commit=... sdkV2=...`) and the
+`phase` and `commit` columns of every `results.csv` row. A jar built from a dirty working tree is
+flagged in the provenance and gets a `-dirty` suffix in the archive filename.
+
+Shading notes, in case the dependency tree changes: nothing is relocated (V2 already relocates its
+Jackson to `software.amazon.awssdk.thirdparty.jackson`, and V1/V2 packages are disjoint), but the
+`ServicesResourceTransformer` is mandatory — V2 discovers `SdkHttpService`/`SdkAsyncHttpService`
+through `META-INF/services`, and without merging, HTTP client resolution fails at runtime rather
+than at build time. All platform natives (including non-host ones) are kept in the jar on purpose,
+so the same binary runs on a laptop and on a benchmark host for cross-checks.
 
 ## Output
 
@@ -203,8 +264,17 @@ RESULT client=v2-sync scenario=small-get iterations=100000 wall_ms=12000 ops_per
   unavailable source (e.g. `procfs` on macOS) fails fast at startup.
 
 With `--append-to-results-file PATH`, each RESULT line is also appended to a CSV file (columns
-mirror the RESULT fields; the header row is written when the file is first created). Runs with a
-no-split CPU source leave the `cpu_user_ms`/`cpu_sys_ms`/`ops_per_user_cpu_sec` cells empty.
+mirror the RESULT fields, plus `phase` and `commit` from the build provenance; the header row is
+written when the file is first created). Runs with a no-split CPU source leave the
+`cpu_user_ms`/`cpu_sys_ms`/`ops_per_user_cpu_sec` cells empty.
+
+The run header also identifies the artifact under test, so a stray log file can be traced back to a
+build:
+
+```
+=== build: phase=phaseD commit=59b8913e05f branch=feature/poc/racecar dirty=true \
+    built=2026-08-28T16:25:19Z sdkV2=2.54.4-SNAPSHOT sdkV1=1.12.797 smithy=1.5.1
+```
 
 With `--metrics`, each SDK's native metric facility reports per-phase timings as `METRIC` lines
 (V2 `MetricPublisher` CoreMetrics, V1 `AWSRequestMetrics`, smithy-java OTel
@@ -261,14 +331,17 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   host with `--no-server --endpoint`).
 - **Dependency pins.** V2 uses the local `-SNAPSHOT` version from the repo (the `<aws.sdk.v2.version>`
   property in the benchmark pom must match the repo root's `<version>`; `scripts/collect.sh` patches
-  it automatically). smithy-java 1.5.1 from Maven Central; V1 via the monolithic
-  `com.amazonaws:aws-java-sdk:1.12.797` artifact (as customers use it — the first build downloads
-  the full V1 module set; swap to `aws-java-sdk-dynamodb` for a leaner tree, runtime behavior is
-  identical). The smithy-java client comes from mavenLocal (see prerequisites). Netty is pinned
-  to 4.2.0.Final for smithy-java compatibility.
-- **No uber-jar.** Because of the V1 monolith, the build writes the resolved classpath to
-  `target/classpath.txt` instead of shading; the `scripts/` files consume it. Run classes manually
-  with `java -cp "target/classes:$(cat target/classpath.txt)" ...`.
+  it automatically). smithy-java 1.5.1 from Maven Central; V1 via
+  `com.amazonaws:aws-java-sdk-dynamodb:1.12.797`, which pulls `aws-java-sdk-core` transitively.
+  (This used to be the monolithic `aws-java-sdk` artifact "as customers use it", but the benchmark
+  only touches `dynamodbv2` plus core, so runtime behavior is identical and the leaner tree is what
+  makes shading practical.) The smithy-java client comes from mavenLocal (see prerequisites). Netty
+  is pinned to 4.2.0.Final for smithy-java compatibility.
+- **Two ways to run.** `package` produces both a shaded uber-jar (`target/racecar-<phase>.jar`, see
+  "Reproducible jars") and the resolved runtime classpath in `target/classpath.txt`. The scripts
+  default to the classpath and switch to the jar with `--jar`; the classpath path is kept as the
+  reference to validate the shaded jar against. Run classes manually with
+  `java -cp "target/classes:$(cat target/classpath.txt)" ...`.
 - **JDK 24+ warnings.** Netty (pulled in by smithy-java) triggers a `sun.misc.Unsafe` deprecation
   warning; harmless. `--enable-native-access=ALL-UNNAMED` is always passed for the CRT client and
   async-profiler.
