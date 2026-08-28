@@ -36,6 +36,7 @@ public final class BuildProvenance {
 
     private final String phase;
     private final String commit;
+    private final String sdkCommit;
     private final String branch;
     private final String dirtyFiles;
     private final String buildTime;
@@ -46,6 +47,7 @@ public final class BuildProvenance {
     private BuildProvenance(Properties p) {
         this.phase = p.getProperty("phase", "unspecified");
         this.commit = p.getProperty("git.commit", "unknown");
+        this.sdkCommit = p.getProperty("sdk.commit", "unrecorded");
         this.branch = p.getProperty("git.branch", "unknown");
         this.dirtyFiles = p.getProperty("git.dirty.files", "unknown");
         this.buildTime = p.getProperty("build.time", "unknown");
@@ -79,7 +81,24 @@ public final class BuildProvenance {
     }
 
     public String shortCommit() {
-        return commit.length() >= 11 ? commit.substring(0, 11) : commit;
+        return abbreviate(commit);
+    }
+
+    /**
+     * Commit the SDK inside this jar was built from, which differs from {@link #commit()} whenever a
+     * jar deliberately pairs the current harness with an SDK from another revision. {@code
+     * "unrecorded"} when the build did not verify it.
+     */
+    public String sdkCommit() {
+        return sdkCommit;
+    }
+
+    public String shortSdkCommit() {
+        return abbreviate(sdkCommit);
+    }
+
+    private static String abbreviate(String sha) {
+        return sha.length() >= 11 ? sha.substring(0, 11) : sha;
     }
 
     public String branch() {
@@ -98,8 +117,9 @@ public final class BuildProvenance {
      * Single-line summary for the run header.
      */
     public String summary() {
-        return String.format("phase=%s commit=%s branch=%s dirty=%s built=%s sdkV2=%s sdkV1=%s smithy=%s",
-                             phase, shortCommit(), branch, dirtyFiles, buildTime,
+        return String.format("phase=%s commit=%s sdkCommit=%s branch=%s dirty=%s built=%s"
+                             + " sdkV2=%s sdkV1=%s smithy=%s",
+                             phase, shortCommit(), shortSdkCommit(), branch, dirtyFiles, buildTime,
                              sdkV2Version, sdkV1Version, smithyVersion);
     }
 }

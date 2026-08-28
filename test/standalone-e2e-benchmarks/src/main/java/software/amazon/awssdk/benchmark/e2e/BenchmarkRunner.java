@@ -254,7 +254,9 @@ public final class BenchmarkRunner {
 
     private static final String CSV_HEADER =
         "client,scenario,iterations,wall_ms,ops_per_wall_sec,cpu_ms,cpu_user_ms,cpu_sys_ms,"
-        + "ops_per_cpu_sec,ops_per_user_cpu_sec,avg_us_per_op,phase,commit";
+        // `commit` is the harness build; `sdk_commit` is the SDK inside it, which is the variable
+        // under test when two jars are compared and is not always the same revision.
+        + "ops_per_cpu_sec,ops_per_user_cpu_sec,avg_us_per_op,phase,commit,sdk_commit";
 
     /**
      * Append one CSV row per RESULT line to {@code file}, creating it with a header row first if
@@ -268,7 +270,7 @@ public final class BenchmarkRunner {
         double cpuSec = cpu.totalNanos() / 1e9;
         double userSec = split ? cpu.userNanos() / 1e9 : 0.0;
         BuildProvenance provenance = BuildProvenance.get();
-        String row = String.format(Locale.US, "%s,%s,%d,%.0f,%.1f,%.0f,%s,%s,%.1f,%s,%.1f,%s,%s",
+        String row = String.format(Locale.US, "%s,%s,%d,%.0f,%.1f,%.0f,%s,%s,%.1f,%s,%.1f,%s,%s,%s",
                                    client, scenario.cliName, iterations,
                                    wallSec * 1e3, iterations / wallSec, cpuSec * 1e3,
                                    split ? String.format(Locale.US, "%.0f", cpu.userNanos() / 1e6) : "",
@@ -277,7 +279,8 @@ public final class BenchmarkRunner {
                                    split && userSec > 0
                                        ? String.format(Locale.US, "%.1f", iterations / userSec) : "",
                                    wallNanos / 1e3 / iterations,
-                                   provenance.phase(), provenance.shortCommit());
+                                   provenance.phase(), provenance.shortCommit(),
+                                   provenance.shortSdkCommit());
         boolean needsHeader = !Files.exists(file) || Files.size(file) == 0;
         String content = needsHeader ? CSV_HEADER + "\n" + row + "\n" : row + "\n";
         Files.writeString(file, content, StandardOpenOption.CREATE, StandardOpenOption.APPEND);

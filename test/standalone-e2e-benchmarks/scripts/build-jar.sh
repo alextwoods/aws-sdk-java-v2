@@ -6,15 +6,28 @@
 # for reruns. Two jars can be compared back-to-back without reinstalling Maven artifacts, which is
 # what makes paired A/B measurement practical.
 #
-# Usage: scripts/build-jar.sh PHASE [--skip-sdk-build] [--archive DIR]
+# Usage: scripts/build-jar.sh PHASE [--skip-sdk-build] [--sdk-commit SHA] [--archive DIR]
 #
 #   PHASE               label stamped into the jar and used in its filename, e.g. phaseA, baseline
 #   --skip-sdk-build    don't rebuild/install the SDK modules first (use what's already in ~/.m2)
+#   --sdk-commit SHA    record SHA as the commit the SDK in ~/.m2 was built from. Only meaningful
+#                       with --skip-sdk-build; without it the SDK is built from HEAD and that is
+#                       what gets recorded.
 #   --archive DIR       archive location (default: <repo>/pipeline_benchmark2/jars)
 #
 # The SDK modules are rebuilt and installed by default, because the benchmark resolves the SDK from
 # ~/.m2 at build time and baking a stale SDK into a phase-labelled jar is the single easiest way to
 # produce a wrong measurement.
+#
+# Two commits are recorded, because they are not always the same one. A baseline jar is built by
+# installing an older SDK and then shading it with today's harness — which is exactly what you want
+# (comparing two jars is only sound if the harness is identical), but it means the harness commit
+# does not describe the SDK bytes. Build such a jar with:
+#
+#   git checkout <baseline-sha>
+#   ... install the SDK modules ...
+#   git checkout <working-branch>
+#   scripts/build-jar.sh phase0 --skip-sdk-build --sdk-commit <baseline-sha>
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,10 +41,12 @@ fi
 shift
 
 SKIP_SDK_BUILD=0
+SDK_COMMIT=""
 ARCHIVE="$REPO/pipeline_benchmark2/jars"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-sdk-build) SKIP_SDK_BUILD=1; shift ;;
+        --sdk-commit)     SDK_COMMIT="$2"; shift 2 ;;
         --archive)        ARCHIVE="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -54,6 +69,13 @@ if [[ "$UNTRACKED_SRC" != "0" ]]; then
 fi
 
 if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
+    if [[ -n "$SDK_COMMIT" ]]; then
+        echo "error: --sdk-commit only applies with --skip-sdk-build; without it the SDK is built" >&2
+        echo "       from HEAD and that commit is recorded automatically." >&2
+        exit 2
+    fi
+    # The SDK is about to be built from the working tree, so HEAD is a verified answer.
+    SDK_COMMIT="$COMMIT"
     echo "==> Building and installing SDK modules (consistent set, excluding codegen-maven-plugin)"
     # codegen-maven-plugin is excluded from the reactor and resolved from ~/.m2 instead: its
     # descriptor goal fails under recent JDKs, and its sources are not what we are changing.
@@ -64,8 +86,16 @@ if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
         --am -P quick -Dmaven.test.skip=true -q)
 fi
 
-echo "==> Building benchmark jar (phase=$PHASE commit=$COMMIT)"
-(cd "$DIR" && mvn -q clean package -Dbenchmark.phase="$PHASE")
+SDK_COMMIT="${SDK_COMMIT:-unrecorded}"
+if [[ "$SDK_COMMIT" == "unrecorded" ]]; then
+    echo "NOTE: --skip-sdk-build without --sdk-commit; the SDK in ~/.m2 cannot be attributed to a" >&2
+    echo "      commit, so the jar records sdk.commit=unrecorded." >&2
+elif [[ "$SDK_COMMIT" != "$COMMIT" ]]; then
+    echo "==> SDK is from a different revision than the harness: sdk=$SDK_COMMIT harness=$COMMIT"
+fi
+
+echo "==> Building benchmark jar (phase=$PHASE harness=$COMMIT sdk=$SDK_COMMIT)"
+(cd "$DIR" && mvn -q clean package -Dbenchmark.phase="$PHASE" -Dbenchmark.sdk.commit="$SDK_COMMIT")
 
 BUILT="$DIR/target/racecar-$PHASE.jar"
 if [[ ! -f "$BUILT" ]]; then
@@ -73,8 +103,10 @@ if [[ ! -f "$BUILT" ]]; then
     exit 1
 fi
 
+# The filename carries the SDK commit, since that is the variable under test when jars are compared;
+# the harness commit is in the embedded provenance.
 mkdir -p "$ARCHIVE"
-ARCHIVED="$ARCHIVE/racecar-$PHASE-$COMMIT$SUFFIX.jar"
+ARCHIVED="$ARCHIVE/racecar-$PHASE-$SDK_COMMIT$SUFFIX.jar"
 cp "$BUILT" "$ARCHIVED"
 
 echo

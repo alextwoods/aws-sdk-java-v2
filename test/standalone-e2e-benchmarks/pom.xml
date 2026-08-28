@@ -37,6 +37,12 @@
         <benchmark.git.commit>${git.commit.id}</benchmark.git.commit>
         <benchmark.git.branch>${git.branch}</benchmark.git.branch>
         <benchmark.git.dirty>${git.dirty}</benchmark.git.dirty>
+        <!-- The commit the *SDK inside the jar* was built from, which is not always the commit the
+             harness was built from: a baseline jar pairs today's harness with an older SDK
+             installed in ~/.m2, and comparing two jars is only sound if the harness is identical.
+             Defaults to "unrecorded" rather than to the harness commit, so an unverified value is
+             never mistaken for a verified one. scripts/build-jar.sh sets it. -->
+        <benchmark.sdk.commit>unrecorded</benchmark.sdk.commit>
         <benchmark.build.time>${maven.build.timestamp}</benchmark.build.time>
         <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
         <!-- Shaded jar name; keeps the phase label and commit in the filename so an archive of

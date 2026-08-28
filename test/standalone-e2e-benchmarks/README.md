@@ -219,9 +219,27 @@ traced to a commit:
 unzip -p target/racecar-phaseD.jar benchmark-provenance.properties
 ```
 
-The same values are printed in the run header (`=== build: phase=... commit=... sdkV2=...`) and the
-`phase` and `commit` columns of every `results.csv` row. A jar built from a dirty working tree is
-flagged in the provenance and gets a `-dirty` suffix in the archive filename.
+The same values are printed in the run header (`=== build: phase=... commit=... sdkCommit=...`) and
+in the `phase`, `commit` and `sdk_commit` columns of every `results.csv` row. "Dirty" means *tracked*
+files differ from the recorded commit — i.e. the jar can't be rebuilt from it — and adds a `-dirty`
+suffix to the archive filename. Untracked scratch files don't count, but untracked files under a
+module's `src/` are called out, since those do get compiled in.
+
+**Two commits, because they can differ.** `commit` is the harness build; `sdk_commit` is the SDK
+*inside* the jar. Comparing two jars is only sound if the harness is identical, so a baseline jar is
+built by installing an older SDK and then shading it with today's harness:
+
+```bash
+git checkout <baseline-sha>
+mvn clean install -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
+    --am -P quick -Dmaven.test.skip=true
+git checkout <working-branch>
+./scripts/build-jar.sh phase0 --skip-sdk-build --sdk-commit <baseline-sha>
+```
+
+The archive filename carries `sdk_commit`, since that is the variable under test. Using
+`--skip-sdk-build` *without* `--sdk-commit` records `sdk.commit=unrecorded` rather than guessing:
+whatever is in `~/.m2` cannot be attributed to a revision.
 
 Shading notes, in case the dependency tree changes: nothing is relocated (V2 already relocates its
 Jackson to `software.amazon.awssdk.thirdparty.jackson`, and V1/V2 packages are disjoint), but the
@@ -264,16 +282,16 @@ RESULT client=v2-sync scenario=small-get iterations=100000 wall_ms=12000 ops_per
   unavailable source (e.g. `procfs` on macOS) fails fast at startup.
 
 With `--append-to-results-file PATH`, each RESULT line is also appended to a CSV file (columns
-mirror the RESULT fields, plus `phase` and `commit` from the build provenance; the header row is
-written when the file is first created). Runs with a no-split CPU source leave the
+mirror the RESULT fields, plus `phase`, `commit` and `sdk_commit` from the build provenance; the
+header row is written when the file is first created). Runs with a no-split CPU source leave the
 `cpu_user_ms`/`cpu_sys_ms`/`ops_per_user_cpu_sec` cells empty.
 
 The run header also identifies the artifact under test, so a stray log file can be traced back to a
 build:
 
 ```
-=== build: phase=phaseD commit=59b8913e05f branch=feature/poc/racecar dirty=true \
-    built=2026-08-28T16:25:19Z sdkV2=2.54.4-SNAPSHOT sdkV1=1.12.797 smithy=1.5.1
+=== build: phase=phaseD1 commit=d8cbc5ac789 sdkCommit=d8cbc5ac789 branch=feature/poc/racecar \
+    dirty=false built=2026-08-28T17:18:32Z sdkV2=2.54.4-SNAPSHOT sdkV1=1.12.797 smithy=1.5.1
 ```
 
 With `--metrics`, each SDK's native metric facility reports per-phase timings as `METRIC` lines
