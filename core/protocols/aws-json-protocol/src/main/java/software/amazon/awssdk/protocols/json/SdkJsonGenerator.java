@@ -39,11 +39,21 @@ public class SdkJsonGenerator implements StructuredJsonGenerator {
      * prevent frequent resizings but small enough to avoid wasted allocations for small requests.
      */
     private static final int DEFAULT_BUFFER_SIZE = 1024;
-    private final SdkByteArrayOutputStream baos = new SdkByteArrayOutputStream(DEFAULT_BUFFER_SIZE);
+    private final SdkByteArrayOutputStream baos;
     private final JsonGenerator generator;
     private final String contentType;
 
     public SdkJsonGenerator(JsonFactory factory, String contentType) {
+        this(factory, contentType, DEFAULT_BUFFER_SIZE);
+    }
+
+    /**
+     * @param initialBufferCapacity initial capacity of the output buffer, e.g. the size of recently marshalled bodies
+     *                              for the same operation. A correct value lets the buffer be allocated once instead
+     *                              of growing to the body size by doubling.
+     */
+    public SdkJsonGenerator(JsonFactory factory, String contentType, int initialBufferCapacity) {
+        this.baos = new SdkByteArrayOutputStream(Math.max(1, initialBufferCapacity));
         try {
             /**
              * A {@link JsonGenerator} created is by default enabled with

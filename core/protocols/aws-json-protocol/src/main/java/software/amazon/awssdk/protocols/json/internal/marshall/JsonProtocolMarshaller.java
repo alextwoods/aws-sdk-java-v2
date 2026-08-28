@@ -31,6 +31,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.IntConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.SdkField;
@@ -88,16 +89,19 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
     private final boolean hasEventStreamingInput;
     private final boolean hasEvent;
     private final boolean hasAwsQueryCompatible;
+    private final IntConsumer marshalledSizeReporter;
 
     JsonProtocolMarshaller(URI endpoint,
                            StructuredJsonGenerator jsonGenerator,
                            String contentType,
                            OperationInfo operationInfo,
                            AwsJsonProtocolMetadata protocolMetadata,
-                           boolean hasAwsQueryCompatible) {
+                           boolean hasAwsQueryCompatible,
+                           IntConsumer marshalledSizeReporter) {
         this.endpoint = endpoint;
         this.jsonGenerator = jsonGenerator;
         this.contentType = contentType;
+        this.marshalledSizeReporter = marshalledSizeReporter != null ? marshalledSizeReporter : size -> { };
         this.protocolMetadata = protocolMetadata;
         this.hasExplicitPayloadMember = operationInfo.hasExplicitPayloadMember();
         this.hasImplicitPayloadMembers = operationInfo.hasImplicitPayloadMembers();
@@ -298,6 +302,7 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
                 int contentSize = jsonGenerator.contentSize();
                 if (contentSize > 0) {
                     request.putHeader(CONTENT_LENGTH, Integer.toString(contentSize));
+                    marshalledSizeReporter.accept(contentSize);
                 }
             }
         }

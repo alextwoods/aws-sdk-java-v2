@@ -16,6 +16,7 @@
 package software.amazon.awssdk.protocols.json.internal.marshall;
 
 import java.net.URI;
+import java.util.function.IntConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.protocols.core.OperationInfo;
@@ -36,6 +37,7 @@ public final class JsonProtocolMarshallerBuilder {
     private boolean sendExplicitNullForPayload;
     private AwsJsonProtocolMetadata protocolMetadata;
     private boolean hasAwsQueryCompatible = false;
+    private IntConsumer marshalledSizeReporter;
 
     private JsonProtocolMarshallerBuilder() {
     }
@@ -112,6 +114,15 @@ public final class JsonProtocolMarshallerBuilder {
     }
 
     /**
+     * Sets a consumer notified of the final marshalled body size, used to seed the marshalling buffer size for
+     * subsequent requests of the same operation.
+     */
+    public JsonProtocolMarshallerBuilder marshalledSizeReporter(IntConsumer marshalledSizeReporter) {
+        this.marshalledSizeReporter = marshalledSizeReporter;
+        return this;
+    }
+
+    /**
      * @return New instance of {@link ProtocolMarshaller}. If {@link #sendExplicitNullForPayload} is true then the marshaller
      * will be wrapped with {@link NullAsEmptyBodyProtocolRequestMarshaller}.
      */
@@ -121,7 +132,8 @@ public final class JsonProtocolMarshallerBuilder {
                                                                                                contentType,
                                                                                                operationInfo,
                                                                                                protocolMetadata,
-                                                                                               hasAwsQueryCompatible);
+                                                                                               hasAwsQueryCompatible,
+                                                                                               marshalledSizeReporter);
         return sendExplicitNullForPayload ? protocolMarshaller
                                           : new NullAsEmptyBodyProtocolRequestMarshaller(protocolMarshaller);
     }

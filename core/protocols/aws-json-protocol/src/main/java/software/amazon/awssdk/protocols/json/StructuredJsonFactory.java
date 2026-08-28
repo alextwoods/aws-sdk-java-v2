@@ -31,6 +31,18 @@ public interface StructuredJsonFactory {
      */
     StructuredJsonGenerator createWriter(String contentType);
 
+    /**
+     * Returns the {@link StructuredJsonGenerator} to be used for marshalling the request, with a hint for the initial
+     * output-buffer capacity (typically the size of recently marshalled bodies for the same operation). Implementations
+     * that do not support pre-sizing may ignore the hint; the default does.
+     *
+     * @param contentType           the content type.
+     * @param initialBufferCapacity suggested initial capacity of the output buffer, in bytes.
+     */
+    default StructuredJsonGenerator createWriter(String contentType, int initialBufferCapacity) {
+        return createWriter(contentType);
+    }
+
     JsonFactory getJsonFactory();
 
     ErrorCodeParser getErrorCodeParser(String customErrorCodeFieldName);

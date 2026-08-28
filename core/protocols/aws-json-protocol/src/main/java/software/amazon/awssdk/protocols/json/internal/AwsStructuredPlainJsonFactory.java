@@ -55,6 +55,13 @@ public final class AwsStructuredPlainJsonFactory {
         }
 
         @Override
+        protected StructuredJsonGenerator createWriter(JsonFactory jsonFactory,
+                                                       String contentType,
+                                                       int initialBufferCapacity) {
+            return new SdkJsonGenerator(jsonFactory, contentType, initialBufferCapacity);
+        }
+
+        @Override
         public JsonFactory getJsonFactory() {
             return JSON_FACTORY;
         }

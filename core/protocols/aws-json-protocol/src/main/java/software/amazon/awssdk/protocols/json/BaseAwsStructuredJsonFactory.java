@@ -37,8 +37,23 @@ public abstract class BaseAwsStructuredJsonFactory implements StructuredJsonFact
         return createWriter(jsonFactory, contentType);
     }
 
+    @Override
+    public StructuredJsonGenerator createWriter(String contentType, int initialBufferCapacity) {
+        return createWriter(jsonFactory, contentType, initialBufferCapacity);
+    }
+
     protected abstract StructuredJsonGenerator createWriter(JsonFactory jsonFactory,
                                                             String contentType);
+
+    /**
+     * Like {@link #createWriter(JsonFactory, String)} but with an initial output-buffer capacity hint. The default
+     * ignores the hint; subclasses whose generators support pre-sizing should override.
+     */
+    protected StructuredJsonGenerator createWriter(JsonFactory jsonFactory,
+                                                   String contentType,
+                                                   int initialBufferCapacity) {
+        return createWriter(jsonFactory, contentType);
+    }
 
     @Override
     public ErrorCodeParser getErrorCodeParser(String customErrorCodeFieldName) {

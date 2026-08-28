@@ -47,6 +47,7 @@ import software.amazon.awssdk.protocols.core.ProtocolMarshaller;
 import software.amazon.awssdk.protocols.json.internal.AwsStructuredPlainJsonFactory;
 import software.amazon.awssdk.protocols.json.internal.ProtocolFact;
 import software.amazon.awssdk.protocols.json.internal.marshall.JsonProtocolMarshallerBuilder;
+import software.amazon.awssdk.protocols.json.internal.marshall.MarshallBufferSizeHints;
 import software.amazon.awssdk.protocols.json.internal.unmarshall.AwsJsonErrorMessageParser;
 import software.amazon.awssdk.protocols.json.internal.unmarshall.AwsJsonProtocolErrorUnmarshaller;
 import software.amazon.awssdk.protocols.json.internal.unmarshall.AwsJsonResponseHandler;
@@ -80,6 +81,7 @@ public abstract class BaseAwsJsonProtocolFactory {
     private final boolean hasAwsQueryCompatible;
     private final SdkClientConfiguration clientConfiguration;
     private final JsonProtocolUnmarshaller protocolUnmarshaller;
+    private final MarshallBufferSizeHints marshallSizeHints = new MarshallBufferSizeHints();
 
     protected BaseAwsJsonProtocolFactory(Builder<?> builder) {
         this.protocolMetadata = builder.protocolMetadata.build();
@@ -189,12 +191,8 @@ public abstract class BaseAwsJsonProtocolFactory {
         if (!generatesBody) {
             return StructuredJsonGenerator.NO_OP;
         }
-        return createGenerator();
-    }
-
-    @SdkTestInternalApi
-    private StructuredJsonGenerator createGenerator() {
-        return getSdkFactory().createWriter(getContentType());
+        return getSdkFactory().createWriter(getContentType(),
+                                            marshallSizeHints.hintFor(operationInfo.operationIdentifier()));
     }
 
     @SdkTestInternalApi
@@ -229,6 +227,7 @@ public abstract class BaseAwsJsonProtocolFactory {
     }
 
     public final ProtocolMarshaller<SdkHttpFullRequest> createProtocolMarshaller(OperationInfo operationInfo) {
+        String operationId = operationInfo.operationIdentifier();
         return JsonProtocolMarshallerBuilder.create()
                                             .endpoint(endpoint(clientConfiguration))
                                             .jsonGenerator(createGenerator(operationInfo))
@@ -237,6 +236,7 @@ public abstract class BaseAwsJsonProtocolFactory {
                                             .sendExplicitNullForPayload(false)
                                             .protocolMetadata(protocolMetadata)
                                             .hasAwsQueryCompatible(hasAwsQueryCompatible)
+                                            .marshalledSizeReporter(size -> marshallSizeHints.record(operationId, size))
                                             .build();
     }
 
