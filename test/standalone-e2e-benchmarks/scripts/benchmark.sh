@@ -26,8 +26,11 @@ PROFILE_FORMAT="html"
 PROFILE_FILE=""
 PROFILE_OUT="$DIR/profiles"
 EXTRA_JVM_ARGS=""
+SERVER_JVM_ARGS=""
 JAR=""
 ENDPOINT=""
+PIN_CLIENT=""
+PIN_SERVER=""
 RUNNER_ARGS=()
 CLIENT="client"
 
@@ -39,7 +42,10 @@ while [[ $# -gt 0 ]]; do
         --profile-format) PROFILE_FORMAT="$2"; shift 2 ;;
         --profile-file)   PROFILE_FILE="$2"; shift 2 ;;
         --profile-out)    PROFILE_OUT="$2"; shift 2 ;;
-        --jvm-args)    EXTRA_JVM_ARGS="$2"; shift 2 ;;
+        --jvm-args)        EXTRA_JVM_ARGS="$2"; shift 2 ;;
+        --server-jvm-args) SERVER_JVM_ARGS="$2"; shift 2 ;;
+        --pin-client)  PIN_CLIENT="$2"; shift 2 ;;
+        --pin-server)  PIN_SERVER="$2"; shift 2 ;;
         --jar)         JAR="$2"; shift 2 ;;
         --endpoint)    ENDPOINT="$2"; LAUNCH_SERVER=0; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         --client)      CLIENT="$2"; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
@@ -50,6 +56,26 @@ done
 if [[ $LAUNCH_SERVER -eq 0 && -z "$ENDPOINT" ]]; then
     echo "error: --no-server requires --endpoint" >&2
     exit 2
+fi
+
+# ---- CPU pinning ----
+# The client and the mock server share this machine, and the server is not a passive party: it is the
+# throughput ceiling and it competes for the same cores. Pinning them to disjoint CPU sets is the
+# single biggest available reduction in run-to-run variance — on an unpinned laptop, going from 1 to 2
+# client threads cost 4x precision purely through that interference.
+CLIENT_PREFIX=()
+SERVER_PREFIX=()
+if [[ -n "$PIN_CLIENT" || -n "$PIN_SERVER" ]]; then
+    if ! command -v taskset >/dev/null 2>&1; then
+        echo "error: --pin-client/--pin-server need taskset, which is Linux-only" >&2
+        exit 2
+    fi
+    if [[ -n "$PIN_CLIENT" ]]; then
+        CLIENT_PREFIX=(taskset -c "$PIN_CLIENT")
+    fi
+    if [[ -n "$PIN_SERVER" ]]; then
+        SERVER_PREFIX=(taskset -c "$PIN_SERVER")
+    fi
 fi
 
 # ---- Resolve what to run: a self-contained shaded jar, or the local build's classpath ----
@@ -91,7 +117,9 @@ if [[ $LAUNCH_SERVER -eq 1 ]]; then
     SERVER_LOG="$(mktemp "${TMPDIR:-/tmp}/mockddb.XXXXXXXX.log")"
     # --enable-native-access silences the JNA warning oshi triggers when the server reads its own
     # CPU for /stats. Four lines per server start is four lines times every run in a collection.
-    java --enable-native-access=ALL-UNNAMED -cp "$CP" \
+    ${SERVER_PREFIX[@]+"${SERVER_PREFIX[@]}"} \
+        java --enable-native-access=ALL-UNNAMED ${SERVER_JVM_ARGS:+$SERVER_JVM_ARGS} \
+        -cp "$CP" \
         software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" > "$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
     ENDPOINT="http://127.0.0.1:$PORT"
@@ -193,4 +221,11 @@ if [[ -n "$EXTRA_JVM_ARGS" ]]; then
 fi
 
 # ---- Run the client ----
-java "${JVM_ARGS[@]}" -cp "$CP" software.amazon.awssdk.benchmark.e2e.BenchmarkRunner "${RUNNER_ARGS[@]}"
+# Tested against the plain strings rather than array lengths: ${#arr[@]} on an unset array is also
+# an error under `set -u` in bash 3.2.
+if [[ -n "$PIN_CLIENT" || -n "$PIN_SERVER" ]]; then
+    echo "pinning: client=[${PIN_CLIENT:-unpinned}] server=[${PIN_SERVER:-unpinned}]"
+fi
+${CLIENT_PREFIX[@]+"${CLIENT_PREFIX[@]}"} \
+    java "${JVM_ARGS[@]}" -cp "$CP" \
+    software.amazon.awssdk.benchmark.e2e.BenchmarkRunner "${RUNNER_ARGS[@]}"

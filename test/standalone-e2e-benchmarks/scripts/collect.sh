@@ -27,6 +27,13 @@
 #                     experiment resolved to +/-2.0% at concurrency 1 and +/-8.4% at 2. Re-measure with
 #                     a null run before raising it on new hardware.
 #   --async-mode X    inflight | join (default: inflight) for async clients
+#   --pin-client CPUS taskset CPU list for the client JVM (Linux). Pinning the client and the mock
+#                     server to disjoint cores is the largest available variance reduction, since the
+#                     server competes for the same cores and is itself the throughput ceiling.
+#   --pin-server CPUS taskset CPU list for the mock server JVM (Linux)
+#   --jvm-args "..."  extra JVM args for the client
+#   --server-jvm-args "..."
+#                     extra JVM args for the mock server
 #   --port N          mock server port (default: 19080)
 #   --out DIR         output root (default: <repo>/pipeline_benchmark2/raw)
 #   --jar PATH        run everything from a shaded benchmark jar instead of the local build. The
@@ -44,6 +51,10 @@ CLIENTS="v1,v2-sync,v2-async,smithy"
 SCENARIOS="small-get,small-put,batch-get,batch-put"
 CONCURRENCY=1
 ASYNC_MODE="inflight"
+PIN_CLIENT=""
+PIN_SERVER=""
+CLIENT_JVM_ARGS=""
+SERVER_JVM_ARGS=""
 PORT=19080
 OUT="$REPO/pipeline_benchmark2/raw"
 JAR=""
@@ -57,6 +68,10 @@ while [[ $# -gt 0 ]]; do
         --scenarios)   SCENARIOS="$2"; shift 2 ;;
         --concurrency) CONCURRENCY="$2"; shift 2 ;;
         --async-mode)  ASYNC_MODE="$2"; shift 2 ;;
+        --pin-client)  PIN_CLIENT="$2"; shift 2 ;;
+        --pin-server)  PIN_SERVER="$2"; shift 2 ;;
+        --jvm-args)        CLIENT_JVM_ARGS="$2"; shift 2 ;;
+        --server-jvm-args) SERVER_JVM_ARGS="$2"; shift 2 ;;
         --port)        PORT="$2"; shift 2 ;;
         --out)         OUT="$2"; shift 2 ;;
         --jar)         JAR="$2"; shift 2 ;;
@@ -72,6 +87,12 @@ if [[ -n "$JAR" ]]; then
     fi
     JAR_ARGS=(--jar "$JAR")
 fi
+
+TUNING_ARGS=()
+[[ -n "$PIN_CLIENT" ]]      && TUNING_ARGS+=(--pin-client "$PIN_CLIENT")
+[[ -n "$PIN_SERVER" ]]      && TUNING_ARGS+=(--pin-server "$PIN_SERVER")
+[[ -n "$CLIENT_JVM_ARGS" ]] && TUNING_ARGS+=(--jvm-args "$CLIENT_JVM_ARGS")
+[[ -n "$SERVER_JVM_ARGS" ]] && TUNING_ARGS+=(--server-jvm-args "$SERVER_JVM_ARGS")
 
 IFS=',' read -r -a CLIENT_ARR <<< "$CLIENTS"
 IFS=',' read -r -a SCENARIO_ARR <<< "$SCENARIOS"
@@ -158,6 +179,9 @@ cat > "$MANIFEST" <<EOF
 - scenarios: $SCENARIOS
 - concurrency: $CONCURRENCY (sync clients use this many threads; async clients keep this many in flight)
 - async mode: $ASYNC_MODE
+- pinning: client=[${PIN_CLIENT:-unpinned}] server=[${PIN_SERVER:-unpinned}]
+- client jvm args: ${CLIENT_JVM_ARGS:-(none)}
+- server jvm args: ${SERVER_JVM_ARGS:-(none)}
 - cpu source: auto
 - server port: $PORT (fresh out-of-process mock server per run)
 - total JVM runs: $TOTAL_RUNS
@@ -195,7 +219,8 @@ run_one() {
     local cmd=(scripts/benchmark.sh --client "${caseid%%_*}" --scenario "${caseid#*_}"
                --iterations "$ITERATIONS" --warmup "$WARMUP" --progress-seconds 0
                --concurrency "$CONCURRENCY" --async-mode "$ASYNC_MODE"
-               --cpu-source auto --port "$PORT" ${JAR_ARGS[@]+"${JAR_ARGS[@]}"} "$@")
+               --cpu-source auto --port "$PORT" ${JAR_ARGS[@]+"${JAR_ARGS[@]}"}
+               ${TUNING_ARGS[@]+"${TUNING_ARGS[@]}"} "$@")
     echo "[$RUN_NO/$TOTAL_RUNS] $caseid $kind"
 
     local start_ts status
