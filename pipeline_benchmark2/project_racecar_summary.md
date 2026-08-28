@@ -412,3 +412,137 @@ Straight from the phase B profile, so this is where the remaining headroom actua
 Option A is the single largest remaining item and is the one that generalizes the
 `SimpleHttpContentPublisher` fix into a pipeline-wide "the body is already bytes" contract, so it is
 the natural next phase.
+
+---
+
+## Phase A — materialized-body contract (zero-copy non-streaming bodies)
+
+- Commits: `0c55ba2a691` (contract + producers + async publisher), `8a018f4b6dc` (signer hashes the
+  buffer), `0a662b24412` (Apache ByteArrayEntity), `3add9f48b8b` (sync metrics wrapper propagates),
+  `b199c36972a` (BaseClientHandler + StreamManagingStage wrappers propagate)
+- Raw data: `raw/phaseA-final/20260828-0112/` (an intermediate run after parts 1–3 is at
+  `raw/phaseA-body/20260827-2254/` and `raw/phaseA-body-p4/20260828-0000/`)
+- Analysis: `analysis/racecar/alloc-phaseA-cumulative.md`, `analysis/racecar/timing-phaseA.md`
+
+### What changed
+
+The generalization of the earlier `SimpleHttpContentPublisher` fix into a pipeline-wide contract.
+Non-streaming bodies are marshalled into memory but carried behind `ContentStreamProvider`, whose
+only accessor is `newStream()` — so every consumer re-buffered the stream.
+
+New contract: `ContentStreamProvider.contentAsByteBufferOrNull()`, a default method returning the
+content as a `ByteBuffer` when it is already in memory, else `null` (callers fall back to
+`newStream()`). Producers: the JSON marshaller's buffer, `fromByteArrayUnsafe`, and
+`QueryParametersToBodyStage`. Consumers: the async request publisher (zero-copy `duplicate()`
+views), the fast SigV4 signer (hashes the buffer directly, one less full-body traversal per
+attempt), and the Apache5 sync client (single-write `ByteArrayEntity` instead of
+`InputStreamEntity`'s 4 KiB copy loop, gated on exact Content-Length match so wire framing is
+unchanged).
+
+### The lesson of parts 4 and 5: wrappers eat contracts
+
+Parts 1–3 measured **+0–1.5% on sync — no change**. Runtime tracing (temporary debug output in the
+gate) showed the provider reaching Apache was a three-deep wrapper chain, each layer hiding the
+buffer:
+
+```
+TrackingContentStreamProvider          (MakeHttpRequestStage, write metrics)
+  -> ClosingStreamProvider             (StreamManagingStage, stream close management)
+    -> BaseClientHandler lambda        (length enforcement, round-trips through interceptor context)
+      -> SingleBufferContentStreamProvider   <- the buffer, unreachable
+```
+
+Every wrapper had to learn to propagate the contract (parts 4–5). The async path was also affected:
+the `BaseClientHandler` lambda had silently downgraded async from true zero-copy to the sized-copy
+fallback. This is a structural observation worth carrying into phase G: **an optional capability on
+an interface is only as good as the least-aware wrapper in the chain.** Any future contract of this
+kind either needs a wrapper-audit like this one, or the pipeline needs fewer wrappers — which is
+exactly what the straight-line pipeline (option G) buys.
+
+Verification per part: an allocation-profile probe (22k-op sync small-put) showed
+`InputStreamEntity.writeTo` at ~86 MB after parts 1–3 and **0 bytes** after part 5.
+
+### Correctness
+
+- `SimpleHttpContentPublisherTest` (24 tests): zero-copy fast path (stream never opened), provider
+  reuse across attempts, short/long stream vs Content-Length, partial reads, cap overflow,
+  demand/cancel semantics, stream never closed.
+- `FastV4HeaderSignerTest` +2: byte-equivalence of the buffer-hashing path (and empty-buffer path)
+  against the legacy signing pipeline.
+- `ApacheHttpRequestFactoryTest` +5: ByteArrayEntity engagement, repeatability across two writes,
+  and fallback on length mismatch / missing length / chunked encoding / plain stream provider.
+- Suites: sdk-core 1,534, http-auth-aws 434, apache5-client 14/14 factory tests, http-client-spi +
+  aws-json-protocol 125. All pass.
+- Flake note: `HttpClientApiCallTimeoutTest.errorResponse_SlowErrorResponseHandler_*` fails ~1-in-5
+  in isolation on the **unmodified** tree as well (timing-sensitive 1s timeout vs slow handler
+  race); unrelated to these changes.
+
+### Allocation (authoritative), phase B → phase A
+
+| client | scenario | phase B | phase A | delta |
+|--------|----------|--------:|--------:|------:|
+| v2-sync | small-get | 44,421 | 39,109 | **−12.0%** |
+| v2-sync | small-put | 37,520 | 33,514 | **−10.7%** |
+| v2-sync | batch-get | 515,968 | 514,464 | −0.3% |
+| v2-sync | batch-put | 187,566 | 184,380 | −1.7% |
+| v2-async | small-get | 52,753 | 49,240 | −6.7% |
+| v2-async | small-put | 45,401 | 39,383 | **−13.3%** |
+| v2-async | batch-get | 725,008 | 719,408 | −0.8% |
+| v2-async | batch-put | 355,498 | 192,275 | **−45.9%** |
+
+`InputStreamEntity.writeTo`: 4,161 → **0** B/op on every sync scenario. Async batch-put's
+`pipeline-framework` category (which contained the old `IoUtils.toByteArray` re-copy) went
+176,218 → 50,043 B/op after parts 1–3 and further down with true zero-copy in part 5.
+
+Sync batch-put barely moves because its allocation is dominated by the marshalling buffer growth
+chain (`json` + `marshall` ≈ 155 KB/op) — that is option E's target, not A's.
+
+### e2e CPU (still noise-dominated, but now positive across the board)
+
+v2-sync user-CPU ops/s vs baseline: small-get +9.0%, small-put +9.3%, batch-get +3.8%, batch-put
++1.8% — first phase where every sync scenario shows positive, though spreads of 8–28% keep this
+inconclusive as evidence.
+
+### Verdict
+
+**Accepted. Biggest phase so far.** Option A delivered exactly what the analysis predicted: the
+body is written once at marshalling and never copied again by the framework on the common path —
+sync writes it straight from the buffer, async publishes views of it, and the signer hashes it in
+place.
+
+---
+
+## Cumulative result (phase 0 → F → B → A)
+
+Allocation, bytes/op, client code:
+
+| client | scenario | phase 0 | phase A | total delta | vs smithy-java |
+|--------|----------|--------:|--------:|-----------:|---------------:|
+| v2-sync | small-get | 61,387 | 39,109 | **−36.3%** | 3.9× (was 6.1×) |
+| v2-sync | small-put | 54,509 | 33,514 | **−38.5%** | 4.8× (was 7.8×) |
+| v2-sync | batch-get | 533,097 | 514,464 | −3.5% | 2.3× |
+| v2-sync | batch-put | 204,272 | 184,380 | −9.7% | 1.51× (was 1.68×) |
+| v2-async | small-get | 69,702 | 49,240 | **−29.4%** | 4.9× |
+| v2-async | small-put | 61,797 | 39,383 | **−36.3%** | 5.6× |
+| v2-async | batch-get | 742,955 | 719,408 | −3.2% | 3.3× |
+| v2-async | batch-put | 371,884 | 192,275 | **−48.3%** | 1.58× (was 3.06×) |
+
+(smithy-java reference values from the 20260824-1618 report: small-get 10,062, small-put 6,977,
+batch-get 219,894, batch-put 121,708 B/op.)
+
+### Next targets (from the phase A profile, v2-sync small-get)
+
+| bytes/op | site | option |
+|---------:|------|--------|
+| 1,594 | `AttributeMapCopier.lambda$copy$0` | D — response copier re-copying parser output |
+| 1,404 | `Apache5HttpRequestFactory.lambda$addHeadersToRequest$0` | header restatement for Apache |
+| 1,146 | `ExecutionAttributes.<init>` (`IdentityHashMap(64)`) | D — typed dense-key attribute store |
+| 1,107 | `AttributeValue.builder` + `build` (2,296 combined) | batch-get driver; D |
+| 1,078 | `SdkByteArrayOutputStream.<init>` | E — size marshalling buffer from a per-op hint |
+| 995 | `LowCopyListMap.shallowCopyMap` | B part 2 / header storage |
+| 990 | `DefaultAuthSchemeOption.<init>` + builder | D — cache constant auth option per client |
+| 990 | `DefaultSdkHttpFullRequest$Builder.putHeader` | header storage |
+
+Remaining big structural items: **E** (marshalling: buffer sizing + straight-line field loop —
+the whole batch-put story), **D** (framework: attributes, metric-stage eliding, auth-option
+caching, response copiers), **C** (de-future the async request path), then **G**.
