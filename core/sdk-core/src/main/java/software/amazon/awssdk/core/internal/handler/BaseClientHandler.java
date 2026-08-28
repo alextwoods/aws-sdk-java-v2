@@ -15,7 +15,9 @@
 
 package software.amazon.awssdk.core.internal.handler;
 
+import java.io.InputStream;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.function.BiFunction;
@@ -144,8 +146,7 @@ public abstract class BaseClientHandler {
             // Enforce the content length specified only if it was present on the request (and not the default).
             ContentStreamProvider streamProvider = contentStreamProviderOptional.get();
             if (contentLengthOptional.isPresent()) {
-                ContentStreamProvider toWrap = contentStreamProviderOptional.get();
-                streamProvider = () -> new LengthAwareInputStream(toWrap.newStream(), contentLength);
+                streamProvider = new LengthAwareContentStreamProvider(streamProvider, contentLength);
             }
 
             return new SdkInternalOnlyRequestBody(streamProvider,
@@ -154,6 +155,45 @@ public abstract class BaseClientHandler {
         }
 
         return null;
+    }
+
+    /**
+     * Enforces the declared content length on the provider's streams, while still propagating
+     * {@link ContentStreamProvider#contentAsByteBufferOrNull()} so a buffer-backed marshalled body keeps its
+     * zero-copy fast paths (signer hashing, async publishing, HTTP body writing) after the request body round-trips
+     * through the interceptor context.
+     */
+    private static final class LengthAwareContentStreamProvider implements ContentStreamProvider {
+        private final ContentStreamProvider delegate;
+        private final long contentLength;
+
+        private LengthAwareContentStreamProvider(ContentStreamProvider delegate, long contentLength) {
+            this.delegate = delegate;
+            this.contentLength = contentLength;
+        }
+
+        @Override
+        public InputStream newStream() {
+            return new LengthAwareInputStream(delegate.newStream(), contentLength);
+        }
+
+        @Override
+        public ByteBuffer contentAsByteBufferOrNull() {
+            ByteBuffer buffered = delegate.contentAsByteBufferOrNull();
+            if (buffered == null) {
+                return null;
+            }
+            // Apply the same truncate-to-declared-length semantics LengthAwareInputStream applies to streams.
+            if (buffered.remaining() > contentLength) {
+                buffered.limit(buffered.position() + (int) contentLength);
+            }
+            return buffered;
+        }
+
+        @Override
+        public String name() {
+            return delegate.name();
+        }
     }
 
     private static void runAfterMarshallingInterceptors(ExecutionContext executionContext) {

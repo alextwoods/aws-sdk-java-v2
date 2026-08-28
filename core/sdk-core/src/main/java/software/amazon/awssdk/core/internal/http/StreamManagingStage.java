@@ -18,6 +18,7 @@ package software.amazon.awssdk.core.internal.http;
 import static software.amazon.awssdk.utils.FunctionalUtils.invokeSafely;
 
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.Response;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
@@ -74,6 +75,17 @@ public final class StreamManagingStage<OutputT> implements RequestPipeline<SdkHt
         public InputStream newStream() {
             currentStream = wrapped.newStream();
             return ReleasableInputStream.wrap(currentStream).disableClose();
+        }
+
+        @Override
+        public ByteBuffer contentAsByteBufferOrNull() {
+            // A buffer needs no close management, so it can be handed through untouched.
+            return wrapped.contentAsByteBufferOrNull();
+        }
+
+        @Override
+        public String name() {
+            return wrapped.name();
         }
 
         void closeCurrentStream() {
