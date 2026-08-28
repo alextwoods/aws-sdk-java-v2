@@ -19,6 +19,7 @@ import static software.amazon.awssdk.utils.FunctionalUtils.invokeSafely;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -74,6 +75,11 @@ public interface ContentStreamProvider {
             @Override
             public InputStream newStream() {
                 return new ByteArrayInputStream(bytes);
+            }
+
+            @Override
+            public ByteBuffer contentAsByteBufferOrNull() {
+                return ByteBuffer.wrap(bytes);
             }
 
             @Override
@@ -174,6 +180,34 @@ public interface ContentStreamProvider {
      * @return The content stream.
      */
     InputStream newStream();
+
+    /**
+     * Returns the full content of this provider as a {@link ByteBuffer}, if it is already buffered in memory, otherwise
+     * {@code null}.
+     *
+     * <p>This lets pipeline components that need the content as bytes — the payload checksummer, the async request-body
+     * publisher, the HTTP client's body writer — use the existing buffer directly instead of re-reading and re-buffering
+     * {@link #newStream()}. Implementations that are not backed by an in-memory buffer must return {@code null}, and
+     * callers must fall back to {@link #newStream()} in that case.
+     *
+     * <p>Implementation requirements:
+     * <ul>
+     *     <li>Each call must return a <em>new</em> {@link ByteBuffer} positioned at the start of the content, because
+     *     callers consume the returned buffer. The returned buffer may share its backing store with previously
+     *     returned buffers.</li>
+     *     <li>The content visible through the returned buffer must not change afterwards, since the SDK may read it
+     *     asynchronously and may re-read it on a retry.</li>
+     * </ul>
+     *
+     * <p>Callers must treat the returned buffer as read-only: the backing store may be shared with the provider and
+     * with other callers.
+     *
+     * @return A new {@link ByteBuffer} over the full content, or {@code null} if the content is not already buffered.
+     */
+    @SdkProtectedApi
+    default ByteBuffer contentAsByteBufferOrNull() {
+        return null;
+    }
 
     /**
      * Each ContentStreamProvider should return a well-formed name that can be used to identify the implementation.

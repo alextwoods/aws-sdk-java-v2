@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.SequenceInputStream;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -162,9 +163,7 @@ final class SdkByteArrayOutputStream extends ByteArrayOutputStream {
             // Small payload: single buffer, wrap directly.
             // Safe to capture buf because callers (SdkJsonGenerator.contentStreamProvider()) close the
             // generator before calling this, guaranteeing no further writes will mutate buf.
-            byte[] b = buf;
-            int c = count;
-            return () -> new ByteArrayInputStream(b, 0, c);
+            return new SingleBufferContentStreamProvider(buf, count);
         }
 
         // Large payload: chain base buffer + chunks
@@ -221,6 +220,40 @@ final class SdkByteArrayOutputStream extends ByteArrayOutputStream {
         if (chunkOffset + needed > currentChunk().length) {
             chunks.add(new byte[CHUNK_SIZE]);
             chunkOffset = 0;
+        }
+    }
+
+    /**
+     * Provider over a single, already-written buffer. The buffer is normally larger than the content, so both the
+     * array and the content length are needed.
+     *
+     * <p>Exposes the buffer through {@link ContentStreamProvider#contentAsByteBufferOrNull()} so that downstream
+     * consumers (checksummer, request-body publisher, HTTP body writer) can use the marshalled bytes without
+     * re-reading the stream. Callers must not write to the stream after handing out one of these, which
+     * {@code SdkJsonGenerator.contentStreamProvider()} guarantees by closing the generator first.
+     */
+    private static final class SingleBufferContentStreamProvider implements ContentStreamProvider {
+        private final byte[] buffer;
+        private final int contentLength;
+
+        private SingleBufferContentStreamProvider(byte[] buffer, int contentLength) {
+            this.buffer = buffer;
+            this.contentLength = contentLength;
+        }
+
+        @Override
+        public InputStream newStream() {
+            return new ByteArrayInputStream(buffer, 0, contentLength);
+        }
+
+        @Override
+        public ByteBuffer contentAsByteBufferOrNull() {
+            return ByteBuffer.wrap(buffer, 0, contentLength);
+        }
+
+        @Override
+        public String name() {
+            return ProviderType.BYTES.getName();
         }
     }
 }

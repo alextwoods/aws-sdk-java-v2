@@ -18,13 +18,13 @@ package software.amazon.awssdk.core.internal.http.pipeline.stages;
 import static java.util.Collections.singletonList;
 import static software.amazon.awssdk.utils.StringUtils.lowerCase;
 
-import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.SdkProtocolMetadata;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.internal.http.RequestExecutionContext;
 import software.amazon.awssdk.core.internal.http.pipeline.MutableRequestToRequestPipeline;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpMethod;
 
@@ -70,7 +70,9 @@ public class QueryParametersToBodyStage implements MutableRequestToRequestPipeli
                              .getBytes(StandardCharsets.UTF_8);
 
         return request.toBuilder().clearQueryParameters()
-                    .contentStreamProvider(() -> new ByteArrayInputStream(params))
+                    // fromByteArrayUnsafe (no copy: params is not aliased anywhere else) rather than a plain lambda,
+                    // so the provider exposes contentAsByteBufferOrNull() to downstream consumers.
+                    .contentStreamProvider(ContentStreamProvider.fromByteArrayUnsafe(params))
                     .putHeader("Content-Length", singletonList(String.valueOf(params.length)))
                     .putHeader("Content-Type", singletonList(DEFAULT_CONTENT_TYPE))
                     .build();
