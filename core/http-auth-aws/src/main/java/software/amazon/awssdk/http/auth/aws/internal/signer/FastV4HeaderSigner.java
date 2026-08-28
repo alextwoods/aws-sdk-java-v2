@@ -27,6 +27,7 @@ import static software.amazon.awssdk.http.auth.aws.signer.SignerConstant.X_AMZ_S
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.DigestException;
 import java.security.InvalidKeyException;
@@ -216,6 +217,26 @@ final class FastV4HeaderSigner {
         if (payload == null) {
             return EMPTY_BODY_SHA256;
         }
+
+        // Fast path: the marshalled body is already in memory, so hash the buffer directly instead of draining a
+        // stream over the same bytes through the pooled read buffer.
+        ByteBuffer buffered = payload.contentAsByteBufferOrNull();
+        if (buffered != null) {
+            if (!buffered.hasRemaining()) {
+                return EMPTY_BODY_SHA256;
+            }
+            try {
+                r.sha256Digest.reset();
+                r.sha256Digest.update(buffered);
+                r.sha256Digest.digest(r.hashBytes, 0, r.hashBytes.length);
+            } catch (DigestException e) {
+                throw new RuntimeException("Unable to compute SHA-256 of request payload: " + e.getMessage(), e);
+            }
+            byte[] bufferedHex = r.signatureHexBytes;
+            writeHex(r.hashBytes, bufferedHex, 0);
+            return new String(bufferedHex, 0, bufferedHex.length, StandardCharsets.US_ASCII);
+        }
+
         InputStream stream;
         try {
             stream = payload.newStream();

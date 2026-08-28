@@ -29,6 +29,7 @@ import java.time.ZoneOffset;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.http.SdkHttpRequest;
 import software.amazon.awssdk.http.auth.spi.signer.SignRequest;
@@ -197,6 +198,37 @@ class FastV4HeaderSignerTest {
 
     private static AwsCredentialsIdentity awsCreds() {
         return AwsCredentialsIdentity.create("access", "secret");
+    }
+
+    @Test
+    @DisplayName("byte-equivalent: buffer-exposing payload hashes identically to the stream path")
+    void bufferExposingPayload() {
+        // Same bytes as basicPost's payload, but through a provider that exposes contentAsByteBufferOrNull(), so the
+        // fast path hashes the buffer directly. Must produce the same signature as the legacy stream-draining path.
+        byte[] body = "{\"TableName\":\"foo\"}".getBytes();
+        SignRequest<AwsCredentialsIdentity> req =
+            SignRequest.builder(awsCreds())
+                       .request(httpsRequest(b -> {}))
+                       .payload(ContentStreamProvider.fromByteArrayUnsafe(body))
+                       .putProperty(REGION_NAME, "us-east-1")
+                       .putProperty(SERVICE_SIGNING_NAME, "demo")
+                       .putProperty(SIGNING_CLOCK, FIXED_CLOCK)
+                       .build();
+        assertSameAsLegacy(req);
+    }
+
+    @Test
+    @DisplayName("byte-equivalent: empty buffer-exposing payload uses the empty-body hash")
+    void emptyBufferExposingPayload() {
+        SignRequest<AwsCredentialsIdentity> req =
+            SignRequest.builder(awsCreds())
+                       .request(httpsRequest(b -> {}))
+                       .payload(ContentStreamProvider.fromByteArrayUnsafe(new byte[0]))
+                       .putProperty(REGION_NAME, "us-east-1")
+                       .putProperty(SERVICE_SIGNING_NAME, "demo")
+                       .putProperty(SIGNING_CLOCK, FIXED_CLOCK)
+                       .build();
+        assertSameAsLegacy(req);
     }
 
     private static SignRequest<AwsCredentialsIdentity> basicPost(
