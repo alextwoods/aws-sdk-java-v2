@@ -58,10 +58,34 @@ public class ApplyUserAgentStage implements MutableRequestToRequestPipeline {
 
     private static final Logger log = Logger.loggerFor(ApplyUserAgentStage.class);
 
+    private static final Pair<List<ApiName>, Collection<String>> NO_API_NAMES =
+        Pair.of(Collections.emptyList(), Collections.emptyList());
+
     private final SdkClientConfiguration clientConfig;
+
+    /**
+     * The leading, per-client-constant portion of the user agent ({@code userAgentPrefix + clientUserAgent}). Computed
+     * once here rather than re-trimmed and re-appended on every request.
+     */
+    private final String constantUserAgentPrefix;
 
     public ApplyUserAgentStage(HttpClientDependencies dependencies) {
         this.clientConfig = dependencies.clientConfiguration();
+        this.constantUserAgentPrefix = buildConstantUserAgentPrefix(clientConfig);
+    }
+
+    private static String buildConstantUserAgentPrefix(SdkClientConfiguration clientConfig) {
+        String clientUserAgent = clientConfig.option(SdkClientOption.CLIENT_USER_AGENT);
+        if (clientUserAgent == null) {
+            log.warn(() -> "Client user agent configuration is missing, so request user agent will be incomplete.");
+            clientUserAgent = "";
+        }
+
+        String userPrefix = trim(clientConfig.option(SdkAdvancedClientOption.USER_AGENT_PREFIX));
+        if (StringUtils.isEmpty(userPrefix)) {
+            return clientUserAgent;
+        }
+        return userPrefix + SPACE + clientUserAgent;
     }
 
     @Override
@@ -115,24 +139,13 @@ public class ApplyUserAgentStage implements MutableRequestToRequestPipeline {
      * values. This method adds request level values directly after the retrieved SDK client user agent string.
      */
     private String finalizeUserAgent(RequestExecutionContext context) {
-        String clientUserAgent = clientConfig.option(SdkClientOption.CLIENT_USER_AGENT);
-        if (clientUserAgent == null) {
-            log.warn(() -> "Client user agent configuration is missing, so request user agent will be incomplete.");
-            clientUserAgent = "";
-        }
-
         //separate apiNames into opaque customer added values and known values added internally as metrics
         Pair<List<ApiName>, Collection<String>> groupedApiNames = groupApiNames(context.requestConfig().apiNames());
 
-        //create builder for the user agent string
-        StringBuilder javaUserAgent = new StringBuilder();
-
-        String userPrefix = trim(clientConfig.option(SdkAdvancedClientOption.USER_AGENT_PREFIX));
-        if (!StringUtils.isEmpty(userPrefix)) {
-            javaUserAgent.append(userPrefix).append(SPACE);
-        }
-
-        javaUserAgent.append(clientUserAgent);
+        //create builder for the user agent string, sized to fit the constant prefix plus the usual per-request
+        //additions so it does not have to grow while appending
+        StringBuilder javaUserAgent = new StringBuilder(constantUserAgentPrefix.length() + 64);
+        javaUserAgent.append(constantUserAgentPrefix);
 
         //add useragent metadata from execution context
         List<AdditionalMetadata> userAgentMetadata =
@@ -159,6 +172,10 @@ public class ApplyUserAgentStage implements MutableRequestToRequestPipeline {
     }
 
     private static Pair<List<ApiName>, Collection<String>> groupApiNames(List<ApiName> input) {
+        if (input.isEmpty()) {
+            // The common case: no request-level api names, so don't allocate the two collections.
+            return NO_API_NAMES;
+        }
         List<ApiName> customApiNames = new ArrayList<>();
         Collection<String> metricsFromApiNames = new ArrayList<>();
         for (ApiName requestApiName : input) {

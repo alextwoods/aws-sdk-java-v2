@@ -234,12 +234,25 @@ public class Apache5HttpRequestFactory {
             // it's already present, so we skip it here. We also skip the Host
             // header to avoid sending it twice, which will interfere with some
             // signing schemes.
-            if (IGNORE_HEADERS.stream().noneMatch(name::equalsIgnoreCase)) {
+            if (!isIgnoredHeader(name)) {
                 for (String headerValue : value) {
                     httpRequest.addHeader(name, headerValue);
                 }
             }
         });
+    }
+
+    /**
+     * Indexed loop rather than {@code IGNORE_HEADERS.stream().noneMatch(...)}, which allocated a stream pipeline and a
+     * capturing lambda for every header of every request.
+     */
+    private static boolean isIgnoredHeader(String name) {
+        for (int i = 0; i < IGNORE_HEADERS.size(); i++) {
+            if (IGNORE_HEADERS.get(i).equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String getHostHeaderValue(SdkHttpRequest request) {
