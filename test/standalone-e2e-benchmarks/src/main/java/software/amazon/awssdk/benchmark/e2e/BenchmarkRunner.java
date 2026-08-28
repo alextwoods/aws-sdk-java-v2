@@ -41,7 +41,7 @@ public final class BenchmarkRunner {
                                 exactly, reproducing older collections.
           --warmup-max-seconds N
                                 ceiling on warmup wall time in quiesce mode (default: 60)
-          --concurrency N       operations kept in flight (default: 2). Sync clients use N threads;
+          --concurrency N       operations kept in flight (default: 1). Sync clients use N threads;
                                 async clients keep N outstanding from one submitting thread. Every
                                 client's connection pool is sized to exactly N.
           --async-mode X        inflight | join (default: inflight). Applies to async clients only.
@@ -130,13 +130,21 @@ public final class BenchmarkRunner {
     private static final int MIN_PROGRESS_SECONDS = 10;
 
     /**
-     * Operations kept in flight by default. Two, chosen from a sweep rather than picked: it roughly
-     * doubles samples per second of wall clock, every client stays steady-state, and total CPU demand
-     * stays near two cores so neither the host nor the mock server is anywhere near its limit. Four
-     * and above is where the async client stops settling and where throughput starts running into the
-     * loopback ceiling (~48k ops/s here), at which point the run is measuring the server.
+     * Operations kept in flight by default.
+     *
+     * <p>One, on the evidence of a null experiment — the same SDK in both arms of a paired comparison,
+     * where any reported difference is pure noise. For {@code v2-sync}/{@code small-get} over 4
+     * repetitions, concurrency 1 resolved to ±2.0% while concurrency 2 resolved to ±8.4%. Concurrency
+     * multiplies contention with the co-resident mock server faster than it adds samples: doubling
+     * throughput buys √2 in precision and costs about 4×, so it is a net loss for comparisons.
+     *
+     * <p>This is not an argument against concurrency, only against it as a default <em>here</em>. It
+     * remains the realistic workload shape, and on a host where the server does not share the client's
+     * cores the trade may well reverse — worth re-running the null experiment there before assuming
+     * either way. A sweep also shows every client stays steady-state at 2 and the async client stops
+     * settling at 4 and above.
      */
-    private static final int DEFAULT_CONCURRENCY = 2;
+    private static final int DEFAULT_CONCURRENCY = 1;
 
     private BenchmarkRunner() {
     }

@@ -20,7 +20,7 @@
 #   --reps N          repetitions of the whole pair (default: 5)
 #   --clients LIST    comma-separated (default: v2-sync,v2-async)
 #   --scenarios LIST  comma-separated (default: small-get,small-put,batch-get,batch-put)
-#   --concurrency N   operations kept in flight (default: 2), identical in both arms
+#   --concurrency N   operations kept in flight (default: 1), identical in both arms
 #   --async-mode X    inflight | join (default: inflight) for async clients
 #   --port N          mock server port (default: 19080)
 #   --out DIR         output root (default: <repo>/pipeline_benchmark2/paired)
@@ -35,7 +35,7 @@ WARMUP=10000
 REPS=5
 CLIENTS="v2-sync,v2-async"
 SCENARIOS="small-get,small-put,batch-get,batch-put"
-CONCURRENCY=2
+CONCURRENCY=1
 ASYNC_MODE="inflight"
 PORT=19080
 OUT="$REPO/pipeline_benchmark2/paired"

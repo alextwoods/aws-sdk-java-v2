@@ -21,11 +21,11 @@
 #   --reps N          clean timing repetitions per case (default: 3)
 #   --clients LIST    comma-separated (default: v1,v2-sync,v2-async,smithy)
 #   --scenarios LIST  comma-separated (default: small-get,small-put,batch-get,batch-put)
-#   --concurrency N   operations kept in flight (default: 2, chosen from a sweep). Higher values
-#                     yield more samples per second of wall clock, but past ~4 the async client stops
-#                     reaching steady state and throughput runs into the loopback ceiling, at which
-#                     point the run measures the server. Re-check with scripts/concurrency-sweep.sh
-#                     on a different host.
+#   --concurrency N   operations kept in flight (default: 1). Higher values give more samples per
+#                     second of wall clock and a more realistic workload, but on a box where the mock
+#                     server shares the client's cores they cost more precision than they buy: a null
+#                     experiment resolved to +/-2.0% at concurrency 1 and +/-8.4% at 2. Re-measure with
+#                     a null run before raising it on new hardware.
 #   --async-mode X    inflight | join (default: inflight) for async clients
 #   --port N          mock server port (default: 19080)
 #   --out DIR         output root (default: <repo>/pipeline_benchmark2/raw)
@@ -42,7 +42,7 @@ WARMUP=20000
 REPS=3
 CLIENTS="v1,v2-sync,v2-async,smithy"
 SCENARIOS="small-get,small-put,batch-get,batch-put"
-CONCURRENCY=2
+CONCURRENCY=1
 ASYNC_MODE="inflight"
 PORT=19080
 OUT="$REPO/pipeline_benchmark2/raw"

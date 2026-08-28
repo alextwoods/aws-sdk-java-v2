@@ -223,12 +223,11 @@ quiesces. Until then latency percentiles and allocation are the trustworthy per-
 With per-operation CPU trustworthy, the sweep became interpretable and two earlier conclusions had to
 be revised.
 
-**Concurrency defaults to 2.** It is the highest level at which every client stays steady-state; the
-async client stops settling at 4 and above. It roughly doubles samples per second of wall clock while
-total CPU demand stays near two cores of fourteen. Drift in per-operation CPU above that is real
-contention cost, but it applies equally to both arms of a fixed-concurrency comparison, so it shifts
-absolute numbers without biasing a delta — the earlier flag scheme treated it as disqualifying and
-recommended concurrency 1 for the wrong reason.
+**Concurrency: 2 is the highest level every client reaches steady state at** (the async client stops
+settling at 4 and above), and drift in per-operation CPU above that is real contention cost which
+applies equally to both arms of a fixed-concurrency comparison. That made 2 look like the right
+default — until the null experiment below showed it costs ~4× precision on this machine, at which point
+the default went back to 1. Both facts hold; the second one decides it.
 
 **"Total core demand is the limit" was wrong, and so was "the server is not the bottleneck".** The
 old sweep put demand at ~11 of 14 cores; with compiler CPU excluded it is ~5. Yet all three clients
@@ -246,6 +245,41 @@ Practical consequence: below concurrency ~4 this does not bite (server 43–47 �
 At 8+ the client waits on the server and per-operation CPU absorbs contention unrelated to the SDK.
 Treat ~48k ops/s as the apparatus limit; raising it means moving the server off the box, which is what
 the separate-host plan is for.
+
+### How small a change can we resolve? A null experiment answers it
+
+The convergence fix removed *bias* from per-operation CPU. It said nothing about *precision*, so the
+resolution floor was measured directly: two jars built from one `~/.m2` state, verified byte-identical
+across all 25,820 entries apart from the provenance stamp, run as the two arms of a paired comparison.
+Every difference reported is noise.
+
+200k operations, 4 repetitions, paired, application CPU per operation:
+
+| case | concurrency | reported delta | spread of pairs |
+|------|-----------:|---------------:|----------------:|
+| `v2-sync` / small-get | 1 | −0.6% | **±2.0%** |
+| `v2-sync` / small-get | 2 | +4.0% | ±8.4% |
+| `v2-sync` / batch-put | 2 | −2.0% | ±4.6% |
+| `v2-async` / small-get | 1 | −3.9% | ±11.3% |
+| `v2-async` / small-get | 2 | −1.2% | ±16.0% |
+| `v2-async` / batch-put | 2 | +6.3% | ±6.3% |
+
+What this settles:
+
+- **`v2-sync` CPU work can be done on this laptop**, at concurrency 1: ±2.0% gives a ~1% standard error
+  over 4 reps, so a 3–4% change is a real signal. That is good enough for phase-sized optimizations
+  and for phase G.
+- **`v2-async` cannot.** ±11% at best means only changes above ~20% are visible. Reaching a 1.5%
+  standard error would take ~57 repetitions. Async CPU claims need a quieter host.
+- **Concurrency is a net loss for comparisons here, and the default went back to 1.** Doubling
+  throughput is worth √2 in precision and cost about 4× — the co-resident server, which is also the
+  throughput ceiling, contends for the same cores. This reverses the earlier decision to default to 2.
+  It is a property of this machine, not of concurrency: on a host where the server has its own cores
+  the trade may reverse, and the null experiment should be re-run there rather than assumed.
+- **Pairing is essential.** Per-arm spread ran 3.5–43% against paired spreads of 2–16%. An unpaired
+  comparison on this machine cannot resolve anything under ~20%, which retroactively explains the
+  "6–31% rep spread" that made e2e CPU look useless early on.
+- **Allocation remains the acceptance metric**, unaffected by any of this and reproducing to 0.7%.
 
 ### An experiment ran against the wrong server (`d66b5af5c39`)
 

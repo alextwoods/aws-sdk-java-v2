@@ -161,10 +161,9 @@ per operation — see the CPU section below):
 | | 2 | 25,426 | 29.4 | 43.1 | 1.9 | CPU-DRIFT |
 | | 8 | 47,901 | 33.3 | 57.9 | 4.4 | CPU-DRIFT |
 
-**Concurrency defaults to 2**, the highest level at which every client stays steady-state. It roughly
-doubles samples per second of wall clock while total CPU demand stays near two cores of fourteen, so
-neither the host nor the server is near a limit. Re-run the sweep on a different host before assuming
-2 is right there.
+Every client stays steady-state up to concurrency 2, and the async client stops settling at 4 and
+above. **But concurrency defaults to 1**, because more samples turned out to cost more than they buy
+on a box where the server shares the client's cores — see the null experiment below.
 
 ### The mock server *is* the ceiling above ~48k ops/s
 
@@ -187,6 +186,42 @@ Consequences:
   up contention that has nothing to do with the SDK.
 - Raising the ceiling means getting the server off the box, which is what the separate-host plan is
   for. Until then, treat ~48k ops/s as the apparatus limit rather than a client result.
+
+## How small a change can this actually resolve?
+
+Run a **null experiment** to find out: the same SDK in both arms of a paired comparison, so every
+difference it reports is noise. Build two jars from one `~/.m2` state with different phase labels
+(verify with `unzip -v` that the entries match apart from the provenance stamp), then run
+`paired-ab.sh` at the settings a real comparison would use.
+
+Results on a 14-core M4 Pro, 200k operations, 4 repetitions, paired — application CPU per operation:
+
+| case | concurrency | reported delta | spread of pairs | verdict |
+|------|-----------:|---------------:|----------------:|---------|
+| `v2-sync` / small-get | 1 | −0.6% | **±2.0%** | usable |
+| `v2-sync` / small-get | 2 | +4.0% | ±8.4% | 4× worse |
+| `v2-sync` / batch-put | 2 | −2.0% | ±4.6% | marginal |
+| `v2-async` / small-get | 1 | −3.9% | ±11.3% | not usable |
+| `v2-async` / small-get | 2 | −1.2% | ±16.0% | not usable |
+| `v2-async` / batch-put | 2 | +6.3% | ±6.3% | marginal |
+
+Read this as the floor beneath which a result is indistinguishable from nothing:
+
+- **`v2-sync` at concurrency 1 is good** — ±2.0%, so 4 repetitions give a standard error near 1% and a
+  3–4% change is a real signal. This is the configuration to use for CPU and latency claims.
+- **Concurrency costs precision faster than it adds samples here.** Doubling throughput is worth √2 in
+  precision; it cost about 4×. The cause is the co-resident server, which is also the throughput
+  ceiling. On a host where the server does not share the client's cores this may well reverse — re-run
+  the null experiment there rather than assuming.
+- **`v2-async` is not resolvable at this scale.** ±11% at best means only changes above roughly 20%
+  are visible. It needs many more repetitions (±11% takes ~57 reps to reach a 1.5% standard error) or
+  a quieter host.
+- **Allocation is unaffected by all of this** and reproduces to within 0.7%, which is why it remains
+  the acceptance metric for a change.
+
+Also useful: compare `spread of pairs` against the per-arm spread the summary prints below it. Per-arm
+spread ran 3.5–43% against paired spreads of 2–16%, so pairing is doing real work — an unpaired
+comparison on this machine cannot see anything under ~20%.
 
 ## Scenarios
 
