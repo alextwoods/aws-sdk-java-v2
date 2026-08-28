@@ -18,6 +18,7 @@ package software.amazon.awssdk.core.internal.http.pipeline.stages;
 import static software.amazon.awssdk.http.Header.CONTENT_LENGTH;
 
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Optional;
 import software.amazon.awssdk.annotations.SdkInternalApi;
@@ -110,22 +111,66 @@ public class MakeHttpRequestStage
         RequestBodyMetrics metrics = context.executionAttributes()
                                             .getAttribute(InternalCoreExecutionAttribute.REQUEST_BODY_METRICS);
 
-        ContentStreamProvider wrapped = () -> {
-            InputStream stream = contentStreamProvider.get().newStream();
-            stream = new BytesWrittenTrackingInputStream(stream, metrics);
+        ContentStreamProvider wrapped = new TrackingContentStreamProvider(contentStreamProvider.get(), metrics, request);
+        return request.toBuilder().contentStreamProvider(wrapped).build();
+    }
+
+    /**
+     * Wraps the request's {@link ContentStreamProvider} with write-metrics tracking, while still propagating
+     * {@link ContentStreamProvider#contentAsByteBufferOrNull()} so that a buffer-backed body keeps its fast path in
+     * the HTTP client (e.g. Apache's single-write {@code ByteArrayEntity}).
+     *
+     * <p>When the body is consumed as a buffer, the metrics are recorded at hand-out: the HTTP client writes the
+     * whole buffer with one bulk write immediately after, so the timestamps are equivalent, and {@code bytesWritten}
+     * reports the full body. The one divergence from the streaming path is a transport failure mid-write, where the
+     * streaming path would report partial bytes and this reports all of them; for a single {@code write()} call the
+     * partial count was never meaningful to begin with.
+     */
+    private static final class TrackingContentStreamProvider implements ContentStreamProvider {
+        private final ContentStreamProvider delegate;
+        private final RequestBodyMetrics metrics;
+        private final SdkHttpFullRequest request;
+
+        private TrackingContentStreamProvider(ContentStreamProvider delegate,
+                                              RequestBodyMetrics metrics,
+                                              SdkHttpFullRequest request) {
+            this.delegate = delegate;
+            this.metrics = metrics;
+            this.request = request;
+        }
+
+        @Override
+        public InputStream newStream() {
+            InputStream stream = new BytesWrittenTrackingInputStream(delegate.newStream(), metrics);
 
             Optional<Long> contentLength = contentLength(request);
             if (!contentLength.isPresent()) {
-                LOG.debug(() -> String.format("Request contains a body but does not have a Content-Length header. Not validating "
-                                              + "the amount of data sent to the service: %s", request));
+                LOG.debug(() -> String.format("Request contains a body but does not have a Content-Length header. Not "
+                                              + "validating the amount of data sent to the service: %s", request));
                 return stream;
             }
 
-            stream = new LengthAwareInputStream(stream, contentLength.get());
-            return stream;
-        };
+            return new LengthAwareInputStream(stream, contentLength.get());
+        }
 
-        return request.toBuilder().contentStreamProvider(wrapped).build();
+        @Override
+        public ByteBuffer contentAsByteBufferOrNull() {
+            ByteBuffer buffered = delegate.contentAsByteBufferOrNull();
+            if (buffered == null) {
+                return null;
+            }
+
+            long now = System.nanoTime();
+            metrics.firstByteWrittenNanoTime().compareAndSet(0, now);
+            metrics.lastByteWrittenNanoTime().set(now);
+            metrics.bytesWritten().addAndGet(buffered.remaining());
+            return buffered;
+        }
+
+        @Override
+        public String name() {
+            return delegate.name();
+        }
     }
 
     private static long updateMetricCollectionAttributes(RequestExecutionContext context) {
