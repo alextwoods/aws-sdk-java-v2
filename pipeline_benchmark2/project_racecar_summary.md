@@ -118,14 +118,21 @@ Consequences:
 - **No phase verdict changes**, because every phase ran on the same transport. But "V2 sync" in this
   document means Apache5, not the Apache 4.x the earlier report and README implied.
 - Every transport is now pinned in code, printed in the run header, and recorded in a `transport`
-  column. `v2-sync-apache4` and `v2-async-netty` were added so those comparisons are explicit rather
-  than accidental.
+  column, so no results file can leave the question open again.
 
-**How much Apache5 and Apache 4.x differ is still unknown**, and the attempt to answer it is what
-exposed the CPU-metric problem below. A single run at 4,000 iterations put Apache5 17% cheaper per
-operation; the same comparison at 40,000 iterations put the two within 0.1% of each other, with
-Apache 4.x ahead on wall-clock throughput. Neither is a result — they are one-off runs at two window
-lengths, and they disagree. This needs a paired A/B with repetitions.
+**Settled scope: Apache5 for sync, CRT for async.** These are the transports V2 is standardizing on,
+so they are the only ones the benchmark carries. `v2-sync-apache4` and `v2-async-netty` existed
+briefly while this was being untangled and have been removed; the numbers they produced are recorded
+below, but they are not part of the measurement matrix. Worth noting that V2's current *async*
+resolution picks Netty at priority 1, so `v2-async` deliberately measures the intended long-term
+default rather than today's fallback.
+
+**How much Apache5 and Apache 4.x differ was never established**, and the attempt to answer it is
+what exposed the CPU-metric problem below. A single run at 4,000 iterations put Apache5 17% cheaper
+per operation; the same comparison at 40,000 iterations put the two within 0.1%, with Apache 4.x
+ahead on wall-clock throughput. Neither is a result — two one-off runs at different window lengths
+that disagree. It is moot now that Apache5 is the only sync transport under test, but it stands as the
+cleanest example of what this metric will do to you.
 
 ### `cpu_us_per_op` does not converge, and that blocks the concurrency default
 
@@ -155,6 +162,9 @@ The sharpest demonstration: two comparisons measured at 4,000 iterations, then r
 | Apache5 vs Apache 4.x, concurrency 1 | Apache5 −16.7% CPU/op | −0.1% (indistinguishable) |
 | in-flight vs `join`, CRT, concurrency 8 | `join` +59% CPU/op | `join` −7.5% |
 
+(The Apache 4.x arm was measured while both sync transports were still wired up; Apache5 is now the
+only one.)
+
 **Both differences shrank to nothing, and one reversed sign.** They were window artifacts. Anything
 this metric appears to show at present has to be treated as unproven.
 
@@ -180,13 +190,17 @@ quantified yet — the CPU metric above cannot support it, and these need paired
 - **Call style.** The old loop did `join()` per call, holding exactly one operation in flight — an
   async client doing a blocking client's job. `--async-mode inflight|join` now drives the same client
   and transport both ways, so the programming model can be isolated from the transport.
-- **Transport.** `v2-sync` was Apache5 while `v2-async` was CRT, so every sync-vs-async statement in
-  this document also compared two unrelated HTTP stacks. `v2-async-netty` closes that gap: Netty is
-  what V2's own default resolution picks, so it is what most async users actually run.
+- **Transport.** `v2-sync` is Apache5 while `v2-async` is CRT, so every sync-vs-async statement in
+  this document also compares two unrelated HTTP stacks. That is now a deliberate and documented
+  property rather than an accident — those are the two transports V2 is standardizing on — but any
+  sync-vs-async claim must be read as "Apache5 sync versus CRT async", not as a statement about the
+  programming models in isolation.
 
-The one thing the sweep does show consistently across all levels is that Netty is substantially more
-expensive here than CRT on every metric — at concurrency 1, 4,489 ops/s against 7,330, and roughly
-double the per-operation CPU. That gap is large enough to survive the noise, unlike the two above.
+One durable observation from the sweep before Netty was dropped from the matrix: Netty was
+substantially more expensive than CRT at every concurrency level — 4,489 ops/s against 7,330 at
+concurrency 1, and roughly double the per-operation CPU. That gap was large and consistent enough to
+survive the noise, unlike the two comparisons above, and it is a point in favour of CRT as the
+long-term async default.
 
 ### Build provenance
 

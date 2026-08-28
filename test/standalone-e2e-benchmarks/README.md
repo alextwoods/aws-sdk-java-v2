@@ -3,22 +3,24 @@
 Fixed-iteration DynamoDB benchmarks comparing four client stacks against an **out-of-process**
 mock HTTP server:
 
-| Client            | SDK                                   | HTTP transport              | Call model |
-|-------------------|---------------------------------------|-----------------------------|------------|
-| `v1`              | AWS SDK for Java V1 (1.12.797)        | Apache HttpClient 4.x       | Blocking, N threads |
-| `v2-sync`         | AWS SDK for Java V2                   | Apache5 (`Apache5HttpClient`) | Blocking, N threads |
-| `v2-sync-apache4` | AWS SDK for Java V2                   | Apache HttpClient 4.x       | Blocking, N threads |
-| `v2-async`        | AWS SDK for Java V2                   | AWS CRT                     | N in flight from one thread |
-| `v2-async-netty`  | AWS SDK for Java V2                   | Netty (`NettyNioAsyncHttpClient`) | N in flight from one thread |
-| `smithy`          | smithy-java (1.5.1), generated client | SmithyHttpClient (HTTP/1.1) | Blocking, N threads |
+| Client     | SDK                                   | HTTP transport                | Call model |
+|------------|---------------------------------------|-------------------------------|------------|
+| `v1`       | AWS SDK for Java V1 (1.12.797)        | Apache HttpClient 4.x         | Blocking, N threads |
+| `v2-sync`  | AWS SDK for Java V2                   | **Apache5** (`Apache5HttpClient`) | Blocking, N threads |
+| `v2-async` | AWS SDK for Java V2                   | **AWS CRT**                   | N in flight from one thread |
+| `smithy`   | smithy-java (1.5.1), generated client | SmithyHttpClient (HTTP/1.1)   | Blocking, N threads |
 
-**Every transport is pinned explicitly**, and the one in use is printed in the run header and
-recorded in the `transport` results column. This is not cosmetic: `dynamodb` pulls in both
-apache5-client and netty-nio-client transitively, so three `SdkHttpService` implementations sit on
-this classpath and V2's default resolution picks by an internal priority table
-(`ClasspathSdkHttpServiceProvider`, Apache5 at priority 1). Earlier versions of this README claimed
-`v2-sync` used Apache 4.x; it was actually Apache5 the whole time. `v2-sync-apache4` exists so that
-comparison is explicit rather than accidental.
+**Apache5 for sync and CRT for async** are the transports V2 is standardizing on, so they are the
+ones this benchmark measures. Both are **pinned explicitly** in `Workloads`, and the transport in use
+is printed in the run header and recorded in the `transport` results column.
+
+Pinning matters here rather than being pedantry. `dynamodb` pulls in `apache5-client` and
+`netty-nio-client` transitively, so more than one `SdkHttpService` can sit on the classpath, and V2
+does not fail on that — `ClasspathSdkHttpServiceProvider` picks by an internal priority table. That
+made the transport an invisible variable, and it had already gone wrong: earlier versions of this
+README claimed `v2-sync` used Apache 4.x when Apache5 was what actually ran. Note also that V2's
+current *async* resolution would pick Netty (priority 1), so `v2-async` is deliberately measuring the
+intended long-term default rather than today's fallback.
 
 This package supersedes the profiling setup in `test/benchmark-smithy-java` /
 `pipeline_benchmark/` for DynamoDB, fixing its fairness issues:
@@ -113,14 +115,13 @@ done
 `--concurrency N` keeps N operations in flight. It buys samples per second of wall clock and a more
 realistic workload than one-at-a-time. The two client families reach it differently, on purpose:
 
-- **Blocking clients** (`v1`, `v2-sync`, `v2-sync-apache4`, `smithy`) run **N caller threads**, each
-  in its own closed loop. N threads is the only way a blocking client can have N operations
-  outstanding.
-- **Async clients** (`v2-async`, `v2-async-netty`) keep **N outstanding from a single submitting
-  thread**, driven by completions. This is the shape async exists for. `--async-mode join` instead
-  runs them on the blocking driver — N threads each blocking on its own future — which is what
-  earlier collections here measured, and is a property of how the client is *used* rather than of the
-  transport. Comparing the two modes separates those.
+- **Blocking clients** (`v1`, `v2-sync`, `smithy`) run **N caller threads**, each in its own closed
+  loop. N threads is the only way a blocking client can have N operations outstanding.
+- **The async client** (`v2-async`) keeps **N outstanding from a single submitting thread**, driven by
+  completions. This is the shape async exists for. `--async-mode join` instead runs it on the
+  blocking driver — N threads each blocking on its own future — which is what earlier collections
+  here measured, and is a property of how the client is *used* rather than of the transport.
+  Comparing the two modes separates those.
 
 Every client's connection pool is sized to exactly N, so no client is measured waiting on its own
 pool and none gets a bigger pool than another.
@@ -146,7 +147,6 @@ What a sweep on a 14-core M4 Pro showed for `small-get`:
 |--------|-----------:|-----------:|--------:|--------------:|-----------------|
 | `v2-sync` (apache5) | 8,884 | 31,601 | 8 | 60 → 122 µs | no |
 | `v2-async` (crt) | 7,330 | 28,672 | 32 | 55 → 89 µs | no |
-| `v2-async-netty` | 4,489 | 18,974 | 16 | 76 → 88 µs | no |
 | `smithy` | 11,873 | 48,851 | 32 | 57 → 79 µs | no |
 
 **The mock server is not the bottleneck.** Its queue never grew and it never ran low on handler
@@ -185,7 +185,7 @@ structurally identical data.
 --endpoint URL        server endpoint (default: http://127.0.0.1:19080)
 --metrics             collect SDK-internal metrics, print per-scenario summary to stdout
 --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
---progress-seconds N  progress/ETA print interval; 0 disables (default: 5)
+--progress-seconds N  progress/ETA print interval; 0 disables (default: 10, minimum 10)
 --cpu-source X        auto | oshi | procfs | mxbean (default: auto)
 --append-to-results-file PATH
                       append one CSV row per RESULT line to PATH; creates the file
@@ -343,11 +343,15 @@ so the same binary runs on a laptop and on a benchmark host for cross-checks.
 
 ## Output
 
-Progress lines print at the configured interval:
+Progress lines print at the configured interval — every 10 s by default, and no more often than that
+even if asked, so a run's log stays a handful of lines:
 
 ```
-progress small-get 9,938/20,000 (49.7%) 4969 ops/s eta 2s
+progress small-get 98,431/200,000 (49.2%) 9843 ops/s eta 10s
 ```
+
+`scripts/collect.sh` passes `--progress-seconds 0`, so its per-run logs contain only the header and
+the RESULT line.
 
 One `RESULT` line per scenario:
 
@@ -433,11 +437,13 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   so misrouted calls fail loudly.
 - **No `x-amz-crc32` response header.** V1 validates it when present but V2/smithy-java do not,
   so omitting it keeps response handling symmetric.
-- **Nothing prints from inside the measured loop when progress is off.** `--progress-seconds 0`
-  (what `scripts/collect.sh` always passes) removes both the print and the per-iteration clock
-  read, so the loop contains only the operation under test. Leaving progress *on* for a long
-  collection is not free: a formatted line plus an auto-flushed write costs tens of microseconds
-  per print, which is the same order as a whole small-get operation.
+- **Nothing prints from inside the measured loop, ever.** Progress is reported by a separate thread
+  reading worker-local counters, so it costs the measured path nothing, and `--progress-seconds 0`
+  (what `scripts/collect.sh` passes) turns it off entirely. This used to be an in-loop clock check,
+  and a sentinel-overflow bug made it print once per operation: a formatted line plus an auto-flushed
+  write, tens of microseconds, the same order as a whole small-get. The interval also has a 10 s
+  floor now — a full collection is hundreds of JVM invocations, and anything printed every few
+  seconds across all of them adds up to log files nobody reads.
 - **CPU-time measurement, and why `cpu_us_per_op` is not yet converged.** Snapshots are taken only
   at scenario boundaries, so measurement overhead is negligible, but the reading is **whole-process**
   CPU — it includes the C1/C2 compiler threads, the VM thread and GC. That fixed cost is amortized
