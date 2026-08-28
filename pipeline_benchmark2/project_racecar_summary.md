@@ -38,6 +38,9 @@ original report achieved on the same box. Two causes, one of them mine:
 2. **Environmental (not fixed):** even idle, spread stayed at 6–31%. The machine is a developer
    workstation with an IDE and other applications resident; the original report's run was
    evidently quieter. A 5–15% CPU improvement is below this noise floor.
+3. **A harness bug (found after phase D, now fixed):** the harness itself was printing a progress
+   line per measured operation, from inside the timed loop. See below — it added ~28–39 µs to
+   every operation, which is ~22% of a small-get.
 
 Consequences for how phases are judged:
 
@@ -56,6 +59,42 @@ Secondary caveat: `SigningDuration` and friends from the `--metrics` runs are si
 repped, and inherit the same noise. Phase F's `SigningDuration` moved by −24% to +53% depending on
 scenario — inconsistent in *sign*, i.e. measuring nothing. Ignore those rows.
 
+### The harness was timing itself (found after phase D, fixed in `ee972091035`)
+
+`--progress-seconds 0` is documented to disable progress reporting, and `collect.sh` has always
+passed it. It disabled nothing. The "never" deadline was computed as `start + Long.MAX_VALUE`,
+which overflows to a negative value, so every iteration compared as due: each measured operation
+printed a formatted progress line and — because `System.out` auto-flushes on a newline — issued a
+write syscall, inside the timed region, with stdout redirected to the collection log. The tell was
+sitting in every log file all along: **200,005 lines for 200,000 operations.**
+
+Cost, from a paired A/B of the pre-fix and post-fix jars alternating arms within one session
+(v2-sync, 50k iterations, 3 reps, stdout to a file exactly as `collect.sh` does):
+
+| scenario | pre-fix µs/op | post-fix µs/op | delta |
+|----------|--------------:|---------------:|------:|
+| small-get | 125.1 | 97.0 | **−22.5%** |
+| batch-put | 380.0 | 340.8 | **−10.3%** |
+
+So the harness charged roughly 28–39 µs to every operation it timed. Consequences:
+
+- **Allocation results — all of them — stand.** The print path allocated 2,071 bytes/op (4.8% of
+  profiled bytes), but every one of those stacks is rooted in `BenchmarkRunner` and was therefore
+  categorized `benchmark-harness`, which `phase_alloc_compare.py` excludes. Verified directly
+  against the phase D profile: 100% of the progress-print bytes land in that category and none leak
+  into a client category. Since allocation is the acceptance metric, no phase verdict changes.
+- **Every recorded e2e timing number is inflated by a near-constant ~28–39 µs/op.** Because it is
+  additive and roughly equal across arms, the *direction* of each phase's timing delta survives,
+  but the *magnitude* is understated: a real X→Y improvement was measured as (X+30)→(Y+30). The
+  e2e CPU sections below were already labelled inconclusive and not used to accept a phase, so
+  nothing needs retracting — but none of those numbers should be quoted, and a baseline-vs-current
+  paired re-collection is a prerequisite for any CPU claim, including for phase G.
+- **The noise floor is partly measurement, not just environment.** Removing per-op file I/O from
+  the loop removes a variance source that had nothing to do with the SDK. How much of the 6–31%
+  spread it accounted for is still open; the phase A collection managed 0.4–12.6% *with* the bug
+  present, while phase D's first rep came in 5.6× slow, so episodic external interference is
+  clearly a separate and larger effect.
+
 ### Build provenance
 
 The benchmark module resolves the SDK from `~/.m2`, so each phase requires installing the changed
@@ -71,6 +110,21 @@ modules. Two wrinkles worth recording:
 - Switching branches leaves stale `target/classes` that poison compilation
   (`cannot access SdkBuilder`, `cannot find symbol` in unrelated modules). `mvn clean install` on
   the reduced module set is required after a branch switch.
+- Installing a *single* core module on its own desynchronizes `~/.m2` and produces
+  `VerifyError: AwsAdvancedClientOption is not assignable to AttributeMap$Key` at benchmark
+  runtime. A consistent set is required:
+  `mvn clean install -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' --am -P quick -Dmaven.test.skip=true`.
+
+**Superseded by an artifact-based flow (`c3c8651129f`).** The above is the reason a collection used
+to be irreproducible: it depended on `~/.m2` state that nothing recorded. The harness now shades
+itself, both SDKs and smithy-java into a single jar and stamps the build into it — phase label, git
+commit/branch/dirty flag, build time, and the V2/V1/smithy-java versions — surfaced in the run
+header, the `phase`/`commit` columns of `results.csv`, and the collection manifest. `scripts/build-jar.sh
+PHASE` runs the consistent-module install, shades, and files the result in `pipeline_benchmark2/jars/`
+(gitignored); `benchmark.sh`, `server.sh` and `collect.sh` all take `--jar`. This is what makes the
+paired A/B above possible at all: two arms alternating in one session with no Maven reinstall
+between them. It is also the prerequisite for moving collection to a dedicated host — the jar is
+the only thing that needs to be copied.
 
 ---
 
