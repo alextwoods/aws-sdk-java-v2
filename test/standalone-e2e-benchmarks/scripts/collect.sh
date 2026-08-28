@@ -106,15 +106,28 @@ else
 fi
 
 # ---- Manifest header ----
-GIT_COMMIT="$(git -C "$REPO" rev-parse HEAD)"
-GIT_BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
-GIT_DIRTY="$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+# The scripts can run from a deployed bundle on a benchmark machine that has no clone of the repo. In
+# that case there is no git state to report, and saying so is better than recording empty strings that
+# look like a commit. It costs nothing either way, because with --jar the artifact's own provenance is
+# the authoritative record of what is being measured.
+if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
+    GIT_COMMIT="$(git -C "$REPO" rev-parse HEAD)"
+    GIT_BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
+    GIT_DIRTY="$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+    GIT_LINE="branch \`$GIT_BRANCH\`, commit \`$GIT_COMMIT\`, dirty files: $GIT_DIRTY"
+else
+    GIT_LINE="not a git checkout (deployed script bundle) — see artifact provenance below"
+fi
 if [[ "$(uname)" == "Darwin" ]]; then
     HW_CPU="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
     HW_CORES="$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
     HW_MEM="$(($(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824)) GiB"
 else
-    HW_CPU="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || echo unknown)"
+    # /proc/cpuinfo has no "model name" on aarch64; lscpu does.
+    HW_CPU="$(lscpu 2>/dev/null | sed -n 's/^Model name: *//p' | head -1)"
+    if [[ -z "$HW_CPU" ]]; then
+        HW_CPU="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || echo unknown)"
+    fi
     HW_CORES="$(nproc 2>/dev/null || echo unknown)"
     HW_MEM="$(awk '/MemTotal/ {printf "%.0f GiB", $2/1048576}' /proc/meminfo 2>/dev/null || echo unknown)"
 fi
@@ -130,7 +143,7 @@ cat > "$MANIFEST" <<EOF
 - Host: $(hostname), $(uname -sm)
 - Hardware: $HW_CPU, $HW_CORES logical cores, $HW_MEM
 - Java: $(java -version 2>&1 | head -1)
-- Git: branch \`$GIT_BRANCH\`, commit \`$GIT_COMMIT\`, dirty files: $GIT_DIRTY
+- Git: $GIT_LINE
 - SDK V2 version: $LOCAL_SDK_VERSION
 - Artifact under test: ${JAR:-local build (target/classes + classpath.txt)}
 - Artifact provenance: $JAR_PROVENANCE

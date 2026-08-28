@@ -100,7 +100,11 @@ if [[ "$(uname)" == "Darwin" ]]; then
     HW_CPU="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
     HW_CORES="$(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
 else
-    HW_CPU="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || echo unknown)"
+    # /proc/cpuinfo has no "model name" on aarch64; lscpu does.
+    HW_CPU="$(lscpu 2>/dev/null | sed -n 's/^Model name: *//p' | head -1)"
+    if [[ -z "$HW_CPU" ]]; then
+        HW_CPU="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || echo unknown)"
+    fi
     HW_CORES="$(nproc 2>/dev/null || echo unknown)"
 fi
 
