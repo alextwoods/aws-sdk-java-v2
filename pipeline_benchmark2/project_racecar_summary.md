@@ -134,6 +134,41 @@ ahead on wall-clock throughput. Neither is a result — two one-off runs at diff
 that disagree. It is moot now that Apache5 is the only sync transport under test, but it stands as the
 cleanest example of what this metric will do to you.
 
+### Resolved: per-operation CPU is now a converged quantity (`64bee8c616a`)
+
+The section below records the problem as found. It is fixed; the fix needed two things, because
+either alone was insufficient.
+
+**Application CPU instead of process CPU.** `cpu_ms` includes the C1/C2 compiler threads, the VM
+thread and GC, whose cost is fixed per JVM rather than per operation. `app_cpu_ms` sums per-thread
+CPU over Java threads only — `ThreadMXBean` cannot see compiler, VM or GC threads, so that is exactly
+the right filter without matching thread names. Threads the harness creates fold their CPU into a
+retired counter as they exit, since a thread's CPU disappears with the thread and the driver's workers
+are joined before the closing snapshot. `unattributed_cpu_ms` (process minus application) is reported
+rather than assumed to be zero.
+
+**Warmup until compilation stops.** Fixing the accounting removes compiler CPU from the total but does
+not stop the code changing. Warmup now runs until total compilation time is flat for 3 s, with a 5 s
+floor on warmup wall time. That needs **55k–315k operations and 6–16 s** depending on client, against
+the 20k that was being requested — so the old warmup was short by an order of magnitude.
+
+Same experiment as below, after both:
+
+| iterations | `cpu_us_per_op` | `app_cpu_us_per_op` | `jit_ms` in window |
+|-----------:|----------------:|--------------------:|-------------------:|
+| 40,000  | 41.1 | 39.5 | 14 |
+| 100,000 | 41.0 | 39.5 | 9  |
+| 300,000 | 39.7 | 39.0 | 12 |
+
+**Spread across window lengths: 135% → 1.3%.** Steady-state cost for `v2-sync` `small-get` at
+concurrency 1 is ~39 µs/op, against the 48.5 the old metric reported at its most favourable window and
+114 at its least.
+
+The warmup gate is evidence, not proof — compilation tails off in bursts — so the runner independently
+measures compilation *inside* the window and reports `steady_state`. **The async client still fails
+that check at concurrency 4+**, compiling 300–550 ms per window; its per-operation CPU should not be
+quoted, and the harness now says so instead of reporting a number that looks fine.
+
 ### `cpu_us_per_op` does not converge, and that blocks the concurrency default
 
 Concurrency was added (`--concurrency N`, `6cc46827f72`) to get more samples per second of wall clock
@@ -181,6 +216,57 @@ So:
 Prerequisite for a defensible default (and for any phase G claim, which is CPU-shaped): measure
 **application CPU** per thread, excluding compiler/VM/GC threads, and warm up until compilation
 quiesces. Until then latency percentiles and allocation are the trustworthy per-operation metrics.
+*(Both done — see the resolution above.)*
+
+### Concurrency default: 2, and the server is the ceiling after all
+
+With per-operation CPU trustworthy, the sweep became interpretable and two earlier conclusions had to
+be revised.
+
+**Concurrency defaults to 2.** It is the highest level at which every client stays steady-state; the
+async client stops settling at 4 and above. It roughly doubles samples per second of wall clock while
+total CPU demand stays near two cores of fourteen. Drift in per-operation CPU above that is real
+contention cost, but it applies equally to both arms of a fixed-concurrency comparison, so it shifts
+absolute numbers without biasing a delta — the earlier flag scheme treated it as disqualifying and
+recommended concurrency 1 for the wrong reason.
+
+**"Total core demand is the limit" was wrong, and so was "the server is not the bottleneck".** The
+old sweep put demand at ~11 of 14 cores; with compiler CPU excluded it is ~5. Yet all three clients
+still flatten near 48k ops/s. A direct test settles it: two independent client processes against one
+server produced 52,569 ops/s against 46,407 for one — **1.13×**, so an entire extra client bought
+almost nothing. The ceiling is the apparatus.
+
+Where, specifically: `server_saturated` stayed `false` throughout, and correctly — Jetty's handler pool
+really is idle (9 busy of 200, empty queue). The limit is beneath it, in the socket layer. Over that
+test the server burned **66.6 s of system time against 34.2 s of user time**: kernel loopback work.
+So `server_saturated` is necessary but not sufficient, and a `false` there means the thread pool has
+headroom, not the server.
+
+Practical consequence: below concurrency ~4 this does not bite (server 43–47 µs/op, ~2 cores total).
+At 8+ the client waits on the server and per-operation CPU absorbs contention unrelated to the SDK.
+Treat ~48k ops/s as the apparatus limit; raising it means moving the server off the box, which is what
+the separate-host plan is for.
+
+### An experiment ran against the wrong server (`d66b5af5c39`)
+
+Worth recording as a methodology failure, because the harness was complicit. The first
+client-vs-server ceiling test was invalid: a `MockDdbServer` from a **two-hour-old jar** was still
+listening on the port, the server the test launched died with "Address already in use", and the
+clients measured against the stale build for the whole experiment.
+
+`benchmark.sh` allowed it. Readiness was a `/ping` probe, which cannot distinguish our server from
+anyone else's — the stale server answered instantly, the loop broke on success, and the dead child was
+never noticed. What caught it was the `server_requests` cross-check reporting 0 against an expected
+150,000, a check added for entirely different reasons.
+
+Fixed: readiness now comes from the launched child's own `READY` line, and startup failures are
+diagnosed from the server log rather than from `kill -0`, which keeps succeeding for an exited
+background child until the shell reaps it. A port conflict fails in about a second with the `lsof`
+command to find the squatter.
+
+Two lessons kept: cross-checks that seem redundant are how you find out the apparatus lied, and any
+result that arrives without a verified provenance chain from server to jar to commit should be assumed
+suspect until it has one.
 
 ### The async comparison conflated call style with transport
 

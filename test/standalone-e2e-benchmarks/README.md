@@ -128,7 +128,7 @@ pool and none gets a bigger pool than another.
 
 **Read the right metric.** Above concurrency 1, `avg_us_per_op` (wall / iterations) is the reciprocal
 of throughput, *not* a latency. Use `mean_lat_us` and the percentiles for latency, `ops_per_wall_sec`
-for throughput, and `cpu_us_per_op` for efficiency. At concurrency 1 `avg_us_per_op` and
+for throughput, and **`app_cpu_us_per_op`** for efficiency. At concurrency 1 `avg_us_per_op` and
 `mean_lat_us` agree, which is a useful self-check that the latency recording is sound.
 
 ### Choosing a level: `scripts/concurrency-sweep.sh`
@@ -137,26 +137,56 @@ for throughput, and `cpu_us_per_op` for efficiency. At concurrency 1 `avg_us_per
 ./scripts/concurrency-sweep.sh --clients v2-sync,v2-async --levels 1,2,4,8,16,32
 ```
 
-Runs one scenario across concurrency levels and prints throughput, scaling, per-operation client and
-server CPU, total core demand, latency percentiles, and flags for `SERVER-SATURATED`,
-`OVERSUBSCRIBED` and `CPU-DRIFT`. Output goes to `pipeline_benchmark2/sweeps/<runid>/` (gitignored).
+Runs one scenario across concurrency levels and prints throughput, scaling, per-operation application
+and server CPU, total core demand, and latency percentiles. Flags split into *hard* — where the run
+stops measuring the client (`SERVER-SATURATED`, `OVERSUBSCRIBED`, `NOT-STEADY`) — and *soft*
+(`CPU-DRIFT`), which is real contention cost but applies to both arms of a fixed-concurrency
+comparison and so shifts absolute numbers without biasing a delta. Output goes to
+`pipeline_benchmark2/sweeps/<runid>/` (gitignored).
 
-What a sweep on a 14-core M4 Pro showed for `small-get`:
+A sweep on a 14-core M4 Pro, `small-get`, 300k operations per point (`app us/op` is application CPU
+per operation — see the CPU section below):
 
-| client | ops/s at 1 | ops/s peak | peak at | server CPU/op | ever saturated? |
-|--------|-----------:|-----------:|--------:|--------------:|-----------------|
-| `v2-sync` (apache5) | 8,884 | 31,601 | 8 | 60 → 122 µs | no |
-| `v2-async` (crt) | 7,330 | 28,672 | 32 | 55 → 89 µs | no |
-| `smithy` | 11,873 | 48,851 | 32 | 57 → 79 µs | no |
+| client | conc | ops/s | app µs/op | server µs/op | cores | flags |
+|--------|-----:|------:|----------:|-------------:|------:|-------|
+| `v2-sync` (apache5) | 1 | 11,628 | 39.2 | 43.5 | 1.0 | |
+| | 2 | 22,046 | 40.0 | 46.2 | 1.9 | |
+| | 4 | 36,408 | 46.0 | 58.8 | 3.8 | CPU-DRIFT |
+| | 8 | 46,504 | 46.6 | 62.1 | 5.1 | CPU-DRIFT |
+| `v2-async` (crt) | 1 | 8,057 | 77.8 | 45.8 | 1.0 | |
+| | 2 | 15,007 | 83.4 | 47.3 | 2.0 | |
+| | 4 | 25,015 | 101.6 | 58.3 | 4.0 | NOT-STEADY CPU-DRIFT |
+| | 8 | 38,054 | 113.7 | 66.8 | 7.0 | NOT-STEADY CPU-DRIFT |
+| `smithy` | 1 | 14,822 | 26.4 | 38.1 | 1.0 | |
+| | 2 | 25,426 | 29.4 | 43.1 | 1.9 | CPU-DRIFT |
+| | 8 | 47,901 | 33.3 | 57.9 | 4.4 | CPU-DRIFT |
 
-**The mock server is not the bottleneck.** Its queue never grew and it never ran low on handler
-threads at any level, and its CPU per operation stays well under the client's. What actually limits
-throughput is total core demand: client plus server peaked at ~11 of 14 cores, and that is what
-flattens the curves past concurrency 8. Throughput gains of 3.2–3.9× arrive by concurrency 4–8, so
-that is the useful range on a machine this size.
+**Concurrency defaults to 2**, the highest level at which every client stays steady-state. It roughly
+doubles samples per second of wall clock while total CPU demand stays near two cores of fourteen, so
+neither the host nor the server is near a limit. Re-run the sweep on a different host before assuming
+2 is right there.
 
-Concurrency still defaults to **1**, because the metric that should decide the default —
-`cpu_us_per_op` — is not yet trustworthy. See the CPU-time caveat below.
+### The mock server *is* the ceiling above ~48k ops/s
+
+Three very different clients all flatten near 48k ops/s while total CPU demand is only ~5 of 14
+cores. That is the shape of a shared limit, and a direct test confirms it: pointing **two independent
+client processes** at one server produced 52,569 ops/s against 46,407 for one — 1.13×, so a whole
+extra client bought almost nothing.
+
+Note what this means for the `server_saturated` flag: it stayed `false` throughout. The flag reports
+Jetty's *handler pool* (`queue_size`, `low_on_threads`), and the pool really is idle — 9 busy threads
+of 200, empty queue. The limit is below it, in the socket layer: over that test the server burned
+**66.6 s of system time against 34.2 s of user time**, i.e. mostly kernel socket work on loopback.
+
+Consequences:
+
+- `server_saturated` is necessary but not sufficient. A `false` there does not mean the server has
+  headroom; it means its thread pool does.
+- Below concurrency ~4 this does not bite — the server costs 43–47 µs/op and total demand is ~2
+  cores. At concurrency 8+ the client spends time waiting on the server, and per-operation CPU picks
+  up contention that has nothing to do with the SDK.
+- Raising the ceiling means getting the server off the box, which is what the separate-host plan is
+  for. Until then, treat ~48k ops/s as the apparatus limit rather than a client result.
 
 ## Scenarios
 
@@ -180,8 +210,11 @@ structurally identical data.
 --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
 --iterations N        measured operations per scenario (default: 10000)
 --warmup N            unmeasured warmup operations per scenario (default: min(2000, iterations))
---concurrency N       operations kept in flight (default: 1)
+--concurrency N       operations kept in flight (default: 2)
 --async-mode X        inflight | join (default: inflight), async clients only
+--warmup-mode X       quiesce | fixed (default: quiesce)
+--warmup-max-seconds N
+                      ceiling on warmup wall time in quiesce mode (default: 60)
 --endpoint URL        server endpoint (default: http://127.0.0.1:19080)
 --metrics             collect SDK-internal metrics, print per-scenario summary to stdout
 --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
@@ -356,11 +389,14 @@ the RESULT line.
 One `RESULT` line per scenario:
 
 ```
-RESULT client=v2-sync transport=apache5 scenario=small-get iterations=100000 concurrency=1 \
-       async_mode=n/a wall_ms=12000 ops_per_wall_sec=8333.3 cpu_ms=9500 cpu_user_ms=9000 \
-       cpu_sys_ms=500 ops_per_cpu_sec=10526.3 ops_per_user_cpu_sec=11111.1 cpu_us_per_op=95.0 \
-       avg_us_per_op=120.0 mean_lat_us=119.8 p50_us=93.0 p90_us=180.0 p99_us=352.0 \
-       p999_us=1200.0 max_us=5145.0 server_cpu_ms=6040 server_requests=100000
+=== warmup small-get: ops=55,000 wall=6.7s jit=6826ms settled=true (compilation quiet for 3000ms)
+RESULT client=v2-sync transport=apache5 scenario=small-get iterations=300000 concurrency=1 \
+       async_mode=n/a wall_ms=25628 ops_per_wall_sec=11706.9 cpu_ms=11910 cpu_user_ms=10450 \
+       cpu_sys_ms=1460 ops_per_cpu_sec=25188.9 ops_per_user_cpu_sec=28708.9 cpu_us_per_op=39.7 \
+       app_cpu_ms=11700 app_cpu_us_per_op=39.0 unattributed_ms=210 avg_us_per_op=85.4 \
+       mean_lat_us=85.4 p50_us=82.0 p90_us=110.0 p99_us=194.0 p999_us=520.0 max_us=5145.0 \
+       jit_ms=12 gc_ms=32 gc_count=41 steady_state=true warmup_ops=55000 warmup_settled=true \
+       server_cpu_ms=13050 server_requests=300000
 ```
 
 - `ops_per_wall_sec` — iterations / elapsed wall clock.
@@ -444,30 +480,64 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   write, tens of microseconds, the same order as a whole small-get. The interval also has a 10 s
   floor now — a full collection is hundreds of JVM invocations, and anything printed every few
   seconds across all of them adds up to log files nobody reads.
-- **CPU-time measurement, and why `cpu_us_per_op` is not yet converged.** Snapshots are taken only
-  at scenario boundaries, so measurement overhead is negligible, but the reading is **whole-process**
-  CPU — it includes the C1/C2 compiler threads, the VM thread and GC. That fixed cost is amortized
-  over the measured operations, so `cpu_us_per_op` shrinks as the window grows instead of converging.
-  Measured on `v2-sync`/`small-get` at concurrency 1 with a 20k warmup:
+- **Use `app_cpu_us_per_op`, not `cpu_us_per_op`.** `cpu_ms` is **whole-process** CPU: it includes the
+  C1/C2 compiler threads, the VM thread and GC. That cost is roughly fixed per JVM rather than per
+  operation, so dividing it by the operation count produces a number that shrinks as the window grows
+  instead of converging. On an unchanged client (`v2-sync`/`small-get`, concurrency 1, fixed 20k
+  warmup) it fell by a factor of 2.3 for no reason but a longer window:
 
-  | iterations | wall/op | `mean_lat_us` | `cpu_us_per_op` | client cores |
-  |-----------:|--------:|--------------:|----------------:|-------------:|
-  | 40,000  | 94.6 µs | 94.5 µs | 114.1 | 1.21 |
-  | 100,000 | 89.9 µs | 89.9 µs | 77.4  | 0.86 |
-  | 300,000 | 84.4 µs | 84.3 µs | 48.5  | 0.57 |
+  | iterations | `mean_lat_us` | `cpu_us_per_op` | client cores |
+  |-----------:|--------------:|----------------:|-------------:|
+  | 40,000  | 94.5 µs | 114.1 | 1.21 |
+  | 100,000 | 89.9 µs | 77.4  | 0.86 |
+  | 300,000 | 84.3 µs | 48.5  | 0.57 |
 
-  Latency moves 11% while per-operation CPU falls by 2.3×, and a single-threaded blocking client
-  reports 1.21 cores — CPU that is not the caller thread. So CPU numbers are only comparable between
-  runs with *identical* iteration counts, and absolute values are inflated. Fixing this means
-  measuring **application CPU** (per-thread, excluding compiler/VM/GC threads) and warming up until
-  compilation quiesces. Until then, prefer latency percentiles and allocation. The procfs source
-  assumes 100 ticks/s (override with `--jvm-args "-DclkTck=N"`).
+  A single-threaded blocking client reporting 1.21 cores is the tell — that CPU cannot be the caller
+  thread. This distorted two real comparisons badly enough that both vanished when re-measured at a
+  longer window, one reversing sign.
+
+  `app_cpu_ms` fixes it by summing per-thread CPU over Java threads only (`ThreadMXBean`), which
+  excludes compiler, VM and GC threads by construction. Combined with quiescence warmup, the same
+  experiment now holds still:
+
+  | iterations | `cpu_us_per_op` | `app_cpu_us_per_op` | `jit_ms` in window |
+  |-----------:|----------------:|--------------------:|-------------------:|
+  | 40,000  | 41.1 | 39.5 | 14 |
+  | 100,000 | 41.0 | 39.5 | 9  |
+  | 300,000 | 39.7 | 39.0 | 12 |
+
+  Spread across window lengths: **1.3%** for `app_cpu_us_per_op`, down from 135%.
+
+  One accounting subtlety worth knowing: a thread's CPU vanishes when the thread dies, so every
+  thread the harness creates folds its total into a retired counter on the way out. Threads created
+  *and* destroyed by the SDK inside a window are the remaining gap, which is why `unattributed_cpu_ms`
+  (process minus application) is reported rather than assumed to be zero.
+
+  The procfs source assumes 100 ticks/s (override with `--jvm-args "-DclkTck=N"`).
+- **Warmup runs until the JIT settles** (`--warmup-mode quiesce`, the default). A fixed count is a
+  guess, and 20k was the wrong guess here: warmup actually needs 55k–315k operations and 6–10 s
+  depending on client, during which the JVM spends 5–7 s compiling. Quiesce mode runs `--warmup`
+  operations and then keeps going in chunks until total compilation time stops growing for 3 s,
+  capped by `--warmup-max-seconds`. `--warmup-mode fixed` reproduces older collections.
+
+  The gate is evidence, not proof — compilation tails off in bursts, so the runner independently
+  checks how much compiling happened *inside* the measured window and reports `steady_state`, warning
+  when it is false. The async client at concurrency 4+ still compiles ~400–550 ms per window and is
+  correctly flagged; treat per-operation CPU from a `steady_state=false` run as unusable. Short windows
+  are disproportionately affected, so the warning suggests raising `--iterations` below 5 s.
 - **Server-side accounting.** `MockDdbServer` exposes `GET /stats` (`key=value` lines: request and
   error counts, its own CPU, and Jetty pool depth). The runner samples it either side of the measured
   window and reports `server_cpu_ms`, `server_requests` and a saturation flag. `server_requests` is a
   cross-check that the server served exactly the operations the client thinks it issued — a mismatch
-  means retries, dropped connections, or a stray second client. Pool size is `--threads N` on the
-  server (default 200).
+  means retries, dropped connections, or a stray second client. It earns its keep: it is what revealed
+  that an experiment had run against a stale server from an older build. Pool size is `--threads N`
+  (default 200). Remember the saturation flag only covers the handler pool, not the socket layer — see
+  the ceiling discussion under Concurrency.
+- **`benchmark.sh` verifies the server is *its own*.** Readiness comes from the launched child's
+  `READY` line, not from `/ping` answering, because a leftover `MockDdbServer` on the same port answers
+  `/ping` instantly while the new one dies with "Address already in use". That is not hypothetical: a
+  server from a two-hour-old jar served an entire experiment before the request-count mismatch exposed
+  it. A port conflict now fails in about a second with the `lsof` command to find the squatter.
 - **Localhost transport.** All traffic is plain HTTP over loopback: no DNS, TLS, or real network.
   Numbers are pipeline overhead, not end-to-end AWS latency. Client and server share the host's
   cores; on a small machine consider running the server on separate cores (`taskset`/separate
