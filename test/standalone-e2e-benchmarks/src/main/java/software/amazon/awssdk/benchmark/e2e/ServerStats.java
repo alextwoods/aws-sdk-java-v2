@@ -79,22 +79,58 @@ final class ServerStats {
     }
 
     /**
+     * One client for the whole run, for two reasons that both affect the measurement.
+     *
+     * <p>Building an {@link HttpClient} per call put its class loading and JIT compilation
+     * immediately before the measured window, where the compilation landed inside it — observed as
+     * hundreds of milliseconds of in-window compilation on short runs. It also spun up and tore down
+     * the client's internal selector and executor threads around every window, and threads that die
+     * mid-window take their CPU with them (see {@link AppCpuMeter}), so the accounting lost it.
+     *
+     * <p>Held for process lifetime rather than closed, since the process is a single benchmark run.
+     */
+    private static volatile HttpClient sharedClient;
+
+    private static HttpClient client() {
+        HttpClient c = sharedClient;
+        if (c == null) {
+            synchronized (ServerStats.class) {
+                c = sharedClient;
+                if (c == null) {
+                    c = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+                    sharedClient = c;
+                }
+            }
+        }
+        return c;
+    }
+
+    /**
      * Fetch {@code /stats}. Returns {@link #notAvailable()} rather than throwing: these counters are
      * diagnostics, and a benchmark run against DynamoDB Local (or any endpoint that is not this mock
      * server) must still work.
      */
     static ServerStats fetch(URI endpoint) {
-        try (HttpClient http = HttpClient.newBuilder()
-                                         .connectTimeout(Duration.ofSeconds(2)).build()) {
+        try {
             HttpRequest req = HttpRequest.newBuilder(endpoint.resolve("/stats"))
                                          .timeout(Duration.ofSeconds(5)).GET().build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = client().send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
                 return notAvailable();
             }
             return parse(resp.body());
         } catch (Exception e) {
             return notAvailable();
+        }
+    }
+
+    /**
+     * Exercise the stats path once before warmup, so the client construction, class loading and first
+     * compilation of this code happen well before any measured window.
+     */
+    static void prewarm(URI endpoint) {
+        for (int i = 0; i < 3; i++) {
+            fetch(endpoint);
         }
     }
 

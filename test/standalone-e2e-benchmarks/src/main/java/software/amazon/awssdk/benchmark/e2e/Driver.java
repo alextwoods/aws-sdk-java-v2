@@ -89,7 +89,10 @@ final class Driver {
 
         for (int w = 0; w < workers; w++) {
             int id = w;
-            threads[w] = new Thread(() -> {
+            // Wrapped so the worker folds its CPU into the retired counter before it exits: these
+            // threads are joined before the closing CPU snapshot, so an unreported worker would take
+            // all of its CPU with it. See AppCpuMeter.
+            threads[w] = new Thread(AppCpuMeter.accounted(() -> {
                 long[] mine = samples[id];
                 int budget = budgets[id];
                 try {
@@ -106,7 +109,7 @@ final class Driver {
                 } catch (Throwable t) {
                     failure.compareAndSet(null, t);
                 }
-            }, "bench-worker-" + w);
+            }), "bench-worker-" + w);
             threads[w].start();
         }
 
