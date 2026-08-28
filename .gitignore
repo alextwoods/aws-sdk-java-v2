@@ -44,3 +44,6 @@ bin/
 
 # Paired A/B timing runs (test/standalone-e2e-benchmarks/scripts/paired-ab.sh)
 /pipeline_benchmark2/paired/
+
+# Concurrency sweeps (test/standalone-e2e-benchmarks/scripts/concurrency-sweep.sh)
+/pipeline_benchmark2/sweeps/

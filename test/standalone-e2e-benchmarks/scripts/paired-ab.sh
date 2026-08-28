@@ -20,6 +20,8 @@
 #   --reps N          repetitions of the whole pair (default: 5)
 #   --clients LIST    comma-separated (default: v2-sync,v2-async)
 #   --scenarios LIST  comma-separated (default: small-get,small-put,batch-get,batch-put)
+#   --concurrency N   operations kept in flight (default: 1), identical in both arms
+#   --async-mode X    inflight | join (default: inflight) for async clients
 #   --port N          mock server port (default: 19080)
 #   --out DIR         output root (default: <repo>/pipeline_benchmark2/paired)
 set -uo pipefail
@@ -33,19 +35,23 @@ WARMUP=10000
 REPS=5
 CLIENTS="v2-sync,v2-async"
 SCENARIOS="small-get,small-put,batch-get,batch-put"
+CONCURRENCY=1
+ASYNC_MODE="inflight"
 PORT=19080
 OUT="$REPO/pipeline_benchmark2/paired"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --jars)       JARS="$2"; shift 2 ;;
-        --iterations) ITERATIONS="$2"; shift 2 ;;
-        --warmup)     WARMUP="$2"; shift 2 ;;
-        --reps)       REPS="$2"; shift 2 ;;
-        --clients)    CLIENTS="$2"; shift 2 ;;
-        --scenarios)  SCENARIOS="$2"; shift 2 ;;
-        --port)       PORT="$2"; shift 2 ;;
-        --out)        OUT="$2"; shift 2 ;;
+        --jars)        JARS="$2"; shift 2 ;;
+        --iterations)  ITERATIONS="$2"; shift 2 ;;
+        --warmup)      WARMUP="$2"; shift 2 ;;
+        --reps)        REPS="$2"; shift 2 ;;
+        --clients)     CLIENTS="$2"; shift 2 ;;
+        --scenarios)   SCENARIOS="$2"; shift 2 ;;
+        --concurrency) CONCURRENCY="$2"; shift 2 ;;
+        --async-mode)  ASYNC_MODE="$2"; shift 2 ;;
+        --port)        PORT="$2"; shift 2 ;;
+        --out)         OUT="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -125,6 +131,7 @@ fi
     echo "- reps of the whole pair: $REPS"
     echo "- clients: $CLIENTS"
     echo "- scenarios: $SCENARIOS"
+    echo "- concurrency: $CONCURRENCY, async mode: $ASYNC_MODE"
     echo "- server port: $PORT (fresh out-of-process mock server per run)"
     echo "- total JVM runs: $TOTAL_RUNS"
     echo ""
@@ -159,6 +166,7 @@ for rep in $(seq 1 "$REPS"); do
                 start_ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
                 if (cd "$DIR" && scripts/benchmark.sh --jar "$jar" --client "$client" \
                         --scenario "$scenario" --iterations "$ITERATIONS" --warmup "$WARMUP" \
+                        --concurrency "$CONCURRENCY" --async-mode "$ASYNC_MODE" \
                         --progress-seconds 0 --cpu-source auto --port "$PORT" \
                         --append-to-results-file "$RESULTS") > "$RUNDIR/$log" 2>&1; then
                     status="ok"

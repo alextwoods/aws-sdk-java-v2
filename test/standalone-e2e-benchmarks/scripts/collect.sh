@@ -21,6 +21,10 @@
 #   --reps N          clean timing repetitions per case (default: 3)
 #   --clients LIST    comma-separated (default: v1,v2-sync,v2-async,smithy)
 #   --scenarios LIST  comma-separated (default: small-get,small-put,batch-get,batch-put)
+#   --concurrency N   operations kept in flight (default: 1). Higher values yield more samples per
+#                     second of wall clock; check scripts/concurrency-sweep.sh first, since past some
+#                     level the run measures CPU contention rather than the client.
+#   --async-mode X    inflight | join (default: inflight) for async clients
 #   --port N          mock server port (default: 19080)
 #   --out DIR         output root (default: <repo>/pipeline_benchmark2/raw)
 #   --jar PATH        run everything from a shaded benchmark jar instead of the local build. The
@@ -36,20 +40,24 @@ WARMUP=20000
 REPS=3
 CLIENTS="v1,v2-sync,v2-async,smithy"
 SCENARIOS="small-get,small-put,batch-get,batch-put"
+CONCURRENCY=1
+ASYNC_MODE="inflight"
 PORT=19080
 OUT="$REPO/pipeline_benchmark2/raw"
 JAR=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --iterations) ITERATIONS="$2"; shift 2 ;;
-        --warmup)     WARMUP="$2"; shift 2 ;;
-        --reps)       REPS="$2"; shift 2 ;;
-        --clients)    CLIENTS="$2"; shift 2 ;;
-        --scenarios)  SCENARIOS="$2"; shift 2 ;;
-        --port)       PORT="$2"; shift 2 ;;
-        --out)        OUT="$2"; shift 2 ;;
-        --jar)        JAR="$2"; shift 2 ;;
+        --iterations)  ITERATIONS="$2"; shift 2 ;;
+        --warmup)      WARMUP="$2"; shift 2 ;;
+        --reps)        REPS="$2"; shift 2 ;;
+        --clients)     CLIENTS="$2"; shift 2 ;;
+        --scenarios)   SCENARIOS="$2"; shift 2 ;;
+        --concurrency) CONCURRENCY="$2"; shift 2 ;;
+        --async-mode)  ASYNC_MODE="$2"; shift 2 ;;
+        --port)        PORT="$2"; shift 2 ;;
+        --out)         OUT="$2"; shift 2 ;;
+        --jar)         JAR="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -133,6 +141,8 @@ cat > "$MANIFEST" <<EOF
 - timing repetitions per case: $REPS
 - clients: $CLIENTS
 - scenarios: $SCENARIOS
+- concurrency: $CONCURRENCY (sync clients use this many threads; async clients keep this many in flight)
+- async mode: $ASYNC_MODE
 - cpu source: auto
 - server port: $PORT (fresh out-of-process mock server per run)
 - total JVM runs: $TOTAL_RUNS
@@ -169,6 +179,7 @@ run_one() {
 
     local cmd=(scripts/benchmark.sh --client "${caseid%%_*}" --scenario "${caseid#*_}"
                --iterations "$ITERATIONS" --warmup "$WARMUP" --progress-seconds 0
+               --concurrency "$CONCURRENCY" --async-mode "$ASYNC_MODE"
                --cpu-source auto --port "$PORT" ${JAR_ARGS[@]+"${JAR_ARGS[@]}"} "$@")
     echo "[$RUN_NO/$TOTAL_RUNS] $caseid $kind"
 

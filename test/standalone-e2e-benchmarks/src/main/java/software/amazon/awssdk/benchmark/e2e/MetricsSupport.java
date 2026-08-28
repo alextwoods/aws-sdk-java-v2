@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.amazonaws.metrics.RequestMetricCollector;
@@ -33,10 +34,17 @@ final class MetricsSupport {
     private MetricsSupport() {
     }
 
-    /** Aggregates every Duration-valued V2 metric in the collection tree, keyed by metric name. */
+    /**
+     * Aggregates every Duration-valued V2 metric in the collection tree, keyed by metric name.
+     *
+     * <p>Concurrent by necessity: at concurrency above 1 the SDK publishes from every caller thread
+     * (and, for async clients, from completion threads). The maps were plain {@link HashMap}s while
+     * the harness was single-threaded, which surfaced as a {@code ConcurrentModificationException}
+     * inside {@code computeIfAbsent} as soon as more than one operation was in flight.
+     */
     static final class V2Publisher implements MetricPublisher {
-        private final Map<String, AtomicLong> totalNanos = new HashMap<>();
-        private final Map<String, AtomicLong> counts = new HashMap<>();
+        private final Map<String, AtomicLong> totalNanos = new ConcurrentHashMap<>();
+        private final Map<String, AtomicLong> counts = new ConcurrentHashMap<>();
 
         @Override
         public void publish(MetricCollection collection) {
@@ -75,7 +83,7 @@ final class MetricsSupport {
         }
     }
 
-    /** Aggregates V1 AWSRequestMetrics timing sub-measurements. */
+    /** Aggregates V1 AWSRequestMetrics timing sub-measurements. Concurrent, as above. */
     static final class V1Collector extends RequestMetricCollector {
         private static final String[] FIELDS = {
             "ClientExecuteTime", "CredentialsRequestTime", "RequestMarshallTime", "RequestSigningTime",
@@ -83,8 +91,8 @@ final class MetricsSupport {
             "ResponseProcessingTime", "RetryPauseTime", "HttpClientPoolAcquireTime",
         };
 
-        private final Map<String, AtomicLong> totalNanos = new HashMap<>();
-        private final Map<String, AtomicLong> counts = new HashMap<>();
+        private final Map<String, AtomicLong> totalNanos = new ConcurrentHashMap<>();
+        private final Map<String, AtomicLong> counts = new ConcurrentHashMap<>();
 
         @Override
         public void collectMetrics(com.amazonaws.Request<?> request, com.amazonaws.Response<?> response) {

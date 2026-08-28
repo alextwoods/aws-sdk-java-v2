@@ -3,12 +3,22 @@
 Fixed-iteration DynamoDB benchmarks comparing four client stacks against an **out-of-process**
 mock HTTP server:
 
-| Client     | SDK                              | HTTP transport            | Call model              |
-|------------|----------------------------------|---------------------------|-------------------------|
-| `v1`       | AWS SDK for Java V1 (1.12.797)   | Apache HttpClient 4.x     | Blocking                |
-| `v2-sync`  | AWS SDK for Java V2 (2.54.2)     | Apache HttpClient 4.x (default) | Blocking          |
-| `v2-async` | AWS SDK for Java V2 (2.54.2)     | AWS CRT async client      | CompletableFuture + `join()` per call |
-| `smithy`   | smithy-java (1.5.1), generated client | SmithyHttpClient (HTTP/1.1) | Blocking          |
+| Client            | SDK                                   | HTTP transport              | Call model |
+|-------------------|---------------------------------------|-----------------------------|------------|
+| `v1`              | AWS SDK for Java V1 (1.12.797)        | Apache HttpClient 4.x       | Blocking, N threads |
+| `v2-sync`         | AWS SDK for Java V2                   | Apache5 (`Apache5HttpClient`) | Blocking, N threads |
+| `v2-sync-apache4` | AWS SDK for Java V2                   | Apache HttpClient 4.x       | Blocking, N threads |
+| `v2-async`        | AWS SDK for Java V2                   | AWS CRT                     | N in flight from one thread |
+| `v2-async-netty`  | AWS SDK for Java V2                   | Netty (`NettyNioAsyncHttpClient`) | N in flight from one thread |
+| `smithy`          | smithy-java (1.5.1), generated client | SmithyHttpClient (HTTP/1.1) | Blocking, N threads |
+
+**Every transport is pinned explicitly**, and the one in use is printed in the run header and
+recorded in the `transport` results column. This is not cosmetic: `dynamodb` pulls in both
+apache5-client and netty-nio-client transitively, so three `SdkHttpService` implementations sit on
+this classpath and V2's default resolution picks by an internal priority table
+(`ClasspathSdkHttpServiceProvider`, Apache5 at priority 1). Earlier versions of this README claimed
+`v2-sync` used Apache 4.x; it was actually Apache5 the whole time. `v2-sync-apache4` exists so that
+comparison is explicit rather than accidental.
 
 This package supersedes the profiling setup in `test/benchmark-smithy-java` /
 `pipeline_benchmark/` for DynamoDB, fixing its fairness issues:
@@ -98,6 +108,56 @@ done
 `scripts/benchmark.sh` builds on first use, starts the mock server as a child process, waits for its
 `/ping` readiness probe, runs the client JVM, and kills the server on exit.
 
+## Concurrency
+
+`--concurrency N` keeps N operations in flight. It buys samples per second of wall clock and a more
+realistic workload than one-at-a-time. The two client families reach it differently, on purpose:
+
+- **Blocking clients** (`v1`, `v2-sync`, `v2-sync-apache4`, `smithy`) run **N caller threads**, each
+  in its own closed loop. N threads is the only way a blocking client can have N operations
+  outstanding.
+- **Async clients** (`v2-async`, `v2-async-netty`) keep **N outstanding from a single submitting
+  thread**, driven by completions. This is the shape async exists for. `--async-mode join` instead
+  runs them on the blocking driver — N threads each blocking on its own future — which is what
+  earlier collections here measured, and is a property of how the client is *used* rather than of the
+  transport. Comparing the two modes separates those.
+
+Every client's connection pool is sized to exactly N, so no client is measured waiting on its own
+pool and none gets a bigger pool than another.
+
+**Read the right metric.** Above concurrency 1, `avg_us_per_op` (wall / iterations) is the reciprocal
+of throughput, *not* a latency. Use `mean_lat_us` and the percentiles for latency, `ops_per_wall_sec`
+for throughput, and `cpu_us_per_op` for efficiency. At concurrency 1 `avg_us_per_op` and
+`mean_lat_us` agree, which is a useful self-check that the latency recording is sound.
+
+### Choosing a level: `scripts/concurrency-sweep.sh`
+
+```bash
+./scripts/concurrency-sweep.sh --clients v2-sync,v2-async --levels 1,2,4,8,16,32
+```
+
+Runs one scenario across concurrency levels and prints throughput, scaling, per-operation client and
+server CPU, total core demand, latency percentiles, and flags for `SERVER-SATURATED`,
+`OVERSUBSCRIBED` and `CPU-DRIFT`. Output goes to `pipeline_benchmark2/sweeps/<runid>/` (gitignored).
+
+What a sweep on a 14-core M4 Pro showed for `small-get`:
+
+| client | ops/s at 1 | ops/s peak | peak at | server CPU/op | ever saturated? |
+|--------|-----------:|-----------:|--------:|--------------:|-----------------|
+| `v2-sync` (apache5) | 8,884 | 31,601 | 8 | 60 → 122 µs | no |
+| `v2-async` (crt) | 7,330 | 28,672 | 32 | 55 → 89 µs | no |
+| `v2-async-netty` | 4,489 | 18,974 | 16 | 76 → 88 µs | no |
+| `smithy` | 11,873 | 48,851 | 32 | 57 → 79 µs | no |
+
+**The mock server is not the bottleneck.** Its queue never grew and it never ran low on handler
+threads at any level, and its CPU per operation stays well under the client's. What actually limits
+throughput is total core demand: client plus server peaked at ~11 of 14 cores, and that is what
+flattens the curves past concurrency 8. Throughput gains of 3.2–3.9× arrive by concurrency 4–8, so
+that is the useful range on a machine this size.
+
+Concurrency still defaults to **1**, because the metric that should decide the default —
+`cpu_us_per_op` — is not yet trustworthy. See the CPU-time caveat below.
+
 ## Scenarios
 
 | Scenario    | Operation      | Request                             | Canned response                 |
@@ -116,10 +176,12 @@ structurally identical data.
 ### Runner options (passed through by `scripts/benchmark.sh`)
 
 ```
---client X            SDK under test: v1, v2-sync, v2-async, smithy (required)
+--client X            SDK under test (see the client table above; required)
 --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
 --iterations N        measured operations per scenario (default: 10000)
 --warmup N            unmeasured warmup operations per scenario (default: min(2000, iterations))
+--concurrency N       operations kept in flight (default: 1)
+--async-mode X        inflight | join (default: inflight), async clients only
 --endpoint URL        server endpoint (default: http://127.0.0.1:19080)
 --metrics             collect SDK-internal metrics, print per-scenario summary to stdout
 --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
@@ -167,7 +229,8 @@ because they perturb timing — never compare their RESULT lines against `result
 `manifest.md` in the run directory records the commit, environment, parameters, and the exact
 command, timestamps and status of every run.
 
-Options: `--iterations`, `--warmup`, `--reps`, `--clients`, `--scenarios`, `--port`, `--out`, `--jar`.
+Options: `--iterations`, `--warmup`, `--reps`, `--clients`, `--scenarios`, `--concurrency`,
+`--async-mode`, `--port`, `--out`, `--jar`.
 
 With `--jar`, no build runs at all and the jar's embedded provenance (phase, commit, SDK versions)
 is recorded in `manifest.md` under *Artifact provenance* — so a collection can be reproduced from
@@ -205,7 +268,8 @@ Timing only — profiling perturbs timing, so allocation and CPU profiles stay i
 ### Standalone server
 
 ```bash
-./scripts/server.sh [--jar PATH] [--port N]   # foreground; prints "READY port=N pid=..." when up
+./scripts/server.sh [--jar PATH] [--port N] [--threads N]   # prints "READY port=..." when up
+curl -s http://127.0.0.1:19080/stats                        # counters, CPU, Jetty pool depth
 ```
 
 Useful for running the server on a separate machine/core set, or keeping one server up across
@@ -288,9 +352,11 @@ progress small-get 9,938/20,000 (49.7%) 4969 ops/s eta 2s
 One `RESULT` line per scenario:
 
 ```
-RESULT client=v2-sync scenario=small-get iterations=100000 wall_ms=12000 ops_per_wall_sec=8333.3 \
-       cpu_ms=9500 cpu_user_ms=9000 cpu_sys_ms=500 ops_per_cpu_sec=10526.3 \
-       ops_per_user_cpu_sec=11111.1 avg_us_per_op=120.0
+RESULT client=v2-sync transport=apache5 scenario=small-get iterations=100000 concurrency=1 \
+       async_mode=n/a wall_ms=12000 ops_per_wall_sec=8333.3 cpu_ms=9500 cpu_user_ms=9000 \
+       cpu_sys_ms=500 ops_per_cpu_sec=10526.3 ops_per_user_cpu_sec=11111.1 cpu_us_per_op=95.0 \
+       avg_us_per_op=120.0 mean_lat_us=119.8 p50_us=93.0 p90_us=180.0 p99_us=352.0 \
+       p999_us=1200.0 max_us=5145.0 server_cpu_ms=6040 server_requests=100000
 ```
 
 - `ops_per_wall_sec` — iterations / elapsed wall clock.
@@ -348,9 +414,9 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
 
 ## Implementation details, assumptions, caveats
 
-- **Single-threaded, closed-loop.** One caller thread issues operations back-to-back; `v2-async`
-  awaits each future with `join()`. This measures per-call pipeline cost, not maximum concurrent
-  throughput. Async stacks pay thread-hop overhead here that a pipelined workload would amortize.
+- **Closed-loop.** Operations are issued back-to-back with no think time, at whatever concurrency is
+  configured (default 1, i.e. one at a time). This measures pipeline cost and closed-loop throughput,
+  not behavior under an open-loop arrival process.
 - **Request objects are prebuilt** once per workload and reused every iteration (identical policy
   for all SDKs). Marshalling model → wire bytes still happens per call in every SDK; request
   *builder* allocation does not.
@@ -372,11 +438,30 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   read, so the loop contains only the operation under test. Leaving progress *on* for a long
   collection is not free: a formatted line plus an auto-flushed write costs tens of microseconds
   per print, which is the same order as a whole small-get operation.
-- **CPU-time measurement.** Snapshots are taken only at scenario boundaries (twice per
-  scenario), so measurement overhead is negligible, but resolution is milliseconds (oshi) or
-  10 ms ticks (procfs) — use runs of at least several seconds. Process CPU includes GC/JIT
-  during the measured window; use generous warmup and iteration counts for stable numbers. The
-  procfs source assumes 100 ticks/s (override with `--jvm-args "-DclkTck=N"`).
+- **CPU-time measurement, and why `cpu_us_per_op` is not yet converged.** Snapshots are taken only
+  at scenario boundaries, so measurement overhead is negligible, but the reading is **whole-process**
+  CPU — it includes the C1/C2 compiler threads, the VM thread and GC. That fixed cost is amortized
+  over the measured operations, so `cpu_us_per_op` shrinks as the window grows instead of converging.
+  Measured on `v2-sync`/`small-get` at concurrency 1 with a 20k warmup:
+
+  | iterations | wall/op | `mean_lat_us` | `cpu_us_per_op` | client cores |
+  |-----------:|--------:|--------------:|----------------:|-------------:|
+  | 40,000  | 94.6 µs | 94.5 µs | 114.1 | 1.21 |
+  | 100,000 | 89.9 µs | 89.9 µs | 77.4  | 0.86 |
+  | 300,000 | 84.4 µs | 84.3 µs | 48.5  | 0.57 |
+
+  Latency moves 11% while per-operation CPU falls by 2.3×, and a single-threaded blocking client
+  reports 1.21 cores — CPU that is not the caller thread. So CPU numbers are only comparable between
+  runs with *identical* iteration counts, and absolute values are inflated. Fixing this means
+  measuring **application CPU** (per-thread, excluding compiler/VM/GC threads) and warming up until
+  compilation quiesces. Until then, prefer latency percentiles and allocation. The procfs source
+  assumes 100 ticks/s (override with `--jvm-args "-DclkTck=N"`).
+- **Server-side accounting.** `MockDdbServer` exposes `GET /stats` (`key=value` lines: request and
+  error counts, its own CPU, and Jetty pool depth). The runner samples it either side of the measured
+  window and reports `server_cpu_ms`, `server_requests` and a saturation flag. `server_requests` is a
+  cross-check that the server served exactly the operations the client thinks it issued — a mismatch
+  means retries, dropped connections, or a stray second client. Pool size is `--threads N` on the
+  server (default 200).
 - **Localhost transport.** All traffic is plain HTTP over loopback: no DNS, TLS, or real network.
   Numbers are pipeline overhead, not end-to-end AWS latency. Client and server share the host's
   cores; on a small machine consider running the server on separate cores (`taskset`/separate

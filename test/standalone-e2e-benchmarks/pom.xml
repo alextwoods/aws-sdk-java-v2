@@ -81,13 +81,29 @@
             <artifactId>dynamodb</artifactId>
             <version>${aws.sdk.v2.version}</version>
         </dependency>
-        <!-- Default sync HTTP client (Apache), declared explicitly for clarity -->
+        <!-- ==================== V2 HTTP transports ====================
+             All four are declared explicitly because the benchmark now names each one in code rather
+             than letting V2 resolve a default. `dynamodb` already drags apache5-client and
+             netty-nio-client in transitively, so with apache-client and aws-crt-client added there
+             are three SdkHttpService implementations on the classpath and V2 picks by an internal
+             priority table (Apache5 first). Relying on that made the transport an invisible
+             variable: this module's README claimed Apache 4.x for `v2-sync` while Apache5 was what
+             actually ran. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache5-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>apache-client</artifactId>
             <version>${aws.sdk.v2.version}</version>
         </dependency>
-        <!-- Recommended async HTTP client (CRT) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>netty-nio-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-crt-client</artifactId>

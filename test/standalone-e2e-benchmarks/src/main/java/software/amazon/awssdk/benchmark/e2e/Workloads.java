@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
@@ -55,6 +56,40 @@ interface Workloads {
 
         void batchPut() throws Exception;
 
+        /**
+         * Human-readable transport identity for the run header and the {@code transport} results
+         * column. Reported because it has been a silent variable: with several {@code SdkHttpService}
+         * implementations on the classpath, V2's default resolution picks by an internal priority
+         * table, and this benchmark's classpath resolved to Apache5 while its README claimed Apache
+         * 4.x. Every client here now pins its transport explicitly and says which one it used.
+         */
+        String transport();
+
+        /**
+         * Whether {@code *Async} methods are usable. Async clients can hold many operations in
+         * flight from a single thread, which is the workload shape they exist for; a blocking
+         * {@code join()} per call measures something else.
+         */
+        default boolean supportsAsync() {
+            return false;
+        }
+
+        default CompletableFuture<?> smallGetAsync() {
+            throw new UnsupportedOperationException();
+        }
+
+        default CompletableFuture<?> smallPutAsync() {
+            throw new UnsupportedOperationException();
+        }
+
+        default CompletableFuture<?> batchGetAsync() {
+            throw new UnsupportedOperationException();
+        }
+
+        default CompletableFuture<?> batchPutAsync() {
+            throw new UnsupportedOperationException();
+        }
+
         default void resetMetrics() {
         }
 
@@ -62,16 +97,25 @@ interface Workloads {
         }
     }
 
-    static Workload create(String client, URI endpoint, boolean metrics) {
+    /**
+     * @param concurrency operations the driver will keep in flight. Every client's connection pool is
+     *                    sized to exactly this, so no client is measured waiting on its own pool and
+     *                    none is given a larger pool than another.
+     */
+    static Workload create(String client, URI endpoint, boolean metrics, int concurrency) {
         switch (client) {
             case "v1":
-                return v1(endpoint, metrics);
+                return v1(endpoint, metrics, concurrency);
             case "v2-sync":
-                return v2Sync(endpoint, metrics);
+                return v2Sync(endpoint, metrics, concurrency);
+            case "v2-sync-apache4":
+                return v2SyncApache4(endpoint, metrics, concurrency);
             case "v2-async":
-                return v2Async(endpoint, metrics);
+                return v2AsyncCrt(endpoint, metrics, concurrency);
+            case "v2-async-netty":
+                return v2AsyncNetty(endpoint, metrics, concurrency);
             case "smithy":
-                return smithy(endpoint, metrics);
+                return smithy(endpoint, metrics, concurrency);
             default:
                 throw new IllegalArgumentException("unknown client: " + client);
         }
@@ -79,13 +123,14 @@ interface Workloads {
 
     // ==================== V1 ====================
 
-    private static Workload v1(URI endpoint, boolean metrics) {
+    private static Workload v1(URI endpoint, boolean metrics, int concurrency) {
         MetricsSupport.V1Collector collector = new MetricsSupport.V1Collector();
         var builder = com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder.standard()
             .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint.toString(), "us-east-1"))
             .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(ACCESS_KEY, SECRET_KEY)))
             // Default DynamoDB policy honors this cap: 2 retries = 3 attempts, matching V2 STANDARD.
-            .withClientConfiguration(new ClientConfiguration().withMaxErrorRetry(2));
+            .withClientConfiguration(new ClientConfiguration().withMaxErrorRetry(2)
+                                                              .withMaxConnections(concurrency));
         if (metrics) {
             builder.withMetricsCollector(collector);
         }
@@ -129,6 +174,10 @@ interface Workloads {
 
             public void batchPut() {
                 ddb.batchWriteItem(batchPutReq);
+            }
+
+            public String transport() {
+                return "apache4-v1";
             }
 
             public void resetMetrics() {
@@ -201,12 +250,38 @@ interface Workloads {
             .build();
     }
 
-    // ==================== V2 sync (Apache, the default sync HTTP client) ====================
+    // ==================== V2 sync ====================
+    //
+    // The transport is pinned rather than resolved from the classpath. `dynamodb` pulls in both
+    // apache5-client and netty-nio-client transitively, so three SdkHttpService implementations are
+    // present here (Apache5, Apache 4.x, CRT) and V2 picks by an internal priority table in
+    // ClasspathSdkHttpServiceProvider — Apache5 wins at priority 1. That is a silent variable in a
+    // benchmark: the winner changes if the table changes or another artifact appears on the
+    // classpath. `v2-sync` therefore pins Apache5 (which is what was actually being measured before
+    // this was pinned), and `v2-sync-apache4` exists to make the Apache 4.x comparison available
+    // instead of implied.
 
-    private static Workload v2Sync(URI endpoint, boolean metrics) {
+    private static Workload v2Sync(URI endpoint, boolean metrics, int concurrency) {
+        return v2SyncWith(endpoint, metrics,
+                          software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
+                                                                               .maxConnections(concurrency),
+                          "apache5");
+    }
+
+    private static Workload v2SyncApache4(URI endpoint, boolean metrics, int concurrency) {
+        return v2SyncWith(endpoint, metrics,
+                          software.amazon.awssdk.http.apache.ApacheHttpClient.builder()
+                                                                             .maxConnections(concurrency),
+                          "apache4");
+    }
+
+    private static Workload v2SyncWith(URI endpoint, boolean metrics,
+                                       software.amazon.awssdk.http.SdkHttpClient.Builder<?> httpBuilder,
+                                       String transport) {
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
+            .httpClientBuilder(httpBuilder)
             .overrideConfiguration(v2Override(metrics, publisher))
             .build();
 
@@ -232,6 +307,10 @@ interface Workloads {
                 ddb.batchWriteItem(batchPutReq);
             }
 
+            public String transport() {
+                return transport;
+            }
+
             public void resetMetrics() {
                 publisher.reset();
             }
@@ -246,13 +325,33 @@ interface Workloads {
         };
     }
 
-    // ==================== V2 async (CRT, the recommended async HTTP client) ====================
+    // ==================== V2 async ====================
+    //
+    // Two transports, both pinned. CRT was the only async option here previously, but Netty is what
+    // V2's default resolution picks (priority 1) and so is what most async users actually run — and
+    // comparing a Netty-based sync-vs-async story against a CRT measurement conflated the
+    // programming model with the transport.
 
-    private static Workload v2Async(URI endpoint, boolean metrics) {
+    private static Workload v2AsyncCrt(URI endpoint, boolean metrics, int concurrency) {
+        return v2AsyncWith(endpoint, metrics,
+                           AwsCrtAsyncHttpClient.builder().maxConcurrency(concurrency).build(),
+                           "crt");
+    }
+
+    private static Workload v2AsyncNetty(URI endpoint, boolean metrics, int concurrency) {
+        return v2AsyncWith(endpoint, metrics,
+                           software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
+                               .builder().maxConcurrency(concurrency).build(),
+                           "netty");
+    }
+
+    private static Workload v2AsyncWith(URI endpoint, boolean metrics,
+                                        software.amazon.awssdk.http.async.SdkAsyncHttpClient httpClient,
+                                        String transport) {
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
-            .httpClient(AwsCrtAsyncHttpClient.builder().maxConcurrency(50).build())
+            .httpClient(httpClient)
             .overrideConfiguration(v2Override(metrics, publisher))
             .build();
 
@@ -278,6 +377,30 @@ interface Workloads {
                 ddb.batchWriteItem(batchPutReq).join();
             }
 
+            public boolean supportsAsync() {
+                return true;
+            }
+
+            public CompletableFuture<?> smallGetAsync() {
+                return ddb.getItem(getReq);
+            }
+
+            public CompletableFuture<?> smallPutAsync() {
+                return ddb.putItem(putReq);
+            }
+
+            public CompletableFuture<?> batchGetAsync() {
+                return ddb.batchGetItem(batchGetReq);
+            }
+
+            public CompletableFuture<?> batchPutAsync() {
+                return ddb.batchWriteItem(batchPutReq);
+            }
+
+            public String transport() {
+                return transport;
+            }
+
             public void resetMetrics() {
                 publisher.reset();
             }
@@ -294,7 +417,7 @@ interface Workloads {
 
     // ==================== smithy-java ====================
 
-    private static Workload smithy(URI endpoint, boolean metrics) {
+    private static Workload smithy(URI endpoint, boolean metrics, int concurrency) {
         var staticCreds = software.amazon.smithy.java.aws.auth.api.identity.AwsCredentialsIdentity
             .create(ACCESS_KEY, SECRET_KEY);
         var resolver = (software.amazon.smithy.java.aws.auth.api.identity.AwsCredentialsResolver)
@@ -302,7 +425,8 @@ interface Workloads {
 
         MetricsSupport.OtelHolder otel = new MetricsSupport.OtelHolder();
         HttpClient http = HttpClient.builder().httpVersionPolicy(HttpVersionPolicy.ENFORCE_HTTP_1_1)
-                                    .maxConnectionsPerRoute(50).maxTotalConnections(50).build();
+                                    .maxConnectionsPerRoute(concurrency)
+                                    .maxTotalConnections(concurrency).build();
 
         var builder = software.amazon.awssdk.benchmark.smithyjava.dynamodb.client.DynamoDBClient.builder()
             .putConfig(RegionSetting.REGION, "us-east-1")
@@ -364,6 +488,10 @@ interface Workloads {
 
             public void batchPut() {
                 ddb.batchWriteItem(batchPutReq);
+            }
+
+            public String transport() {
+                return "smithy-http1";
             }
 
             public void resetMetrics() {
