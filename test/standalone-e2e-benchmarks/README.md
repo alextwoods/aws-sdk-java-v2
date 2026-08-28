@@ -223,6 +223,71 @@ Also useful: compare `spread of pairs` against the per-arm spread the summary pr
 spread ran 3.5–43% against paired spreads of 2–16%, so pairing is doing real work — an unpaired
 comparison on this machine cannot see anything under ~20%.
 
+## Running on a dedicated benchmark host
+
+The jar-based flow means the host needs nothing but a JDK and async-profiler — no repo, no Maven, no
+`~/.m2` to keep in sync. Only the scripts and the artifacts under test travel.
+
+```bash
+export RACECAR_REMOTE_TARGET=ec2-user@my-host
+export RACECAR_REMOTE_KEY=~/my-key.pem
+
+# One-time on the host: JDK 25, async-profiler, git, perf
+#   sudo dnf install -y java-25-amazon-corretto-devel git perf
+#   curl -sSL <async-profiler linux-arm64 tarball> | tar xz && sudo mv async-profiler-* /opt/async-profiler
+#   sudo ln -sf /opt/async-profiler/bin/{asprof,jfrconv} /usr/local/bin/
+
+./scripts/deploy-remote.sh --target "$RACECAR_REMOTE_TARGET" --key "$RACECAR_REMOTE_KEY" \
+    --jar ../../pipeline_benchmark2/jars/racecar-phase0-<sha>.jar \
+    --jar ../../pipeline_benchmark2/jars/racecar-phaseD1-<sha>.jar
+
+./scripts/remote-run.sh start ./my-run.sh   # detached; returns in seconds
+./scripts/remote-run.sh status              # RUNNING / NOT-RUNNING, plus load and newest run dirs
+./scripts/remote-run.sh log 40
+./scripts/remote-run.sh wait 7200
+./scripts/remote-run.sh fetch paired        # lands in pipeline_benchmark2/paired/host-<runid>/
+./scripts/remote-run.sh stop
+```
+
+`deploy-remote.sh` deliberately does not ship `build-jar.sh`: building remotely needs the repo, and
+the result would not be traceable to a commit the way a deployed jar is. Build locally, deploy the
+artifact.
+
+### Pinning and JVM settings that matter
+
+Pinning is the main reason to use a dedicated Linux host. On a 64-core machine:
+
+```bash
+--pin-server 0-15 --pin-client 32-47 \
+--jvm-args        "-Xms2g -Xmx2g -XX:+AlwaysPreTouch -XX:ParallelGCThreads=4 -XX:CICompilerCount=4" \
+--server-jvm-args "-Xms2g -Xmx2g -XX:+AlwaysPreTouch -XX:ParallelGCThreads=4 -XX:CICompilerCount=4"
+```
+
+The JVM's defaults on 64 cores are **18 compiler threads and 43 GC threads**, for a benchmark that
+runs one or two application threads. That is a lot of scheduling noise, and a fixed pre-touched heap
+also keeps heap growth and page faults out of the measured window. `taskset` is Linux-only; the pin
+flags fail with a clear message elsewhere.
+
+### What the host bought
+
+Null experiment (identical SDK in both arms), 200k operations, 5 reps, concurrency 1, application CPU
+per operation:
+
+| case | laptop (M4 Pro, unpinned) | c6g.metal (pinned, tuned) |
+|------|--------------------------:|--------------------------:|
+| `v2-sync` / small-get | ±2.0% | ±2.7% |
+| `v2-async` / small-get | ±11.3% | **±2.5%** |
+
+Sync was already fine on the laptop; **async is the unlock**, going from resolving only >20% changes
+to resolving a few percent. Absolute costs are ~4× higher on Graviton2 (Neoverse-N1 at a fixed clock)
+than on an M4 Pro, so allow longer runs for the same iteration counts.
+
+Two host-specific notes. Application-CPU accounting matters even more here: with a short fixed warmup
+one run showed process CPU of 995 µs/op against 227 µs/op of application CPU, a 4.4× inflation from
+those 18 compiler threads. And `v2-async` still trips the `steady_state` check on ~30% of runs at 200k
+iterations, because the slower cores stretch the window's share of residual compilation — raise
+`--iterations` for async, or read those runs as latency-only.
+
 ## Scenarios
 
 | Scenario    | Operation      | Request                             | Canned response                 |

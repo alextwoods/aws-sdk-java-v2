@@ -281,6 +281,43 @@ What this settles:
   "6–31% rep spread" that made e2e CPU look useless early on.
 - **Allocation remains the acceptance metric**, unaffected by any of this and reproducing to 0.7%.
 
+### The dedicated host, and what it actually bought (`f5f871fd7e6`)
+
+Measurements moved to a **c6g.metal** — Graviton2 Neoverse-N1, 64 physical cores, no SMT, one socket,
+one NUMA node, 126 GiB, Amazon Linux 2023, JDK 25 to match the local toolchain. Client and mock server
+pinned to disjoint 16-core sets, and the JVM's 64-core ergonomics tamed (it defaults to 18 compiler
+threads and 43 GC threads for a benchmark running one application thread).
+
+Null experiment repeated there, 200k operations, 5 reps, concurrency 1, application CPU per operation:
+
+| case | laptop (unpinned) | c6g.metal (pinned, tuned) |
+|------|------------------:|--------------------------:|
+| `v2-sync` / small-get | ±2.0% | ±2.7% |
+| `v2-async` / small-get | ±11.3% | **±2.5%** |
+
+**Async is the unlock.** Sync was already usable on the laptop and is about the same on the host. Async
+went from ±11.3% — able to see only changes above roughly 20% — to ±2.5%, which makes the async side of
+every phase claim measurable for the first time. The latency distribution is also far tighter than
+anything the laptop produced: p50 163.8 µs, p90 170.2, p99 182.8 on a representative run.
+
+Costs are ~4× higher per operation than the M4 Pro (`v2-sync` small-get: ~152 µs/op application CPU
+against ~38), since Neoverse-N1 runs at a fixed, lower clock. Runs take proportionally longer; nothing
+else changes.
+
+Two host-specific findings worth keeping:
+
+- **Application-CPU accounting matters more here, not less.** One run with a short fixed warmup showed
+  995 µs/op of process CPU against 227 µs/op of application CPU — a 4.4× inflation, against ~1.05× on
+  the Mac. With 18 compiler threads available, whole-process CPU on this box is close to meaningless
+  until the JIT settles.
+- **`v2-async` still fails the in-window steady-state check on ~30% of runs at 200k iterations.** The
+  slower cores stretch how much of the window residual compilation occupies. Async needs higher
+  iteration counts here, and runs flagged `steady_state=false` remain latency-only.
+
+The ~48k ops/s loopback ceiling measured on the laptop has not been re-measured here and should not be
+assumed to transfer: more cores and a different kernel will move it. Re-run the two-client test before
+trusting any high-concurrency number on this host.
+
 ### An experiment ran against the wrong server (`d66b5af5c39`)
 
 Worth recording as a methodology failure, because the harness was complicit. The first
