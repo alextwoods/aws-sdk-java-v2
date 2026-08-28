@@ -320,6 +320,11 @@ Inspect JFR recordings with `jfr print`, JDK Mission Control, or IntelliJ.
   so misrouted calls fail loudly.
 - **No `x-amz-crc32` response header.** V1 validates it when present but V2/smithy-java do not,
   so omitting it keeps response handling symmetric.
+- **Nothing prints from inside the measured loop when progress is off.** `--progress-seconds 0`
+  (what `scripts/collect.sh` always passes) removes both the print and the per-iteration clock
+  read, so the loop contains only the operation under test. Leaving progress *on* for a long
+  collection is not free: a formatted line plus an auto-flushed write costs tens of microseconds
+  per print, which is the same order as a whole small-get operation.
 - **CPU-time measurement.** Snapshots are taken only at scenario boundaries (twice per
   scenario), so measurement overhead is negligible, but resolution is milliseconds (oshi) or
   10 ms ticks (procfs) — use runs of at least several seconds. Process CPU includes GC/JIT

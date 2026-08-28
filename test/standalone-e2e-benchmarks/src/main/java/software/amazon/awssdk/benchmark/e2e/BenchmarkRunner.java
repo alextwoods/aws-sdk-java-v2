@@ -192,23 +192,30 @@ public final class BenchmarkRunner {
         }
         workload.resetMetrics();
 
-        long progressIntervalNanos = progressSeconds > 0 ? progressSeconds * 1_000_000_000L : Long.MAX_VALUE;
+        // Progress reporting must add nothing to the measured loop when disabled. Both the deadline
+        // and the clock read are guarded by `showProgress`, because a `start + Long.MAX_VALUE`
+        // deadline silently overflows to a negative value: every iteration then looks due, and the
+        // loop prints (and, since System.out auto-flushes on newline, writes) once per operation.
+        boolean showProgress = progressSeconds > 0;
+        long progressIntervalNanos = showProgress ? progressSeconds * 1_000_000_000L : 0L;
         CpuTimeSource.Snapshot cpuBefore = cpuSource.snapshot();
         long start = System.nanoTime();
-        long nextProgress = start + progressIntervalNanos;
+        long nextProgress = showProgress ? start + progressIntervalNanos : Long.MAX_VALUE;
 
         for (int i = 0; i < iterations; i++) {
             scenario.run(workload);
-            long now = System.nanoTime();
-            if (now >= nextProgress) {
-                int done = i + 1;
-                double elapsedSec = (now - start) / 1e9;
-                double rate = done / elapsedSec;
-                double etaSec = (iterations - done) / rate;
-                System.out.printf("progress %s %,d/%,d (%.1f%%) %.0f ops/s eta %s%n",
-                                  scenario.cliName, done, iterations, 100.0 * done / iterations,
-                                  rate, formatDuration(etaSec));
-                nextProgress = now + progressIntervalNanos;
+            if (showProgress) {
+                long now = System.nanoTime();
+                if (now >= nextProgress) {
+                    int done = i + 1;
+                    double elapsedSec = (now - start) / 1e9;
+                    double rate = done / elapsedSec;
+                    double etaSec = (iterations - done) / rate;
+                    System.out.printf("progress %s %,d/%,d (%.1f%%) %.0f ops/s eta %s%n",
+                                      scenario.cliName, done, iterations, 100.0 * done / iterations,
+                                      rate, formatDuration(etaSec));
+                    nextProgress = now + progressIntervalNanos;
+                }
             }
         }
 
