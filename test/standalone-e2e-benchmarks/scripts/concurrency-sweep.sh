@@ -20,8 +20,10 @@
 #   --clients LIST      comma-separated (default: v2-sync,v2-async)
 #   --scenario X        single scenario (default: small-get)
 #   --levels LIST       concurrency levels (default: 1,2,4,8,16,32)
-#   --iterations N      measured ops per run (default: 40000)
-#   --warmup N          warmup ops per run (default: 10000)
+#   --iterations N      measured ops per run (default: 300000). Large on purpose: JIT compilation
+#                       tails off in bursts, so a short window is disproportionately likely to contain
+#                       one, and a run whose window is mostly compilation cannot answer this question.
+#   --warmup N          minimum warmup ops per run (default: 20000); quiesce mode extends it
 #   --jar PATH          run from a shaded benchmark jar
 #   --port N            mock server port (default: 19080)
 #   --out DIR           output dir (default: <repo>/pipeline_benchmark2/sweeps/<runid>)
@@ -33,8 +35,8 @@ REPO="$(cd "$DIR/../.." && pwd)"
 CLIENTS="v2-sync,v2-async"
 SCENARIO="small-get"
 LEVELS="1,2,4,8,16,32"
-ITERATIONS=40000
-WARMUP=10000
+ITERATIONS=300000
+WARMUP=20000
 JAR=""
 PORT=19080
 OUT=""

@@ -41,7 +41,7 @@ public final class BenchmarkRunner {
                                 exactly, reproducing older collections.
           --warmup-max-seconds N
                                 ceiling on warmup wall time in quiesce mode (default: 60)
-          --concurrency N       operations kept in flight (default: 1). Sync clients use N threads;
+          --concurrency N       operations kept in flight (default: 2). Sync clients use N threads;
                                 async clients keep N outstanding from one submitting thread. Every
                                 client's connection pool is sized to exactly N.
           --async-mode X        inflight | join (default: inflight). Applies to async clients only.
@@ -136,7 +136,7 @@ public final class BenchmarkRunner {
      * and above is where the async client stops settling and where throughput starts running into the
      * loopback ceiling (~48k ops/s here), at which point the run is measuring the server.
      */
-    private static final int DEFAULT_CONCURRENCY = 1;
+    private static final int DEFAULT_CONCURRENCY = 2;
 
     private BenchmarkRunner() {
     }
