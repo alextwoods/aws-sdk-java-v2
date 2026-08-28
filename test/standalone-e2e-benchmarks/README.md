@@ -173,6 +173,35 @@ With `--jar`, no build runs at all and the jar's embedded provenance (phase, com
 is recorded in `manifest.md` under *Artifact provenance* — so a collection can be reproduced from
 the archived jar alone.
 
+### Paired A/B comparison (`scripts/paired-ab.sh`)
+
+Compares two jars by alternating them inside one session, which is the right shape for judging a
+change on a machine with drift. Sequential collections taken hours apart are confounded by whatever
+the machine did in between — that has been the dominant error term here, with one collection's first
+repetition running 5.6× slow. Alternating arms makes drift hit both nearly equally, so the
+*difference* survives noise that swamps either arm's absolute number.
+
+```bash
+./scripts/paired-ab.sh --jars \
+    "phase0=../../pipeline_benchmark2/jars/racecar-phase0-10f88f7bffd.jar,\
+phaseD1=../../pipeline_benchmark2/jars/racecar-phaseD1-d1524d7f46d.jar" \
+    --iterations 100000 --warmup 30000 --reps 5
+```
+
+The arm order reverses on even repetitions, so neither arm systematically occupies the warmer
+position. Output goes to `pipeline_benchmark2/paired/<runid>/` (gitignored): `results.csv`,
+`manifest.md` with both arms' full provenance, per-run logs, and `summary.md` from
+`pipeline_benchmark2/analysis/scripts/paired_ab_summary.py`.
+
+The summary's headline is the mean of the **per-repetition ratios** between arms, not the ratio of
+the means, since the ratio is what pairing stabilizes. It also prints each arm's standalone spread
+for comparison: when the paired spread is much tighter, pairing is doing real work and unpaired
+numbers from this machine can't be trusted at that resolution. Arms are identified by the jar's
+stamped `phase` label (so each jar needs a distinct one), and the summary refuses to draw conclusions
+if the two jars were built from different *harness* commits.
+
+Timing only — profiling perturbs timing, so allocation and CPU profiles stay in `collect.sh`.
+
 ### Standalone server
 
 ```bash

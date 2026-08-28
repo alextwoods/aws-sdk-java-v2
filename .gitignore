@@ -41,3 +41,6 @@ bin/
 
 # Archived benchmark uber-jars (test/standalone-e2e-benchmarks/scripts/build-jar.sh) — ~64 MB each
 /pipeline_benchmark2/jars/
+
+# Paired A/B timing runs (test/standalone-e2e-benchmarks/scripts/paired-ab.sh)
+/pipeline_benchmark2/paired/
