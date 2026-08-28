@@ -19,13 +19,17 @@ from collections import OrderedDict, defaultdict
 from pathlib import Path
 
 # (csv field, label, per-op conversion, lower_is_better)
+#
+# Application CPU leads: process CPU includes the compiler, VM and GC threads, whose cost is fixed per
+# JVM rather than per operation, and dividing it by the operation count produces a figure that changes
+# with the window length. Process CPU is kept below it for comparison, not for drawing conclusions.
 METRICS = [
-    ("avg_us_per_op", "wall µs/op", lambda r: float(r["avg_us_per_op"]), True),
-    ("cpu_us_per_op", "cpu µs/op",
+    ("app_cpu_us_per_op", "application cpu µs/op",
+     lambda r: float(r["app_cpu_us_per_op"]) if r.get("app_cpu_us_per_op") else None, True),
+    ("mean_lat_us", "mean latency µs", lambda r: float(r["mean_lat_us"]), True),
+    ("avg_us_per_op", "wall µs/op (1/throughput)", lambda r: float(r["avg_us_per_op"]), True),
+    ("cpu_us_per_op", "process cpu µs/op (includes JIT/GC/VM)",
      lambda r: float(r["cpu_ms"]) * 1000.0 / float(r["iterations"]), True),
-    ("user_cpu_us_per_op", "user cpu µs/op",
-     lambda r: float(r["cpu_user_ms"]) * 1000.0 / float(r["iterations"])
-     if r.get("cpu_user_ms") else None, True),
 ]
 
 
@@ -72,6 +76,15 @@ def main(argv):
         n = len(next(iter(data[a].values()), []))
         print(f"- `{a}`: sdk_commit `{sdk[a]}`, {n} reps per case")
     print()
+    # A run whose window still contained JIT compilation is not steady-state, so its per-operation
+    # figures are unreliable regardless of how the CPU was accounted.
+    not_steady = [r for r in rows if str(r.get("steady_state", "true")).lower() == "false"]
+    if not_steady:
+        cases = sorted({f'{r["client"]}/{r["scenario"]}' for r in not_steady})
+        print(f"**{len(not_steady)} of {len(rows)} runs were not steady-state** (JIT still compiling "
+              f"inside the measured window): {', '.join(cases)}. Per-operation CPU for those cases is "
+              f"unreliable; raise --iterations or treat them as latency-only.\n")
+
     if len(harness) == 1:
         print(f"Harness build identical across arms (commit `{harness.pop()}`), so the SDK is the "
               f"only difference.\n")
