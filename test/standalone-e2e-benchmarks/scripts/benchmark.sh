@@ -82,23 +82,60 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ $LAUNCH_SERVER -eq 1 ]]; then
+    # Readiness is confirmed from OUR child's own READY line, not from the port answering /ping.
+    # A /ping probe cannot tell our server apart from someone else's: a stale MockDdbServer left
+    # running on this port answers instantly, the launched child dies with "Address already in use",
+    # and the benchmark then measures happily against a server from an unknown build. That happened —
+    # a server from a two-hour-old jar served an entire experiment before the mismatched
+    # server_requests count gave it away.
+    SERVER_LOG="$(mktemp "${TMPDIR:-/tmp}/mockddb.XXXXXXXX.log")"
     # --enable-native-access silences the JNA warning oshi triggers when the server reads its own
     # CPU for /stats. Four lines per server start is four lines times every run in a collection.
     java --enable-native-access=ALL-UNNAMED -cp "$CP" \
-        software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" &
+        software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" > "$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
     ENDPOINT="http://127.0.0.1:$PORT"
     RUNNER_ARGS+=(--endpoint "$ENDPOINT")
-    for _ in $(seq 1 100); do
-        if curl -sf "$ENDPOINT/ping" >/dev/null 2>&1; then
+
+    server_failed() {
+        echo "error: mock server did not start: $1" >&2
+        sed 's/^/  /' "$SERVER_LOG" >&2
+        if grep -q "Address already in use" "$SERVER_LOG" 2>/dev/null; then
+            echo "  hint: something else is already on port $PORT — very likely a MockDdbServer left" >&2
+            echo "        over from an earlier run, possibly from a different build. Find it with" >&2
+            echo "          lsof -nP -iTCP:$PORT -sTCP:LISTEN" >&2
+            echo "        then kill it, or pass --port to use a different one." >&2
+        fi
+        rm -f "$SERVER_LOG"
+        exit 1
+    }
+
+    SERVER_READY=0
+    for _ in $(seq 1 150); do
+        if grep -q "^READY " "$SERVER_LOG" 2>/dev/null; then
+            SERVER_READY=1
             break
         fi
+        # Diagnose from the log rather than from the process: a backgrounded child that has already
+        # exited still satisfies `kill -0` until the shell reaps it, so waiting on liveness alone
+        # turns a one-second port conflict into a 30-second timeout with no explanation.
+        if grep -q "Address already in use" "$SERVER_LOG" 2>/dev/null; then
+            server_failed "port $PORT is already in use"
+        fi
+        if grep -q "^Exception\|^Caused by" "$SERVER_LOG" 2>/dev/null; then
+            server_failed "it threw during startup"
+        fi
         if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-            echo "error: mock server exited during startup" >&2
-            exit 1
+            server_failed "the process exited"
         fi
         sleep 0.2
     done
+    if [[ $SERVER_READY -eq 0 ]]; then
+        server_failed "no READY line within 30s"
+    fi
+    # Surface the server's own line so the run log records which server answered.
+    grep "^READY " "$SERVER_LOG"
+    rm -f "$SERVER_LOG"
 fi
 
 # ---- Profiler flags ----
