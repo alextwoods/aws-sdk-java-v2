@@ -633,3 +633,113 @@ Allocation, bytes/op, client code:
   rather than allocation), D (framework: attributes store, metric-stage eliding, auth-option
   caching, generated copiers), B part 2 (idempotent re-signing then the barrier move), E part 2
   (field-loop), and G (straight-line pipeline).
+
+---
+
+## Phase D (part 1) — per-request user-agent and header work
+
+- Commit: `c01f8e84f29`
+- Raw data: `raw/phaseD-framework/20260828-0729/`
+- Analysis: `analysis/racecar/alloc-phaseD-cumulative.md`
+
+### What changed
+
+Four contained items in the `pipeline-framework` bucket, the largest remaining category on small
+operations:
+
+- `ApplyUserAgentStage` rebuilt the constant leading portion of the user agent
+  (`userAgentPrefix + clientUserAgent`, including a `trim()` and emptiness checks) on every request.
+  It is per-client constant — computed once in the constructor now.
+- The user-agent `StringBuilder` started at the default 16 chars and grew by doubling to the typical
+  100–200 char result. Now sized from the known prefix length plus headroom.
+- `groupApiNames` allocated two `ArrayList`s even when the request had no api names (the common
+  case). Short-circuits to a shared empty pair.
+- `Apache5HttpRequestFactory.addHeadersToRequest` evaluated `IGNORE_HEADERS.stream().noneMatch(...)`
+  **per header**, allocating a stream pipeline and capturing lambda for every header of every
+  request. Replaced with an indexed loop.
+
+### Allocation, phase E → phase D
+
+| client | scenario | phase E | phase D | delta |
+|--------|----------|--------:|--------:|------:|
+| v2-sync | small-get | 40,153 | 38,995 | −2.9% |
+| v2-sync | small-put | 33,094 | 31,472 | **−4.9%** |
+| v2-sync | batch-get | 511,523 | 509,926 | −0.3% |
+| v2-sync | batch-put | 105,355 | 104,150 | −1.1% |
+| v2-async | small-get | 49,085 | 47,877 | −2.5% |
+| v2-async | small-put | 39,345 | 39,128 | −0.6% |
+| v2-async | batch-get | 717,944 | 699,732 | −2.5% |
+| v2-async | batch-put | 112,345 | 111,664 | −0.6% |
+
+The Apache header site went from ~1,250–1,640 to ~230–245 B/op (**−80 to −85%**) across scenarios —
+the stream-per-header was most of its cost.
+
+`sdk-core` 1,534 tests pass (apart from the known pre-existing `HttpClientApiCallTimeoutTest`
+flake), `ApplyUserAgentStageTest` 11/11, apache5-client green with checkstyle + spotbugs.
+
+### A measurement that stopped a change
+
+`ExecutionAttributes.<init>` (`new IdentityHashMap<>(64)`, ~1,040 B of table) looked like an easy
+win by shrinking the initial size. Instrumenting the real attribute count first showed **53
+attributes per request** on every scenario — so `expectedMaxSize=64` is *correctly* sized (53
+entries need capacity ≥ 80 → a 256-slot table), and shrinking it would have forced a rehash and
+made things worse.
+
+The only way to improve this site is the dense-int-key store (smithy-java's
+`ChunkedArrayStorageContext` model): 53 attributes in an `Object[64]` is ~272 B versus ~1,040 B.
+That is a ~770 B/op win but it touches `ExecutionAttributes`' public surface and the subtle
+derived/mapped attribute `ValueStorage` semantics, so it is deliberately left as a scoped
+follow-up rather than bundled here. Worth noting independently: **53 execution attributes per
+request** is itself a lot of per-call state, and is the kind of thing phase G should question.
+
+---
+
+## Final scoreboard (phase 0 → F → B → A → E1 → D1)
+
+Allocation, bytes/op, client code, versus the phase 0 baseline and smithy-java:
+
+| client | scenario | phase 0 | now | total delta | vs smithy-java |
+|--------|----------|--------:|----:|-----------:|---------------:|
+| v2-sync | small-get | 61,387 | 38,995 | **−36.5%** | 3.9× (was 6.1×) |
+| v2-sync | small-put | 54,509 | 31,472 | **−42.3%** | 4.5× (was 7.8×) |
+| v2-sync | batch-get | 533,097 | 509,926 | −4.3% | 2.3× |
+| v2-sync | batch-put | 204,272 | 104,150 | **−49.0%** | **0.86×** (was 1.68×) |
+| v2-async | small-get | 69,702 | 47,877 | **−31.3%** | 4.8× (was 6.9×) |
+| v2-async | small-put | 61,797 | 39,128 | **−36.7%** | 5.6× (was 8.9×) |
+| v2-async | batch-get | 742,955 | 699,732 | −5.8% | 3.2× |
+| v2-async | batch-put | 371,884 | 111,664 | **−70.0%** | **0.92×** (was 3.06×) |
+
+Both batch-put cases now allocate **less than smithy-java**. Small operations are down ~1/3 but
+remain 4–6× smithy, and batch-get has barely moved.
+
+### Where the remaining gap is
+
+**batch-get (−4 to −6%)** is response-side and needs codegen work: `AttributeValue` builders plus
+`AttributeMapCopier`/`BatchGetResponseMapCopier` re-copying the parser's output (~30% of its
+allocation). No pipeline change reaches it.
+
+**Small ops (~39 KB/op)** are a long tail with no single dominant site left. From the phase D
+profile (v2-sync small-get): response unmarshalling ~7 KB, `ExecutionAttributes` ~1.1 KB,
+per-request `RequestPipelineBuilder` stage-chain construction ~1.0 KB, auth-scheme option rebuild
+~1.0 KB, `LowCopyListMap` header machinery ~1.0 KB, `putHeader` ~1.0 KB, Jackson parser scratch
+~3 KB.
+
+Notably, **the pipeline object graph is rebuilt on every request** (`RequestPipelineBuilder.then` +
+`wrappedWith` ≈ 1 KB/op). It cannot simply be cached because `HandleResponseStage` captures the
+per-request response handler — which is precisely the argument for option G: a straight-line
+pipeline has no per-request stage graph to allocate at all.
+
+### Recommended next order
+
+1. **G (straight-line pipeline)** — now the best-motivated item. It removes the per-request stage
+   graph, makes the wrapper-chain problem from phase A structurally impossible, and is where the
+   remaining `pipeline-framework` cost lives. **Prerequisite: fix the e2e CPU noise floor**
+   (dedicated/quiesced host or many more reps), because G's payoff is CPU-shaped, not
+   allocation-shaped, and the current 6–31% spread cannot resolve it.
+2. **D part 2** — dense-int-key `ExecutionAttributes` (~770 B/op, needs a design decision on the
+   public surface), and eliding the metric stages when no publisher is configured.
+3. **C (de-future the async request path)** — the async CPU/latency story; also blocked on the
+   noise floor.
+4. **B part 2** — idempotent re-signing, then move the immutability barrier.
+5. **E part 2 / codegen items** — the `sdkFields()` field loop and the generated response copiers;
+   biggest remaining allocation items but they live in codegen, so longest validation tail.
