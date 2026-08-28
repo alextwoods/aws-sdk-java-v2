@@ -546,3 +546,90 @@ batch-get 219,894, batch-put 121,708 B/op.)
 Remaining big structural items: **E** (marshalling: buffer sizing + straight-line field loop —
 the whole batch-put story), **D** (framework: attributes, metric-stage eliding, auth-option
 caching, response copiers), **C** (de-future the async request path), then **G**.
+
+---
+
+## Phase E (part 1) — marshalling buffer sized from recent body sizes
+
+- Commit: `b70aa6b5b45`
+- Raw data: `raw/phaseE-marshal/20260828-0225/`
+- Analysis: `analysis/racecar/alloc-phaseE-cumulative.md`
+
+### What changed
+
+`SdkJsonGenerator` allocated its output buffer at a fixed 1 KB and grew to the body size by
+doubling — a 50 KB batch-put body allocates ~127 KB of cumulative garbage per request
+(1+2+4+…+64 KB), the dominant allocation on write-heavy workloads.
+
+New `MarshallBufferSizeHints` (one per protocol factory, i.e. per client) tracks recently observed
+marshalled-body sizes per operation and the generator allocates the buffer at that size up front.
+The hint grows immediately on a larger body and decays by 1/8th of the gap per smaller observation
+(with a floor step of 1, so integer division can't stall it above a smaller steady state — caught
+by a unit test on the first attempt at the formula). Clamped to [1 KB, 128 KB]; above 128 KB the
+buffer switches to chunked storage anyway.
+
+Plumbing: `StructuredJsonFactory.createWriter(contentType, initialBufferCapacity)` default-method
+overload (CBOR/RPCv2 factories ignore it, unchanged); the marshaller reports the final size back
+via `JsonProtocolMarshallerBuilder.marshalledSizeReporter`.
+
+### Correctness
+
+`MarshallBufferSizeHintsTest` (8 tests): growth, decay, convergence to steady state, clamping both
+ends, per-operation independence, null operation id. `aws-json-protocol` suite green with
+checkstyle + spotbugs (spotbugs caught a now-unused private method, removed);
+`aws-cbor-protocol` and `smithy-rpcv2-protocol` compile and pass against the new default methods.
+
+### Allocation (authoritative), phase A → phase E
+
+| client | scenario | phase A | phase E | delta |
+|--------|----------|--------:|--------:|------:|
+| v2-sync | batch-put | 184,380 | 105,355 | **−42.9%** |
+| v2-async | batch-put | 192,275 | 112,345 | **−41.6%** |
+| v2-sync | small-get | 39,109 | 40,153 | +2.7% (noise) |
+| v2-sync | small-put | 33,514 | 33,094 | −1.3% |
+| others | | | | ±0.6% |
+
+The `json` category on sync batch-put: 117,188 → 38,175 B/op (−67%) — the doubling chain is gone;
+what remains is Jackson's own writer scratch plus the single right-sized buffer. Small operations
+are unaffected because their bodies already fit in the 1 KB default.
+
+**Milestone: v2 batch-put now allocates less than smithy-java** (sync 105,355 and async 112,345 vs
+smithy's 121,708 B/op) — smithy pays Jackson's growth chain on every call since it sizes its
+`ByteBufferOutputStream` statically, while V2 now predicts per operation.
+
+### Verdict
+
+**Accepted.** Biggest single-scenario win of the project so far, exactly where the deep-dive
+predicted (§6.1). The remaining `marshall` category cost (36 KB/op on batch-put: `sdkFields()`
+iterators, trait probes) is option E part 2 — a CPU-shaped change requiring the field-loop rework.
+
+---
+
+## Cumulative scoreboard (phase 0 → F → B → A → E1)
+
+Allocation, bytes/op, client code:
+
+| client | scenario | phase 0 | now | total delta | vs smithy-java |
+|--------|----------|--------:|----:|-----------:|---------------:|
+| v2-sync | small-get | 61,387 | 40,153 | **−34.6%** | 4.0× (was 6.1×) |
+| v2-sync | small-put | 54,509 | 33,094 | **−39.3%** | 4.7× (was 7.8×) |
+| v2-sync | batch-get | 533,097 | 511,523 | −4.0% | 2.3× |
+| v2-sync | batch-put | 204,272 | 105,355 | **−48.4%** | **0.87×** (was 1.68×) |
+| v2-async | small-get | 69,702 | 49,085 | **−29.6%** | 4.9× |
+| v2-async | small-put | 61,797 | 39,345 | **−36.3%** | 5.6× |
+| v2-async | batch-get | 742,955 | 717,944 | −3.4% | 3.3× |
+| v2-async | batch-put | 371,884 | 112,345 | **−69.8%** | **0.92×** (was 3.06×) |
+
+### What remains, and where it lives
+
+- **batch-get (−4% so far)**: dominated by response-side work — `AttributeValue` builders,
+  `AttributeMapCopier`/`BatchGetResponseMapCopier` re-copying parser output (~30% of its
+  allocation), i.e. option D's generated-copier item, which requires codegen changes.
+- **small ops (~40 KB/op, 4-5× smithy)**: a long tail led by pipeline-framework (~20 KB/op):
+  Apache header restatement (~2.2 KB), per-call `RequestPipelineBuilder` stage-chain construction
+  (~1 KB — a phase G item), user-agent rebuild (~1 KB), `ExecutionAttributes` (~1.1 KB),
+  auth-scheme option rebuild (~1 KB), plus response-side unmarshalling (~7 KB).
+- **Options not yet started**: C (de-future the async request path — the async wall/CPU story
+  rather than allocation), D (framework: attributes store, metric-stage eliding, auth-option
+  caching, generated copiers), B part 2 (idempotent re-signing then the barrier move), E part 2
+  (field-loop), and G (straight-line pipeline).
