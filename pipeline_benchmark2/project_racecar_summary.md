@@ -95,6 +95,99 @@ So the harness charged roughly 28–39 µs to every operation it timed. Conseque
   present, while phase D's first rep came in 5.6× slow, so episodic external interference is
   clearly a separate and larger effect.
 
+### The measured transport was not the documented one (`6cc46827f72`)
+
+`dynamodb` pulls in `apache5-client` and `netty-nio-client` transitively. With `apache-client` and
+`aws-crt-client` also declared, three `SdkHttpService` implementations sit on the benchmark
+classpath, and V2 does not fail on that — `ClasspathSdkHttpServiceProvider` picks by an internal
+priority table, and **Apache5 wins at priority 1**. So `v2-sync` has been `Apache5HttpClient`
+throughout, while this module's README said "Apache HttpClient 4.x (default)". Confirmed by running
+the same `DefaultSdkHttpClientBuilder` path a client builder uses:
+
+```
+RESOLVED sync  = software.amazon.awssdk.http.apache5.Apache5HttpClient  clientName=Apache5
+RESOLVED async = software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
+```
+
+Consequences:
+
+- **Phase D part 1 was measured against the client it changed.** That commit touched
+  `apache5-client` header handling, and Apache5 is what ran. Had the resolution gone the other way,
+  half that change would have been dead code and the recorded delta would have come only from the
+  user-agent part.
+- **No phase verdict changes**, because every phase ran on the same transport. But "V2 sync" in this
+  document means Apache5, not the Apache 4.x the earlier report and README implied.
+- Every transport is now pinned in code, printed in the run header, and recorded in a `transport`
+  column. `v2-sync-apache4` and `v2-async-netty` were added so those comparisons are explicit rather
+  than accidental.
+
+**How much Apache5 and Apache 4.x differ is still unknown**, and the attempt to answer it is what
+exposed the CPU-metric problem below. A single run at 4,000 iterations put Apache5 17% cheaper per
+operation; the same comparison at 40,000 iterations put the two within 0.1% of each other, with
+Apache 4.x ahead on wall-clock throughput. Neither is a result — they are one-off runs at two window
+lengths, and they disagree. This needs a paired A/B with repetitions.
+
+### `cpu_us_per_op` does not converge, and that blocks the concurrency default
+
+Concurrency was added (`--concurrency N`, `6cc46827f72`) to get more samples per second of wall clock
+under a more realistic workload. It works: throughput rises 3.2–3.9× by concurrency 4–8. **The mock
+server is not the bottleneck** — across a 1→32 sweep on four clients its queue never grew, it never
+ran low on handler threads, and its CPU per operation stayed well under the client's. What flattens
+the curves is total core demand, peaking at ~11 of this box's 14 cores.
+
+But the default stayed at 1, because the metric that should decide it is an artifact. Whole-process
+CPU includes the C1/C2 compiler threads, the VM thread and GC, and that fixed cost is amortized over
+the measured operations rather than converging. `v2-sync`/`small-get`, concurrency 1, 20k warmup:
+
+| iterations | wall/op | `mean_lat_us` | `cpu_us_per_op` | client cores |
+|-----------:|--------:|--------------:|----------------:|-------------:|
+| 40,000  | 94.6 µs | 94.5 µs | 114.1 | 1.21 |
+| 100,000 | 89.9 µs | 89.9 µs | 77.4  | 0.86 |
+| 300,000 | 84.4 µs | 84.3 µs | 48.5  | 0.57 |
+
+Latency moves 11% while per-operation CPU falls 2.3×, and a *single-threaded blocking* client reports
+1.21 cores — CPU that cannot be the caller thread.
+
+The sharpest demonstration: two comparisons measured at 4,000 iterations, then repeated at 40,000.
+
+| comparison | at 4,000 iterations | at 40,000 iterations |
+|------------|--------------------:|---------------------:|
+| Apache5 vs Apache 4.x, concurrency 1 | Apache5 −16.7% CPU/op | −0.1% (indistinguishable) |
+| in-flight vs `join`, CRT, concurrency 8 | `join` +59% CPU/op | `join` −7.5% |
+
+**Both differences shrank to nothing, and one reversed sign.** They were window artifacts. Anything
+this metric appears to show at present has to be treated as unproven.
+
+So:
+
+- CPU numbers are only comparable between runs with **identical** iteration counts. The phase
+  collections all used 200k, so phase-to-phase comparisons were not broken by this, but every
+  absolute CPU/op figure recorded here is inflated.
+- The sweep's per-operation CPU column mixes real contention with the same artifact: at fixed
+  iterations, higher concurrency finishes sooner, leaving less compilation inside the window, which
+  makes higher concurrency look artificially cheaper. `v2-sync` at concurrency 2 showing −30%
+  per-op CPU against concurrency 1 is that, not an efficiency gain.
+
+Prerequisite for a defensible default (and for any phase G claim, which is CPU-shaped): measure
+**application CPU** per thread, excluding compiler/VM/GC threads, and warm up until compilation
+quiesces. Until then latency percentiles and allocation are the trustworthy per-operation metrics.
+
+### The async comparison conflated call style with transport
+
+Two confounds sat in the old `v2-async` numbers. Both are now separable, though neither has been
+quantified yet — the CPU metric above cannot support it, and these need paired A/B runs:
+
+- **Call style.** The old loop did `join()` per call, holding exactly one operation in flight — an
+  async client doing a blocking client's job. `--async-mode inflight|join` now drives the same client
+  and transport both ways, so the programming model can be isolated from the transport.
+- **Transport.** `v2-sync` was Apache5 while `v2-async` was CRT, so every sync-vs-async statement in
+  this document also compared two unrelated HTTP stacks. `v2-async-netty` closes that gap: Netty is
+  what V2's own default resolution picks, so it is what most async users actually run.
+
+The one thing the sweep does show consistently across all levels is that Netty is substantially more
+expensive here than CRT on every metric — at concurrency 1, 4,489 ops/s against 7,330, and roughly
+double the per-operation CPU. That gap is large enough to survive the noise, unlike the two above.
+
 ### Build provenance
 
 The benchmark module resolves the SDK from `~/.m2`, so each phase requires installing the changed
