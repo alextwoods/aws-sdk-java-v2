@@ -332,6 +332,33 @@ public class FastJsonGeneratorWireIdentityTest {
     }
 
     @Test
+    public void preEncodedFieldNameTokenMatchesStringPath() {
+        String[] names = {"a", "TableName", "S", "with \"quotes\"", "caf\u00e9", "\u4e2d\u6587",
+                          "emoji \ud83d\ude00", "tab\there", "field-with-long-name-0123456789"};
+        for (String name : names) {
+            byte[] token = FastJsonGenerator.encodeFieldNameToken(name);
+
+            FastJsonGenerator viaString = new FastJsonGenerator(CONTENT_TYPE, 4);
+            viaString.writeStartObject();
+            viaString.writeFieldName("first");
+            viaString.writeValue(1);
+            viaString.writeFieldName(name);
+            viaString.writeValue("v");
+            viaString.writeEndObject();
+
+            FastJsonGenerator viaToken = new FastJsonGenerator(CONTENT_TYPE, 4);
+            viaToken.writeStartObject();
+            viaToken.writeFieldName("first", FastJsonGenerator.encodeFieldNameToken("first"));
+            viaToken.writeValue(1);
+            viaToken.writeFieldName(name, token);
+            viaToken.writeValue("v");
+            viaToken.writeEndObject();
+
+            assertThat(viaToken.getBytes()).as("field name: %s", name).isEqualTo(viaString.getBytes());
+        }
+    }
+
+    @Test
     public void contentSizeAndProviderMatchGetBytes() {
         FastJsonGenerator fast = new FastJsonGenerator(CONTENT_TYPE, 4);
         fast.writeStartObject();

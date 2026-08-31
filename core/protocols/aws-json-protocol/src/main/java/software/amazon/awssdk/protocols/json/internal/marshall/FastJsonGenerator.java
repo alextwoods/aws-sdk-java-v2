@@ -182,6 +182,35 @@ public final class FastJsonGenerator implements StructuredJsonGenerator {
         return this;
     }
 
+    @Override
+    public StructuredJsonGenerator writeFieldName(String fieldName, byte[] jsonFieldNameToken) {
+        // Comma (if needed) + pre-encoded "name": token in a single reservation and copy.
+        int tokenLength = jsonFieldNameToken.length;
+        ensureCapacity(tokenLength + 1);
+        if (needsComma[depth]) {
+            buf[pos++] = ',';
+        } else {
+            needsComma[depth] = true;
+        }
+        System.arraycopy(jsonFieldNameToken, 0, buf, pos, tokenLength);
+        pos += tokenLength;
+        afterFieldName = true;
+        return this;
+    }
+
+    /**
+     * Pre-encodes a field name as complete {@code "name":} token bytes (opening quote, escaped UTF-8
+     * name, closing quote, colon) for {@link #writeFieldName(String, byte[])}. Uses the exact escaping
+     * of {@link #writeFieldName(String)}, so the two paths are byte-identical.
+     */
+    public static byte[] encodeFieldNameToken(String fieldName) {
+        FastJsonGenerator scratch = new FastJsonGenerator(null, fieldName.length() + 3);
+        scratch.writeQuotedString(fieldName);
+        scratch.ensureCapacity(1);
+        scratch.buf[scratch.pos++] = ':';
+        return Arrays.copyOf(scratch.buf, scratch.pos);
+    }
+
     // ----------------------------------------------------------------------
     // Values
     // ----------------------------------------------------------------------

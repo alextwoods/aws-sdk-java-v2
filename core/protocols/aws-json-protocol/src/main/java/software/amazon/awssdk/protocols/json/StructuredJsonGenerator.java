@@ -156,6 +156,21 @@ public interface StructuredJsonGenerator {
 
     StructuredJsonGenerator writeFieldName(String fieldName);
 
+    /**
+     * Writes a field name that has additionally been pre-encoded as a complete JSON field-name prefix:
+     * opening quote, escaped UTF-8 name, closing quote and colon (e.g. {@code "name":}). JSON-text
+     * implementations may copy the token directly instead of re-encoding the name on every write; the
+     * default implementation ignores the token and delegates to {@link #writeFieldName(String)}, which
+     * keeps binary formats such as CBOR correct.
+     *
+     * @param fieldName          the field name.
+     * @param jsonFieldNameToken the same field name pre-encoded as UTF-8 {@code "name":} token bytes.
+     *                           Callers must not mutate the array after passing it.
+     */
+    default StructuredJsonGenerator writeFieldName(String fieldName, byte[] jsonFieldNameToken) {
+        return writeFieldName(fieldName);
+    }
+
     StructuredJsonGenerator writeValue(String val);
 
     StructuredJsonGenerator writeValue(boolean bool);

@@ -45,6 +45,8 @@ import software.amazon.awssdk.core.traits.PayloadTrait;
 import software.amazon.awssdk.core.traits.RequiredTrait;
 import software.amazon.awssdk.core.traits.TimestampFormatTrait;
 import software.amazon.awssdk.core.traits.TraitType;
+import software.amazon.awssdk.core.util.SdkAutoConstructList;
+import software.amazon.awssdk.core.util.SdkAutoConstructMap;
 import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.protocols.core.InstantToString;
@@ -292,6 +294,13 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
         final boolean required;
 
         /**
+         * The location name pre-encoded as UTF-8 {@code "name":} token bytes, for
+         * {@link StructuredJsonGenerator#writeFieldName(String, byte[])}. Only computed for
+         * PAYLOAD-location fields, whose names are written into the JSON document.
+         */
+        final byte[] fieldNameToken;
+
+        /**
          * Registry marshaller for non-null values of non-PAYLOAD-location fields, resolved on first use.
          * Plain (non-volatile) field: the registry always returns the same instance for a given
          * (location, type) pair, so a data race can only cause a redundant lookup.
@@ -305,6 +314,9 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
             this.explicitStringPayload = explicitPayload && MarshallingType.STRING.equals(field.marshallingType());
             this.payloadLocation = field.location() == MarshallLocation.PAYLOAD;
             this.required = field.containsTrait(RequiredTrait.class, TraitType.REQUIRED_TRAIT);
+            this.fieldNameToken = payloadLocation && !explicitPayload && field.locationName() != null
+                                  ? FastJsonGenerator.encodeFieldNameToken(field.locationName())
+                                  : null;
         }
     }
 
@@ -395,69 +407,84 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
 
         StructuredJsonGenerator gen = marshallerContext.jsonGenerator();
         String fieldName = field.locationName();
+        byte[] nameToken = plan.fieldNameToken;
 
         switch (knownType) {
             case STRING:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((String) val);
                 break;
             case INTEGER:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((int) (Integer) val);
                 break;
             case LONG:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((long) (Long) val);
                 break;
             case SHORT:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((short) (Short) val);
                 break;
             case BYTE:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((byte) (Byte) val);
                 break;
             case FLOAT:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((float) (Float) val);
                 break;
             case DOUBLE:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((double) (Double) val);
                 break;
             case BIG_DECIMAL:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((BigDecimal) val);
                 break;
             case BOOLEAN:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeValue((boolean) (Boolean) val);
                 break;
             case INSTANT:
-                // Delegate to existing INSTANT marshaller to preserve TimestampFormatTrait handling.
-                // Note: INSTANT marshaller writes the field name itself.
+                // Write the name here (token fast path), then delegate with a null paramName to the
+                // INSTANT marshaller, which preserves TimestampFormatTrait handling for the value.
+                gen.writeFieldName(fieldName, nameToken);
                 SimpleTypeJsonMarshaller.INSTANT.marshall((Instant) val, marshallerContext,
-                    fieldName, (SdkField<Instant>) field);
+                    null, (SdkField<Instant>) field);
                 break;
             case SDK_BYTES:
-                gen.writeFieldName(fieldName);
+                gen.writeFieldName(fieldName, nameToken);
                 gen.writeBinaryValue(((SdkBytes) val).asByteArrayUnsafe());
                 break;
             case SDK_POJO:
-                SimpleTypeJsonMarshaller.SDK_POJO.marshall((SdkPojo) val, marshallerContext,
-                    fieldName, (SdkField<SdkPojo>) field);
+                gen.writeFieldName(fieldName, nameToken);
+                gen.writeStartObject();
+                doMarshall((SdkPojo) val);
+                gen.writeEndObject();
                 break;
             case LIST:
-                SimpleTypeJsonMarshaller.LIST.marshall((List<?>) val, marshallerContext,
-                    fieldName, (SdkField<List<?>>) field);
+                // The emit check must precede the field-name write (an empty auto-construct list emits
+                // neither), mirroring the LIST marshaller's own check.
+                List<?> list = (List<?>) val;
+                if (!list.isEmpty() || !(list instanceof SdkAutoConstructList)) {
+                    gen.writeFieldName(fieldName, nameToken);
+                    SimpleTypeJsonMarshaller.LIST.marshall(list, marshallerContext,
+                        null, (SdkField<List<?>>) field);
+                }
                 break;
             case MAP:
-                SimpleTypeJsonMarshaller.MAP.marshall((Map<String, ?>) val, marshallerContext,
-                    fieldName, (SdkField<Map<String, ?>>) field);
+                Map<String, ?> map = (Map<String, ?>) val;
+                if (!map.isEmpty() || !(map instanceof SdkAutoConstructMap)) {
+                    gen.writeFieldName(fieldName, nameToken);
+                    SimpleTypeJsonMarshaller.MAP.marshall(map, marshallerContext,
+                        null, (SdkField<Map<String, ?>>) field);
+                }
                 break;
             case DOCUMENT:
+                gen.writeFieldName(fieldName, nameToken);
                 SimpleTypeJsonMarshaller.DOCUMENT.marshall((Document) val, marshallerContext,
-                    fieldName, (SdkField<Document>) field);
+                    null, (SdkField<Document>) field);
                 break;
             default:
                 // Unknown type — fall back to registry lookup
