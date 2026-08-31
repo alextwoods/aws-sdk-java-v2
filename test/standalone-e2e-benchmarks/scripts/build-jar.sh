@@ -13,6 +13,10 @@
 #   --sdk-commit SHA    record SHA as the commit the SDK in ~/.m2 was built from. Only meaningful
 #                       with --skip-sdk-build; without it the SDK is built from HEAD and that is
 #                       what gets recorded.
+#   --sdk-version V     build against a PUBLISHED SDK v2 release from Maven Central (e.g. 2.54.0)
+#                       instead of the local build. Implies --skip-sdk-build, and records the version
+#                       in the provenance with sdk.commit=published-V. This is how you get a
+#                       genuinely unmodified baseline: no local tree, no doubt about what is in it.
 #   --archive DIR       archive location (default: <repo>/pipeline_benchmark2/jars)
 #
 # The SDK modules are rebuilt and installed by default, because the benchmark resolves the SDK from
@@ -42,11 +46,13 @@ shift
 
 SKIP_SDK_BUILD=0
 SDK_COMMIT=""
+SDK_VERSION=""
 ARCHIVE="$REPO/pipeline_benchmark2/jars"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-sdk-build) SKIP_SDK_BUILD=1; shift ;;
         --sdk-commit)     SDK_COMMIT="$2"; shift 2 ;;
+        --sdk-version)    SDK_VERSION="$2"; SKIP_SDK_BUILD=1; shift 2 ;;
         --archive)        ARCHIVE="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -66,6 +72,12 @@ fi
 UNTRACKED_SRC="$(git -C "$REPO" status --porcelain | awk '/^\?\?/ {print $2}' | grep -c '/src/' || true)"
 if [[ "$UNTRACKED_SRC" != "0" ]]; then
     echo "NOTE: $UNTRACKED_SRC untracked file(s) under a module src/ directory; these are compiled in." >&2
+fi
+
+if [[ -n "$SDK_VERSION" ]]; then
+    # A published release has no commit in this repo; say so rather than implying one.
+    SDK_COMMIT="published-$SDK_VERSION"
+    echo "==> Using PUBLISHED SDK v2 $SDK_VERSION from Maven Central (no local SDK involved)"
 fi
 
 if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
@@ -95,7 +107,11 @@ elif [[ "$SDK_COMMIT" != "$COMMIT" ]]; then
 fi
 
 echo "==> Building benchmark jar (phase=$PHASE harness=$COMMIT sdk=$SDK_COMMIT)"
-(cd "$DIR" && mvn -q clean package -Dbenchmark.phase="$PHASE" -Dbenchmark.sdk.commit="$SDK_COMMIT")
+MVN_ARGS=(-q clean package -Dbenchmark.phase="$PHASE" -Dbenchmark.sdk.commit="$SDK_COMMIT")
+if [[ -n "$SDK_VERSION" ]]; then
+    MVN_ARGS+=(-Daws.sdk.v2.version="$SDK_VERSION")
+fi
+(cd "$DIR" && mvn "${MVN_ARGS[@]}")
 
 BUILT="$DIR/target/racecar-$PHASE.jar"
 if [[ ! -f "$BUILT" ]]; then
