@@ -95,7 +95,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-plugin-plugin</artifactId>
-                <version>3.6.0</version>
+                <!-- 3.6.0's descriptor goal cannot parse class files newer than Java 17
+                     ("Unsupported class file major version"); 3.13.1 handles current JDKs. -->
+                <version>3.13.1</version>
                 <executions>
                     <execution>
                         <id>default-descriptor</id>
