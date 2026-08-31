@@ -18,40 +18,12 @@ package software.amazon.awssdk.core.internal.http;
 import java.util.function.Consumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.annotations.ThreadSafe;
-import software.amazon.awssdk.core.ClientType;
 import software.amazon.awssdk.core.Response;
 import software.amazon.awssdk.core.SdkRequest;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.http.ExecutionContext;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
-import software.amazon.awssdk.core.internal.http.pipeline.RequestPipelineBuilder;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.AfterExecutionInterceptorsStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.AfterTransmissionExecutionInterceptorsStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallAttemptMetricCollectionStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallAttemptTimeoutTrackingStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallMetricCollectionStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallTimeoutTrackingStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyTransactionIdStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyUserAgentStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.AuthSchemeResolutionStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.BeforeTransmissionExecutionInterceptorsStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.BeforeUnmarshallingExecutionInterceptorsStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.CompressRequestStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.EndpointResolutionStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ExecutionFailureExceptionReportingStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.HandleResponseStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.HttpChecksumStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MakeHttpRequestStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MakeRequestImmutableStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MakeRequestMutableStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MergeCustomHeadersStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MergeCustomQueryParamsStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.QueryParametersToBodyStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.RetryableStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.SigningStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.TimeoutExceptionHandlingStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.UnwrapResponseContainer;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.utils.SdkAutoCloseable;
 
@@ -178,40 +150,11 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
             }
 
             try {
-                return RequestPipelineBuilder
-                    // Start of mutating request
-                    .first(RequestPipelineBuilder
-                               .first(MakeRequestMutableStage::new)
-                               .then(ApplyTransactionIdStage::new)
-                               .then(MergeCustomHeadersStage::new)
-                               .then(MergeCustomQueryParamsStage::new)
-                               .then(QueryParametersToBodyStage::new)
-                               .then(() -> new CompressRequestStage(httpClientDependencies))
-                               .then(AuthSchemeResolutionStage::new)
-                               .then(EndpointResolutionStage::new)
-                               .then(() -> new HttpChecksumStage(ClientType.SYNC))
-                               .then(ApplyUserAgentStage::new)
-                               .then(MakeRequestImmutableStage::new)
-                               // End of mutating request
-                               .then(RequestPipelineBuilder
-                                         .first(SigningStage::new)
-                                         .then(BeforeTransmissionExecutionInterceptorsStage::new)
-                                         .then(MakeHttpRequestStage::new)
-                                         .then(AfterTransmissionExecutionInterceptorsStage::new)
-                                         .then(BeforeUnmarshallingExecutionInterceptorsStage::new)
-                                         .then(() -> new HandleResponseStage<>(responseHandler))
-                                         .wrappedWith(ApiCallAttemptTimeoutTrackingStage::new)
-                                         .wrappedWith(TimeoutExceptionHandlingStage::new)
-                                         .wrappedWith((deps, wrapped) -> new ApiCallAttemptMetricCollectionStage<>(wrapped))
-                                         .wrappedWith(RetryableStage::new)::build)
-                               .wrappedWith(StreamManagingStage::new)
-                               .wrappedWith(ApiCallTimeoutTrackingStage::new)::build)
-                               .wrappedWith((deps, wrapped) -> new ApiCallMetricCollectionStage<>(wrapped))
-                    .then(() -> new UnwrapResponseContainer<>())
-                    .then(() -> new AfterExecutionInterceptorsStage<>())
-                    .wrappedWith(ExecutionFailureExceptionReportingStage::new)
-                    .build(httpClientDependencies)
-                    .execute(request, createRequestExecutionDependencies());
+                // The stage chain lives in SyncApiCallPipeline as straight-line code: same stages,
+                // same order, without the per-request RequestPipelineBuilder composition machinery
+                // (~50 builder/composer objects per call) it used to be assembled from here.
+                return SyncApiCallPipeline.create(httpClientDependencies, responseHandler)
+                                          .execute(request, createRequestExecutionDependencies());
             } catch (RuntimeException e) {
                 throw e;
             } catch (Exception e) {
