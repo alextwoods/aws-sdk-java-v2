@@ -17,8 +17,8 @@ package software.amazon.awssdk.protocols.json.internal;
 
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.protocols.json.BaseAwsStructuredJsonFactory;
-import software.amazon.awssdk.protocols.json.SdkJsonGenerator;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.internal.marshall.FastJsonGenerator;
 import software.amazon.awssdk.thirdparty.jackson.core.JsonFactory;
 import software.amazon.awssdk.thirdparty.jackson.core.StreamReadConstraints;
 import software.amazon.awssdk.thirdparty.jackson.core.StreamReadFeature;
@@ -51,14 +51,14 @@ public final class AwsStructuredPlainJsonFactory {
         @Override
         protected StructuredJsonGenerator createWriter(JsonFactory jsonFactory,
                                                        String contentType) {
-            return new SdkJsonGenerator(jsonFactory, contentType);
+            return new FastJsonGenerator(contentType);
         }
 
         @Override
         protected StructuredJsonGenerator createWriter(JsonFactory jsonFactory,
                                                        String contentType,
                                                        int initialBufferCapacity) {
-            return new SdkJsonGenerator(jsonFactory, contentType, initialBufferCapacity);
+            return new FastJsonGenerator(contentType, initialBufferCapacity);
         }
 
         @Override
