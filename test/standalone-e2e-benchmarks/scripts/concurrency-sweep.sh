@@ -25,6 +25,13 @@
 #                       one, and a run whose window is mostly compilation cannot answer this question.
 #   --warmup N          minimum warmup ops per run (default: 20000); quiesce mode extends it
 #   --jar PATH          run from a shaded benchmark jar
+#   --pin-client CPUS   taskset CPU list for the client (Linux). Size it to hold the LARGEST
+#                       concurrency level in the sweep with a core per thread, and keep it fixed
+#                       across levels so concurrency is the only thing varying.
+#   --pin-server CPUS   taskset CPU list for the mock server (Linux)
+#   --jvm-args "..."    extra JVM args for the client
+#   --server-jvm-args "..."
+#                       extra JVM args for the mock server
 #   --port N            mock server port (default: 19080)
 #   --out DIR           output dir (default: <repo>/pipeline_benchmark2/sweeps/<runid>)
 set -uo pipefail
@@ -38,6 +45,10 @@ LEVELS="1,2,4,8,16,32"
 ITERATIONS=300000
 WARMUP=20000
 JAR=""
+PIN_CLIENT=""
+PIN_SERVER=""
+CLIENT_JVM_ARGS=""
+SERVER_JVM_ARGS=""
 PORT=19080
 OUT=""
 
@@ -49,6 +60,10 @@ while [[ $# -gt 0 ]]; do
         --iterations) ITERATIONS="$2"; shift 2 ;;
         --warmup)     WARMUP="$2"; shift 2 ;;
         --jar)        JAR="$2"; shift 2 ;;
+        --pin-client) PIN_CLIENT="$2"; shift 2 ;;
+        --pin-server) PIN_SERVER="$2"; shift 2 ;;
+        --jvm-args)        CLIENT_JVM_ARGS="$2"; shift 2 ;;
+        --server-jvm-args) SERVER_JVM_ARGS="$2"; shift 2 ;;
         --port)       PORT="$2"; shift 2 ;;
         --out)        OUT="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -63,6 +78,12 @@ if [[ -n "$JAR" ]]; then
     fi
     JAR_ARGS=(--jar "$JAR")
 fi
+
+TUNING_ARGS=()
+[[ -n "$PIN_CLIENT" ]]      && TUNING_ARGS+=(--pin-client "$PIN_CLIENT")
+[[ -n "$PIN_SERVER" ]]      && TUNING_ARGS+=(--pin-server "$PIN_SERVER")
+[[ -n "$CLIENT_JVM_ARGS" ]] && TUNING_ARGS+=(--jvm-args "$CLIENT_JVM_ARGS")
+[[ -n "$SERVER_JVM_ARGS" ]] && TUNING_ARGS+=(--server-jvm-args "$SERVER_JVM_ARGS")
 
 if [[ -z "$OUT" ]]; then
     OUT="$REPO/pipeline_benchmark2/sweeps/$(date +%Y%m%d-%H%M)"
@@ -81,6 +102,7 @@ fi
 
 echo "Sweep: clients=$CLIENTS scenario=$SCENARIO levels=$LEVELS iterations=$ITERATIONS"
 echo "Host has $CORES logical cores. Output: $OUT"
+echo "Pinning: client=[${PIN_CLIENT:-unpinned}] server=[${PIN_SERVER:-unpinned}]"
 echo ""
 
 TOTAL=$(( ${#CLIENT_ARR[@]} * ${#LEVEL_ARR[@]} ))
@@ -94,7 +116,7 @@ for client in "${CLIENT_ARR[@]}"; do
         if ! (cd "$DIR" && scripts/benchmark.sh --client "$client" --scenario "$SCENARIO" \
                 --iterations "$ITERATIONS" --warmup "$WARMUP" --concurrency "$level" \
                 --progress-seconds 0 --cpu-source auto --port "$PORT" \
-                ${JAR_ARGS[@]+"${JAR_ARGS[@]}"} \
+                ${JAR_ARGS[@]+"${JAR_ARGS[@]}"} ${TUNING_ARGS[@]+"${TUNING_ARGS[@]}"} \
                 --append-to-results-file "$RESULTS") > "$log" 2>&1; then
             echo "  FAILED — see $log" >&2
             FAILURES=$((FAILURES + 1))

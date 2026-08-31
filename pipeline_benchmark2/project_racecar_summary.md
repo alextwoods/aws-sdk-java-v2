@@ -314,9 +314,55 @@ Two host-specific findings worth keeping:
   slower cores stretch how much of the window residual compilation occupies. Async needs higher
   iteration counts here, and runs flagged `steady_state=false` remain latency-only.
 
-The ~48k ops/s loopback ceiling measured on the laptop has not been re-measured here and should not be
-assumed to transfer: more cores and a different kernel will move it. Re-run the two-client test before
-trusting any high-concurrency number on this host.
+### The concurrency sweep on the host, and an async ceiling that is ours
+
+Re-run on the host with per-operation CPU now trustworthy, client pinned to 32 cores (fixed across
+levels so concurrency is the only variable), `small-get`, 300k operations per point. Throughput and
+total core demand:
+
+| client | c=1 | c=2 | c=4 | c=8 | c=16 | c=32 |
+|--------|----:|----:|----:|----:|-----:|-----:|
+| `v2-sync` (apache5) | 5,805 / 1.2c | 11,319 / 2.3c | 21,628 / 4.5c | 41,511 / 9.1c | 80,059 / 18.0c | **143,340** / 34.3c |
+| `v2-async` (crt) | 4,575 / 1.2c | 9,520 / 2.4c | 19,582 / 4.4c | 22,341 / 5.0c | 20,707 / 4.8c | 21,639 / 5.0c |
+| `smithy` | 11,855 / 1.3c | 23,568 / 2.6c | 43,531 / 5.2c | 88,613 / 10.3c | 164,150 / 20.3c | **272,857** / 33.1c |
+
+**The laptop's ~48k ops/s ceiling was the laptop.** `v2-sync` reaches 143k and smithy 273k here, both
+scaling near-linearly in cores (24.7× and 23.0× throughput at concurrency 32), with no saturation flag
+at any level. That number should never have been treated as a property of the apparatus in general, and
+this is the reason the host mattered beyond noise.
+
+**`v2-async` plateaus at ~22k ops/s from concurrency 8 upward, using only ~5 cores — and the cap is
+ours, not CRT's.** Sync and smithy scale right past it, so it is neither the server nor the machine. A
+plateau pinned at roughly one core of useful work points at a single-threaded bottleneck, and the
+harness has exactly one candidate: in-flight mode submits every request from **one** thread by
+deliberate design, because chaining from the completion callback would move marshalling and signing
+onto the transport's event-loop threads. Driving the same client and transport in `join` mode, which
+uses N threads instead, settles it:
+
+| mode | concurrency 8 | concurrency 16 | app CPU/op |
+|------|--------------:|---------------:|-----------:|
+| `inflight` (one submitter) | 20,080 | 20,547 | 152.7 → 153.5 |
+| `join` (N threads) | 34,571 | **63,191** | 199.1 → 202.2 |
+
+In-flight is flat between 8 and 16 while join scales 1.8×, so **~20.5k ops/s is the submitter thread's
+ceiling**, at roughly 45 µs of submit-side CPU per operation. Note also that join costs ~30% more CPU
+per operation, which is the thread-per-request overhead — so in-flight is the more efficient model per
+operation and the throughput-capped one at the same time.
+
+Consequence: **async throughput above concurrency ~4 measures the harness, not the SDK**, and should
+not be quoted. Per-operation CPU is less affected but every async level at 2 and above is flagged
+`NOT-STEADY` anyway. The fix is to allow several submitter threads while keeping the in-flight model
+(`--submitters N`), which is not yet implemented. None of this touches the phase comparison, which runs
+at concurrency 1 where in-flight and join are the same thing.
+
+**The server has headroom even at these rates.** Two independent clients against one server produced
+83,407 ops/s against 43,400 for one — 1.92×, so the run is client-bound. On the laptop the same test
+gave 1.13× and identified the server as the ceiling; that conclusion was specific to that machine.
+
+Two further notes from the sweep: every `v2-async` level at 2 and above is flagged `NOT-STEADY`, so its
+per-operation CPU there is unreliable regardless; and async per-operation CPU *falls* with concurrency
+(192.6 → 146.4 µs/op), which is the shape of fixed per-operation costs amortizing across more in-flight
+work, but is not worth interpreting while the runs are flagged.
 
 ### An experiment ran against the wrong server (`d66b5af5c39`)
 
@@ -1029,6 +1075,60 @@ Allocation, bytes/op, client code, versus the phase 0 baseline and smithy-java:
 
 Both batch-put cases now allocate **less than smithy-java**. Small operations are down ~1/3 but
 remain 4–6× smithy, and batch-get has barely moved.
+
+### CPU: the first credible measurement of the stack (c6g.metal, paired, 5 reps)
+
+Every CPU figure recorded earlier in this document was inconclusive. With application-CPU accounting,
+quiescence warmup, paired arms and a quiet pinned host, the stack can finally be measured. Both arms
+are the same harness (`e1df7d63dc0`) and differ only in the SDK inside them; concurrency 1, the
+configuration whose noise floor was measured at ±2.7% sync / ±2.5% async.
+
+**Application CPU per operation, phase 0 → phase D1:**
+
+| client | scenario | phase 0 | phase D1 | delta | spread | wins | steady |
+|--------|----------|--------:|---------:|------:|-------:|-----:|-------:|
+| v2-sync | small-get | 155.7 | 140.1 | **−10.0%** | ±1.8% | 5/5 | 10/10 |
+| v2-sync | small-put | 145.5 | 130.3 | **−10.4%** | ±1.3% | 5/5 | 10/10 |
+| v2-sync | batch-get | 662.0 | 652.5 | −1.4% | ±0.7% | 5/5 | 10/10 |
+| v2-sync | batch-put | 799.5 | 772.5 | −3.4% | ±2.1% | 5/5 | 10/10 |
+| v2-async | small-get | 208.3 | 195.9 | **−5.9%** | ±1.2% | 5/5 | 6/10 |
+| v2-async | small-put | 200.3 | 189.2 | **−5.5%** | ±2.4% | 5/5 | 9/10 |
+| v2-async | batch-get | 751.8 | 736.8 | −2.0% | ±2.6% | 4/5 | **0/10** |
+| v2-async | batch-put | 804.3 | 752.2 | −6.4% | ±2.3% | 5/5 | **0/10** |
+
+**Mean latency moves with it**, slightly less than CPU: −8.1% and −7.8% on sync small-get/small-put,
+−5.3% and −4.9% on async, −1.4% to −2.1% on sync batch.
+
+These are real signals, not noise: every delta exceeds the measured floor, the paired spreads are
+±0.7–2.6% (tighter than the null experiment's ±2.5–2.7%), and the sign is consistent across all 5
+repetitions in 7 of 8 cases.
+
+**Caveat on the async batch rows.** Both are `0/10` steady-state — 25k iterations left too much residual
+compilation inside the window on these slower cores. The deltas are consistent (5/5 wins on batch-put)
+but they are not steady-state measurements and should be re-run at higher iteration counts before being
+quoted.
+
+#### Allocation savings do not convert to CPU one-for-one
+
+The most useful thing in the table is the ratio between the two metrics:
+
+| scenario (v2-sync) | allocation | app CPU | ratio |
+|--------------------|-----------:|--------:|------:|
+| small-get | −36.5% | −10.0% | ~1 : 3.7 |
+| small-put | −42.3% | −10.4% | ~1 : 4.1 |
+| batch-get | −4.3% | −1.4% | ~1 : 3.1 |
+| batch-put | −49.0% | −3.4% | **~1 : 14** |
+
+Small operations and batch-get convert at a fairly consistent 1:3–4. **batch-put is the outlier**: a
+49% allocation reduction bought 3.4% CPU. That is consistent with where the work actually is — batch-put
+serializes ~50 KB of items and writes them to a socket, so removing body copies eliminates a great deal
+of *allocation* while the serialization and syscall cost that dominates its CPU is untouched. The
+allocation-shaped optimizations paid off where per-request fixed overhead dominates, which is small
+operations.
+
+This has a direct bearing on phase G. Collapsing the stage chain is a fixed-per-request cost
+optimization, so on this evidence it should land in the same place as phases A–F: visible on small
+operations, largely invisible on batch-put.
 
 ### Where the remaining gap is
 
