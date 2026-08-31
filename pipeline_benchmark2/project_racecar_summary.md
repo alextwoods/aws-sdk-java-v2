@@ -1287,3 +1287,130 @@ pipeline has no per-request stage graph to allocate at all.
 4. **B part 2** — idempotent re-signing, then move the immutability barrier.
 5. **E part 2 / codegen items** — the `sdkFields()` field loop and the generated response copiers;
    biggest remaining allocation items but they live in codegen, so longest validation tail.
+
+## Phase E2 — extreme JSON request marshalling (smithy-java serde techniques)
+
+- Commits (one optimization each, in order):
+  - `8c311fc13b9` E2.1 `perf(aws-json-protocol): Hand-rolled JSON generator replacing Jackson`
+  - `2fbae67d9fd` harness: sized-writer benchmark variant (production steady state)
+  - `3ba6907097e` E2.2 `perf(aws-json-protocol): Cache per-field marshalling plan`
+  - `1bf927a3759` E2.3 `perf(aws-json-protocol): Dispatch container elements without registry lookups`
+  - `b0fa0d66f50` E2.4 `perf(aws-json-protocol): Pre-encoded field-name tokens`
+  - `fbbd5f4c6bb` E2.6 `perf(codegen): Generate straight-line JSON marshalling on model classes`
+  - (`7a6dccd8c04` ci: maven-plugin-plugin 3.6.0→3.13.1, unblocks codegen builds on JDK 25)
+- Raw: `raw/e2-jmh/t0-baseline-*.json` (local), `raw/e2-jmh/host-e2.1/` (paired host session 1),
+  `raw/e2-jmh/host-e2x/` (paired host session 2, five arms)
+- Measurement harness: **component-level JMH** (`test/sdk-standard-benchmarks`,
+  `JsonRpc10MarshallBenchmark` — POJO → SdkHttpFullRequest, no network), per the phase brief. No e2e
+  runs. All host numbers from the c6g.metal box, `taskset -c 32-47`, arms alternating within a
+  session, order reversed on even reps, 3 reps, `-prof gc` for allocation.
+
+### What changed, per commit
+
+**E2.1 — FastJsonGenerator.** `SdkJsonGenerator` (shaded Jackson `UTF8JsonGenerator` →
+`SdkByteArrayOutputStream`) replaced for JSON text protocols by a hand-rolled writer modelled on
+smithy-java's `SmithyJsonSerializer`: single `byte[]` cursor, worst-case capacity reservation per
+write with a cold `grow()`, comma tracking via a per-depth `boolean[]`, two-digits-at-a-time
+integers, single-pass ASCII string fast path with escape/UTF-8 fallback, base64 straight into the
+output buffer, zero-copy `contentAsByteBufferOrNull()` handoff. Byte-identity with Jackson is
+enforced by a golden test (uppercase `\uXXXX` escapes, surrogates escaped not raw, quoted
+NaN/Infinity, epoch-seconds timestamps) plus 5,000-case string fuzz. CBOR/RPCv2 keep Jackson-CBOR.
+
+**E2.2 — FieldPlan.** The per-field trait probes in `doMarshall` (up to 3× PayloadTrait EnumMap
+lookups, RequiredTrait, location comparison, knownType resolution, registry lookup) move into an
+identity-cached per-`SdkField` plan; `DefaultValueTrait` is eagerly dereferenced in the SdkField
+constructor (same pattern as LocationTrait).
+
+**E2.3 — container element dispatch.** LIST/MAP marshallers resolved every element via
+`context.marshall(PAYLOAD, val)` — instanceof + two HashMap lookups per element. Element type now
+resolved once per container from `ListTrait.memberFieldInfo`/`MapTrait.valueFieldInfo`, elements
+written through a knownType switch.
+
+**E2.4 — pre-encoded field names.** Additive `StructuredJsonGenerator.writeFieldName(String, byte[])`
+default method (CBOR unaffected); FastJsonGenerator overrides with a fused comma+token arraycopy.
+FieldPlan pre-encodes each payload field's `"name":` token once.
+
+**E2.6 — generated self-marshalling (the structural one).** Model shapes of JSON-family protocols
+whose members all bind to the payload now implement `StructuredJsonWritable`; codegen emits a
+`marshallJsonFields` method of straight-line writes: null check per member, static pre-encoded name
+token, direct typed write, inline list/map loops, direct nested-shape calls.
+`JsonProtocolMarshaller.doMarshall` dispatches on one instanceof. This is smithy-java's generated
+`serializeMembers` translated to the SdkPojo world: for DynamoDB's `AttributeValue` (a 10-field
+pseudo-union marshalled through the generic loop) one value's cost collapses from ~10 getter
+lambdas + ~40 trait/plan probes to ≤10 null checks and monomorphic writes. Qualification is
+transitive over nested shapes, computed as a fixpoint per model (handles recursion); shapes with
+non-payload members, explicit payloads, documents, streaming/events, idempotency tokens or custom
+defaults keep the generic loop, as does all older generated code. Works for CBOR too (the generated
+method targets the `StructuredJsonGenerator` interface).
+
+Not done: E2.5 (name-token storage on SdkField) — mooted by E2.6, which bypasses FieldPlan entirely
+on qualified shapes; E2.7 (transform-marshaller singletons) — deferred, ~24 B/op against a
+~1,336 B/op steady-state total, no expected CPU signal; generator/buffer pooling — deferred until
+the remaining per-request allocation (~1.3 KB) justifies it.
+
+### Correctness gates (every commit)
+
+aws-json-protocol 151→152 tests, sdk-core 2,152, cbor + rpcv2 module suites, **protocol-tests 726**
+(exact expected-body assertions; after E2.6, 92 protocol-test model classes are on the generated
+path, so the suite genuinely exercises it), codegen 675 (23 fixtures regenerated),
+codegen-generated-classes-test 1,973. FastJsonGenerator wire-identity golden test incl. randomized
+fuzz vs Jackson.
+
+### Results (paired, host, marshallSized = steady-state buffer sizing, ns/op)
+
+Cumulative E2.1→E2.6 (session 2) on top of the T0→E2.1 win (session 1), DynamoDB-shaped corpus:
+
+| case | T0→E2.1 time | E2.1→E2.6 time | E2.1→E2.6 alloc |
+|------|-------------:|---------------:|----------------:|
+| PutItem ShallowMap S/M/L | −5.0/−6.8/−7.8% | **−69.8/−67.4/−65.1%** | −0/−0/−0% |
+| PutItem MixedItem S/M/L | −6.7/−7.2/−6.1% | **−70.2/−71.8/−71.4%** | −20/−34/−40% |
+| PutItem Nested M/L | −11.9/−13.9% | **−67.7/−75.5%** | −0/−40% |
+| PutItem BinaryData S/M/L | −7.7/−26.6/−31.2% | −55.8/−22.1/−7.5% | −0/−0/−0% |
+| GetItem / PutItem Baseline | −14.9/−10.4% | −51.9/−55.7% | −0/−0% |
+| RPCv2-CBOR (3 cases) | (control: flat) | **−68.5…−71.9%** | −1…+11% |
+
+Per-commit attribution (session 2, sized): E2.2 **regressed time** on map-heavy cases (+8…+20% on
+ShallowMap/Nested) while cutting allocation up to 40% on MixedItem — the FieldPlan CHM read per
+field plus the extra indirection cost more than the EnumMap probes it replaced on these shapes.
+E2.3 (−1…−9.5% on item cases) and E2.4 (−2…−7% broadly) clawed most of it back; the three runtime
+commits net out roughly flat on time for map-heavy cases and −7…−14% allocation. **E2.6 then makes
+the dispatch question moot** — on qualified shapes none of that machinery runs at all, and it
+delivers −48…−77% against E2.4 with the identical wire bytes. The E2.2 lesson is recorded: plan
+caching is the right shape for the *fallback* path, but on this corpus the fallback was already
+cheap enough that only removing the loop entirely (codegen) moves marshalling CPU decisively.
+
+CBOR arm doubled as control for E2.1–E2.4 (flat within noise in session 1; ±small drifts session 2)
+and as a *measurement* for E2.6, since the generated method also serves CBOR: −70% there too.
+
+Absolute steady-state numbers worth keeping (host, Graviton2): PutItemRequest MixedItem_M marshals
+in **7.95 µs → was 30.8 µs at E2.1, ~31 µs at T0**; ShallowMap_L 28.9 µs (was 92.6); a small
+GetItem marshals in 0.58 µs. For scale against the e2e picture: sync batch-put's whole-call app CPU
+was ~752 µs/op at G2, of which serialization was the dominant component — this phase removes
+roughly 60 µs/op of it (batch-put ≈ 25 MixedItem-ish items).
+
+### The wrong-looking result that was real
+
+Session 1 (local Mac) showed the E2.1 arm regressing allocation up to +77% on L cases while time
+improved — cause: the un-hinted benchmark constructor path doubles the new generator's buffer from
+1 KB, where Jackson accumulated into a recycled thread-local. That is a cold-start artifact the E1
+size hints already fix in production; the `marshallSized` variant (buffer pre-sized like
+`MarshallBufferSizeHints` steady state) was added to the harness and shows allocation flat-to-down
+everywhere. Both variants are kept in the harness deliberately: `marshall` measures cold start,
+`marshallSized` measures steady state.
+
+### Interface changes (all additive, reviewed and approved up front)
+
+- `StructuredJsonGenerator.writeFieldName(String, byte[])` — default method, delegates.
+- `StructuredJsonWritable` — new `@SdkProtectedApi` interface in aws-json-protocol.
+- `JsonFieldNameToken` — new `@SdkProtectedApi` token pre-encoder.
+- `codegen-maven-plugin` maven-plugin-plugin 3.6.0→3.13.1 (build-only; JDK 25 unblock).
+
+### Follow-ups
+
+- **Response side (unmarshalling) is now the bigger half of the serde gap** — batch-get barely moved
+  all project. The same treatment (generated `readJsonFields` + hand-rolled parser) is the natural
+  E3.
+- E2.7 (marshaller singletons) and generator pooling: revisit if per-request fixed overhead shows up
+  in e2e small-op profiles; both are small against the current ~1.3 KB/op steady state.
+- The E2.2 FieldPlan is now fallback-path only; if REST-JSON top-level shapes show up hot in
+  profiles, E2.5 (plan storage on SdkField) is the next step there.
