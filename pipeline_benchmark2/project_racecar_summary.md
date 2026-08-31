@@ -1089,24 +1089,23 @@ configuration whose noise floor was measured at ±2.7% sync / ±2.5% async.
 |--------|----------|--------:|---------:|------:|-------:|-----:|-------:|
 | v2-sync | small-get | 155.7 | 140.1 | **−10.0%** | ±1.8% | 5/5 | 10/10 |
 | v2-sync | small-put | 145.5 | 130.3 | **−10.4%** | ±1.3% | 5/5 | 10/10 |
-| v2-sync | batch-get | 662.0 | 652.5 | −1.4% | ±0.7% | 5/5 | 10/10 |
-| v2-sync | batch-put | 799.5 | 772.5 | −3.4% | ±2.1% | 5/5 | 10/10 |
+| v2-sync | batch-get | 669.6 | 652.0 | −2.6% | ±1.5% | 5/5 | 10/10 |
+| v2-sync | batch-put | 804.5 | 755.5 | **−6.1%** | ±2.7% | 5/5 | 10/10 |
 | v2-async | small-get | 208.3 | 195.9 | **−5.9%** | ±1.2% | 5/5 | 6/10 |
 | v2-async | small-put | 200.3 | 189.2 | **−5.5%** | ±2.4% | 5/5 | 9/10 |
-| v2-async | batch-get | 751.8 | 736.8 | −2.0% | ±2.6% | 4/5 | **0/10** |
-| v2-async | batch-put | 804.3 | 752.2 | −6.4% | ±2.3% | 5/5 | **0/10** |
+| v2-async | batch-get | 736.8 | 725.1 | −1.6% | ±2.6% | 4/5 | 10/10 |
+| v2-async | batch-put | 784.2 | 749.0 | **−4.5%** | ±1.8% | 5/5 | 10/10 |
+
+(The batch rows are from a re-collection at 80k iterations. The first pass at 25k iterations left the
+async batch windows 0/10 steady-state; at 80k every run in the session, sync and async, was steady.
+The re-measured sync batch numbers moved from −1.4%/−3.4% to −2.6%/−6.1% — the flagged run had been
+*understating* the improvement, which is the direction JIT-in-window bias usually takes.)
 
 **Mean latency moves with it**, slightly less than CPU: −8.1% and −7.8% on sync small-get/small-put,
-−5.3% and −4.9% on async, −1.4% to −2.1% on sync batch.
+−5.3% and −4.9% on async.
 
 These are real signals, not noise: every delta exceeds the measured floor, the paired spreads are
-±0.7–2.6% (tighter than the null experiment's ±2.5–2.7%), and the sign is consistent across all 5
-repetitions in 7 of 8 cases.
-
-**Caveat on the async batch rows.** Both are `0/10` steady-state — 25k iterations left too much residual
-compilation inside the window on these slower cores. The deltas are consistent (5/5 wins on batch-put)
-but they are not steady-state measurements and should be re-run at higher iteration counts before being
-quoted.
+±0.7–2.7%, and the sign is consistent across all 5 repetitions in 15 of 16 case-metric pairs.
 
 #### Allocation savings do not convert to CPU one-for-one
 
@@ -1116,11 +1115,11 @@ The most useful thing in the table is the ratio between the two metrics:
 |--------------------|-----------:|--------:|------:|
 | small-get | −36.5% | −10.0% | ~1 : 3.7 |
 | small-put | −42.3% | −10.4% | ~1 : 4.1 |
-| batch-get | −4.3% | −1.4% | ~1 : 3.1 |
-| batch-put | −49.0% | −3.4% | **~1 : 14** |
+| batch-get | −4.3% | −2.6% | ~1 : 1.7 |
+| batch-put | −49.0% | −6.1% | **~1 : 8** |
 
-Small operations and batch-get convert at a fairly consistent 1:3–4. **batch-put is the outlier**: a
-49% allocation reduction bought 3.4% CPU. That is consistent with where the work actually is — batch-put
+Small operations convert at a fairly consistent 1:3.7–4.1. **batch-put is still the outlier**: a 49%
+allocation reduction bought 6.1% CPU. That is consistent with where the work actually is — batch-put
 serializes ~50 KB of items and writes them to a socket, so removing body copies eliminates a great deal
 of *allocation* while the serialization and syscall cost that dominates its CPU is untouched. The
 allocation-shaped optimizations paid off where per-request fixed overhead dominates, which is small
