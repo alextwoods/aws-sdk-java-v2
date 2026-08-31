@@ -26,22 +26,11 @@ import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallAttemptM
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallAttemptTimeoutTrackingStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallMetricCollectionStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallTimeoutTrackingStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyTransactionIdStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyUserAgentStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.AuthSchemeResolutionStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.BeforeTransmissionExecutionInterceptorsStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.BeforeUnmarshallingExecutionInterceptorsStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.CompressRequestStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.EndpointResolutionStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ExecutionFailureExceptionReportingStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.HandleResponseStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.HttpChecksumStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.MakeHttpRequestStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MakeRequestImmutableStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MakeRequestMutableStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MergeCustomHeadersStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.MergeCustomQueryParamsStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.QueryParametersToBodyStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.RetryableStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.SigningStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.TimeoutExceptionHandlingStage;
@@ -59,7 +48,7 @@ import software.amazon.awssdk.utils.Pair;
  * ~30 single-use builder objects and ~19 two-field pair nodes <i>per request</i>, and executing it
  * meant hopping through those pair nodes' polymorphic {@code execute} calls. Here the two sequential
  * runs (the eleven request-mutation stages, and the six attempt stages) are plain sequences of method
- * calls in {@link MutationAndCallStages} and {@link AttemptStages}, and only the stages that carry
+ * calls in {@link RequestMutationStages} and {@link AttemptStages}, and only the stages that carry
  * real behavior around an inner pipeline (retry, timeouts, metrics, stream management, failure
  * reporting) remain as wrapper objects, hand-nested once.
  *
@@ -116,49 +105,25 @@ final class SyncApiCallPipeline {
     }
 
     /**
-     * The request-mutation sequence — run once per request — followed by the retryable attempt
-     * block. Replaces eleven {@code .then(...)} compositions.
+     * The shared request-mutation sequence ({@link RequestMutationStages}) followed by the retryable
+     * attempt block.
      */
     private static final class MutationAndCallStages<OutputT>
             implements RequestPipeline<SdkHttpFullRequest, Response<OutputT>> {
 
-        private final MakeRequestMutableStage makeMutable = new MakeRequestMutableStage();
-        private final ApplyTransactionIdStage applyTransactionId = new ApplyTransactionIdStage();
-        private final MergeCustomHeadersStage mergeCustomHeaders;
-        private final MergeCustomQueryParamsStage mergeCustomQueryParams = new MergeCustomQueryParamsStage();
-        private final QueryParametersToBodyStage queryParamsToBody = new QueryParametersToBodyStage();
-        private final CompressRequestStage compressRequest;
-        private final AuthSchemeResolutionStage authSchemeResolution;
-        private final EndpointResolutionStage endpointResolution;
-        private final HttpChecksumStage httpChecksum = new HttpChecksumStage(ClientType.SYNC);
-        private final ApplyUserAgentStage applyUserAgent;
-        private final MakeRequestImmutableStage makeImmutable = new MakeRequestImmutableStage();
+        private final RequestMutationStages mutation;
         private final RequestPipeline<SdkHttpFullRequest, Response<OutputT>> attempt;
 
         MutationAndCallStages(HttpClientDependencies dependencies,
                               RequestPipeline<SdkHttpFullRequest, Response<OutputT>> attempt) {
-            this.mergeCustomHeaders = new MergeCustomHeadersStage(dependencies);
-            this.compressRequest = new CompressRequestStage(dependencies);
-            this.authSchemeResolution = new AuthSchemeResolutionStage(dependencies);
-            this.endpointResolution = new EndpointResolutionStage(dependencies);
-            this.applyUserAgent = new ApplyUserAgentStage(dependencies);
+            this.mutation = new RequestMutationStages(dependencies, ClientType.SYNC);
             this.attempt = attempt;
         }
 
         @Override
         public Response<OutputT> execute(SdkHttpFullRequest request, RequestExecutionContext context)
                 throws Exception {
-            SdkHttpFullRequest.Builder mutable = makeMutable.execute(request, context);
-            mutable = applyTransactionId.execute(mutable, context);
-            mutable = mergeCustomHeaders.execute(mutable, context);
-            mutable = mergeCustomQueryParams.execute(mutable, context);
-            mutable = queryParamsToBody.execute(mutable, context);
-            mutable = compressRequest.execute(mutable, context);
-            mutable = authSchemeResolution.execute(mutable, context);
-            mutable = endpointResolution.execute(mutable, context);
-            mutable = httpChecksum.execute(mutable, context);
-            mutable = applyUserAgent.execute(mutable, context);
-            return attempt.execute(makeImmutable.execute(mutable, context), context);
+            return attempt.execute(mutation.execute(request, context), context);
         }
     }
 
