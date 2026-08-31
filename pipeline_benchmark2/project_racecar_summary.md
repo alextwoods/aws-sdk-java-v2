@@ -1129,6 +1129,75 @@ This has a direct bearing on phase G. Collapsing the stage chain is a fixed-per-
 optimization, so on this evidence it should land in the same place as phases A–F: visible on small
 operations, largely invisible on batch-put.
 
+## Phase G (part 1) — straight-line sync pipeline
+
+- Commit: `ac0c028febb` (`perf(sdk-core): Straight-line sync request pipeline`)
+- Raw: `pipeline_benchmark2/paired/host-20260831-0334` (small), `host-20260831-0406` (batch)
+
+### What changed
+
+The sync pipeline was assembled per request from `RequestPipelineBuilder`: ~30 single-use builder
+objects, ~19 two-field `ComposingRequestPipelineStage` pair nodes, and a polymorphic `execute()` hop
+at every stage boundary. The DSL's flexibility was unused — the chain has exactly one shape.
+
+`SyncApiCallPipeline` is the same chain written in a straight line: the eleven mutation stages and the
+six attempt stages become plain sequences of method calls, and only the wrappers with real behavior
+(retry, timeouts, metrics, stream management, failure reporting) remain as objects, hand-nested once.
+Stage logic is **reused, not copied** — there is no second implementation of any stage to drift — and
+construction stays per-request, because `BaseSyncClientHandler` supplies per-request dependencies whose
+configuration plugins may have modified. The async pipeline is untouched in this part.
+
+### Correctness
+
+- sdk-core: 1,534 tests, 1 failure — the documented pre-existing flake, passes on re-run.
+- All four scenarios run through the new pipeline; the `--metrics` output set is identical to phase
+  D1's (11 metrics), confirming the metric-collection wrappers are wired correctly.
+
+### Measurement (paired, host, 5 reps — with a built-in control)
+
+`v2-async` was included in the comparison deliberately: phase G does not touch the async path, so its
+delta must read zero. It does — all four async cases land between −1.8% and +0.4%, within the ±2.5%
+floor. A non-zero control would have invalidated the session; instead it certifies it.
+
+Application CPU per operation, phase D1 → phase G:
+
+| client | scenario | phase D1 | phase G | delta | spread | wins | steady |
+|--------|----------|---------:|--------:|------:|-------:|-----:|-------:|
+| v2-sync | small-get | 137.2 | 124.6 | **−9.0%** | ±4.8% | 5/5 | 10/10 |
+| v2-sync | small-put | 128.9 | 117.8 | **−8.5%** | ±3.8% | 5/5 | 10/10 |
+| v2-sync | batch-get | 650.1 | 648.0 | −0.3% | ±1.1% | 3/5 | 10/10 |
+| v2-sync | batch-put | 754.9 | 752.3 | −0.3% | ±1.0% | 2/5 | 10/10 |
+| v2-async | *(control)* | — | — | −1.8%…+0.4% | ≤±2.8% | — | — |
+
+Latency: −7.4% and −6.5% on the sync small operations, flat elsewhere.
+
+**The prediction held exactly.** The conversion analysis above predicted a fixed-per-request
+optimization would be visible on small operations and largely invisible on batch-put; it delivered
+−9% and −0.3% respectively. The size of the small-op win — ~12 µs/op for removing composition
+machinery — is more than allocation alone explains; the likely bulk of it is that the
+`ComposingRequestPipelineStage.execute` call sites were megamorphic (every pair node dispatches to
+different stage types), which defeats inlining along the entire chain, whereas the straight-line
+calls are monomorphic.
+
+A session-to-session note: the phase D1 arm measured 137.2 µs/op here against 140.1 in the phase-0
+session — a 2% shift between sessions run hours apart, which is exactly why arms are paired within a
+session and cross-session numbers are never compared directly.
+
+### Verdict
+
+Kept. The cumulative sync small-get improvement from phase 0 is now **≈ −18%** application CPU
+(−10.0% to D1, then −9.0% to G, compounded), with allocation down 36.5% and every phase individually
+validated against a measured noise floor.
+
+### Follow-ups identified
+
+- **G part 2 (async):** the same collapse applies to `AmazonAsyncHttpClient`, plus de-futuring the
+  stages that only ever return completed futures (option C overlaps here). The async control rows in
+  this run are the baseline for it.
+- **G part 3 (per-client stages):** stage construction is still per-request because of the per-request
+  dependencies copy; routing the response handler through `RequestExecutionContext` and honoring
+  plugin config would allow one pipeline per client. Expected value is small next to part 1.
+
 ### Where the remaining gap is
 
 **batch-get (−4 to −6%)** is response-side and needs codegen work: `AttributeValue` builders plus
