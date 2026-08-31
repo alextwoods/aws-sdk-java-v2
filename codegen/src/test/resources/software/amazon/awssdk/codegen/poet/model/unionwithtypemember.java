@@ -22,6 +22,9 @@ import software.amazon.awssdk.core.protocol.MarshallingType;
 import software.amazon.awssdk.core.traits.LocationTrait;
 import software.amazon.awssdk.core.util.SdkAutoConstructList;
 import software.amazon.awssdk.core.util.SdkAutoConstructMap;
+import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
 import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
@@ -29,7 +32,7 @@ import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
 /**
  */
 @Generated("software.amazon.awssdk:codegen")
-public final class UnionWithTypeMember implements SdkPojo, Serializable, ToCopyableBuilder<UnionWithTypeMember.Builder, UnionWithTypeMember> {
+public final class UnionWithTypeMember implements SdkPojo, Serializable, ToCopyableBuilder<UnionWithTypeMember.Builder, UnionWithTypeMember>, StructuredJsonWritable {
   private static final SdkField<String> STRING_MEMBER_FIELD = SdkField.<String>builder(MarshallingType.STRING)
   .memberName("StringMember")
   .getter(getter(UnionWithTypeMember::stringMember))
@@ -51,6 +54,10 @@ public final class UnionWithTypeMember implements SdkPojo, Serializable, ToCopya
   private static final List<SdkField<?>> SDK_FIELDS = Collections.unmodifiableList(Arrays.asList(STRING_MEMBER_FIELD,TYPE_FIELD));
 
   private static final Map<String, SdkField<?>> SDK_NAME_TO_FIELD = memberNameToFieldInitializer();
+
+  private static final byte[] STRING_MEMBER_FIELD_NAME_TOKEN = JsonFieldNameToken.of("StringMember");
+
+  private static final byte[] TYPE_FIELD_NAME_TOKEN = JsonFieldNameToken.of("Type");
 
   private static final UnionWithTypeMember UNSET_INSTANCE = new UnionWithTypeMember(Type.UNKNOWN_TO_SDK_VERSION, null, null);
 
@@ -215,6 +222,18 @@ public final class UnionWithTypeMember implements SdkPojo, Serializable, ToCopya
     map.put("StringMember", STRING_MEMBER_FIELD);
     map.put("Type", TYPE_FIELD);
     return Collections.unmodifiableMap(map);
+  }
+
+  @Override
+  public final void marshallJsonFields(StructuredJsonGenerator generator) {
+    if (stringMember != null) {
+      generator.writeFieldName("StringMember", STRING_MEMBER_FIELD_NAME_TOKEN);
+      generator.writeValue(stringMember);
+    }
+    if (typeValue != null) {
+      generator.writeFieldName("Type", TYPE_FIELD_NAME_TOKEN);
+      generator.writeValue(typeValue);
+    }
   }
 
   private static <T> Function<Object, T> getter(Function<UnionWithTypeMember, T> g) {

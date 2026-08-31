@@ -58,6 +58,7 @@ import software.amazon.awssdk.protocols.json.AwsJsonProtocol;
 import software.amazon.awssdk.protocols.json.AwsJsonProtocolMetadata;
 import software.amazon.awssdk.protocols.json.BaseAwsJsonProtocolFactory;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.protocols.json.internal.ProtocolFact;
 
 /**
@@ -217,6 +218,13 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
     }
 
     void doMarshall(SdkPojo pojo) {
+        // Shapes whose members all bind to the payload carry generated straight-line marshalling code;
+        // dispatch to it instead of the reflective field loop. Shapes with non-payload members (or from
+        // older generated code) do not implement the interface and take the generic path below.
+        if (pojo instanceof StructuredJsonWritable) {
+            ((StructuredJsonWritable) pojo).marshallJsonFields(jsonGenerator);
+            return;
+        }
         List<SdkField<?>> fields = pojo.sdkFields();
         if (fields instanceof RandomAccess) {
             // Generated models return a RandomAccess list; indexed access avoids the iterator allocation.

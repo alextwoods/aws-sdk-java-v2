@@ -19,6 +19,9 @@ import software.amazon.awssdk.core.protocol.MarshallLocation;
 import software.amazon.awssdk.core.protocol.MarshallingType;
 import software.amazon.awssdk.core.traits.LocationTrait;
 import software.amazon.awssdk.core.traits.RequiredTrait;
+import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
 import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
@@ -26,7 +29,7 @@ import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
 /**
  */
 @Generated("software.amazon.awssdk:codegen")
-public final class NestedQueryParameterOperation implements SdkPojo, Serializable, ToCopyableBuilder<NestedQueryParameterOperation.Builder, NestedQueryParameterOperation> {
+public final class NestedQueryParameterOperation implements SdkPojo, Serializable, ToCopyableBuilder<NestedQueryParameterOperation.Builder, NestedQueryParameterOperation>, StructuredJsonWritable {
   private static final SdkField<String> QUERY_PARAM_ONE_FIELD = SdkField.<String>builder(MarshallingType.STRING)
   .memberName("QueryParamOne")
   .getter(getter(NestedQueryParameterOperation::queryParamOne))
@@ -66,6 +69,14 @@ public final class NestedQueryParameterOperation implements SdkPojo, Serializabl
   private static final List<SdkField<?>> SDK_FIELDS = Collections.unmodifiableList(Arrays.asList(QUERY_PARAM_ONE_FIELD,QUERY_PARAM_TWO_FIELD,NESTED_HEADER_MEMBER_FIELD,NESTED_STATUS_CODE_FIELD));
 
   private static final Map<String, SdkField<?>> SDK_NAME_TO_FIELD = memberNameToFieldInitializer();
+
+  private static final byte[] QUERY_PARAM_ONE_FIELD_NAME_TOKEN = JsonFieldNameToken.of("QueryParamOne");
+
+  private static final byte[] QUERY_PARAM_TWO_FIELD_NAME_TOKEN = JsonFieldNameToken.of("QueryParamTwo");
+
+  private static final byte[] NESTED_HEADER_MEMBER_FIELD_NAME_TOKEN = JsonFieldNameToken.of("NestedHeaderMember");
+
+  private static final byte[] NESTED_STATUS_CODE_FIELD_NAME_TOKEN = JsonFieldNameToken.of("NestedStatusCode");
 
   private static final long serialVersionUID = 1L;
 
@@ -194,6 +205,29 @@ public final class NestedQueryParameterOperation implements SdkPojo, Serializabl
     map.put("NestedHeaderMember", NESTED_HEADER_MEMBER_FIELD);
     map.put("NestedStatusCode", NESTED_STATUS_CODE_FIELD);
     return Collections.unmodifiableMap(map);
+  }
+
+  @Override
+  public final void marshallJsonFields(StructuredJsonGenerator generator) {
+    if (queryParamOne == null) {
+      throw new IllegalArgumentException("Parameter 'QueryParamOne' must not be null");
+    }
+    if (true) {
+      generator.writeFieldName("QueryParamOne", QUERY_PARAM_ONE_FIELD_NAME_TOKEN);
+      generator.writeValue(queryParamOne);
+    }
+    if (queryParamTwo != null) {
+      generator.writeFieldName("QueryParamTwo", QUERY_PARAM_TWO_FIELD_NAME_TOKEN);
+      generator.writeValue(queryParamTwo);
+    }
+    if (nestedHeaderMember != null) {
+      generator.writeFieldName("NestedHeaderMember", NESTED_HEADER_MEMBER_FIELD_NAME_TOKEN);
+      generator.writeValue(nestedHeaderMember);
+    }
+    if (nestedStatusCode != null) {
+      generator.writeFieldName("NestedStatusCode", NESTED_STATUS_CODE_FIELD_NAME_TOKEN);
+      generator.writeValue(nestedStatusCode);
+    }
   }
 
   private static <T> Function<Object, T> getter(Function<NestedQueryParameterOperation, T> g) {

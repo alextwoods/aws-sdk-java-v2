@@ -62,6 +62,7 @@ import software.amazon.awssdk.codegen.poet.eventstream.EventStreamUtils;
 import software.amazon.awssdk.codegen.poet.model.TypeProvider.TypeNameOptions;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
+import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.StringUtils;
 import software.amazon.awssdk.utils.Validate;
 import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
@@ -114,6 +115,14 @@ public class AwsServiceModel implements ClassSpec {
                                                .addTypes(nestedModelClassTypes());
 
         shapeModelSpec.additionalMethods().forEach(specBuilder::addMethod);
+
+        StructuredJsonWritableSpec jsonWritableSpec = new StructuredJsonWritableSpec(intermediateModel, shapeModel,
+                                                                                     typeProvider);
+        if (jsonWritableSpec.qualifies()) {
+            specBuilder.addSuperinterface(ClassName.get(StructuredJsonWritable.class));
+            specBuilder.addFields(jsonWritableSpec.nameTokenFields());
+            specBuilder.addMethod(jsonWritableSpec.marshallJsonFieldsMethod());
+        }
 
         if (shapeModel.isUnion()) {
             specBuilder.addField(unionTypeField());

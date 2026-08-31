@@ -34,6 +34,9 @@ import software.amazon.awssdk.core.traits.LocationTrait;
 import software.amazon.awssdk.core.traits.MapTrait;
 import software.amazon.awssdk.core.util.DefaultSdkAutoConstructMap;
 import software.amazon.awssdk.core.util.SdkAutoConstructMap;
+import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
 import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
@@ -41,7 +44,8 @@ import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
 /**
  */
 @Generated("software.amazon.awssdk:codegen")
-public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBuilder<NestedOptions.Builder, NestedOptions> {
+public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBuilder<NestedOptions.Builder, NestedOptions>,
+        StructuredJsonWritable {
     private static final SdkField<String> PAGE_SIZE_FIELD = SdkField.<String> builder(MarshallingType.STRING)
             .memberName("pageSize").getter(getter(NestedOptions::pageSize)).setter(setter(Builder::pageSize))
             .traits(LocationTrait.builder().location(MarshallLocation.PAYLOAD).locationName("pageSize").build()).build();
@@ -72,6 +76,14 @@ public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBui
             HEADER_PARAM_FIELD, QUERY_PARAM_FIELD, PREFIX_HEADERS_FIELD));
 
     private static final Map<String, SdkField<?>> SDK_NAME_TO_FIELD = memberNameToFieldInitializer();
+
+    private static final byte[] PAGE_SIZE_FIELD_NAME_TOKEN = JsonFieldNameToken.of("pageSize");
+
+    private static final byte[] HEADER_PARAM_FIELD_NAME_TOKEN = JsonFieldNameToken.of("headerParam");
+
+    private static final byte[] QUERY_PARAM_FIELD_NAME_TOKEN = JsonFieldNameToken.of("queryParam");
+
+    private static final byte[] PREFIX_HEADERS_FIELD_NAME_TOKEN = JsonFieldNameToken.of("prefixHeaders");
 
     private static final long serialVersionUID = 1L;
 
@@ -232,6 +244,33 @@ public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBui
         map.put("queryParam", QUERY_PARAM_FIELD);
         map.put("prefixHeaders", PREFIX_HEADERS_FIELD);
         return Collections.unmodifiableMap(map);
+    }
+
+    @Override
+    public final void marshallJsonFields(StructuredJsonGenerator generator) {
+        if (pageSize != null) {
+            generator.writeFieldName("pageSize", PAGE_SIZE_FIELD_NAME_TOKEN);
+            generator.writeValue(pageSize);
+        }
+        if (headerParam != null) {
+            generator.writeFieldName("headerParam", HEADER_PARAM_FIELD_NAME_TOKEN);
+            generator.writeValue(headerParam);
+        }
+        if (queryParam != null) {
+            generator.writeFieldName("queryParam", QUERY_PARAM_FIELD_NAME_TOKEN);
+            generator.writeValue(queryParam);
+        }
+        if (prefixHeaders != null && (!prefixHeaders.isEmpty() || !(prefixHeaders instanceof SdkAutoConstructMap))) {
+            generator.writeFieldName("prefixHeaders", PREFIX_HEADERS_FIELD_NAME_TOKEN);
+            generator.writeStartObject();
+            for (Map.Entry<String, String> entry0 : prefixHeaders.entrySet()) {
+                if (entry0.getValue() != null) {
+                    generator.writeFieldName(entry0.getKey());
+                    generator.writeValue(entry0.getValue());
+                }
+            }
+            generator.writeEndObject();
+        }
     }
 
     private static <T> Function<Object, T> getter(Function<NestedOptions, T> g) {
