@@ -1189,14 +1189,72 @@ Kept. The cumulative sync small-get improvement from phase 0 is now **≈ −18%
 (−10.0% to D1, then −9.0% to G, compounded), with allocation down 36.5% and every phase individually
 validated against a measured noise floor.
 
+## Phase G (part 2) — straight-line async pipeline
+
+- Commit: `ee3fb0765c2` (`perf(sdk-core): Straight-line async request pipeline`)
+- Raw: `pipeline_benchmark2/paired/host-20260831-0522` (small), `host-20260831-0553` (batch-put)
+
+### What changed
+
+The same collapse applied to `AmazonAsyncHttpClient`. The eleven mutation stages moved to
+`RequestMutationStages`, shared with the sync pipeline (the sequence is identical apart from the
+`ClientType` handed to the checksum stage), so both paths run one implementation instead of two
+copies. The delicate piece is the tail: the builder form adapted the trailing synchronous stages
+through `RequestPipelineBuilder.async()`, whose wrapper links exceptions *backwards* with
+`forwardExceptionTo` so that cancelling the returned future reaches the in-flight HTTP future.
+`FinishStages` reproduces that structure exactly, because dropping the backward link would leave a
+cancelled call's HTTP exchange running. De-futuring the effectively-synchronous stages (option C) is
+deliberately not in this change.
+
+Mechanism verified directly: in phase D1's allocation profiles, 78% (sync) and 45% (async) of
+allocation stacks passed through `RequestPipelineBuilder`/`ComposingRequestPipelineStage`/
+`AsyncRequestPipelineWrapper` frames; in G2 both are **zero** — the machinery is off every path.
+
+### Measurement (paired, host, 5 reps — roles reversed)
+
+This time `v2-sync` is the control (parts 1 and 2 share the sync path) and `v2-async` is the
+measurement. The control reads zero: −1.1%, +1.6%, −0.5%, all inside the floor.
+
+| client | scenario | phase G | phase G2 | delta | spread | wins | steady |
+|--------|----------|--------:|---------:|------:|-------:|-----:|-------:|
+| v2-async | small-get | 195.6 | 181.3 | **−7.3%** | ±1.5% | 5/5 | 7/10 |
+| v2-async | small-put | 187.7 | 172.4 | **−8.1%** | ±1.8% | 5/5 | 4/10 |
+| v2-async | batch-put | 749.3 | 739.1 | −1.3% | ±2.1% | 4/5 | 10/10 |
+| v2-sync | *(control)* | — | — | −1.1%…+1.6% | ≤±3.3% | — | 30/30 |
+
+Caveat, stated rather than hidden: the async small windows are only 7/10 and 4/10 steady-state (the
+async client chronically compiles longer on these cores), so the CPU figures there carry residual-JIT
+contamination. Two things say the result is real anyway: the paired spreads are tight (±1.5–1.8%)
+with 5/5 sign consistency, and **latency — which the steady-state issue does not distort — agrees**:
+−6.2% and −6.8%.
+
+### Verdict
+
+Kept. Phase G lands almost identically on both clients (−9.0%/−8.5% sync, −7.3%/−8.1% async), which
+is what you'd expect from removing the same machinery from both paths.
+
+### Cumulative scoreboard, phase 0 → G2 (application CPU per op, host, paired)
+
+| client | scenario | phase 0 | now | total |
+|--------|----------|--------:|----:|------:|
+| v2-sync | small-get | 155.7 | ~127 | **≈ −18%** |
+| v2-sync | small-put | 145.5 | ~119 | **≈ −18%** |
+| v2-async | small-get | 208.3 | ~181 | **≈ −13%** |
+| v2-async | small-put | 200.3 | ~172 | **≈ −14%** |
+| v2-sync | batch-put | 804.5 | ~750 | ≈ −7% |
+| v2-async | batch-put | 784.2 | ~739 | ≈ −6% |
+
+("now" chains the paired deltas; absolute values shift ~2% between sessions, the deltas are what is
+measured.)
+
 ### Follow-ups identified
 
-- **G part 2 (async):** the same collapse applies to `AmazonAsyncHttpClient`, plus de-futuring the
-  stages that only ever return completed futures (option C overlaps here). The async control rows in
-  this run are the baseline for it.
-- **G part 3 (per-client stages):** stage construction is still per-request because of the per-request
-  dependencies copy; routing the response handler through `RequestExecutionContext` and honoring
-  plugin config would allow one pipeline per client. Expected value is small next to part 1.
+- **Option C (de-futuring):** `AsyncSigningStage` and the interceptor stages usually return completed
+  futures; short-circuiting the completed-future case would remove `thenApply` hops from the async
+  path. The G2 numbers are the baseline.
+- **G part 3 (per-client stages):** construction is still per-request because of the per-request
+  dependencies copy; routing the response handler through `RequestExecutionContext` would allow one
+  pipeline per client. Expected value is small next to the composition collapse.
 
 ### Where the remaining gap is
 
