@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.RandomAccess;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.IntConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
@@ -68,13 +69,12 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
 
     private static final JsonMarshallerRegistry MARSHALLER_REGISTRY = createMarshallerRegistry();
 
-    // Caches the resolved marshaller for non-PAYLOAD fields, keyed by SdkField identity.
-    // SdkField instances are static final per generated model class, so identity-based lookup is correct.
-    // The cache is effectively bounded by the total number of non-payload SdkField instances across all
+    // Caches the per-field marshalling plan (trait probes, dispatch type, resolved marshaller), keyed by
+    // SdkField identity. SdkField instances are static final per generated model class, so identity-based
+    // lookup is correct and the cache is bounded by the total number of SdkField instances across all
     // loaded service models — each SdkField is inserted at most once, and no eviction is needed.
     // ConcurrentHashMap is used for thread safety; the one-time put per SdkField is negligible.
-    private static final ConcurrentHashMap<SdkField<?>, JsonMarshaller<Object>> MARSHALLER_CACHE =
-        new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<SdkField<?>, FieldPlan> FIELD_PLAN_CACHE = new ConcurrentHashMap<>();
 
     private final URI endpoint;
     private final StructuredJsonGenerator jsonGenerator;
@@ -215,56 +215,101 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
     }
 
     void doMarshall(SdkPojo pojo) {
-        for (SdkField<?> field : pojo.sdkFields()) {
-            Object val = field.getValueOrDefault(pojo);
-            if (isExplicitBinaryPayload(field)) {
+        List<SdkField<?>> fields = pojo.sdkFields();
+        if (fields instanceof RandomAccess) {
+            // Generated models return a RandomAccess list; indexed access avoids the iterator allocation.
+            for (int i = 0; i < fields.size(); i++) {
+                marshallPojoField(pojo, fields.get(i));
+            }
+        } else {
+            for (SdkField<?> field : fields) {
+                marshallPojoField(pojo, field);
+            }
+        }
+    }
+
+    private void marshallPojoField(SdkPojo pojo, SdkField<?> field) {
+        FieldPlan plan = planFor(field);
+        Object val = field.getValueOrDefault(pojo);
+        if (plan.explicitPayload) {
+            if (plan.explicitBinaryPayload) {
                 if (val != null) {
                     SdkBytes sdkBytes = (SdkBytes) val;
                     request.contentStreamProvider(sdkBytes::asInputStream);
                     updateContentLengthHeader(sdkBytes.asByteArrayUnsafe().length);
                 }
-            } else if (isExplicitStringPayload(field)) {
+            } else if (plan.explicitStringPayload) {
                 if (val != null) {
                     byte[] content = ((String) val).getBytes(StandardCharsets.UTF_8);
                     request.contentStreamProvider(() -> new ByteArrayInputStream(content));
                     updateContentLengthHeader(content.length);
-
                 }
-            } else if (isExplicitPayloadMember(field)) {
+            } else {
                 marshallExplicitJsonPayload(field, val);
-            } else if (val != null) {
-                if (field.location() == MarshallLocation.PAYLOAD) {
-                    // HOT PATH: switch-based dispatch, no registry, no interface dispatch
-                    marshallPayloadField(field, val);
-                } else {
-                    // WARM PATH: cached registry lookup + interface dispatch
-                    marshallFieldViaRegistry(field, val);
-                }
-            } else if (field.location() != MarshallLocation.PAYLOAD) {
-                // Null non-payload: must go through registry (null marshallers vary by location)
-                marshallFieldViaRegistry(field, val);
-            } else if (field.containsTrait(RequiredTrait.class, TraitType.REQUIRED_TRAIT)) {
-                throw new IllegalArgumentException(
-                    String.format("Parameter '%s' must not be null", field.locationName()));
             }
-            // else: null payload field, not required → no-op
+        } else if (val != null) {
+            if (plan.payloadLocation) {
+                // HOT PATH: switch-based dispatch, no registry, no interface dispatch
+                marshallPayloadField(field, plan, val);
+            } else {
+                // WARM PATH: plan-cached marshaller + interface dispatch
+                marshallFieldViaRegistry(field, plan, val);
+            }
+        } else if (!plan.payloadLocation) {
+            // Null non-payload: must go through registry (null marshallers vary by location)
+            marshallNullViaRegistry(field);
+        } else if (plan.required) {
+            throw new IllegalArgumentException(
+                String.format("Parameter '%s' must not be null", field.locationName()));
+        }
+        // else: null payload field, not required → no-op
+    }
+
+    /**
+     * Returns the cached {@link FieldPlan} for the field, computing it on first use. Get-before-put:
+     * ConcurrentHashMap.get() is a single lock-free volatile read, and concurrent first-use puts are
+     * idempotent because the plan is derived deterministically from the (static final) field.
+     */
+    private static FieldPlan planFor(SdkField<?> field) {
+        FieldPlan plan = FIELD_PLAN_CACHE.get(field);
+        if (plan == null) {
+            plan = new FieldPlan(field);
+            FIELD_PLAN_CACHE.put(field, plan);
+        }
+        return plan;
+    }
+
+    /**
+     * Precomputed per-field marshalling decisions: every trait probe and dispatch lookup that
+     * {@code doMarshall} would otherwise repeat on each request is resolved once per SdkField.
+     */
+    static final class FieldPlan {
+        final MarshallingKnownType knownType;
+        final boolean explicitPayload;
+        final boolean explicitBinaryPayload;
+        final boolean explicitStringPayload;
+        final boolean payloadLocation;
+        final boolean required;
+
+        /**
+         * Registry marshaller for non-null values of non-PAYLOAD-location fields, resolved on first use.
+         * Plain (non-volatile) field: the registry always returns the same instance for a given
+         * (location, type) pair, so a data race can only cause a redundant lookup.
+         */
+        JsonMarshaller<Object> nonNullMarshaller;
+
+        FieldPlan(SdkField<?> field) {
+            this.knownType = field.marshallingType().getKnownType();
+            this.explicitPayload = field.containsTrait(PayloadTrait.class, TraitType.PAYLOAD_TRAIT);
+            this.explicitBinaryPayload = explicitPayload && MarshallingType.SDK_BYTES.equals(field.marshallingType());
+            this.explicitStringPayload = explicitPayload && MarshallingType.STRING.equals(field.marshallingType());
+            this.payloadLocation = field.location() == MarshallLocation.PAYLOAD;
+            this.required = field.containsTrait(RequiredTrait.class, TraitType.REQUIRED_TRAIT);
         }
     }
 
     private void updateContentLengthHeader(int contentLength) {
         request.putHeader(CONTENT_LENGTH, Integer.toString(contentLength));
-    }
-
-    private boolean isExplicitBinaryPayload(SdkField<?> field) {
-        return isExplicitPayloadMember(field) && MarshallingType.SDK_BYTES.equals(field.marshallingType());
-    }
-
-    private boolean isExplicitStringPayload(SdkField<?> field) {
-        return isExplicitPayloadMember(field) && MarshallingType.STRING.equals(field.marshallingType());
-    }
-
-    private boolean isExplicitPayloadMember(SdkField<?> field) {
-        return field.containsTrait(PayloadTrait.class, TraitType.PAYLOAD_TRAIT);
     }
 
     private void marshallExplicitJsonPayload(SdkField<?> field, Object val) {
@@ -341,10 +386,10 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
      * registry lookup and interface dispatch. Each case is a monomorphic call site that the JIT can inline.
      */
     @SuppressWarnings("unchecked")
-    private void marshallPayloadField(SdkField<?> field, Object val) {
-        MarshallingKnownType knownType = field.marshallingType().getKnownType();
+    private void marshallPayloadField(SdkField<?> field, FieldPlan plan, Object val) {
+        MarshallingKnownType knownType = plan.knownType;
         if (knownType == null) {
-            marshallFieldViaRegistry(field, val);
+            marshallFieldViaRegistry(field, plan, val);
             return;
         }
 
@@ -416,29 +461,29 @@ public class JsonProtocolMarshaller implements ProtocolMarshaller<SdkHttpFullReq
                 break;
             default:
                 // Unknown type — fall back to registry lookup
-                marshallFieldViaRegistry(field, val);
+                marshallFieldViaRegistry(field, plan, val);
                 break;
         }
     }
 
     @SuppressWarnings("unchecked")
-    private void marshallFieldViaRegistry(SdkField<?> field, Object val) {
+    private void marshallFieldViaRegistry(SdkField<?> field, FieldPlan plan, Object val) {
         if (val == null) {
-            MARSHALLER_REGISTRY.getMarshaller(field.location(), field.marshallingType(), val)
-                               .marshall(val, marshallerContext, field.locationName(), (SdkField<Object>) field);
+            marshallNullViaRegistry(field);
             return;
         }
-        // Use get-before-put instead of computeIfAbsent. ConcurrentHashMap.get() is a single lock-free
-        // volatile read, whereas computeIfAbsent() has additional overhead even on cache hits (bucket-level
-        // synchronization bookkeeping). The benign-race on first access is safe: SdkField instances are
-        // static final, and the registry always returns the same marshaller for a given (location, type) pair,
-        // so concurrent puts are idempotent.
-        JsonMarshaller<Object> marshaller = MARSHALLER_CACHE.get(field);
+        JsonMarshaller<Object> marshaller = plan.nonNullMarshaller;
         if (marshaller == null) {
             marshaller = MARSHALLER_REGISTRY.getMarshaller(field.location(), field.marshallingType(), val);
-            MARSHALLER_CACHE.put(field, marshaller);
+            plan.nonNullMarshaller = marshaller;
         }
         marshaller.marshall(val, marshallerContext, field.locationName(), (SdkField<Object>) field);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void marshallNullViaRegistry(SdkField<?> field) {
+        MARSHALLER_REGISTRY.getMarshaller(field.location(), field.marshallingType(), null)
+                           .marshall(null, marshallerContext, field.locationName(), (SdkField<Object>) field);
     }
 
     private void marshallField(SdkField<?> field, Object val) {
