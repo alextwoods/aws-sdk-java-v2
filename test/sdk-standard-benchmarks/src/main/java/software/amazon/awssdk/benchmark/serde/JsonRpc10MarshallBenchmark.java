@@ -84,6 +84,7 @@ public class JsonRpc10MarshallBenchmark {
     private SdkPojo request;
     private OperationInfo operationInfo;
     private AwsJsonProtocolMetadata protocolMetadata;
+    private int marshalledBodySize;
 
     @Setup(Level.Trial)
     public void setup() throws Exception {
@@ -109,8 +110,43 @@ public class JsonRpc10MarshallBenchmark {
                 .protocol(AwsJsonProtocol.AWS_JSON)
                 .contentType(CONTENT_TYPE)
                 .build();
+
+        // 5. Record the marshalled body size to drive the sized-writer benchmark variant, replicating
+        // the steady state of BaseAwsJsonProtocolFactory's MarshallBufferSizeHints feedback loop.
+        SdkHttpFullRequest marshalled = createMarshaller(1024).marshall(request);
+        this.marshalledBodySize = marshalled.contentStreamProvider()
+                .map(p -> {
+                    try (java.io.InputStream is = p.newStream()) {
+                        int total = 0;
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = is.read(buf)) > 0) {
+                            total += n;
+                        }
+                        return total;
+                    } catch (java.io.IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .orElse(1024);
     }
 
+    private ProtocolMarshaller<SdkHttpFullRequest> createMarshaller(int initialBufferCapacity) {
+        return JsonProtocolMarshallerBuilder.create()
+                .endpoint(ENDPOINT)
+                .jsonGenerator(AwsStructuredPlainJsonFactory.SDK_JSON_FACTORY
+                        .createWriter(CONTENT_TYPE, initialBufferCapacity))
+                .contentType(CONTENT_TYPE)
+                .operationInfo(operationInfo)
+                .sendExplicitNullForPayload(false)
+                .protocolMetadata(protocolMetadata)
+                .build();
+    }
+
+    /**
+     * Marshalls with the default (unsized) output buffer: the SDK's behavior on the first calls of an
+     * operation, before the buffer-size hints warm up.
+     */
     @Benchmark
     public void marshall(Blackhole bh) {
         ProtocolMarshaller<SdkHttpFullRequest> marshaller = JsonProtocolMarshallerBuilder.create()
@@ -123,5 +159,14 @@ public class JsonRpc10MarshallBenchmark {
                 .protocolMetadata(protocolMetadata)
                 .build();
         bh.consume(marshaller.marshall(request));
+    }
+
+    /**
+     * Marshalls with the output buffer pre-sized to the body size: the SDK's steady-state behavior once
+     * {@code MarshallBufferSizeHints} has recorded the operation's recent body sizes.
+     */
+    @Benchmark
+    public void marshallSized(Blackhole bh) {
+        bh.consume(createMarshaller(marshalledBodySize).marshall(request));
     }
 }
