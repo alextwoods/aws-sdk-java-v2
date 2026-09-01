@@ -22,8 +22,16 @@ GCVM_RX = re.compile(r"WorkerThread::run|ConcurrentGCThread::run|VMThread::run|G
 
 # Java/native categories, checked deepest-frame-first; first match wins.
 CATEGORIES = [
-    ("socket-syscall", re.compile(r"^(write|read|poll|kevent|send|recv|__sendto|__recvfrom|"
-                                  r"__connect|close|fcntl)$")),
+    # Syscall leaves. macOS reports bare names (write, read, kevent); glibc on Linux reports
+    # wrapper symbols (__GI___libc_write, __poll, __read), and the vDSO shows as [vdso]. Matching
+    # only the macOS spelling silently pushed all syscall CPU up the stack into whatever Java
+    # category matched next, which on Linux inflated pipeline-framework from ~18% to ~43%.
+    ("socket-syscall", re.compile(r"^(__GI_)?(__libc_)?(__)?"
+                                  r"(write|read|pwrite|pread|writev|readv|"
+                                  r"poll|ppoll|epoll_wait|epoll_pwait|kevent|"
+                                  r"send|sendto|sendmsg|recv|recvfrom|recvmsg|"
+                                  r"connect|close|fcntl|accept|accept4|shutdown)$"
+                                  r"|^\[vdso\]$|^syscall$")),
     ("crypto", re.compile(r"sha256|SHA2|MessageDigest|HmacCore|Hmac|implCompress|Mac\.")),
     ("json", re.compile(r"jackson|smithy/java/json|JsonParser|JsonGenerator|JsonFactory|"
                         r"JsonToken|JsonNode")),
@@ -37,7 +45,11 @@ CATEGORIES = [
     ("endpoint-rules", re.compile(r"endpoints/|EndpointResol|rulesengine|EndpointProvider|"
                                   r"EndpointRule")),
     ("retry", re.compile(r"[Rr]etry|TokenBucket|RateLimiter")),
-    ("http-client", re.compile(r"org/apache/http|com/amazonaws/http|apache/internal|"
+    # org/apache/hc covers Apache5 (httpcore5/httpclient5), which is what v2-sync actually uses --
+    # the older org/apache/http pattern alone matches only Apache 4.x and left Apache5's frames
+    # falling through to "other". awssdk/http/apache covers both SDK adapters (apache, apache5).
+    ("http-client", re.compile(r"org/apache/http|org/apache/hc|awssdk/http/apache|"
+                               r"com/amazonaws/http|apache/internal|"
                                r"smithy/java/http|H1Exchange|/crt/|AwsCrt|sun/nio|NioSocketImpl|"
                                r"SocketDispatcher|Socket(In|Out)putStream|libsystem_kernel")),
     ("pipeline-framework", re.compile(r"pipeline/stages|AmazonHttpClient|ClientHandler|"
