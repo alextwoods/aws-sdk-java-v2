@@ -98,6 +98,27 @@ public class AsyncSigningStage implements RequestPipeline<SdkHttpFullRequest,
 
         adjustForClockSkew(context.executionAttributes());
         CompletableFuture<? extends T> identityFuture = selectedAuthScheme.identity();
+
+        // De-futured fast path: the identity is almost always already resolved (credentials providers
+        // cache), and non-streaming signing is synchronous. Running inline skips the thenCompose /
+        // thenApply dependent-node allocations on every attempt without changing any semantics: the
+        // same work would have run inline on this thread anyway for a completed future.
+        if (identityFuture.isDone() && !identityFuture.isCompletedExceptionally()) {
+            T identity = identityFuture.getNow(null);
+            CompletableFuture<SdkHttpFullRequest> signedRequestFuture = MetricUtils.reportDuration(
+                () -> doSraSign(request, context, selectedAuthScheme, identity, payloadChecksumStore),
+                context.attemptMetricCollector(),
+                CoreMetric.SIGNING_DURATION);
+            if (signedRequestFuture.isDone() && !signedRequestFuture.isCompletedExceptionally()) {
+                updateHttpRequestInInterceptorContext(signedRequestFuture.getNow(null), context.executionContext());
+                return signedRequestFuture;
+            }
+            return signedRequestFuture.thenApply(r -> {
+                updateHttpRequestInInterceptorContext(r, context.executionContext());
+                return r;
+            });
+        }
+
         return identityFuture.thenCompose(identity -> {
             CompletableFuture<SdkHttpFullRequest> signedRequestFuture = MetricUtils.reportDuration(
                 () -> doSraSign(request, context, selectedAuthScheme, identity, payloadChecksumStore),

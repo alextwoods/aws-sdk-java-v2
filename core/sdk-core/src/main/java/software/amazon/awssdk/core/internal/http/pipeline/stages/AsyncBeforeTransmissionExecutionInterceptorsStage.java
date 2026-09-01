@@ -29,6 +29,19 @@ public class AsyncBeforeTransmissionExecutionInterceptorsStage implements
     public CompletableFuture<SdkHttpFullRequest> execute(CompletableFuture<SdkHttpFullRequest> input,
                                                          RequestExecutionContext context) throws Exception {
 
+        // De-futured fast path: signing usually completes synchronously, so the input is already
+        // done. Run the interceptors inline and return the input future unchanged — the dependent
+        // future, completion node and backward exception link below exist only for the in-flight case.
+        if (input.isDone() && !input.isCompletedExceptionally()) {
+            try {
+                context.interceptorChain().beforeTransmission(context.executionContext().interceptorContext(),
+                        context.executionAttributes());
+                return input;
+            } catch (Throwable interceptorException) {
+                return CompletableFutureUtils.failedFuture(interceptorException);
+            }
+        }
+
         CompletableFuture<SdkHttpFullRequest> future = new CompletableFuture<>();
 
         input.whenComplete((r, t) -> {

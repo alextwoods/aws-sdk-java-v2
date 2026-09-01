@@ -91,6 +91,20 @@ public final class MakeAsyncHttpRequestStage<OutputT>
     @Override
     public CompletableFuture<Response<OutputT>> execute(CompletableFuture<SdkHttpFullRequest> requestFuture,
                                                         RequestExecutionContext context) {
+        // De-futured fast path: the signed request is almost always already available. The mirror
+        // future and its four completion/cancellation links below exist to bridge a not-yet-complete
+        // request future; with a completed one, the future from executeHttpRequest already carries
+        // the timeout and HTTP-cancellation wiring, so it can be returned directly. Cancelling it
+        // reaches the HTTP client future through the whenComplete link inside executeHttpRequest,
+        // exactly as the mirrored future's link would have.
+        if (requestFuture.isDone() && !requestFuture.isCompletedExceptionally()) {
+            try {
+                return executeHttpRequest(requestFuture.getNow(null), context);
+            } catch (Throwable t) {
+                return CompletableFutureUtils.failedFuture(t);
+            }
+        }
+
         CompletableFuture<Response<OutputT>> toReturn = new CompletableFuture<>();
 
         // Setup the cancellations. If the caller fails to provide a request, forward the exception to the future we
