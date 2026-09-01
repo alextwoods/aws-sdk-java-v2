@@ -1690,3 +1690,101 @@ reliable signal.
 Kept. −6.6% async small-get CPU / −5% latency from removing coordination hops alone, with a clean
 control. This banks part of the ~18% "async coordination" share identified in the crosssdk-254
 report; the remainder is the executor handoffs and the netty/CRT boundary, out of scope here.
+
+## Phase B2.b — the immutability barrier, and what was actually behind it
+
+- Commit: `fa076acc284` (`perf(sdk-core): Stamp the first attempt's retry-info header before the barrier`)
+- Raw: `paired/host-20260901-1610` (7 reps, small ops, both clients)
+
+### The premise was wrong
+
+B2.b was queued as "move the immutability barrier out of the retry loop", carried over from the phase D1
+profiles. Reading the post-G2 pipeline first showed the barrier is *already* outside it:
+`RequestMutationStages` — `MakeRequestMutableStage` through `MakeRequestImmutableStage` — runs once per
+call, and `RetryableStage` is nested inside that expression, so retries re-enter only the attempt block.
+Nothing needed moving, and the feared retyping of the retry loop across both clients was not the work.
+
+What the per-attempt cost actually was, on both paths:
+
+1. `RetryableStageHelper.requestToSend()` — `toBuilder()` + one `putHeader` + `build()`, every attempt
+   including the first. The `putHeader` is the expensive part: the retry stage holds an immutable
+   request, so the first mutation of a builder derived from it makes `LowCopyListMap` clone the entire
+   header map (`shallowCopyMap`, a fresh case-insensitive `TreeMap` plus an entry per header), and the
+   rebuild then materializes a second request with its buildable/lazy wrappers.
+2. `FastV4HeaderSigner` — the same pattern again, `source.toBuilder()` plus five `putHeader` calls, so a
+   second map clone per attempt. Removing this one requires the signer to accept a builder, which is an
+   `HttpSigner`/`SignRequest` interface change. Left alone.
+3. `MakeHttpRequestStage.wrapRequestContentStream` — a round trip per attempt when a body is present,
+   but it touches no header, so under the low-copy scheme it costs only wrapper objects.
+
+### What changed
+
+Item 1, and only item 1. `ApplyRetryInfoStage` stamps `attempt=1; max=N` inside the mutation sequence,
+where the request is already in builder form and the map is already privately owned — the transaction-id
+stage immediately before it has paid that sequence's one copy — so the write is free. `requestToSend()`
+then compares the header against the value it would write itself and returns the request untouched when
+they match. Retries still rebuild, which is right: the attempt number changes, and the previous attempt's
+request shares the map anyway.
+
+The comparison is what makes this safe rather than clever. The stage resolves max-attempts by a different
+route than the helper (which goes through the retry-policy adapter), and if the two ever disagree — or the
+stage declines to stamp because no retry configuration exposes a count — the match fails and the original
+rebuild happens. The fast path can cost performance; it cannot cost correctness.
+
+### Measurement
+
+Two things were measured, and they disagree in the way that matters to record.
+
+**The mechanism, directly.** A thread-allocation probe over the exact sequence a call performs, on a
+request carrying the headers a marshalled DynamoDB call has: the two round trips cost **1,424 B/op**, the
+one round trip plus the untouched return costs **774 B/op** — **−649 B/op on every call**, both clients.
+This is not a sampled profile; it is `getCurrentThreadAllocatedBytes` around 200,000 warmed iterations.
+
+**Whole-call CPU: nothing.** Paired, 7 reps, against phase C:
+
+| client | scenario | phaseC | phaseB2 | delta | spread | wins |
+|--------|----------|-------:|--------:|------:|-------:|-----:|
+| v2-sync | small-get | 107.3 | 108.7 | +1.4% | ±3.8% | 3/7 |
+| v2-sync | small-put | 101.2 | 102.0 | +0.8% | ±3.1% | 3/7 |
+| v2-async | small-get | 171.7 | 170.2 | −0.9% | ±2.3% | 5/7 |
+| v2-async | small-put | 164.4 | 163.0 | −0.8% | ±2.7% | 5/7 |
+
+Latency agrees that there is nothing to see: +0.5%, +0.2%, −0.7%, −0.6%. Sign consistency is 3/7 and 2/7
+on sync — below chance — and 5/7 and 6/7 on async. Read together: **no measurable effect on CPU, and no
+regression either.** 649 B/op is a few percent of a small call's allocation, and a red-black tree copy of
+a dozen entries is a few hundred nanoseconds against 107 µs, so this is the expected outcome, not a
+surprise. Recorded because a null result on a change whose mechanism is proven is worth more than a
+guess about it.
+
+### Kept, on these grounds
+
+Not on the timing, which says nothing. The allocation reduction is real and measured, there is no
+regression, the diff is 35 lines plus one stage, and the change is binary compatible. The tests are worth
+having independently: `RetryableStageRequestIsolationTest` pins invariants that had no coverage at all
+before — per-attempt request identity, single-valued attempt headers, each attempt starting from the
+*unsigned* request, that a stale or absent pre-stamped header is not trusted, and that the stage and
+helper agree under both retry-policy and retry-strategy configuration. Mutation-verified: trusting the
+header's presence instead of its value fails 3 of them; making the stage disagree with the helper fails 1.
+
+### The version that was written first, and discarded
+
+The first implementation threaded the mutation sequence's builder through the retry stage, so the retry
+helper owned the barrier and materialized one request per attempt. It worked, passed every gate, and
+saved **646 B/op** — three bytes less than the version that shipped. It also changed `execute()`
+signatures on five `@SdkInternalApi` pipeline stages plus `RetryableStageHelper`'s constructor, and broke
+the japicmp binary-compatibility gate, which a temp worktree confirmed passes at `HEAD`. The root pom
+excludes `*.internal.*` from that gate, but the pattern does not reach nested internal subpackages, so
+landing it would have meant either relaxing a repo-wide gate or scattering deprecated bridge methods
+through six internal classes — for the same 649 bytes obtainable without touching a single signature. The
+patch is kept at `/tmp/b2b_builder_threading.patch` for the record but is not the direction.
+
+### Follow-ups
+
+- **The signer's map clone (item 2 above)** is the other half of the per-attempt header churn and needs
+  an `HttpSigner`/`SignRequest` interface change to accept a builder. Worth a design discussion; the
+  B2.a idempotency work is already in place as its prerequisite.
+- **Allocation profiles from separate `collect.sh` runs are not comparable arm-to-arm.** An attempt to
+  verify this change that way showed a uniform −25% across every category, including unmarshalling and
+  Apache internals that the change cannot touch: `asprof alloc --total` scales with sample count, so two
+  independently scheduled recordings do not share a denominator. The thread-allocation probe was used
+  instead. Worth remembering before quoting a cross-run alloc delta.
