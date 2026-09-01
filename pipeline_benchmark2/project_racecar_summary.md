@@ -1538,3 +1538,155 @@ already landed, the remaining identified items, ranked:
    `RequestExecutionContext`).
 6. **E2.7 + generator/reader pooling** (small; revisit if e2e small-op profiles still show
    per-request serde fixed costs).
+
+## E2E validation of phases E2+E3 (paired, host)
+
+- Arms: `e3base` (phase G2 SDK `ee3fb0765c2`, current harness) vs `phaseE3` (`6f07335b3a2`), 5 reps,
+  concurrency 1, pinned, identical harness commit across arms.
+- Raw: `paired/host-20260901-0410` (small), `host-20260901-0440` (batch).
+
+Whole-call **application CPU per operation**, all cases 5/5 wins:
+
+| client | scenario | G2 | E2+E3 | delta | spread |
+|--------|----------|---:|------:|------:|-------:|
+| v2-sync | small-get | 128.3 | 113.7 | **−11.3%** | ±1.8% |
+| v2-sync | small-put | 120.5 | 107.3 | **−10.9%** | ±2.6% |
+| v2-async | small-get | 184.4 | 166.4 | −9.7% † | ±2.5% |
+| v2-async | small-put | 177.8 | 157.8 | −11.2% † | ±2.6% |
+| v2-sync | batch-get | 649.1 | 485.4 | **−25.2%** | ±0.7% |
+| v2-sync | batch-put | 756.7 | 328.0 | **−56.6%** | ±0.5% |
+| v2-async | batch-get | 719.8 | 565.7 | −21.4% | ±0.7% |
+| v2-async | batch-put | 747.9 | 393.6 | −47.4% | ±1.2% |
+
+† async small runs flagged not-steady on some reps; latency (−8.2%, −8.5%) confirms the direction.
+
+The component-level JMH wins converted to end-to-end almost 1:1 where serde dominates: the
+crosssdk-254 report put marshalling at 51% of batch-put CPU (595 µs/op) — E2 removed most of it and
+the whole call dropped 56.6%. Batch-get's −25% matches E3's unmarshalling share. Small operations
+got −11% from serde alone, consistent with serde being ~10–15% of a small call post-G2.
+
+Cumulative against phase 0 (compounding recorded phase deltas): **v2-sync small-get ≈ −27%
+application CPU, batch-put ≈ −59%, batch-get ≈ −27%**. Against the crosssdk-254 absolute table
+(unmodified 2.54.0: sync 151.6/798.5/664.7 µs for small-get/batch-put/batch-get), the branch now
+measures 113.7/328.0/485.4 — the smithy-java gap on batch-put has closed from 2.62× to ~1.08×
+(304.3 µs), and small-get from 3.30× to ~2.5×.
+
+## Phase D2 — per-call framework allocations
+
+- Commits: `9c9344b1819` (`perf(sdk-core): Dense-array storage for ExecutionAttributes`),
+  `e833b09e60f` (`perf(sdk-core): Skip per-request auth scheme option rebuild when nothing merges`)
+- Raw: `paired/host-20260901-0533` (small, 5 reps), `host-20260901-0602` (batch-put sync, 3 reps)
+
+### What changed
+
+**Dense-array `ExecutionAttributes`** (`9c9344b1819`): every `ExecutionAttribute` now takes a
+small-int id from a copy-on-write global registry at construction; the per-request store is a plain
+`Object[]` indexed by id instead of an `IdentityHashMap` sized 64. `ValueStorage` was refactored
+onto `rawGet`/`rawSet` so derived/mapped attributes keep working. Allocation is roughly neutral
+(the array is about the same size as the old pre-sized map); the win is CPU — no hashing, no
+collision probing, no `Map.Entry` traffic on the hottest read path in the SDK (every interceptor,
+stage, signer and auth resolver reads these). Two behavioral notes flagged for interface review:
+`getAttributes()` now returns a snapshot rather than a live view, and a null-valued attribute is
+indistinguishable from an absent one.
+
+**Auth scheme option rebuild skip** (`e833b09e60f`): `AuthSchemeResolver
+.mergePreExistingAuthSchemeProperties` re-built every `AuthSchemeOption` (builder + copy-on-write
+property maps, ~1 KB/op) even when there was nothing to merge — the common case. A
+`PropertyAbsenceProbe` fast path detects "no pre-existing properties to merge" without allocating
+and returns the original option untouched; `ResolveIdentityRequest` now shares a static empty
+instance for the no-property case.
+
+### Measurement (paired, host, vs phase E3 `6f07335b3a2`)
+
+Application CPU per op:
+
+| client | scenario | phaseE3 | phaseD2 | delta | spread | wins |
+|--------|----------|--------:|--------:|------:|-------:|-----:|
+| v2-sync | small-get | 113.7 | 116.2 | +2.3% | ±4.6% | 2/5 |
+| v2-async | small-get | 170.2 | 164.3 | **−3.4%** | ±2.7% | 4/5 |
+| v2-sync | small-put | 107.2 | 103.4 | **−3.6%** | ±2.0% | 5/5 |
+| v2-async | small-put | 161.4 | 154.7 | **−4.1%** | ±3.5% | 5/5 |
+| v2-sync | batch-put | 330.0 | 323.4 | −2.0% | ±2.3% | 2/3 |
+
+Latency agrees where CPU is noisy: batch-put latency −1.7% at 3/3 wins, small-put −2.4%/−3.9% at
+5/5. The one red cell (sync small-get +2.3%) sits inside its own ±4.6% pair spread at 2/5 wins —
+statistically indistinguishable from zero, while the same code path on small-put reads −3.6% at
+5/5. Async small windows were flagged not-steady on some reps (chronic for the async client on
+these cores); latency confirms the direction there too (−2.8%, −3.9%).
+
+### Verdict
+
+Kept. A consistent −2…−4% whole-call win from pure framework overhead removal, which is what the
+profile predicted: ExecutionAttributes + auth option churn were ~2 KB/op and a few percent of CPU
+on a small call. The remaining D2 item — header-map churn (`deepCopyMap`, `putHeader`,
+`Apache5HttpRequestFactory.addHeadersToRequest`, ~3.7 KB/op) — is deferred to phase B2.b, which
+moves the same immutability barrier.
+
+## Phase B2.a — signing: re-signing idempotency
+
+- Commit: `5826db2974b` (`fix(http-auth-aws): Make legacy-path re-signing idempotent`)
+
+### What changed
+
+Prerequisite for B2.b (moving the request-immutability barrier out of the retry loop): signing the
+same request twice must yield the same result, which requires the signer to ignore its own prior
+output. Added `authorization` to `V4CanonicalRequest.HEADERS_TO_IGNORE_IN_LOWER_CASE` (it already
+ignored `x-amzn-trace-id` and `user-agent`); `FastV4HeaderSigner` was verified already-idempotent
+(it overwrites rather than appends its headers). `ReSigningIdempotencyTest` (4 tests) locks the
+property: sign(sign(r)) == sign(r) for header and query signers. Mutation-verified — reverting the
+one-line change fails 2 of the new tests.
+
+No measurement: this is a correctness enabler, not an optimization; no hot-path behavior changes
+until B2.b consumes it.
+
+### B2.b deliberately not attempted unattended
+
+Moving the immutability barrier means the retry loop holds a mutable request builder across
+attempts, retyping `RequestPipeline` stages on both sync and async paths. Too much regression
+surface for unattended work; scoped out pending review. The concrete prize measured in phase D1
+profiles: ~3.7 KB/op of header-map copies plus the per-attempt `toBuilder().build()` round trip.
+
+## Phase C — de-future the async request path
+
+- Commit: `65433be31bd` (`perf(sdk-core): De-future the async request path when futures are already
+  complete`)
+- Raw: `paired/host-20260901-0608` (5 reps, vs phase D2 `e833b09e60f`)
+
+### What changed
+
+Three async stages that almost always hold already-completed futures now detect that and run
+inline instead of scheduling continuations:
+
+- `AsyncSigningStage`: when identity resolution is already done (cached credentials — the steady
+  state), sign synchronously instead of `thenCompose` off the identity future.
+- `AsyncBeforeTransmissionExecutionInterceptorsStage`: runs its interceptors inline (they are
+  synchronous callbacks; the stage only returned a future for pipeline shape).
+- `MakeAsyncHttpRequestStage`: returns the execution future directly instead of wrapping it in
+  another dependent completion.
+
+All fast paths read the completed value with `isDone()` + `getNow(null)` (the ASYNC_BLOCKING_CALL
+spotbugs rule forbids `join()` in async paths, correctly). The slow path — identity actually
+pending — is untouched.
+
+### Measurement (paired, host; v2-sync is the control — C touches only the async client)
+
+Application CPU per op:
+
+| client | scenario | phaseD2 | phaseC | delta | spread | wins |
+|--------|----------|--------:|-------:|------:|-------:|-----:|
+| v2-async | small-get | 167.1 | 156.1 | **−6.6%** | ±1.5% | 5/5 |
+| v2-async | small-put | 149.3 | 149.1 | −0.1% | ±2.2% | 2/5 |
+| v2-sync | *(control)* | — | — | −0.4%…−1.0% | ≤±6.5% | — |
+
+The control reads zero ✓. Latency agrees on the win (small-get −4.9% at 5/5) and on the flat
+(small-put −0.2%). The get/put asymmetry is real and repeatable in this run: small-put's async
+completion timing is dominated by the request-body write, so the continuation hops C removes were
+already off its critical path, while small-get's response-side chain shortens directly. Async
+small windows again flagged partially non-steady; the 5/5 latency agreement on small-get is the
+reliable signal.
+
+### Verdict
+
+Kept. −6.6% async small-get CPU / −5% latency from removing coordination hops alone, with a clean
+control. This banks part of the ~18% "async coordination" share identified in the crosssdk-254
+report; the remainder is the executor handoffs and the netty/CRT boundary, out of scope here.
