@@ -1508,3 +1508,33 @@ interface.
   didn't matter on this corpus).
 - CBOR byte-level reader (definite-length pre-sizing of collections is possible there).
 - Error-path unmarshalling still uses the JsonNode DOM; cold path, untouched.
+
+## Post-E3 opportunity queue
+
+Serde is considered tapped out for now — the remaining serde items (speculative in-order member
+matching in the byte reader, byte-level double parsing, a CBOR byte-level reader, error-path DOM
+removal) are recorded in the E2/E3 follow-up sections as **future opportunities**, not next work.
+
+Reading `analysis/crosssdk-254/report.md` (unmodified 2.54.0 vs smithy) against what the branch has
+already landed, the remaining identified items, ranked:
+
+1. **E2E validation of E2/E3** — the serde wins are component-level JMH; the crosssdk gaps #1
+   (marshalling 595 µs/op batch-put) and #4 (response copiers, 332 KB/op batch-get) should be
+   re-measured end-to-end (racecar HEAD vs phase-G2 jar, existing e2e harness) to confirm they
+   close and to re-baseline the category tables. Cheap, and re-ranks everything below.
+2. **D part 2 — per-call framework allocations** (crosssdk gap #2, 23.7% CPU / 11.8 KB/op small-get
+   on unmodified V2; G1/G2 already took ~9%):
+   - dense-int-key `ExecutionAttributes` (~1.1 KB/op; needs a public-surface design decision)
+   - auth-scheme option resolution rebuild per call (~1 KB/op, `DefaultAuthSchemeOption
+     .consumeProperty` 1.4% CPU)
+   - header-map churn: `CollectionUtils.deepCopyMap` on builder mutation (2.2 KB/op), `putHeader`
+     paths, `Apache5HttpRequestFactory.addHeadersToRequest` (1.7 KB/op)
+   - metric-stage elision when no publisher is configured
+3. **C — de-future the async request path** (~18% of async small-op CPU is coordination;
+   overlaps G2's `FinishStages`; async-capable measurement now exists on the host).
+4. **B part 2 — signing** (idempotent re-signing, then move the immutability barrier; the object
+   graph remainder after phase F).
+5. **G part 3 — per-client pipeline stages** (small; response handler through
+   `RequestExecutionContext`).
+6. **E2.7 + generator/reader pooling** (small; revisit if e2e small-op profiles still show
+   per-request serde fixed costs).
