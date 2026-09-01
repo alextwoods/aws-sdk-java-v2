@@ -1414,3 +1414,97 @@ everywhere. Both variants are kept in the harness deliberately: `marshall` measu
   in e2e small-op profiles; both are small against the current ~1.3 KB/op steady state.
 - The E2.2 FieldPlan is now fallback-path only; if REST-JSON top-level shapes show up hot in
   profiles, E2.5 (plan storage on SdkField) is the next step there.
+
+## Phase E3 — JSON response unmarshalling (builder churn + byte-level parsing)
+
+- Commits:
+  - `4d62743d988` E3.1 `perf(aws-json-protocol): Remove JsonNode detours from fast unmarshalling parser`
+  - `2ae5cc4d446` E3.2 `perf(codegen): Generate straight-line JSON deserialization on model builders`
+  - `8b5b027045c` E3.3 `perf(aws-json-protocol): Byte-level JSON reader for generated deserialization`
+  - `04528e3c84b` E3.3 fix: gate byte reader on known Content-Length (+ benchmark harness realism)
+- Raw: `raw/e2-jmh/host-e3/` (T0), `host-e3x/` (T0/E3.1/E3.2 paired), `host-e3y/` (first E3.3 run,
+  kept as the negative result), `host-e3z/` (final E3.3 paired)
+- Harness: `JsonRpc10UnmarshallBenchmark` (8 GetItemOutput cases) + `RpcV2CborUnmarshallBenchmark`
+  (control for E3.1/E3.3, measurement for E3.2), c6g.metal, pinned, arms alternating, 3 reps.
+
+### Context
+
+Production JSON clients all run the "fast" Jackson-streaming unmarshaller (codegen emits
+`ENABLE_FAST_UNMARSHALLER=true` for every JSON protocol), so that was the baseline — post-E2 the
+read side stood at 3–10× the cost of the equivalent marshal (GetItemOutput_M 10.9 µs vs ~1–3 µs).
+Per nested shape the fast path paid: a builder, a `sdkFieldNameToField` HashMap lookup per key, a
+megamorphic setter per member, per-setter union bookkeeping, and — the churn this phase targeted —
+the generated copier double-copy: `parseMap`/`parseList` build a collection, then the setter's
+copier rebuilds it entry-by-entry (re-hashing every key) and wraps it, discarding the original.
+Plus two `JsonNode` detours (timestamps, quoted scalars) and a `String` per value via Jackson.
+
+### What changed
+
+**E3.1** removed the JsonNode+registry detours inside `JsonUnmarshallingParser` (timestamps in all
+formats, quoted numbers) with identical `StringToValueConverter`/`DateUtils` conversions.
+Measured: flat on this corpus (the detours don't appear in GetItemOutput's shapes) — kept as an
+enabler and for services with timestamp-heavy responses.
+
+**E3.2** — the builder-churn kill, mirror of E2.6. New format-agnostic `StructuredJsonReader`
+cursor + `JsonMemberTable` (per-shape static member table with packed-long short-name identities);
+codegen emits `readJsonFields` on qualifying builders (`StructuredJsonReadable`): switch on member
+ordinal, direct field writes, collections built exactly once and wrapped unmodifiable directly,
+union type maintained without per-setter bookkeeping. First reader implementation wraps the
+existing Jackson token stream, so JSON text and CBOR both dispatch through the same generated code.
+Null members are skipped (provably identical end state); unknown keys skipped via `skipChildren`.
+Qualification shared with E2.6's fixpoint, extended to Response shapes.
+
+**E3.3** — the Jackson replacement. `FastJsonStructuredReader` parses JSON text directly from the
+body bytes: packed-long member matching (one long compare for names ≤7 bytes — the AttributeValue
+S/N/B/M/L path), pooled ≤8-byte string dedup cache (smithy-java's design: map keys and short values
+repeated across items decode once), integers from digits, base64 decoded from the buffer region
+into `SdkBytes.fromByteArrayUnsafe`, single-pass escape-free string decode. Engages only when
+Content-Length is known so the body buffer is allocated exactly once at the right size; CBOR keeps
+the Jackson-backed reader.
+
+### The negative result worth keeping
+
+The first E3.3 run regressed small responses +82…+91% time and +48…+361% allocation. Cause: the
+benchmark responses carried no Content-Length, so every parse drained the stream through
+`IoUtils.toByteArray`'s growing-buffer path — costing far more than Jackson's recycled input buffer
+saves. Two fixes, both kept: the byte path now requires a known Content-Length (real HTTP responses
+have it; anything else falls back to the Jackson reader), and the unmarshall benchmarks now set
+Content-Length like a real response. The diagnosis run is preserved in `host-e3y/`.
+
+### Results (paired, host)
+
+| step | time delta | alloc delta | control (CBOR) |
+|------|-----------:|------------:|---------------:|
+| T0 → E3.1 | −2.6…+1.0% (flat) | flat | — |
+| E3.1 → E3.2 | **−11.8…−13.4%** (trivial cases flat) | −11…−18% | −9.2/−18.4% (measurement: same generated code) |
+| E3.2 → E3.3 (final, paired same harness) | **−11.6…−43.0%** | −8…−53% small, +7…+26% large (the one-time body buffer) | +0.2% (flat ✓) |
+
+Cumulative T0 → E3.3, compounded: **GetItemOutput_M −33% (10.9 → 7.3 µs), _L −33% (78.8 → 52.7 µs),
+Binary_M −35%, GetItemOutput_Baseline −25% (318 → 240 ns), Healthcheck −43%**; CBOR −18% via E3.2
+alone. Response-side alloc: _M 11.2 → 10.3 KB (−9%) with copier churn replaced by the single body
+buffer; small cases −15…−50%.
+
+### Correctness
+
+- Differential suite: `FastJsonStructuredReaderDifferentialTest` asserts object equality between
+  the byte reader and the Jackson reader across the full value matrix (escapes, unicode, quoted
+  numbers, NaN/Infinity, base64, all timestamp formats, nested/null container permutations,
+  unknown-key skipping) plus 500 randomized documents, and malformed-document rejection parity.
+- 726 protocol-tests green per commit (103 protocol-test model classes on the generated read path;
+  JSON-text suites run through the byte reader after E3.3), codegen 675 with 22 fixtures
+  regenerated, codegen-generated-classes 1,973, aws-json-protocol 155.
+
+### Interface changes (additive, approved)
+
+`StructuredJsonReader` (+ 3 consumer interfaces), `StructuredJsonReadable`, `JsonMemberTable` —
+all `@SdkProtectedApi` in aws-json-protocol; generated BuilderImpls implement the readable
+interface.
+
+### Follow-ups
+
+- Speculative in-order member matching (smithy-java's fused expected-next check) — the packed-long
+  scan is O(members) per field; in-order responses could match in one comparison.
+- Direct double parsing from bytes (currently String-boxed; DynamoDB numbers are strings, so this
+  didn't matter on this corpus).
+- CBOR byte-level reader (definite-length pre-sizing of collections is possible there).
+- Error-path unmarshalling still uses the JsonNode DOM; cold path, untouched.
