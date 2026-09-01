@@ -1,0 +1,9 @@
+--- metrics client=v1 scenario=small-put iterations=200,000 ---
+METRIC ClientExecuteTime                          count=200,000 totalMs=28,305.2 avgUs=141.53
+METRIC CredentialsRequestTime                     count=200,000 totalMs=0.0 avgUs=0.00
+METRIC HttpClientReceiveResponseTime              count=200,000 totalMs=10,329.6 avgUs=51.65
+METRIC HttpClientSendRequestTime                  count=200,000 totalMs=3,827.8 avgUs=19.14
+METRIC HttpRequestTime                            count=200,000 totalMs=16,513.3 avgUs=82.57
+METRIC RequestMarshallTime                        count=200,000 totalMs=2,970.8 avgUs=14.85
+METRIC RequestSigningTime                         count=200,000 totalMs=3,635.7 avgUs=18.18
+METRIC ResponseProcessingTime                     count=200,000 totalMs=601.1 avgUs=3.01

@@ -1,0 +1,12 @@
+--- metrics client=v2-sync scenario=batch-get iterations=40,000 ---
+METRIC ApiCallDuration                            count=40,000 totalMs=26,570.4 avgUs=664.26
+METRIC BackoffDelayDuration                       count=40,000 totalMs=0.0 avgUs=0.00
+METRIC ConcurrencyAcquireDuration                 count=40,000 totalMs=30.1 avgUs=0.75
+METRIC CredentialsFetchDuration                   count=40,000 totalMs=4.3 avgUs=0.11
+METRIC EndpointResolveDuration                    count=40,000 totalMs=379.1 avgUs=9.48
+METRIC MarshallingDuration                        count=40,000 totalMs=992.1 avgUs=24.80
+METRIC ServiceCallDuration                        count=40,000 totalMs=4,405.3 avgUs=110.13
+METRIC SigningDuration                            count=40,000 totalMs=922.1 avgUs=23.05
+METRIC TimeToFirstByte                            count=40,000 totalMs=4,405.3 avgUs=110.13
+METRIC TimeToLastByte                             count=40,000 totalMs=24,221.9 avgUs=605.55
+METRIC UnmarshallingDuration                      count=40,000 totalMs=18,505.5 avgUs=462.64

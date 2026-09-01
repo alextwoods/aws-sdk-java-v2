@@ -1,0 +1,488 @@
+# Profile report — 20260831-2339
+
+ops per case (warmup+measured): 50,000. Client code only: JIT, GC/VM and harness stacks excluded.
+
+
+==============================================================================
+## CPU
+==============================================================================
+
+### smithy_batch-get
+client-code samples: 2,838   (jvm/harness excluded: 1,450)   ops=87,500 [47,500+40,000]
+  categories:
+     64.48%  json
+     12.51%  unmarshall
+      8.35%  socket-syscall
+      4.26%  http-client
+      2.29%  pipeline-framework
+      1.97%  signing
+      1.83%  thread-sync
+      1.37%  endpoint-rules
+      1.02%  retry
+      0.70%  marshall
+      0.67%  crypto
+      0.53%  other
+  top self frames:
+      7.89%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8StreamJsonParser._finishAndReturnString
+      5.29%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/sym/ByteQuadsCanonicalizer.findName
+      4.55%  __GI___recv
+      4.51%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8StreamJsonParser._skipWSOrEnd
+      3.84%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8StreamJsonParser.nextName
+      3.03%  __GI___send
+      3.00%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8StreamJsonParser._parseName
+      2.96%  software/amazon/smithy/java/json/jackson/JacksonJsonDeserializer.readStruct
+      2.78%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/base/ParserMinimalBase._updateToken
+      2.78%  java/util/ImmutableCollections$MapN.probe
+      2.61%  java/util/HashMap.putVal
+      2.57%  itable stub
+      2.11%  java/lang/StringUTF16.compress
+      2.08%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8StreamJsonParser._updateLocation
+
+### smithy_batch-put
+client-code samples: 1,931   (jvm/harness excluded: 675)   ops=67,500 [27,500+40,000]
+  categories:
+     56.91%  json
+     11.70%  socket-syscall
+      9.11%  crypto
+      6.21%  marshall
+      5.49%  http-client
+      2.80%  pipeline-framework
+      2.69%  signing
+      2.23%  endpoint-rules
+      1.35%  thread-sync
+      0.88%  retry
+      0.52%  other
+      0.10%  unmarshall
+  top self frames:
+     22.73%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8JsonGenerator._writeStringSegment
+     10.46%  __GI___send
+      8.13%  sha256_implCompressMB
+      7.04%  java/lang/String.charAt
+      4.40%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8JsonGenerator.writeName
+      4.25%  itable stub
+      1.86%  copy_byte_f
+      1.76%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/JsonWriteContext.writeValue
+      1.35%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/UTF8JsonGenerator.writeString
+      1.35%  java/util/LinkedHashMap$LinkedHashIterator.nextNode
+      1.24%  jbyte_disjoint_arraycopy
+      1.24%  software/amazon/smithy/java/json/jackson/JacksonJsonSerializer$JsonMapSerializer.writeEntry
+      1.24%  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/JsonWriteContext.writeName
+      1.14%  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/SharedSerde$PutItemInputAttributeMapSerializer.accept
+
+### v1_batch-get
+client-code samples: 9,417   (jvm/harness excluded: 1,309)   ops=62,500 [22,500+40,000]
+  categories:
+     74.14%  unmarshall
+     14.01%  json
+      4.96%  http-client
+      2.81%  socket-syscall
+      1.49%  signing
+      1.28%  marshall
+      0.92%  retry
+      0.16%  crypto
+      0.15%  other
+      0.05%  pipeline-framework
+      0.02%  thread-sync
+  top self frames:
+     21.83%  java/util/Stack.peek
+     21.00%  java/util/Vector.isEmpty
+      7.06%  java/lang/String.equals
+      6.28%  java/util/Vector.size
+      2.84%  com/amazonaws/transform/JsonUnmarshallerContextImpl.testExpression
+      2.15%  com/amazonaws/transform/JsonUnmarshallerContextImpl.nextToken
+      1.85%  com/fasterxml/jackson/core/json/UTF8StreamJsonParser._finishAndReturnString
+      1.79%  com/amazonaws/transform/JsonUnmarshallerContextImpl.updateContext
+      1.64%  java/util/Vector.addElement
+      1.61%  com/fasterxml/jackson/core/json/UTF8StreamJsonParser._parseName
+      1.51%  com/fasterxml/jackson/core/json/UTF8StreamJsonParser.nextToken
+      1.50%  __read
+      1.43%  java/util/Stack.pop
+      1.43%  java/util/Vector.elementData
+
+### v1_batch-put
+client-code samples: 4,329   (jvm/harness excluded: 992)   ops=62,500 [22,500+40,000]
+  categories:
+     50.68%  marshall
+     19.13%  json
+     10.26%  http-client
+      9.98%  socket-syscall
+      3.65%  crypto
+      3.35%  signing
+      1.73%  retry
+      0.60%  unmarshall
+      0.32%  other
+      0.18%  thread-sync
+      0.12%  pipeline-framework
+  top self frames:
+     21.07%  java/util/HashMap.getNode
+      9.61%  com/amazonaws/protocol/json/internal/MarshallerRegistry.getMarshaller
+      9.10%  com/fasterxml/jackson/core/json/UTF8JsonGenerator._writeStringSegment
+      7.97%  __GI___libc_write
+      3.79%  itable stub
+      3.33%  sha256_implCompressMB
+      2.54%  com/amazonaws/protocol/json/internal/JsonProtocolMarshaller.doMarshall
+      1.99%  com/fasterxml/jackson/core/json/UTF8JsonGenerator.writeFieldName
+      1.89%  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$1.marshall
+      1.80%  java/lang/String.charAt
+      1.62%  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$14.marshall
+      1.39%  copy_byte_f
+      1.34%  java/util/HashMap.get
+      1.25%  java/util/HashMap.hash
+
+### v2-async_batch-get
+client-code samples: 4,052   (jvm/harness excluded: 1,473)   ops=67,500 [27,500+40,000]
+  categories:
+     37.54%  unmarshall
+     24.36%  json
+      9.55%  pipeline-framework
+      7.87%  socket-syscall
+      5.48%  other
+      5.11%  http-client
+      3.28%  signing
+      2.20%  marshall
+      1.95%  thread-sync
+      1.58%  endpoint-rules
+      0.64%  retry
+      0.44%  crypto
+  top self frames:
+      4.49%  java/util/HashMap.putVal
+      4.37%  itable stub
+      3.43%  __read
+      3.23%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._finishAndReturnString
+      2.94%  software/amazon/awssdk/services/dynamodb/model/AttributeValue.<init>
+      2.91%  /tmp/AWSCRT_7119274115750438376libaws-crt-jni.so
+      2.52%  software/amazon/awssdk/thirdparty/jackson/core/sym/ByteQuadsCanonicalizer.findName
+      2.44%  vtable stub
+      2.42%  copy_byte_f
+      2.42%  __GI___send
+      2.27%  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.valueFor
+      2.20%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser.nextToken
+      1.90%  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.<init>
+      1.83%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._skipWSOrEnd
+
+### v2-async_batch-put
+client-code samples: 4,818   (jvm/harness excluded: 1,471)   ops=67,500 [27,500+40,000]
+  categories:
+     45.52%  marshall
+     18.00%  json
+      9.76%  pipeline-framework
+      5.13%  signing
+      4.52%  socket-syscall
+      4.38%  http-client
+      4.03%  crypto
+      2.89%  other
+      1.95%  thread-sync
+      1.78%  endpoint-rules
+      1.18%  unmarshall
+      0.87%  retry
+  top self frames:
+     14.09%  itable stub
+      8.82%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator._writeStringSegment
+      3.49%  sha256_implCompressMB
+      3.42%  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.marshallPayloadField
+      3.20%  java/util/Arrays$ArrayItr.hasNext
+      3.05%  software/amazon/awssdk/core/SdkField.get
+      2.82%  java/util/Arrays$ArrayItr.next
+      2.55%  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.doMarshall
+      2.51%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator.writeFieldName
+      2.12%  __GI___send
+      1.99%  copy_byte_f
+      1.78%  /tmp/AWSCRT_15052577280939745315libaws-crt-jni.so
+      1.66%  software/amazon/awssdk/protocols/core/AbstractMarshallingRegistry.toMarshallingType
+      1.62%  java/lang/String.charAt
+
+### v2-sync_batch-get
+client-code samples: 4,933   (jvm/harness excluded: 1,864)   ops=70,000 [30,000+40,000]
+  categories:
+     36.39%  unmarshall
+     23.88%  json
+     12.06%  pipeline-framework
+      8.78%  http-client
+      6.67%  socket-syscall
+      4.84%  signing
+      2.94%  marshall
+      2.27%  endpoint-rules
+      0.77%  crypto
+      0.71%  other
+      0.61%  retry
+      0.08%  thread-sync
+  top self frames:
+      5.09%  itable stub
+      3.99%  java/util/HashMap.putVal
+      3.10%  software/amazon/awssdk/services/dynamodb/model/AttributeValue.<init>
+      2.80%  vtable stub
+      2.78%  __read
+      2.74%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._finishAndReturnString
+      2.72%  __GI___libc_write
+      2.64%  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.valueFor
+      2.64%  software/amazon/awssdk/thirdparty/jackson/core/sym/ByteQuadsCanonicalizer.findName
+      2.41%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser.nextToken
+      2.15%  software/amazon/awssdk/services/dynamodb/model/BatchGetResponseMapCopier$$Lambda.0x00000f000125c468.accept
+      1.89%  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.<init>
+      1.80%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._skipWSOrEnd
+      1.64%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8StreamJsonParser._parseName
+
+### v2-sync_batch-put
+client-code samples: 5,940   (jvm/harness excluded: 1,751)   ops=70,000 [30,000+40,000]
+  categories:
+     51.09%  marshall
+     17.63%  json
+      7.46%  socket-syscall
+      6.95%  http-client
+      5.77%  pipeline-framework
+      4.04%  signing
+      3.33%  crypto
+      1.58%  endpoint-rules
+      0.96%  unmarshall
+      0.59%  retry
+      0.49%  other
+      0.10%  thread-sync
+  top self frames:
+     13.89%  itable stub
+      8.20%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator._writeStringSegment
+      6.58%  java/util/Arrays$ArrayItr.next
+      6.06%  __GI___libc_write
+      4.66%  java/util/Arrays$ArrayItr.hasNext
+      3.92%  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.marshallPayloadField
+      3.37%  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.doMarshall
+      2.83%  sha256_implCompressMB
+      2.81%  software/amazon/awssdk/core/SdkField.get
+      2.15%  software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator.writeFieldName
+      1.82%  java/lang/String.charAt
+      1.55%  software/amazon/awssdk/services/dynamodb/model/AttributeValue.lambda$getter$0
+      1.21%  software/amazon/awssdk/protocols/core/AbstractMarshallingRegistry.toMarshallingType
+      1.18%  java/util/EnumMap.unmaskNull
+
+==============================================================================
+## ALLOC
+==============================================================================
+
+### smithy_batch-get
+client-code bytes: 19,101,594,740   = 218,304 bytes/op   ops=87,500 [47,500+40,000]
+  categories:
+     48.85%  unmarshall    106,637 B/op
+     32.49%  json     70,938 B/op
+     16.82%  http-client     36,712 B/op
+      0.73%  pipeline-framework      1,588 B/op
+      0.71%  signing      1,540 B/op
+      0.26%  endpoint-rules        575 B/op
+      0.09%  retry        186 B/op
+      0.02%  crypto         54 B/op
+      0.02%  other         51 B/op
+      0.01%  marshall         24 B/op
+  top allocation sites:
+     30.89%     67,444 B/op  software/amazon/smithy/java/internal/shaded/tools/jackson/core/util/TextBuffer.setCurrentAndReturn
+     21.18%     46,227 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/SharedSerde$AttributeMap$ValueDeserializer.accept
+     16.28%     35,550 B/op  software/amazon/smithy/java/http/client/ManagedResponseInputStream.readKnownLength
+      9.56%     20,870 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/AttributeValue.builder
+      6.64%     14,488 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/AttributeValue$Builder.s
+      5.42%     11,828 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/SharedSerde$MapAttributeValue$ValueDeserializer.accept
+      2.34%      5,105 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/AttributeValue$Builder.n
+      0.72%      1,582 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/SharedSerde$ListAttributeValue$MemberDeserializer.accept
+      0.69%      1,504 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/SharedSerde.deserializeMapAttributeValue
+      0.66%      1,438 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/SharedSerde.deserializeAttributeMap
+      0.50%      1,091 B/op  software/amazon/smithy/java/io/ByteBufferOutputStream.ensureCapacity
+      0.36%        779 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/AttributeValue$MMember.<init>
+      0.33%        731 B/op  software/amazon/awssdk/benchmark/smithyjava/dynamodb/model/AttributeValue$LMember.<init>
+      0.23%        503 B/op  software/amazon/smithy/java/context/OverlayContext.put
+
+### smithy_batch-put
+client-code bytes: 8,314,914,002   = 123,184 bytes/op   ops=67,500 [27,500+40,000]
+  categories:
+     95.84%  json    118,054 B/op
+      1.17%  signing      1,437 B/op
+      1.00%  http-client      1,235 B/op
+      0.98%  pipeline-framework      1,212 B/op
+      0.46%  endpoint-rules        567 B/op
+      0.20%  retry        249 B/op
+      0.19%  unmarshall        233 B/op
+      0.08%  other        105 B/op
+      0.06%  crypto         78 B/op
+      0.01%  marshall         16 B/op
+  top allocation sites:
+     94.32%    116,182 B/op  software/amazon/smithy/java/io/ByteBufferOutputStream.ensureCapacity
+      0.30%        365 B/op  software/amazon/smithy/java/context/OverlayContext.put
+      0.29%        357 B/op  software/amazon/smithy/java/http/client/h1/H1Utils.parseHeaderLine
+      0.26%        326 B/op  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/JsonWriteContext.createChildObjectContext
+      0.25%        303 B/op  software/amazon/smithy/java/aws/client/auth/scheme/sigv4/SigV4Signer.getAuthHeader
+      0.23%        287 B/op  software/amazon/smithy/java/context/ChunkedArrayStorageContext.createChunk
+      0.20%        249 B/op  software/amazon/smithy/java/internal/shaded/tools/jackson/core/json/ByteSourceJsonBootstrapper.constructParser
+      0.20%        241 B/op  software/amazon/smithy/java/context/ChunkedArrayStorageContext.copyTo
+      0.18%        217 B/op  software/amazon/smithy/java/http/api/ArrayHttpHeaders.<init>
+      0.16%        202 B/op  software/amazon/smithy/java/io/ByteBufferOutputStream.<init>
+      0.14%        171 B/op  software/amazon/smithy/java/aws/client/auth/scheme/sigv4/SigV4Signer.sign
+      0.11%        140 B/op  software/amazon/smithy/java/rulesengine/BytecodeEvaluator.runLoop
+      0.11%        132 B/op  software/amazon/smithy/java/aws/client/auth/scheme/sigv4/SigV4Signer.signInPlace
+      0.11%        132 B/op  software/amazon/smithy/java/aws/client/auth/scheme/sigv4/SigV4Signer.computeSignature
+
+### v1_batch-get
+client-code bytes: 18,633,930,736   = 266,199 bytes/op   ops=70,000 [30,000+40,000]
+  categories:
+     59.94%  unmarshall    159,548 B/op
+     26.75%  json     71,221 B/op
+      5.68%  http-client     15,129 B/op
+      5.62%  signing     14,950 B/op
+      0.97%  retry      2,576 B/op
+      0.90%  marshall      2,397 B/op
+      0.06%  crypto        157 B/op
+      0.05%  pipeline-framework        135 B/op
+      0.03%  other         86 B/op
+  top allocation sites:
+     28.85%     76,801 B/op  com/amazonaws/services/dynamodbv2/model/transform/AttributeValueJsonUnmarshaller.unmarshall
+     25.45%     67,745 B/op  com/fasterxml/jackson/core/util/TextBuffer.setCurrentAndReturn
+     19.01%     50,609 B/op  com/amazonaws/transform/MapUnmarshaller.unmarshall
+     10.13%     26,971 B/op  com/amazonaws/transform/JsonUnmarshallerContextImpl.updateContext
+      1.47%      3,902 B/op  org/apache/http/entity/InputStreamEntity.writeTo
+      0.97%      2,576 B/op  com/amazonaws/transform/ListUnmarshaller.unmarshallJsonToList
+      0.95%      2,524 B/op  com/amazonaws/auth/AWS4Signer.createCanonicalRequest
+      0.82%      2,195 B/op  com/amazonaws/auth/AWS4Signer.buildAuthorizationHeader
+      0.76%      2,030 B/op  com/amazonaws/services/dynamodbv2/model/AttributeValue.setL
+      0.66%      1,760 B/op  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$14.marshall
+      0.43%      1,138 B/op  com/amazonaws/util/StringUtils.appendCompactedString
+      0.42%      1,131 B/op  com/amazonaws/util/StringUtils.lowerCase
+      0.41%      1,086 B/op  com/amazonaws/auth/AWS4Signer.getSignedHeadersString
+      0.39%      1,049 B/op  com/amazonaws/protocol/json/SdkJsonGenerator.<init>
+
+### v1_batch-put
+client-code bytes: 11,947,174,338   = 191,155 bytes/op   ops=62,500 [22,500+40,000]
+  categories:
+     81.15%  json    155,130 B/op
+      7.84%  signing     14,982 B/op
+      7.81%  http-client     14,932 B/op
+      1.34%  retry      2,567 B/op
+      1.12%  marshall      2,147 B/op
+      0.41%  unmarshall        780 B/op
+      0.14%  crypto        277 B/op
+      0.13%  pipeline-framework        243 B/op
+      0.05%  other         96 B/op
+  top allocation sites:
+     59.87%    114,437 B/op  com/fasterxml/jackson/core/json/UTF8JsonGenerator._flushBuffer
+     19.83%     37,900 B/op  com/amazonaws/protocol/json/SdkJsonGenerator.getBytes
+      2.14%      4,094 B/op  org/apache/http/entity/InputStreamEntity.writeTo
+      1.18%      2,265 B/op  com/amazonaws/auth/AWS4Signer.buildAuthorizationHeader
+      1.11%      2,114 B/op  com/amazonaws/auth/AWS4Signer.createCanonicalRequest
+      0.73%      1,401 B/op  com/amazonaws/auth/AbstractAWSSigner.hash
+      0.70%      1,342 B/op  com/amazonaws/protocol/json/internal/SimpleTypeJsonMarshallers$14.marshall
+      0.66%      1,267 B/op  com/amazonaws/auth/AWS4Signer.getSignedHeadersString
+      0.54%      1,040 B/op  com/amazonaws/protocol/json/SdkJsonGenerator.<init>
+      0.53%      1,015 B/op  com/amazonaws/auth/AWS4Signer.shouldExcludeHeaderFromSigning
+      0.52%        990 B/op  com/amazonaws/util/StringUtils.appendCompactedString
+      0.50%        956 B/op  org/apache/http/protocol/BasicHttpContext.setAttribute
+      0.50%        948 B/op  com/amazonaws/util/StringUtils.lowerCase
+      0.42%        805 B/op  com/amazonaws/auth/AbstractAWSSigner.doHash
+
+### v2-async_batch-get
+client-code bytes: 52,357,119,150   = 747,959 bytes/op   ops=70,000 [30,000+40,000]
+  categories:
+     77.06%  unmarshall    576,349 B/op
+      9.41%  json     70,412 B/op
+      8.31%  pipeline-framework     62,180 B/op
+      3.13%  signing     23,391 B/op
+      1.14%  http-client      8,546 B/op
+      0.35%  marshall      2,621 B/op
+      0.28%  endpoint-rules      2,127 B/op
+      0.23%  retry      1,723 B/op
+      0.05%  other        348 B/op
+      0.04%  crypto        262 B/op
+  top allocation sites:
+     16.00%    119,665 B/op  software/amazon/awssdk/services/dynamodb/model/BatchGetResponseMapCopier.lambda$copy$0
+     12.50%     93,503 B/op  software/amazon/awssdk/core/internal/http/async/AsyncResponseHandler$BaosSubscriber.onNext
+     11.44%     85,579 B/op  software/amazon/awssdk/services/dynamodb/model/AttributeValue.builder
+      9.93%     74,299 B/op  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.build
+      9.04%     67,596 B/op  software/amazon/awssdk/thirdparty/jackson/core/util/TextBuffer.setCurrentAndReturn
+      8.06%     60,256 B/op  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.parseMap
+      5.74%     42,902 B/op  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.<init>
+      5.08%     38,018 B/op  software/amazon/awssdk/crt/http/HttpStreamResponseHandlerNativeAdapter.onResponseBody
+      4.91%     36,760 B/op  software/amazon/awssdk/utils/BinaryUtils.copyBytesFrom
+      4.90%     36,685 B/op  software/amazon/awssdk/core/internal/http/async/AsyncResponseHandler.lambda$prepare$0
+      1.53%     11,459 B/op  software/amazon/awssdk/services/dynamodb/model/MapAttributeValueCopier.lambda$copy$0
+      0.96%      7,213 B/op  software/amazon/awssdk/services/dynamodb/model/BatchGetResponseMapCopier.lambda$copy$1
+      0.80%      6,014 B/op  software/amazon/awssdk/utils/IoUtils.toByteArray
+      0.54%      4,074 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/util/ChecksumUtil.lambda$readAll$0
+
+### v2-async_batch-put
+client-code bytes: 25,991,250,207   = 371,304 bytes/op   ops=70,000 [30,000+40,000]
+  categories:
+     47.15%  pipeline-framework    175,059 B/op
+     31.52%  json    117,043 B/op
+      9.98%  marshall     37,052 B/op
+      6.38%  signing     23,690 B/op
+      2.43%  http-client      9,010 B/op
+      1.04%  unmarshall      3,850 B/op
+      0.71%  endpoint-rules      2,636 B/op
+      0.57%  retry      2,105 B/op
+      0.12%  other        445 B/op
+      0.11%  crypto        412 B/op
+  top allocation sites:
+     43.45%    161,316 B/op  software/amazon/awssdk/utils/IoUtils.toByteArray
+     30.81%    114,407 B/op  software/amazon/awssdk/protocols/json/SdkByteArrayOutputStream.write
+      8.86%     32,888 B/op  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.doMarshall
+      1.08%      3,992 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/util/ChecksumUtil.lambda$readAll$0
+      0.69%      2,562 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/V4CanonicalRequest.getCanonicalHeadersString
+      0.68%      2,532 B/op  software/amazon/awssdk/utils/CollectionUtils.lambda$deepCopyMap$1
+      0.68%      2,517 B/op  software/amazon/awssdk/http/DefaultSdkHttpFullRequest$Builder.putHeader
+      0.61%      2,262 B/op  software/amazon/awssdk/http/crt/internal/request/CrtRequestAdapter.lambda$createAsyncHttpHeaderList$4
+      0.41%      1,513 B/op  software/amazon/awssdk/protocols/json/internal/marshall/SimpleTypeJsonMarshaller$13.marshall
+      0.38%      1,393 B/op  software/amazon/awssdk/crt/http/HttpHeader.<init>
+      0.34%      1,266 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/V4RequestSigner.lambda$header$0
+      0.29%      1,094 B/op  software/amazon/awssdk/utils/CompletableFutureUtils.forwardExceptionTo
+      0.28%      1,056 B/op  software/amazon/awssdk/crt/http/HttpRequestBase.marshalForJni
+      0.27%      1,004 B/op  software/amazon/awssdk/protocols/json/SdkByteArrayOutputStream.<init>
+
+### v2-sync_batch-get
+client-code bytes: 36,146,689,397   = 535,507 bytes/op   ops=67,500 [27,500+40,000]
+  categories:
+     68.98%  unmarshall    369,401 B/op
+     13.11%  json     70,192 B/op
+      9.98%  pipeline-framework     53,438 B/op
+      4.06%  signing     21,717 B/op
+      2.58%  http-client     13,833 B/op
+      0.52%  endpoint-rules      2,804 B/op
+      0.37%  marshall      1,996 B/op
+      0.32%  retry      1,693 B/op
+      0.06%  crypto        318 B/op
+      0.02%  other        112 B/op
+  top allocation sites:
+     22.30%    119,405 B/op  software/amazon/awssdk/services/dynamodb/model/BatchGetResponseMapCopier.lambda$copy$0
+     15.73%     84,220 B/op  software/amazon/awssdk/services/dynamodb/model/AttributeValue.builder
+     13.78%     73,781 B/op  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.build
+     12.56%     67,249 B/op  software/amazon/awssdk/thirdparty/jackson/core/util/TextBuffer.setCurrentAndReturn
+     11.54%     61,788 B/op  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.parseMap
+      7.90%     42,324 B/op  software/amazon/awssdk/services/dynamodb/model/AttributeValue$BuilderImpl.<init>
+      2.24%     12,016 B/op  software/amazon/awssdk/services/dynamodb/model/MapAttributeValueCopier.lambda$copy$0
+      1.31%      7,006 B/op  software/amazon/awssdk/services/dynamodb/model/BatchGetResponseMapCopier.lambda$copy$1
+      0.79%      4,233 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/util/ChecksumUtil.lambda$readAll$0
+      0.76%      4,086 B/op  org/apache/hc/core5/http/io/entity/InputStreamEntity.writeTo
+      0.50%      2,703 B/op  software/amazon/awssdk/protocols/json/internal/unmarshall/JsonUnmarshallingParser.parseList
+      0.49%      2,649 B/op  software/amazon/awssdk/services/dynamodb/model/MapAttributeValueCopier.copy
+      0.48%      2,594 B/op  software/amazon/awssdk/services/dynamodb/model/ListAttributeValueCopier.copy
+      0.45%      2,408 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/V4CanonicalRequest.getCanonicalHeadersString
+
+### v2-sync_batch-put
+client-code bytes: 14,113,528,222   = 209,089 bytes/op   ops=67,500 [27,500+40,000]
+  categories:
+     57.53%  json    120,299 B/op
+     17.73%  marshall     37,081 B/op
+      9.96%  signing     20,832 B/op
+      6.56%  http-client     13,725 B/op
+      5.48%  pipeline-framework     11,449 B/op
+      1.11%  endpoint-rules      2,315 B/op
+      0.76%  unmarshall      1,585 B/op
+      0.71%  retry      1,491 B/op
+      0.12%  crypto        241 B/op
+      0.04%  other         74 B/op
+  top allocation sites:
+     56.32%    117,759 B/op  software/amazon/awssdk/protocols/json/SdkByteArrayOutputStream.write
+     16.04%     33,539 B/op  software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshaller.doMarshall
+      2.02%      4,218 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/util/ChecksumUtil.lambda$readAll$0
+      1.91%      3,992 B/op  org/apache/hc/core5/http/io/entity/InputStreamEntity.writeTo
+      1.17%      2,439 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/V4CanonicalRequest.getCanonicalHeadersString
+      1.01%      2,120 B/op  software/amazon/awssdk/utils/CollectionUtils.lambda$deepCopyMap$1
+      0.80%      1,670 B/op  software/amazon/awssdk/http/apache5/internal/impl/Apache5HttpRequestFactory.lambda$addHeadersToRequest$1
+      0.74%      1,538 B/op  software/amazon/awssdk/protocols/json/internal/marshall/SimpleTypeJsonMarshaller$13.marshall
+      0.53%      1,103 B/op  software/amazon/awssdk/http/auth/aws/internal/signer/V4RequestSigner.lambda$header$0
+      0.52%      1,080 B/op  software/amazon/awssdk/http/DefaultSdkHttpFullRequest$Builder.putHeader
+      0.47%        986 B/op  software/amazon/awssdk/protocols/json/SdkByteArrayOutputStream.<init>
+      0.47%        986 B/op  software/amazon/awssdk/http/auth/spi/internal/scheme/DefaultAuthSchemeOption$BuilderImpl.<init>
+      0.43%        901 B/op  software/amazon/awssdk/utils/internal/CodecUtils.toStringDirect
+      0.43%        901 B/op  org/apache/hc/core5/util/CharArrayBuffer.<init>

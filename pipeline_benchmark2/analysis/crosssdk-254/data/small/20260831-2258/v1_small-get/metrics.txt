@@ -1,0 +1,9 @@
+--- metrics client=v1 scenario=small-get iterations=200,000 ---
+METRIC ClientExecuteTime                          count=200,000 totalMs=31,772.3 avgUs=158.86
+METRIC CredentialsRequestTime                     count=200,000 totalMs=0.0 avgUs=0.00
+METRIC HttpClientReceiveResponseTime              count=200,000 totalMs=10,444.9 avgUs=52.22
+METRIC HttpClientSendRequestTime                  count=200,000 totalMs=3,983.5 avgUs=19.92
+METRIC HttpRequestTime                            count=200,000 totalMs=16,871.0 avgUs=84.36
+METRIC RequestMarshallTime                        count=200,000 totalMs=996.8 avgUs=4.98
+METRIC RequestSigningTime                         count=200,000 totalMs=3,622.3 avgUs=18.11
+METRIC ResponseProcessingTime                     count=200,000 totalMs=5,612.8 avgUs=28.06

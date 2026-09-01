@@ -1,0 +1,12 @@
+--- metrics client=v2-sync scenario=small-put iterations=200,000 ---
+METRIC ApiCallDuration                            count=200,000 totalMs=31,110.6 avgUs=155.55
+METRIC BackoffDelayDuration                       count=200,000 totalMs=0.0 avgUs=0.00
+METRIC ConcurrencyAcquireDuration                 count=200,000 totalMs=129.8 avgUs=0.65
+METRIC CredentialsFetchDuration                   count=200,000 totalMs=18.8 avgUs=0.09
+METRIC EndpointResolveDuration                    count=200,000 totalMs=1,200.7 avgUs=6.00
+METRIC MarshallingDuration                        count=200,000 totalMs=3,785.9 avgUs=18.93
+METRIC ServiceCallDuration                        count=200,000 totalMs=19,044.6 avgUs=95.22
+METRIC SigningDuration                            count=200,000 totalMs=4,324.3 avgUs=21.62
+METRIC TimeToFirstByte                            count=200,000 totalMs=19,044.6 avgUs=95.22
+METRIC TimeToLastByte                             count=200,000 totalMs=20,938.3 avgUs=104.69
+METRIC UnmarshallingDuration                      count=200,000 totalMs=893.5 avgUs=4.47

@@ -1,0 +1,12 @@
+--- metrics client=v2-async scenario=small-get iterations=200,000 ---
+METRIC ApiCallDuration                            count=200,000 totalMs=36,865.3 avgUs=184.33
+METRIC BackoffDelayDuration                       count=200,000 totalMs=0.0 avgUs=0.00
+METRIC ConcurrencyAcquireDuration                 count=200,000 totalMs=6,059.8 avgUs=30.30
+METRIC CredentialsFetchDuration                   count=200,000 totalMs=48.3 avgUs=0.24
+METRIC EndpointResolveDuration                    count=200,000 totalMs=1,291.9 avgUs=6.46
+METRIC MarshallingDuration                        count=200,000 totalMs=1,736.8 avgUs=8.68
+METRIC ServiceCallDuration                        count=199,999 totalMs=28,680.7 avgUs=143.40
+METRIC SigningDuration                            count=200,000 totalMs=4,869.2 avgUs=24.35
+METRIC TimeToFirstByte                            count=200,000 totalMs=22,571.4 avgUs=112.86
+METRIC TimeToLastByte                             count=200,000 totalMs=29,755.6 avgUs=148.78
+METRIC UnmarshallingDuration                      count=200,000 totalMs=2,969.9 avgUs=14.85

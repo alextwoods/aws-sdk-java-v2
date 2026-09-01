@@ -1,0 +1,9 @@
+--- metrics client=v1 scenario=batch-get iterations=40,000 ---
+METRIC ClientExecuteTime                          count=40,000 totalMs=61,906.1 avgUs=1,547.65
+METRIC CredentialsRequestTime                     count=40,000 totalMs=0.0 avgUs=0.00
+METRIC HttpClientReceiveResponseTime              count=40,000 totalMs=2,609.7 avgUs=65.24
+METRIC HttpClientSendRequestTime                  count=40,000 totalMs=827.1 avgUs=20.68
+METRIC HttpRequestTime                            count=40,000 totalMs=4,062.9 avgUs=101.57
+METRIC RequestMarshallTime                        count=40,000 totalMs=857.6 avgUs=21.44
+METRIC RequestSigningTime                         count=40,000 totalMs=823.7 avgUs=20.59
+METRIC ResponseProcessingTime                     count=40,000 totalMs=54,973.7 avgUs=1,374.34

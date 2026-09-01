@@ -1,0 +1,10 @@
+--- metrics client=smithy scenario=batch-put iterations=40,000 ---
+METRIC smithy.client.call.attempt_duration        count=40,000 totalMs=5,953.9 avgUs=148.85
+METRIC smithy.client.call.auth.resolve_identity_duration count=40,000 totalMs=1.7 avgUs=0.04
+METRIC smithy.client.call.auth.signing_duration   count=40,000 totalMs=1,595.0 avgUs=39.88
+METRIC smithy.client.call.deserialization_duration count=40,000 totalMs=80.8 avgUs=2.02
+METRIC smithy.client.call.duration                count=40,000 totalMs=14,324.1 avgUs=358.10
+METRIC smithy.client.call.request_payload_size    count=40,000 total=1,535,600,000 avg=38,390 (bytes)
+METRIC smithy.client.call.resolve_endpoint_duration count=40,000 totalMs=180.5 avgUs=4.51
+METRIC smithy.client.call.response_payload_size   count=40,000 total=920,000 avg=23 (bytes)
+METRIC smithy.client.call.serialization_duration  count=40,000 totalMs=8,239.9 avgUs=206.00
