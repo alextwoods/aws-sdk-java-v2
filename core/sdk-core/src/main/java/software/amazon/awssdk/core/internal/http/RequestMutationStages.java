@@ -18,6 +18,7 @@ package software.amazon.awssdk.core.internal.http;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.ClientType;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
+import software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyRetryInfoStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyTransactionIdStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyUserAgentStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AuthSchemeResolutionStage;
@@ -32,9 +33,9 @@ import software.amazon.awssdk.core.internal.http.pipeline.stages.QueryParameters
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 
 /**
- * The request-mutation sequence — the eleven stages, run once per request, that take the marshalled
- * request through transaction id, header/query merging, compression, auth scheme and endpoint
- * resolution, checksums and user agent, ending back at an immutable request.
+ * The request-mutation sequence — the twelve stages, run once per request, that take the marshalled
+ * request through transaction id and retry info, header/query merging, compression, auth scheme and
+ * endpoint resolution, checksums and user agent, ending back at an immutable request.
  *
  * <p>This sequence is byte-for-byte the same for the sync and async pipelines (only the
  * {@link ClientType} passed to the checksum stage differs), which is why it lives in one shared
@@ -45,6 +46,7 @@ final class RequestMutationStages implements RequestPipeline<SdkHttpFullRequest,
 
     private final MakeRequestMutableStage makeMutable = new MakeRequestMutableStage();
     private final ApplyTransactionIdStage applyTransactionId = new ApplyTransactionIdStage();
+    private final ApplyRetryInfoStage applyRetryInfo;
     private final MergeCustomHeadersStage mergeCustomHeaders;
     private final MergeCustomQueryParamsStage mergeCustomQueryParams = new MergeCustomQueryParamsStage();
     private final QueryParametersToBodyStage queryParamsToBody = new QueryParametersToBodyStage();
@@ -56,6 +58,7 @@ final class RequestMutationStages implements RequestPipeline<SdkHttpFullRequest,
     private final MakeRequestImmutableStage makeImmutable = new MakeRequestImmutableStage();
 
     RequestMutationStages(HttpClientDependencies dependencies, ClientType clientType) {
+        this.applyRetryInfo = new ApplyRetryInfoStage(dependencies);
         this.mergeCustomHeaders = new MergeCustomHeadersStage(dependencies);
         this.compressRequest = new CompressRequestStage(dependencies);
         this.authSchemeResolution = new AuthSchemeResolutionStage(dependencies);
@@ -69,6 +72,7 @@ final class RequestMutationStages implements RequestPipeline<SdkHttpFullRequest,
             throws Exception {
         SdkHttpFullRequest.Builder mutable = makeMutable.execute(request, context);
         mutable = applyTransactionId.execute(mutable, context);
+        mutable = applyRetryInfo.execute(mutable, context);
         mutable = mergeCustomHeaders.execute(mutable, context);
         mutable = mergeCustomQueryParams.execute(mutable, context);
         mutable = queryParamsToBody.execute(mutable, context);

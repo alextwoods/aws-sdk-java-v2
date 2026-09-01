@@ -271,12 +271,38 @@ public final class RetryableStageHelper {
     }
 
     /**
+     * The value of the {@link #SDK_RETRY_INFO_HEADER} for a given attempt. Shared with
+     * {@link software.amazon.awssdk.core.internal.http.pipeline.stages.ApplyRetryInfoStage}, which pre-stamps the
+     * first attempt's value; the two must agree exactly for that pre-stamping to be usable.
+     */
+    public static String retryInfoHeaderValue(int attemptNumber, int maxAttempts) {
+        return "attempt=" + attemptNumber + "; max=" + maxAttempts;
+    }
+
+    /**
      * Retrieve the request to send to the service, including any detailed retry information headers.
+     *
+     * <p>The first attempt usually needs no work at all. {@code ApplyRetryInfoStage} already stamped
+     * {@code attempt=1} while the mutation sequence had the request in builder form, where the write was free — the map
+     * was already private. Rebuilding here to write the same bytes would cost a full header-map clone plus a second
+     * request materialization, on every single call, because a freshly built request shares its map (see
+     * {@link software.amazon.awssdk.internal.http.LowCopyListMap}). So when the header already reads what this attempt
+     * needs, the request is returned untouched.
+     *
+     * <p>The check is a string comparison against the value this class itself would produce, which makes the fast path
+     * self-verifying: if the stage could not resolve the same max-attempts value, or did not run at all, the comparison
+     * simply fails and the original rebuild happens. Retries always rebuild, which is correct and costs what it always
+     * did — they are rare, and the previous attempt's request now shares the map anyway.
      */
     public SdkHttpFullRequest requestToSend() {
+        String retryInfo = retryInfoHeaderValue(attemptNumber, retryStrategy().maxAttempts());
+
+        if (retryInfo.equals(request.firstMatchingHeader(SDK_RETRY_INFO_HEADER).orElse(null))) {
+            return request;
+        }
+
         return request.toBuilder()
-                      .putHeader(SDK_RETRY_INFO_HEADER, "attempt=" + attemptNumber
-                                                        + "; max=" + retryStrategy().maxAttempts())
+                      .putHeader(SDK_RETRY_INFO_HEADER, retryInfo)
                       .build();
     }
 
