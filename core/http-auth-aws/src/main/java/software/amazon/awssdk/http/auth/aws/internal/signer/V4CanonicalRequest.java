@@ -43,7 +43,11 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
 @Immutable
 public final class V4CanonicalRequest {
     private static final List<String> HEADERS_TO_IGNORE_IN_LOWER_CASE =
-        Arrays.asList("connection", "x-amzn-trace-id", "user-agent", "expect", "transfer-encoding", "x-forwarded-for");
+        Arrays.asList("connection", "x-amzn-trace-id", "user-agent", "expect", "transfer-encoding", "x-forwarded-for",
+                      // The output of signing. Ignoring it keeps re-signing a reused request idempotent (the
+                      // fast header signer and smithy-java both exclude it); including it could only ever fold a
+                      // stale signature from a previous attempt into the canonical request, which is always wrong.
+                      "authorization");
 
     private final SdkHttpRequest request;
     private final String contentHash;
