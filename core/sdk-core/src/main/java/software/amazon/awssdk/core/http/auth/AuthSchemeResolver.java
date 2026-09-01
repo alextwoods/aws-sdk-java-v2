@@ -39,6 +39,7 @@ import software.amazon.awssdk.http.auth.spi.signer.HttpSigner;
 import software.amazon.awssdk.http.auth.spi.signer.SignerProperty;
 import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
 import software.amazon.awssdk.identity.spi.Identity;
+import software.amazon.awssdk.identity.spi.IdentityProperty;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.IdentityProviders;
 import software.amazon.awssdk.identity.spi.ResolveIdentityRequest;
@@ -152,6 +153,12 @@ public final class AuthSchemeResolver {
         // freshly resolved scheme.
         if (authSchemeBeforeInterceptors != null &&
             authSchemeBeforeInterceptors.authSchemeOption() == existingAuthScheme.authSchemeOption()) {
+            // Fast path: the placeholder scheme created by legacy signer attribute writes (signing name/region)
+            // usually contributes nothing, because the resolved option already carries every property. Skip the
+            // option rebuild entirely in that case — this runs on every request.
+            if (!hasPropertyAbsentFrom(existingAuthScheme.authSchemeOption(), selectedAuthScheme.authSchemeOption())) {
+                return selectedAuthScheme;
+            }
             AuthSchemeOption.Builder mergedOption = selectedAuthScheme.authSchemeOption().toBuilder();
             existingAuthScheme.authSchemeOption().forEachSignerProperty(mergedOption::putSignerPropertyIfAbsent);
             existingAuthScheme.authSchemeOption().forEachIdentityProperty(mergedOption::putIdentityPropertyIfAbsent);
@@ -186,6 +193,67 @@ public final class AuthSchemeResolver {
             selectedAuthScheme.signer(),
             mergedOption.build()
         );
+    }
+
+    /**
+     * Returns true if {@code source} carries any signer or identity property that is absent from {@code target} —
+     * i.e. whether a putIfAbsent merge of source into target would change anything. Allocation-free probe used to
+     * skip the per-request option rebuild in the common case.
+     */
+    private static boolean hasPropertyAbsentFrom(AuthSchemeOption source, AuthSchemeOption target) {
+        PropertyAbsenceProbe probe = new PropertyAbsenceProbe(target);
+        source.forEachSignerProperty(probe);
+        if (probe.foundAbsent) {
+            return true;
+        }
+        source.forEachIdentityProperty(probe);
+        return probe.foundAbsent;
+    }
+
+    /**
+     * Builds a {@link ResolveIdentityRequest} from an option's identity properties, returning a shared
+     * empty request when the option has none (the common case).
+     */
+    private static final class IdentityRequestBuilderConsumer implements AuthSchemeOption.IdentityPropertyConsumer {
+        private static final ResolveIdentityRequest EMPTY = ResolveIdentityRequest.builder().build();
+
+        private ResolveIdentityRequest.Builder builder;
+
+        @Override
+        public <T> void accept(IdentityProperty<T> key, T value) {
+            if (builder == null) {
+                builder = ResolveIdentityRequest.builder();
+            }
+            builder.putProperty(key, value);
+        }
+
+        ResolveIdentityRequest buildOrEmpty() {
+            return builder == null ? EMPTY : builder.build();
+        }
+    }
+
+    private static final class PropertyAbsenceProbe
+            implements AuthSchemeOption.SignerPropertyConsumer, AuthSchemeOption.IdentityPropertyConsumer {
+        private final AuthSchemeOption target;
+        private boolean foundAbsent;
+
+        PropertyAbsenceProbe(AuthSchemeOption target) {
+            this.target = target;
+        }
+
+        @Override
+        public <T> void accept(SignerProperty<T> key, T value) {
+            if (!foundAbsent && target.signerProperty(key) == null) {
+                foundAbsent = true;
+            }
+        }
+
+        @Override
+        public <T> void accept(IdentityProperty<T> key, T value) {
+            if (!foundAbsent && target.identityProperty(key) == null) {
+                foundAbsent = true;
+            }
+        }
     }
 
     /**
@@ -275,11 +343,13 @@ public final class AuthSchemeResolver {
             return null;
         }
 
-        ResolveIdentityRequest.Builder identityRequestBuilder = ResolveIdentityRequest.builder();
-        authOption.forEachIdentityProperty(identityRequestBuilder::putProperty);
+        // Most auth options carry no identity properties; share the empty request instead of
+        // building one per call.
+        IdentityRequestBuilderConsumer identityRequestBuilder = new IdentityRequestBuilderConsumer();
+        authOption.forEachIdentityProperty(identityRequestBuilder);
 
         CompletableFuture<? extends T> identity = resolveIdentity(
-            identityProvider, identityRequestBuilder.build(), metricCollector);
+            identityProvider, identityRequestBuilder.buildOrEmpty(), metricCollector);
 
         return new SelectedAuthScheme<>(identity, signer, authOption);
     }
