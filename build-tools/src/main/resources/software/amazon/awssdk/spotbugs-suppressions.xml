@@ -553,6 +553,17 @@
         <Bug pattern="AT_OPERATION_SEQUENCE_ON_CONCURRENT_ABSTRACTION"/>
     </Match>
 
+    <!-- False positive: the reader is created per parse and confined to one thread; pos/depth are
+         plain parse-cursor state, and the only shared structure (the string-cache pool) is an
+         AtomicReferenceArray handed off with CAS. -->
+    <Match>
+        <Class name="software.amazon.awssdk.protocols.json.internal.unmarshall.FastJsonStructuredReader"/>
+        <Or>
+            <Bug pattern="AT_NONATOMIC_OPERATIONS_ON_SHARED_VARIABLE"/>
+            <Bug pattern="AT_STALE_THREAD_WRITE_OF_PRIMITIVE"/>
+        </Or>
+    </Match>
+
     <!-- By design. These methods should block. -->
     <Match>
         <Class name="software.amazon.awssdk.retries.internal.DefaultAdaptiveRetryStrategy"/>

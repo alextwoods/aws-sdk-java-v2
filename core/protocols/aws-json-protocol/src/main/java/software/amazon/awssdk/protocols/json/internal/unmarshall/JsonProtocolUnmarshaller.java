@@ -45,12 +45,14 @@ import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.protocols.core.StringToInstant;
 import software.amazon.awssdk.protocols.core.StringToValueConverter;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
 import software.amazon.awssdk.protocols.json.internal.AwsStructuredPlainJsonFactory;
 import software.amazon.awssdk.protocols.json.internal.MarshallerUtil;
 import software.amazon.awssdk.protocols.json.internal.unmarshall.document.DocumentUnmarshaller;
 import software.amazon.awssdk.protocols.jsoncore.JsonNode;
 import software.amazon.awssdk.protocols.jsoncore.JsonNodeParser;
 import software.amazon.awssdk.protocols.jsoncore.JsonValueNodeFactory;
+import software.amazon.awssdk.utils.IoUtils;
 import software.amazon.awssdk.utils.Lazy;
 import software.amazon.awssdk.utils.builder.Buildable;
 
@@ -68,9 +70,20 @@ public class JsonProtocolUnmarshaller {
     private final JsonUnmarshallingParser unmarshallingParser;
     private final JsonNodeParser parser;
 
+    /**
+     * True when the fast path may parse JSON text bytes directly (no Jackson) for shapes with
+     * generated deserialization code. False for binary formats (CBOR), which keep the Jackson-backed
+     * reader.
+     */
+    private final boolean useByteParser;
+    private final TimestampFormatTrait.Format defaultPayloadTimestampFormat;
+
     private JsonProtocolUnmarshaller(Builder builder) {
         ProtocolUnmarshallDependencies dependencies = builder.protocolUnmarshallDependencies;
         this.registry = dependencies.jsonUnmarshallerRegistry();
+        this.useByteParser = builder.enableFastUnmarshalling
+                             && "JSON".equals(dependencies.jsonFactory().getFormatName());
+        this.defaultPayloadTimestampFormat = dependencies.timestampFormats().get(MarshallLocation.PAYLOAD);
         if (builder.enableFastUnmarshalling) {
             this.unmarshallingParser = JsonUnmarshallingParser.builder()
                                                               .jsonValueNodeFactory(dependencies.nodeValueFactory())
@@ -259,7 +272,62 @@ public class JsonProtocolUnmarshaller {
             unmarshallFromJson(sdkPojo, response.content().get());
             return unmarshallResponse(sdkPojo, response);
         }
+        if (useByteParser && sdkPojo instanceof StructuredJsonReadable) {
+            return byteUnmarshallFromJson((StructuredJsonReadable) sdkPojo, response);
+        }
         return unmarshallFromJson(sdkPojo, response.content().get());
+    }
+
+    /**
+     * Parses the whole JSON text body with the byte-level reader, dispatching straight into the
+     * builder's generated deserialization code.
+     */
+    @SuppressWarnings("unchecked")
+    private <TypeT extends SdkPojo> TypeT byteUnmarshallFromJson(StructuredJsonReadable builder,
+                                                                 SdkHttpFullResponse response) throws IOException {
+        byte[] body = readFully(response);
+        boolean nonNullDocument = FastJsonStructuredReader.parseDocument(body, 0, body.length,
+                                                                         defaultPayloadTimestampFormat,
+                                                                         builder);
+        if (!nonNullDocument) {
+            return null;
+        }
+        return (TypeT) ((Buildable) builder).build();
+    }
+
+    /**
+     * Reads the response body into a byte array, pre-sized from Content-Length when present.
+     */
+    private static byte[] readFully(SdkHttpFullResponse response) throws IOException {
+        InputStream content = response.content().get();
+        int sizeHint = response.firstMatchingHeader("Content-Length")
+                               .map(JsonProtocolUnmarshaller::parseLengthOrNegative)
+                               .orElse(-1);
+        if (sizeHint >= 0) {
+            byte[] body = new byte[sizeHint];
+            int offset = 0;
+            while (offset < sizeHint) {
+                int read = content.read(body, offset, sizeHint - offset);
+                if (read < 0) {
+                    break;
+                }
+                offset += read;
+            }
+            if (offset == sizeHint) {
+                return body;
+            }
+            return java.util.Arrays.copyOf(body, offset);
+        }
+        return IoUtils.toByteArray(content);
+    }
+
+    private static int parseLengthOrNegative(String value) {
+        try {
+            long parsed = Long.parseLong(value);
+            return parsed >= 0 && parsed <= Integer.MAX_VALUE ? (int) parsed : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     @SuppressWarnings("unchecked")
