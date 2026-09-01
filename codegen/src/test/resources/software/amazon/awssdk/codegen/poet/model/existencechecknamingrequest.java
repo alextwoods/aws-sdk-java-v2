@@ -426,10 +426,10 @@ public final class ExistenceCheckNamingRequest extends JsonProtocolTestsRequest 
     }
 
     private BuilderImpl(ExistenceCheckNamingRequest model) {
-      super(model);build(model.build);
-      superValue(model.superValue);
-      toStringValue(model.toStringValue);
-      equalsValue(model.equalsValue);
+      super(model);this.build = model.build;
+      this.superValue = model.superValue;
+      this.toStringValue = model.toStringValue;
+      this.equalsValue = model.equalsValue;
     }
 
     public final Collection<String> getBuild() {

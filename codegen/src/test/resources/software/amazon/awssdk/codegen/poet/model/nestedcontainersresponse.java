@@ -353,9 +353,9 @@ public final class NestedContainersResponse extends JsonProtocolTestsResponse im
     }
 
     private BuilderImpl(NestedContainersResponse model) {
-      super(model);listOfListOfStrings(model.listOfListOfStrings);
-      listOfListOfListOfStrings(model.listOfListOfListOfStrings);
-      mapOfStringToListOfListOfStrings(model.mapOfStringToListOfListOfStrings);
+      super(model);this.listOfListOfStrings = model.listOfListOfStrings;
+      this.listOfListOfListOfStrings = model.listOfListOfListOfStrings;
+      this.mapOfStringToListOfListOfStrings = model.mapOfStringToListOfListOfStrings;
     }
 
     public final Collection<? extends Collection<String>> getListOfListOfStrings() {

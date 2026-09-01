@@ -350,7 +350,7 @@ public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBui
             pageSize(model.pageSize);
             headerParam(model.headerParam);
             queryParam(model.queryParam);
-            prefixHeaders(model.prefixHeaders);
+            this.prefixHeaders = model.prefixHeaders;
         }
 
         public final String getPageSize() {

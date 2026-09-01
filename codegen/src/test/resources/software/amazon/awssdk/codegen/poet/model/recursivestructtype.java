@@ -407,8 +407,8 @@ public final class RecursiveStructType implements SdkPojo, Serializable, ToCopya
     private BuilderImpl(RecursiveStructType model) {
       noRecurse(model.noRecurse);
       recursiveStruct(model.recursiveStruct);
-      recursiveList(model.recursiveList);
-      recursiveMap(model.recursiveMap);
+      this.recursiveList = model.recursiveList;
+      this.recursiveMap = model.recursiveMap;
     }
 
     public final String getNoRecurse() {

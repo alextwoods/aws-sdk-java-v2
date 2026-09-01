@@ -248,10 +248,39 @@ class ModelBuilderSpecs {
 
         shapeModel.getNonStreamingMembers().forEach(m -> {
             String name = m.getVariable().getVariableName();
-            copyBuilderCtor.addStatement("$N(model.$N)", m.getFluentSetterMethodName(), name);
+            if (copyConstructorCanAdopt(m)) {
+                copyBuilderCtor.addStatement("this.$N = model.$N", name, name);
+            } else {
+                copyBuilderCtor.addStatement("$N(model.$N)", m.getFluentSetterMethodName(), name);
+            }
         });
 
         return copyBuilderCtor.build();
+    }
+
+    /**
+     * Whether the copy constructor can take a member straight from the model instead of routing it through the fluent
+     * setter.
+     *
+     * <p>For a list or map member the setter's entire job is a defensive deep copy, because a caller-supplied collection
+     * could be mutated afterwards or contain mutable value lists. A collection reached through {@code model.<field>} is
+     * not caller-supplied: it is whatever the member copier or the generated JSON read path produced when the model was
+     * built, which is deeply unmodifiable in both cases (or an {@code SdkAutoConstruct} sentinel). Copying it again
+     * produces an {@code equals} but distinct structure, and nothing can observe the difference — the collection cannot
+     * be mutated in place by either side, and every builder setter replaces its field wholesale rather than mutating it.
+     * So the copy is pure cost, and on a large response it is the dominant cost: the SDK itself calls
+     * {@code toBuilder()} on every response it unmarshalls, to attach the HTTP response, and on a 25-item DynamoDB
+     * BatchGetItem that rebuilt the whole response spine for nothing.
+     *
+     * <p>Only collections qualify. Setters for other member kinds do not copy — they assign — so there is nothing to
+     * save, and adopting would mean reasoning about every setter that does more than assign.
+     *
+     * <p>Unions never qualify, whatever the member kind. Their setters also call
+     * {@code handleUnionValueChange}, which is what maintains {@code type} and {@code setTypes}; bypassing it would
+     * leave the copied builder without a type.
+     */
+    private boolean copyConstructorCanAdopt(MemberModel member) {
+        return !shapeModel.isUnion() && (member.isList() || member.isMap());
     }
 
     private List<MethodSpec> accessors() {

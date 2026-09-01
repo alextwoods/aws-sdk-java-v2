@@ -562,8 +562,8 @@ public final class QueryParameterOperationRequest extends JsonProtocolTestsReque
       queryParamTwo(model.queryParamTwo);
       stringHeaderMember(model.stringHeaderMember);
       nestedQueryParameterOperation(model.nestedQueryParameterOperation);
-      requiredListQueryParams(model.requiredListQueryParams);
-      optionalListQueryParams(model.optionalListQueryParams);
+      this.requiredListQueryParams = model.requiredListQueryParams;
+      this.optionalListQueryParams = model.optionalListQueryParams;
       statusCodeOnInput(model.statusCodeOnInput);
       payloadMemberWithCustomName(model.payloadMemberWithCustomName);
     }
