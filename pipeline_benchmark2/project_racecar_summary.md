@@ -1694,7 +1694,8 @@ report; the remainder is the executor handoffs and the netty/CRT boundary, out o
 ## Phase B2.b — the immutability barrier, and what was actually behind it
 
 - Commit: `fa076acc284` (`perf(sdk-core): Stamp the first attempt's retry-info header before the barrier`)
-- Raw: `paired/host-20260901-1610` (7 reps, small ops, both clients)
+- Raw: `paired/host-20260901-1610` (discarded variant), `host-20260901-1704` (committed form),
+  `host-20260901-1733` (null experiment) — 7 reps each, small ops
 
 ### The premise was wrong
 
@@ -1740,26 +1741,46 @@ request carrying the headers a marshalled DynamoDB call has: the two round trips
 one round trip plus the untouched return costs **774 B/op** — **−649 B/op on every call**, both clients.
 This is not a sampled profile; it is `getCurrentThreadAllocatedBytes` around 200,000 warmed iterations.
 
-**Whole-call CPU: nothing.** Paired, 7 reps, against phase C:
+**Whole-call CPU: unmeasurable, and the rig said so out loud.** Two paired runs, 7 reps each — the first
+against the discarded builder-threading variant, the second against the committed form:
 
-| client | scenario | phaseC | phaseB2 | delta | spread | wins |
-|--------|----------|-------:|--------:|------:|-------:|-----:|
-| v2-sync | small-get | 107.3 | 108.7 | +1.4% | ±3.8% | 3/7 |
-| v2-sync | small-put | 101.2 | 102.0 | +0.8% | ±3.1% | 3/7 |
-| v2-async | small-get | 171.7 | 170.2 | −0.9% | ±2.3% | 5/7 |
-| v2-async | small-put | 164.4 | 163.0 | −0.8% | ±2.7% | 5/7 |
+| client | scenario | run 1 (variant) | run 2 (committed) |
+|--------|----------|----------------:|------------------:|
+| v2-sync | small-get | +1.4% (3/7) | −0.8% (4/7) |
+| v2-sync | small-put | +0.8% (3/7) | **+4.2% (1/7)** |
+| v2-async | small-get | −0.9% (5/7) | +1.3% (2/7) |
+| v2-async | small-put | −0.8% (5/7) | +0.0% (3/7) |
 
-Latency agrees that there is nothing to see: +0.5%, +0.2%, −0.7%, −0.6%. Sign consistency is 3/7 and 2/7
-on sync — below chance — and 5/7 and 6/7 on async. Read together: **no measurable effect on CPU, and no
-regression either.** 649 B/op is a few percent of a small call's allocation, and a red-black tree copy of
-a dozen entries is a few hundred nanoseconds against 107 µs, so this is the expected outcome, not a
-surprise. Recorded because a null result on a change whose mechanism is proven is worth more than a
-guess about it.
+The two runs disagree case by case, and run 2's sync small-put reads like a real regression: +4.2% CPU,
++2.9% latency, 1 of 7 pairs favouring the candidate. A change that only removes work cannot cost 4%, so
+rather than argue about it, the floor was measured — a **null experiment**, the same jar copied under two
+names, run as both arms, 7 reps, `paired/host-20260901-1733`:
+
+| client | scenario | null delta | spread | "wins" | per-pair |
+|--------|----------|-----------:|-------:|-------:|----------|
+| v2-sync | small-get | +2.7% | ±6.9% | 1/7 | −3.4, +2.8, +0.5, +5.3, +2.0, **+10.3**, +1.5 |
+| v2-sync | small-put | +0.1% | ±4.3% | 4/7 | −3.8, −1.6, +3.4, +3.7, +4.8, −3.3, −2.9 |
+
+Byte-identical code produced **+2.7% at 1/7** on small-get, with one pair at +10.3%. That is the same
+shape as the "regression", so the +4.2% is not interpretable, and neither is any other reading in the
+table. (The summarizer cannot label a same-jar comparison — arms are keyed by the jar's stamped phase —
+so the null was paired from `results.csv` against the run log's execution order. The log also confirms
+`paired-ab.sh` alternates which arm goes first per repetition, ruling out a fixed position bias.)
+
+Verdict on the timing: **no effect measurable at this resolution, and no evidence of regression.** 649
+B/op is a few percent of a small call's allocation, and a red-black tree copy of a dozen entries is a few
+hundred nanoseconds against 107 µs, so the expected effect was always below what this rig resolves.
+
+**Caveat that outlives this phase:** the floor moved. Earlier phases on this host reported ±1.5–2.7%
+paired spreads with 5/5 sign consistency; this session's null resolves only ±4–7% on sync small ops. Any
+sub-2% measurement taken in this window is unusable, and a null run — not a rerun — is what tells you
+which regime you are in.
 
 ### Kept, on these grounds
 
-Not on the timing, which says nothing. The allocation reduction is real and measured, there is no
-regression, the diff is 35 lines plus one stage, and the change is binary compatible. The tests are worth
+Not on the timing, which the null experiment shows cannot speak to an effect this size. The allocation
+reduction is real and measured, there is no evidence of regression, the diff is 35 lines plus one stage,
+and the change is binary compatible. The tests are worth
 having independently: `RetryableStageRequestIsolationTest` pins invariants that had no coverage at all
 before — per-attempt request identity, single-valued attempt headers, each attempt starting from the
 *unsigned* request, that a stale or absent pre-stamped header is not trusted, and that the stage and
