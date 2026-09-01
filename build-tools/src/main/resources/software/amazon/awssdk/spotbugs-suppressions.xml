@@ -564,6 +564,13 @@
         </Or>
     </Match>
 
+    <!-- The attribute-id registry is copy-on-write: elements are written into a fresh array before
+         it is published through the volatile field, so readers never see a partially written slot. -->
+    <Match>
+        <Class name="software.amazon.awssdk.core.interceptor.ExecutionAttribute"/>
+        <Bug pattern="VO_VOLATILE_REFERENCE_TO_ARRAY"/>
+    </Match>
+
     <!-- By design. These methods should block. -->
     <Match>
         <Class name="software.amazon.awssdk.retries.internal.DefaultAdaptiveRetryStrategy"/>

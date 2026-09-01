@@ -15,10 +15,14 @@
 
 package software.amazon.awssdk.core.interceptor;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.UnaryOperator;
 import software.amazon.awssdk.annotations.NotThreadSafe;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.utils.ToString;
@@ -35,29 +39,46 @@ import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
 @SdkPublicApi
 @NotThreadSafe
 public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttributes.Builder, ExecutionAttributes> {
-    private final Map<ExecutionAttribute<?>, Object> attributes;
+    /**
+     * Attribute values, indexed by {@link ExecutionAttribute} id. Every {@code ExecutionAttribute} is a static
+     * final constant with a dense id, so a flat array replaces the per-execution hash map: reads and writes are
+     * a bounds check and an array access, and construction is a single allocation.
+     */
+    private Object[] values;
 
     public ExecutionAttributes() {
-        this.attributes = new IdentityHashMap<>(64);
+        this.values = new Object[ExecutionAttribute.idCapacity()];
     }
 
     protected ExecutionAttributes(Map<? extends ExecutionAttribute<?>, ?> attributes) {
-        this.attributes = new IdentityHashMap<>(attributes);
+        this();
+        attributes.forEach((key, value) -> rawSet(key.id(), value));
     }
-    
+
+    ExecutionAttributes(ExecutionAttributes source) {
+        this.values = source.values.clone();
+    }
+
     /**
      * Retrieve the current value of the provided attribute in this collection of attributes. This will return null if the value
      * is not set.
      */
     public <U> U getAttribute(ExecutionAttribute<U> attribute) {
-        return attribute.storage().get(attributes);
+        return attribute.storage().get(this);
     }
 
     /**
      * Retrieve the collection of attributes.
      */
     public Map<ExecutionAttribute<?>, Object> getAttributes() {
-        return Collections.unmodifiableMap(attributes);
+        Map<ExecutionAttribute<?>, Object> result = new IdentityHashMap<>(values.length);
+        Object[] currentValues = values;
+        for (int i = 0; i < currentValues.length; i++) {
+            if (currentValues[i] != null) {
+                result.put(ExecutionAttribute.forId(i), currentValues[i]);
+            }
+        }
+        return Collections.unmodifiableMap(result);
     }
 
     /**
@@ -72,7 +93,7 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
      * Update or set the provided attribute in this collection of attributes.
      */
     public <U> ExecutionAttributes putAttribute(ExecutionAttribute<U> attribute, U value) {
-        attribute.storage().set(attributes, value);
+        attribute.storage().set(this, value);
         return this;
     }
 
@@ -80,7 +101,7 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
      * Set the provided attribute in this collection of attributes if it does not already exist in the collection.
      */
     public <U> ExecutionAttributes putAttributeIfAbsent(ExecutionAttribute<U> attribute, U value) {
-        attribute.storage().setIfAbsent(attributes, value);
+        attribute.storage().setIfAbsent(this, value);
         return this;
     }
 
@@ -88,9 +109,9 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
      * Merge attributes of a higher precedence into the current lower precedence collection.
      */
     public ExecutionAttributes merge(ExecutionAttributes lowerPrecedenceExecutionAttributes) {
-        Map<ExecutionAttribute<?>, Object> copiedAttributes = new IdentityHashMap<>(this.attributes);
-        lowerPrecedenceExecutionAttributes.getAttributes().forEach(copiedAttributes::putIfAbsent);
-        return new ExecutionAttributes(copiedAttributes);
+        ExecutionAttributes result = new ExecutionAttributes(this);
+        result.putAbsentAttributes(lowerPrecedenceExecutionAttributes);
+        return result;
     }
 
     /**
@@ -98,7 +119,43 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
      */
     public void putAbsentAttributes(ExecutionAttributes lowerPrecedenceExecutionAttributes) {
         if (lowerPrecedenceExecutionAttributes != null) {
-            lowerPrecedenceExecutionAttributes.getAttributes().forEach(attributes::putIfAbsent);
+            Object[] lower = lowerPrecedenceExecutionAttributes.values;
+            for (int i = 0; i < lower.length; i++) {
+                if (lower[i] != null && rawGet(i) == null) {
+                    rawSet(i, lower[i]);
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Raw id-indexed storage, used by ExecutionAttribute.ValueStorage implementations.
+    // ------------------------------------------------------------------
+
+    Object rawGet(int id) {
+        Object[] currentValues = values;
+        return id < currentValues.length ? currentValues[id] : null;
+    }
+
+    void rawSet(int id, Object value) {
+        ensureCapacity(id);
+        values[id] = value;
+    }
+
+    void rawSetIfAbsent(int id, Object value) {
+        if (rawGet(id) == null) {
+            rawSet(id, value);
+        }
+    }
+
+    void rawCompute(int id, UnaryOperator<Object> update) {
+        rawSet(id, update.apply(rawGet(id)));
+    }
+
+    private void ensureCapacity(int id) {
+        if (id >= values.length) {
+            // An attribute registered after this instance was created; grow to cover all current ids.
+            values = Arrays.copyOf(values, Math.max(ExecutionAttribute.idCapacity(), id + 1));
         }
     }
 
@@ -126,19 +183,43 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
         }
 
         ExecutionAttributes that = (ExecutionAttributes) o;
-
-        return attributes != null ? attributes.equals(that.attributes) : that.attributes == null;
+        Object[] a = this.values;
+        Object[] b = that.values;
+        int max = Math.max(a.length, b.length);
+        for (int i = 0; i < max; i++) {
+            Object left = i < a.length ? a[i] : null;
+            Object right = i < b.length ? b[i] : null;
+            if (left == null ? right != null : !left.equals(right)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
     public int hashCode() {
-        return attributes != null ? attributes.hashCode() : 0;
+        int result = 0;
+        Object[] currentValues = values;
+        for (int i = 0; i < currentValues.length; i++) {
+            if (currentValues[i] != null) {
+                // Mirrors Map.Entry hash contract: key hash ^ value hash, summed.
+                result += ExecutionAttribute.forId(i).hashCode() ^ currentValues[i].hashCode();
+            }
+        }
+        return result;
     }
 
     @Override
     public String toString() {
+        List<ExecutionAttribute<?>> keys = new ArrayList<>();
+        Object[] currentValues = values;
+        for (int i = 0; i < currentValues.length; i++) {
+            if (currentValues[i] != null) {
+                keys.add(ExecutionAttribute.forId(i));
+            }
+        }
         return ToString.builder("ExecutionAttributes")
-                       .add("attributes", attributes.keySet())
+                       .add("attributes", keys)
                        .build();
     }
 
@@ -148,7 +229,7 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
 
     private static class UnmodifiableExecutionAttributes extends ExecutionAttributes {
         UnmodifiableExecutionAttributes(ExecutionAttributes executionAttributes) {
-            super(executionAttributes.attributes);
+            super(executionAttributes);
         }
 
         @Override
@@ -167,13 +248,14 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
      * copy() if it's because of {@link #unmodifiableExecutionAttributes(ExecutionAttributes)}.
      */
     public static final class Builder implements CopyableBuilder<ExecutionAttributes.Builder, ExecutionAttributes> {
-        private final Map<ExecutionAttribute<?>, Object> executionAttributes = new IdentityHashMap<>(64);
+        private final ExecutionAttributes executionAttributes;
 
         private Builder() {
+            this.executionAttributes = new ExecutionAttributes();
         }
 
         private Builder(ExecutionAttributes source) {
-            this.executionAttributes.putAll(source.attributes);
+            this.executionAttributes = new ExecutionAttributes(source);
         }
 
         /**

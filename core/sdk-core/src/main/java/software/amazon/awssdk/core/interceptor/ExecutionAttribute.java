@@ -15,7 +15,6 @@
 
 package software.amazon.awssdk.core.interceptor;
 
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -50,9 +49,19 @@ import software.amazon.awssdk.utils.Validate;
 @SdkPublicApi
 public final class ExecutionAttribute<T> {
     private static final ConcurrentMap<String, ExecutionAttribute<?>> NAME_HISTORY = new ConcurrentHashMap<>();
-    
+
+    /**
+     * Registry of all attributes, indexed by {@link #id}. Attributes are static final constants, so this is
+     * append-only and small; it enables {@link ExecutionAttributes} to store values in a dense array indexed
+     * by attribute id instead of a hash map per execution.
+     */
+    private static final Object REGISTRY_LOCK = new Object();
+    private static volatile ExecutionAttribute<?>[] registry = new ExecutionAttribute<?>[64];
+    private static int nextId = 0;
+
     private final String name;
     private final ValueStorage<T> storage;
+    private final int id;
 
     /**
      * Creates a new {@link ExecutionAttribute} bound to the provided type param.
@@ -69,6 +78,45 @@ public final class ExecutionAttribute<T> {
                        new DefaultValueStorage() :
                        storage;
         ensureUnique();
+        this.id = register(this);
+    }
+
+    private static int register(ExecutionAttribute<?> attribute) {
+        synchronized (REGISTRY_LOCK) {
+            int id = nextId++;
+            // Copy-on-write: the element is written before the new array is published through the
+            // volatile field, so readers never observe a partially-registered slot.
+            ExecutionAttribute<?>[] next =
+                java.util.Arrays.copyOf(registry, Math.max(registry.length, id + 1) == registry.length
+                                                  ? registry.length
+                                                  : registry.length * 2);
+            next[id] = attribute;
+            registry = next;
+            return id;
+        }
+    }
+
+    /**
+     * The dense id of this attribute, used by {@link ExecutionAttributes} for array-indexed storage.
+     */
+    int id() {
+        return id;
+    }
+
+    /**
+     * The number of ids allocated so far; the size an id-indexed array needs to cover all current attributes.
+     */
+    static int idCapacity() {
+        synchronized (REGISTRY_LOCK) {
+            return nextId;
+        }
+    }
+
+    /**
+     * The attribute registered with the given id.
+     */
+    static ExecutionAttribute<?> forId(int id) {
+        return registry[id];
     }
 
     /**
@@ -210,49 +258,49 @@ public final class ExecutionAttribute<T> {
 
     /**
      * The value storage allows reading or writing values to this attribute. Used by {@link ExecutionAttributes} for storing
-     * attribute values, whether they are "real" or derived.
+     * attribute values, whether they are "real" or derived. Values live in a dense array on the
+     * {@link ExecutionAttributes}, indexed by attribute id.
      */
     interface ValueStorage<T> {
         /**
-         * Retrieve an attribute's value from the provided attribute map.
+         * Retrieve an attribute's value from the provided attributes.
          */
-        T get(Map<ExecutionAttribute<?>, Object> attributes);
+        T get(ExecutionAttributes attributes);
 
         /**
-         * Set an attribute's value to the provided attribute map.
+         * Set an attribute's value in the provided attributes.
          */
-        void set(Map<ExecutionAttribute<?>, Object> attributes, T value);
+        void set(ExecutionAttributes attributes, T value);
 
         /**
-         * Set an attribute's value to the provided attribute map, if the value is not already in the map.
+         * Set an attribute's value in the provided attributes, if a value is not already present.
          */
-        void setIfAbsent(Map<ExecutionAttribute<?>, Object> attributes, T value);
+        void setIfAbsent(ExecutionAttributes attributes, T value);
     }
 
     /**
-     * An implementation of {@link ValueStorage} that stores the current execution attribute in the provided attributes map.
+     * An implementation of {@link ValueStorage} that stores the current execution attribute in its own slot.
      */
     private final class DefaultValueStorage implements ValueStorage<T> {
         @SuppressWarnings("unchecked") // Safe because of the implementation of set()
         @Override
-        public T get(Map<ExecutionAttribute<?>, Object> attributes) {
-            return (T) attributes.get(ExecutionAttribute.this);
+        public T get(ExecutionAttributes attributes) {
+            return (T) attributes.rawGet(id);
         }
 
         @Override
-        public void set(Map<ExecutionAttribute<?>, Object> attributes, T value) {
-            attributes.put(ExecutionAttribute.this, value);
+        public void set(ExecutionAttributes attributes, T value) {
+            attributes.rawSet(id, value);
         }
 
         @Override
-        public void setIfAbsent(Map<ExecutionAttribute<?>, Object> attributes, T value) {
-            attributes.putIfAbsent(ExecutionAttribute.this, value);
+        public void setIfAbsent(ExecutionAttributes attributes, T value) {
+            attributes.rawSetIfAbsent(id, value);
         }
     }
 
     /**
-     * An implementation of {@link ValueStorage} that derives its value from a different execution attribute in the provided
-     * attributes map.
+     * An implementation of {@link ValueStorage} that derives its value from a different execution attribute.
      */
     private static final class DerivationValueStorage<T, U> implements ValueStorage<T> {
         private final Supplier<ExecutionAttribute<U>> realAttribute;
@@ -267,18 +315,18 @@ public final class ExecutionAttribute<T> {
 
         @SuppressWarnings("unchecked") // Safe because of the implementation of set
         @Override
-        public T get(Map<ExecutionAttribute<?>, Object> attributes) {
-            return readMapping.apply((U) attributes.get(realAttribute.get()));
+        public T get(ExecutionAttributes attributes) {
+            return readMapping.apply((U) attributes.rawGet(realAttribute.get().id()));
         }
 
         @SuppressWarnings("unchecked") // Safe because of the implementation of set
         @Override
-        public void set(Map<ExecutionAttribute<?>, Object> attributes, T value) {
-            attributes.compute(realAttribute.get(), (k, real) -> writeMapping.apply((U) real, value));
+        public void set(ExecutionAttributes attributes, T value) {
+            attributes.rawCompute(realAttribute.get().id(), real -> writeMapping.apply((U) real, value));
         }
 
         @Override
-        public void setIfAbsent(Map<ExecutionAttribute<?>, Object> attributes, T value) {
+        public void setIfAbsent(ExecutionAttributes attributes, T value) {
             T currentValue = get(attributes);
             if (currentValue == null) {
                 set(attributes, value);
@@ -287,8 +335,8 @@ public final class ExecutionAttribute<T> {
     }
 
     /**
-     * An implementation of {@link ValueStorage} that is backed by a different execution attribute in the provided
-     * attributes map (mirrors its value), and maps (updates) to another attribute.
+     * An implementation of {@link ValueStorage} that is backed by a different execution attribute (mirrors its
+     * value), and maps (updates) to another attribute.
      */
     private static final class MappedValueStorage<T, U> implements ValueStorage<T> {
         private final Supplier<ExecutionAttribute<T>> backingAttributeSupplier;
@@ -305,22 +353,22 @@ public final class ExecutionAttribute<T> {
 
         @SuppressWarnings("unchecked") // Safe because of the implementation of set
         @Override
-        public T get(Map<ExecutionAttribute<?>, Object> attributes) {
+        public T get(ExecutionAttributes attributes) {
             return readMapping.apply(
-                (T) attributes.get(backingAttributeSupplier.get()),
-                (U) attributes.get(attributeSupplier.get())
+                (T) attributes.rawGet(backingAttributeSupplier.get().id()),
+                (U) attributes.rawGet(attributeSupplier.get().id())
             );
         }
 
         @SuppressWarnings("unchecked") // Safe because of the implementation of set
         @Override
-        public void set(Map<ExecutionAttribute<?>, Object> attributes, T value) {
-            attributes.put(backingAttributeSupplier.get(), value);
-            attributes.compute(attributeSupplier.get(), (k, attr) -> writeMapping.apply((U) attr, value));
+        public void set(ExecutionAttributes attributes, T value) {
+            attributes.rawSet(backingAttributeSupplier.get().id(), value);
+            attributes.rawCompute(attributeSupplier.get().id(), attr -> writeMapping.apply((U) attr, value));
         }
 
         @Override
-        public void setIfAbsent(Map<ExecutionAttribute<?>, Object> attributes, T value) {
+        public void setIfAbsent(ExecutionAttributes attributes, T value) {
             T currentValue = get(attributes);
             if (currentValue == null) {
                 set(attributes, value);
