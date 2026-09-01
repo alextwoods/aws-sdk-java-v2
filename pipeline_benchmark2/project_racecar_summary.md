@@ -1694,8 +1694,11 @@ report; the remainder is the executor handoffs and the netty/CRT boundary, out o
 ## Phase B2.b — the immutability barrier, and what was actually behind it
 
 - Commit: `fa076acc284` (`perf(sdk-core): Stamp the first attempt's retry-info header before the barrier`)
-- Raw: `paired/host-20260901-1610` (discarded variant), `host-20260901-1704` (committed form),
-  `host-20260901-1733` (null experiment) — 7 reps each, small ops
+- Raw, 7 reps each, small ops: `paired/host-20260901-1840` (committed form) and `host-20260901-1928`
+  (matched null) are the runs to read — both at 200k iterations / 30k warmup, client pinned 32–47.
+  `host-20260901-1610` (discarded variant), `host-20260901-1704` (committed form) and `host-20260901-1733`
+  (null) were taken at the harness default 50k/10k on cores 8–15 and are superseded; see the measurement
+  section for why they are kept rather than deleted.
 
 ### The premise was wrong
 
@@ -1753,32 +1756,56 @@ against the discarded builder-threading variant, the second against the committe
 
 The two runs disagree case by case, and run 2's sync small-put reads like a real regression: +4.2% CPU,
 +2.9% latency, 1 of 7 pairs favouring the candidate. A change that only removes work cannot cost 4%, so
-rather than argue about it, the floor was measured — a **null experiment**, the same jar copied under two
-names, run as both arms, 7 reps, `paired/host-20260901-1733`:
+two things were checked instead of argued about.
 
-| client | scenario | null delta | spread | "wins" | per-pair |
-|--------|----------|-----------:|-------:|-------:|----------|
-| v2-sync | small-get | +2.7% | ±6.9% | 1/7 | −3.4, +2.8, +0.5, +5.3, +2.0, **+10.3**, +1.5 |
-| v2-sync | small-put | +0.1% | ±4.3% | 4/7 | −3.8, −1.6, +3.4, +3.7, +4.8, −3.3, −2.9 |
+**First, the configuration — which was wrong.** Both runs above used `paired-ab.sh`'s default 50,000
+iterations and 10,000 warmup, and pinned the client to cores 8–15. Every earlier phase on this host used
+150,000–200,000 iterations, 20,000–30,000 warmup, and client cores 32–47 with the server on 0–15. A
+50,000-iteration window is about seven seconds of measured work, on half as many cores, adjacent to core
+0 where kernel, IRQ and timer work concentrates — and the host does have periodic background activity
+that is not excluded from the pinned set (a `refresh-policy-routes` timer every ~60 s, `sysstat-collect`
+every 10 min, a resident `chronicled` agent). The host itself was otherwise clean: load 0.03 at rest, no
+other users since the instance booted, no leftover JVMs or harness processes, and the three runs did not
+overlap each other.
 
-Byte-identical code produced **+2.7% at 1/7** on small-get, with one pair at +10.3%. That is the same
-shape as the "regression", so the +4.2% is not interpretable, and neither is any other reading in the
-table. (The summarizer cannot label a same-jar comparison — arms are keyed by the jar's stamped phase —
-so the null was paired from `results.csv` against the run log's execution order. The log also confirms
-`paired-ab.sh` alternates which arm goes first per repetition, ruling out a fixed position bias.)
+So both runs were repeated with the established configuration (`paired/host-20260901-1840`), and it did
+matter — for accuracy, if not for the verdict. Async absolute CPU dropped from ~171 µs/op to ~158 µs/op
+once warmup and iterations were restored, i.e. the short-window runs had been reporting async numbers
+roughly 8% too high through JIT contamination. That is worth knowing independently of B2.b.
 
-Verdict on the timing: **no effect measurable at this resolution, and no evidence of regression.** 649
-B/op is a few percent of a small call's allocation, and a red-black tree copy of a dozen entries is a few
-hundred nanoseconds against 107 µs, so the expected effect was always below what this rig resolves.
+**Second, the floor — measured under the same corrected configuration.** A null experiment, the same jar
+copied under two names and run as both arms, 7 reps, `paired/host-20260901-1928`, beside the corrected
+B2.b comparison:
 
-**Caveat that outlives this phase:** the floor moved. Earlier phases on this host reported ±1.5–2.7%
-paired spreads with 5/5 sign consistency; this session's null resolves only ±4–7% on sync small ops. Any
-sub-2% measurement taken in this window is unusable, and a null run — not a rerun — is what tells you
-which regime you are in.
+| client | scenario | B2.b delta (wins) | null delta (wins) | null worst pair |
+|--------|----------|------------------:|------------------:|----------------:|
+| v2-sync | small-get | +2.4% (2/7) | −0.3% (4/7) | −4.5% |
+| v2-sync | small-put | +0.6% (3/7) | +0.4% (2/7) | **−8.8%** |
+| v2-async | small-get | +1.4% (4/7) | +2.4% (2/7) | +7.2% |
+| v2-async | small-put | −0.1% (4/7) | −1.6% (5/7) | −4.9% |
+
+Identical code produces means from −1.6% to +2.4%, sign consistency from 2/7 to 5/7, and individual pairs
+as extreme as −8.8%. The B2.b column is drawn from that same distribution on every case. (The summarizer
+cannot label a same-jar comparison — arms are keyed by the jar's stamped phase label — so the null was
+paired from `results.csv` against the run log's execution order. The log also confirms `paired-ab.sh`
+alternates which arm goes first per repetition, ruling out a fixed position bias.)
+
+Verdict on the timing: **no effect measurable, and no evidence of regression.** 649 B/op is a few percent
+of a small call's allocation, and a red-black tree copy of a dozen entries is a few hundred nanoseconds
+against 105 µs, so the expected effect was always below what this rig resolves.
+
+**What this says about the method, correcting an earlier reading of it.** The first instinct was that the
+host's noise floor had degraded. It had not. Checking the earlier manifests, D2's paired spreads were
+±2.0–4.6% and C's ±1.5–6.5% — the same regime as today's ±3.3–6.3%. For small operations this rig has
+always resolved roughly ±2.5% on a 7-rep mean, with individual pairs swinging several times that. What
+made D2 and C credible was never tight spreads: it was effect sizes of 3–6% *combined with* 5/5 sign
+consistency and latency agreeing with CPU. Below about 2–3% on small ops, this harness cannot distinguish
+a change from a no-op, and the way to find that out is a null run at the same settings — not a rerun,
+which just produces a second uninterpretable number, as it did here.
 
 ### Kept, on these grounds
 
-Not on the timing, which the null experiment shows cannot speak to an effect this size. The allocation
+Not on the timing, which the matched null shows cannot speak to an effect this size. The allocation
 reduction is real and measured, there is no evidence of regression, the diff is 35 lines plus one stage,
 and the change is binary compatible. The tests are worth
 having independently: `RetryableStageRequestIsolationTest` pins invariants that had no coverage at all
@@ -1804,6 +1831,12 @@ patch is kept at `/tmp/b2b_builder_threading.patch` for the record but is not th
 - **The signer's map clone (item 2 above)** is the other half of the per-attempt header churn and needs
   an `HttpSigner`/`SignRequest` interface change to accept a builder. Worth a design discussion; the
   B2.a idempotency work is already in place as its prerequisite.
+- **Always pass the measurement configuration explicitly.** `paired-ab.sh` defaults to 50,000 iterations
+  and 10,000 warmup, which is not what any phase here was measured at. Use
+  `--iterations 200000 --warmup 30000 --pin-client 32-47 --pin-server 0-15` for small operations on this
+  host, and check the run's `manifest.md` before comparing its numbers against a recorded phase. The
+  defaults cost ~8% accuracy on async absolute CPU through JIT contamination, and the harness's own
+  "N of M runs were not steady-state" warning is the tell.
 - **Allocation profiles from separate `collect.sh` runs are not comparable arm-to-arm.** An attempt to
   verify this change that way showed a uniform −25% across every category, including unmarshalling and
   Apache internals that the change cannot touch: `asprof alloc --total` scales with sample count, so two
