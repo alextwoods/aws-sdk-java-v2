@@ -110,6 +110,9 @@ public class RpcV2CborUnmarshallBenchmark {
         SdkHttpFullResponse response = SdkHttpFullResponse.builder()
                 .statusCode(statusCode)
                 .putHeader("Content-Type", CONTENT_TYPE)
+                // Real HTTP responses carry Content-Length; several unmarshalling optimizations key
+                // off it (body buffer pre-sizing), so the benchmark must include it.
+                .putHeader("Content-Length", String.valueOf(responseBytes.length))
                 .content(AbortableInputStream.create(new ByteArrayInputStream(responseBytes)))
                 .build();
         bh.consume(unmarshaller.unmarshall((SdkPojo) emptyResponse.toBuilder(), response));

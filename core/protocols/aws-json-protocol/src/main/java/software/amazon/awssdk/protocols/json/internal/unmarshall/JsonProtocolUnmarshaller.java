@@ -52,7 +52,6 @@ import software.amazon.awssdk.protocols.json.internal.unmarshall.document.Docume
 import software.amazon.awssdk.protocols.jsoncore.JsonNode;
 import software.amazon.awssdk.protocols.jsoncore.JsonNodeParser;
 import software.amazon.awssdk.protocols.jsoncore.JsonValueNodeFactory;
-import software.amazon.awssdk.utils.IoUtils;
 import software.amazon.awssdk.utils.Lazy;
 import software.amazon.awssdk.utils.builder.Buildable;
 
@@ -273,7 +272,16 @@ public class JsonProtocolUnmarshaller {
             return unmarshallResponse(sdkPojo, response);
         }
         if (useByteParser && sdkPojo instanceof StructuredJsonReadable) {
-            return byteUnmarshallFromJson((StructuredJsonReadable) sdkPojo, response);
+            // The byte-level reader needs the body in memory. Only take it when Content-Length is
+            // known (the normal case for JSON responses), so the buffer is allocated exactly once at
+            // the right size; without a length, draining the stream into a growing buffer costs more
+            // than Jackson's recycled input buffer saves, so keep the streaming reader.
+            int contentLength = response.firstMatchingHeader("Content-Length")
+                                        .map(JsonProtocolUnmarshaller::parseLengthOrNegative)
+                                        .orElse(-1);
+            if (contentLength >= 0) {
+                return byteUnmarshallFromJson((StructuredJsonReadable) sdkPojo, response, contentLength);
+            }
         }
         return unmarshallFromJson(sdkPojo, response.content().get());
     }
@@ -284,41 +292,25 @@ public class JsonProtocolUnmarshaller {
      */
     @SuppressWarnings("unchecked")
     private <TypeT extends SdkPojo> TypeT byteUnmarshallFromJson(StructuredJsonReadable builder,
-                                                                 SdkHttpFullResponse response) throws IOException {
-        byte[] body = readFully(response);
-        boolean nonNullDocument = FastJsonStructuredReader.parseDocument(body, 0, body.length,
+                                                                 SdkHttpFullResponse response,
+                                                                 int contentLength) throws IOException {
+        InputStream content = response.content().get();
+        byte[] body = new byte[contentLength];
+        int offset = 0;
+        while (offset < contentLength) {
+            int read = content.read(body, offset, contentLength - offset);
+            if (read < 0) {
+                break;
+            }
+            offset += read;
+        }
+        boolean nonNullDocument = FastJsonStructuredReader.parseDocument(body, 0, offset,
                                                                          defaultPayloadTimestampFormat,
                                                                          builder);
         if (!nonNullDocument) {
             return null;
         }
         return (TypeT) ((Buildable) builder).build();
-    }
-
-    /**
-     * Reads the response body into a byte array, pre-sized from Content-Length when present.
-     */
-    private static byte[] readFully(SdkHttpFullResponse response) throws IOException {
-        InputStream content = response.content().get();
-        int sizeHint = response.firstMatchingHeader("Content-Length")
-                               .map(JsonProtocolUnmarshaller::parseLengthOrNegative)
-                               .orElse(-1);
-        if (sizeHint >= 0) {
-            byte[] body = new byte[sizeHint];
-            int offset = 0;
-            while (offset < sizeHint) {
-                int read = content.read(body, offset, sizeHint - offset);
-                if (read < 0) {
-                    break;
-                }
-                offset += read;
-            }
-            if (offset == sizeHint) {
-                return body;
-            }
-            return java.util.Arrays.copyOf(body, offset);
-        }
-        return IoUtils.toByteArray(content);
     }
 
     private static int parseLengthOrNegative(String value) {
