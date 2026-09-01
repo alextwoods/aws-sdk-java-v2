@@ -19,6 +19,7 @@ import static software.amazon.awssdk.utils.FunctionalUtils.invokeSafely;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,6 +32,7 @@ import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.awssdk.core.document.Document;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.protocol.MarshallLocation;
 import software.amazon.awssdk.core.protocol.MarshallingKnownType;
 import software.amazon.awssdk.core.protocol.MarshallingType;
@@ -38,6 +40,7 @@ import software.amazon.awssdk.core.traits.ListTrait;
 import software.amazon.awssdk.core.traits.MapTrait;
 import software.amazon.awssdk.core.traits.TimestampFormatTrait;
 import software.amazon.awssdk.core.traits.TraitType;
+import software.amazon.awssdk.protocols.core.StringToValueConverter;
 import software.amazon.awssdk.protocols.jsoncore.JsonNodeParser;
 import software.amazon.awssdk.protocols.jsoncore.JsonValueNodeFactory;
 import software.amazon.awssdk.thirdparty.jackson.core.JsonFactory;
@@ -45,6 +48,7 @@ import software.amazon.awssdk.thirdparty.jackson.core.JsonParseException;
 import software.amazon.awssdk.thirdparty.jackson.core.JsonParser;
 import software.amazon.awssdk.thirdparty.jackson.core.JsonToken;
 import software.amazon.awssdk.utils.BinaryUtils;
+import software.amazon.awssdk.utils.DateUtils;
 import software.amazon.awssdk.utils.builder.Buildable;
 
 /**
@@ -279,11 +283,44 @@ final class JsonUnmarshallingParser {
                     && marshallingKnownType != MarshallingKnownType.STRING
                     && marshallingKnownType != MarshallingKnownType.SDK_BYTES
                 ) {
+                    Object converted = stringValueFor(field, marshallingKnownType, parser);
+                    if (converted != null) {
+                        return converted;
+                    }
                     JsonUnmarshaller<Object> unmarshaller = unmarshallerRegistry.getUnmarshaller(MarshallLocation.PAYLOAD, type);
                     return unmarshaller.unmarshall(context, jsonValueNodeFactory.node(parser, lookAhead),
                                                    (SdkField<Object>) field);
                 }
                 return simpleValueFor(field, marshallingKnownType, context, parser, lookAhead);
+        }
+    }
+
+    /**
+     * Converts a string-typed token for a non-string scalar field (e.g. quoted numbers, "NaN",
+     * "Infinity") directly through the same {@link StringToValueConverter} the registry unmarshaller
+     * would apply, without allocating an intermediate JsonNode or doing a registry lookup. Returns
+     * {@code null} for types that need the registry fallback.
+     */
+    private Object stringValueFor(SdkField<?> field, MarshallingKnownType knownType, JsonParser parser) throws IOException {
+        switch (knownType) {
+            case INTEGER:
+                return StringToValueConverter.TO_INTEGER.convert(parser.getText(), (SdkField<Integer>) field);
+            case LONG:
+                return StringToValueConverter.TO_LONG.convert(parser.getText(), (SdkField<Long>) field);
+            case SHORT:
+                return StringToValueConverter.TO_SHORT.convert(parser.getText(), (SdkField<Short>) field);
+            case BYTE:
+                return StringToValueConverter.TO_BYTE.convert(parser.getText(), (SdkField<Byte>) field);
+            case FLOAT:
+                return StringToValueConverter.TO_FLOAT.convert(parser.getText(), (SdkField<Float>) field);
+            case DOUBLE:
+                return StringToValueConverter.TO_DOUBLE.convert(parser.getText(), (SdkField<Double>) field);
+            case BIG_DECIMAL:
+                return StringToValueConverter.TO_BIG_DECIMAL.convert(parser.getText(), (SdkField<BigDecimal>) field);
+            case BOOLEAN:
+                return StringToValueConverter.TO_BOOLEAN.convert(parser.getText(), (SdkField<Boolean>) field);
+            default:
+                return null;
         }
     }
 
@@ -414,11 +451,50 @@ final class JsonUnmarshallingParser {
         if (format == TimestampFormatTrait.Format.UNIX_TIMESTAMP_MILLIS) {
             return Instant.ofEpochMilli(parser.getLongValue());
         }
+        // Direct parse for the common token/format combinations, applying exactly the conversion the
+        // registry's StringToInstant would (whose input is parser.getText() via an intermediate
+        // JsonNode, which this path skips). Unusual combinations (e.g. CBOR embedded objects) keep
+        // the node path below.
+        switch (format) {
+            case UNIX_TIMESTAMP:
+                if (lookAhead == JsonToken.VALUE_NUMBER_INT
+                    || lookAhead == JsonToken.VALUE_NUMBER_FLOAT
+                    || lookAhead == JsonToken.VALUE_STRING) {
+                    return parseUnixTimestamp(parser.getText());
+                }
+                break;
+            case ISO_8601:
+                if (lookAhead == JsonToken.VALUE_STRING) {
+                    return DateUtils.parseIso8601Date(parser.getText());
+                }
+                break;
+            case RFC_822:
+                if (lookAhead == JsonToken.VALUE_STRING) {
+                    return DateUtils.parseRfc822Date(parser.getText());
+                }
+                break;
+            default:
+                break;
+        }
 
         JsonUnmarshaller<Object> unmarshaller = unmarshallerRegistry.getUnmarshaller(MarshallLocation.PAYLOAD,
                                                                                      field.marshallingType());
         return (Instant) unmarshaller.unmarshall(context, jsonValueNodeFactory.node(parser, lookAhead),
                                                  (SdkField<Object>) field);
+    }
+
+    /**
+     * Mirrors StringToInstant's NumberFormatException wrapping for UNIX_TIMESTAMP values.
+     */
+    private static Instant parseUnixTimestamp(String value) {
+        try {
+            return DateUtils.parseUnixTimestampInstant(value);
+        } catch (NumberFormatException e) {
+            throw SdkClientException.builder()
+                                    .message("Unable to parse date : " + value)
+                                    .cause(e)
+                                    .build();
+        }
     }
 
     /**
