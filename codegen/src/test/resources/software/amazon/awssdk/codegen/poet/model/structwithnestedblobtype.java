@@ -21,7 +21,10 @@ import software.amazon.awssdk.core.protocol.MarshallLocation;
 import software.amazon.awssdk.core.protocol.MarshallingType;
 import software.amazon.awssdk.core.traits.LocationTrait;
 import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.JsonMemberTable;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
+import software.amazon.awssdk.protocols.json.StructuredJsonReader;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
@@ -141,6 +144,12 @@ public final class StructWithNestedBlobType implements SdkPojo, Serializable, To
     }
   }
 
+  static StructWithNestedBlobType $readJson(StructuredJsonReader reader) {
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
+  }
+
   private static <T> Function<Object, T> getter(Function<StructWithNestedBlobType, T> g) {
     return obj -> g.apply((StructWithNestedBlobType) obj);
   }
@@ -161,7 +170,9 @@ public final class StructWithNestedBlobType implements SdkPojo, Serializable, To
     Builder nestedBlob(SdkBytes nestedBlob);
   }
 
-  static final class BuilderImpl implements Builder {
+  static final class BuilderImpl implements Builder, StructuredJsonReadable {
+    private static final JsonMemberTable $JSON_MEMBER_TABLE = JsonMemberTable.of("NestedBlob");
+
     private SdkBytes nestedBlob;
 
     private BuilderImpl() {
@@ -198,6 +209,23 @@ public final class StructWithNestedBlobType implements SdkPojo, Serializable, To
     @Override
     public Map<String, SdkField<?>> sdkFieldNameToField() {
       return SDK_NAME_TO_FIELD;
+    }
+
+    @Override
+    public final void readJsonFields(StructuredJsonReader reader) {
+      reader.readStruct(this, $JSON_MEMBER_TABLE, BuilderImpl::$readJsonMember);
+    }
+
+    private static void $readJsonMember(BuilderImpl b, int memberIndex,
+        StructuredJsonReader reader) {
+      switch (memberIndex) {
+        case 0: {
+          b.nestedBlob = reader.readSdkBytes();
+          break;
+        }
+        default:
+          throw new IllegalStateException("Unexpected member index: " + memberIndex);
+      }
     }
   }
 }

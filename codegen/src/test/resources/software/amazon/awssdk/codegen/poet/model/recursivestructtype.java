@@ -1,10 +1,12 @@
 package software.amazon.awssdk.services.jsonprotocoltests.model;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,7 +31,10 @@ import software.amazon.awssdk.core.util.DefaultSdkAutoConstructMap;
 import software.amazon.awssdk.core.util.SdkAutoConstructList;
 import software.amazon.awssdk.core.util.SdkAutoConstructMap;
 import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.JsonMemberTable;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
+import software.amazon.awssdk.protocols.json.StructuredJsonReader;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
@@ -301,6 +306,12 @@ public final class RecursiveStructType implements SdkPojo, Serializable, ToCopya
     }
   }
 
+  static RecursiveStructType $readJson(StructuredJsonReader reader) {
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
+  }
+
   private static <T> Function<Object, T> getter(Function<RecursiveStructType, T> g) {
     return obj -> g.apply((RecursiveStructType) obj);
   }
@@ -379,7 +390,9 @@ public final class RecursiveStructType implements SdkPojo, Serializable, ToCopya
     Builder recursiveMap(Map<String, RecursiveStructType> recursiveMap);
   }
 
-  static final class BuilderImpl implements Builder {
+  static final class BuilderImpl implements Builder, StructuredJsonReadable {
+    private static final JsonMemberTable $JSON_MEMBER_TABLE = JsonMemberTable.of("NoRecurse", "RecursiveStruct", "RecursiveList", "RecursiveMap");
+
     private String noRecurse;
 
     private RecursiveStructType recursiveStruct;
@@ -479,6 +492,39 @@ public final class RecursiveStructType implements SdkPojo, Serializable, ToCopya
     @Override
     public Map<String, SdkField<?>> sdkFieldNameToField() {
       return SDK_NAME_TO_FIELD;
+    }
+
+    @Override
+    public final void readJsonFields(StructuredJsonReader reader) {
+      reader.readStruct(this, $JSON_MEMBER_TABLE, BuilderImpl::$readJsonMember);
+    }
+
+    private static void $readJsonMember(BuilderImpl b, int memberIndex,
+        StructuredJsonReader reader) {
+      switch (memberIndex) {
+        case 0: {
+          b.noRecurse = reader.readString();
+          break;
+        }
+        case 1: {
+          b.recursiveStruct = RecursiveStructType.$readJson(reader);
+          break;
+        }
+        case 2: {
+          List<RecursiveStructType> recursiveListValue = new ArrayList<>();
+          reader.readList(recursiveListValue, (l0, r0) -> l0.add(r0.readNullIfPresent() ? null : RecursiveStructType.$readJson(r0)));
+          b.recursiveList = Collections.unmodifiableList(recursiveListValue);
+          break;
+        }
+        case 3: {
+          Map<String, RecursiveStructType> recursiveMapValue = new LinkedHashMap<>();
+          reader.readStringMap(recursiveMapValue, (m0, k0, r0) -> m0.put(k0, r0.readNullIfPresent() ? null : RecursiveStructType.$readJson(r0)));
+          b.recursiveMap = Collections.unmodifiableMap(recursiveMapValue);
+          break;
+        }
+        default:
+          throw new IllegalStateException("Unexpected member index: " + memberIndex);
+      }
     }
   }
 }

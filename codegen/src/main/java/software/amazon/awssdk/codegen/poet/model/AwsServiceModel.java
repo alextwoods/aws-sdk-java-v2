@@ -62,6 +62,7 @@ import software.amazon.awssdk.codegen.poet.eventstream.EventStreamUtils;
 import software.amazon.awssdk.codegen.poet.model.TypeProvider.TypeNameOptions;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.StringUtils;
 import software.amazon.awssdk.utils.Validate;
@@ -122,6 +123,15 @@ public class AwsServiceModel implements ClassSpec {
             specBuilder.addSuperinterface(ClassName.get(StructuredJsonWritable.class));
             specBuilder.addFields(jsonWritableSpec.nameTokenFields());
             specBuilder.addMethod(jsonWritableSpec.marshallJsonFieldsMethod());
+        }
+
+        StructuredJsonReadableSpec jsonReadableSpec = new StructuredJsonReadableSpec(intermediateModel,
+                                                                                     shapeModel,
+                                                                                     typeProvider,
+                                                                                     className(),
+                                                                                     modelBuilderSpecs.builderImplName());
+        if (jsonReadableSpec.qualifies()) {
+            specBuilder.addMethod(jsonReadableSpec.readJsonStaticMethod());
         }
 
         if (shapeModel.isUnion()) {
@@ -854,7 +864,7 @@ public class AwsServiceModel implements ClassSpec {
             case Response:
             case Exception:
                 nestedClasses.add(modelBuilderSpecs.builderInterface());
-                nestedClasses.add(modelBuilderSpecs.beanStyleBuilder());
+                nestedClasses.add(addGeneratedJsonReading(modelBuilderSpecs.beanStyleBuilder()));
                 break;
             default:
                 break;
@@ -865,6 +875,27 @@ public class AwsServiceModel implements ClassSpec {
         }
 
         return nestedClasses;
+    }
+
+    /**
+     * Adds the generated {@code StructuredJsonReadable} implementation (member table, readJsonFields,
+     * per-member switch) to the builder implementation for qualifying JSON-protocol shapes.
+     */
+    private TypeSpec addGeneratedJsonReading(TypeSpec builderImpl) {
+        StructuredJsonReadableSpec readableSpec = new StructuredJsonReadableSpec(intermediateModel,
+                                                                                 shapeModel,
+                                                                                 typeProvider,
+                                                                                 className(),
+                                                                                 modelBuilderSpecs.builderImplName());
+        if (!readableSpec.qualifies()) {
+            return builderImpl;
+        }
+        return builderImpl.toBuilder()
+                          .addSuperinterface(ClassName.get(StructuredJsonReadable.class))
+                          .addField(readableSpec.memberTableField())
+                          .addMethod(readableSpec.readJsonFieldsMethod())
+                          .addMethod(readableSpec.readJsonMemberMethod())
+                          .build();
     }
 
     private MethodSpec constructor() {

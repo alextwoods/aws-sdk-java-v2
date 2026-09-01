@@ -10,7 +10,10 @@ import software.amazon.awssdk.annotations.Mutable;
 import software.amazon.awssdk.annotations.NotThreadSafe;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
+import software.amazon.awssdk.protocols.json.JsonMemberTable;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
+import software.amazon.awssdk.protocols.json.StructuredJsonReader;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
@@ -97,12 +100,20 @@ public final class Underscore_Name_Type implements SdkPojo, Serializable, ToCopy
   public final void marshallJsonFields(StructuredJsonGenerator generator) {
   }
 
+  static Underscore_Name_Type $readJson(StructuredJsonReader reader) {
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
+  }
+
   @Mutable
   @NotThreadSafe
   public interface Builder extends SdkPojo, CopyableBuilder<Builder, Underscore_Name_Type> {
   }
 
-  static final class BuilderImpl implements Builder {
+  static final class BuilderImpl implements Builder, StructuredJsonReadable {
+    private static final JsonMemberTable $JSON_MEMBER_TABLE = JsonMemberTable.of();
+
     private BuilderImpl() {
     }
 
@@ -122,6 +133,19 @@ public final class Underscore_Name_Type implements SdkPojo, Serializable, ToCopy
     @Override
     public Map<String, SdkField<?>> sdkFieldNameToField() {
       return SDK_NAME_TO_FIELD;
+    }
+
+    @Override
+    public final void readJsonFields(StructuredJsonReader reader) {
+      reader.readStruct(this, $JSON_MEMBER_TABLE, BuilderImpl::$readJsonMember);
+    }
+
+    private static void $readJsonMember(BuilderImpl b, int memberIndex,
+        StructuredJsonReader reader) {
+      switch (memberIndex) {
+        default:
+          throw new IllegalStateException("Unexpected member index: " + memberIndex);
+      }
     }
   }
 }

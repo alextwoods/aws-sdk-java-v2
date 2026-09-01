@@ -41,6 +41,7 @@ import software.amazon.awssdk.core.traits.MapTrait;
 import software.amazon.awssdk.core.traits.TimestampFormatTrait;
 import software.amazon.awssdk.core.traits.TraitType;
 import software.amazon.awssdk.protocols.core.StringToValueConverter;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
 import software.amazon.awssdk.protocols.jsoncore.JsonNodeParser;
 import software.amazon.awssdk.protocols.jsoncore.JsonValueNodeFactory;
 import software.amazon.awssdk.thirdparty.jackson.core.JsonFactory;
@@ -134,6 +135,15 @@ final class JsonUnmarshallingParser {
      * END_OBJECT.
      */
     private SdkPojo parseSdkPojo(JsonUnmarshallerContext c, SdkPojo pojo, JsonParser parser) throws IOException {
+        // Builders whose members all bind to the payload carry generated straight-line
+        // deserialization code (direct field writes, no setter/copier churn); dispatch to it. The
+        // shape's START_OBJECT has already been consumed here, so hand it to the reader as pending.
+        if (pojo instanceof StructuredJsonReadable) {
+            JacksonStructuredJsonReader reader =
+                new JacksonStructuredJsonReader(parser, defaultFormat, JsonToken.START_OBJECT);
+            ((StructuredJsonReadable) pojo).readJsonFields(reader);
+            return (SdkPojo) ((Buildable) pojo).build();
+        }
         Map<String, SdkField<?>> pojoFields = pojo.sdkFieldNameToField();
         JsonToken currentToken = parser.nextToken();
         while (currentToken != JsonToken.END_OBJECT) {

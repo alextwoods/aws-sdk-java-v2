@@ -109,7 +109,14 @@ public final class StructuredJsonWritableSpec {
     }
 
     private Map<String, Boolean> qualificationMap() {
-        return QUALIFICATION_CACHE.computeIfAbsent(intermediateModel, StructuredJsonWritableSpec::computeQualification);
+        return qualificationFor(intermediateModel);
+    }
+
+    /**
+     * Shared with {@link StructuredJsonReadableSpec}: the transitive payload-only qualification map.
+     */
+    static Map<String, Boolean> qualificationFor(IntermediateModel model) {
+        return QUALIFICATION_CACHE.computeIfAbsent(model, StructuredJsonWritableSpec::computeQualification);
     }
 
     /**
@@ -149,7 +156,9 @@ public final class StructuredJsonWritableSpec {
 
     private static boolean locallyQualifies(IntermediateModel model, ShapeModel shape, Set<String> pojoRefs) {
         ShapeType type = shape.getShapeType();
-        if (type != ShapeType.Request && type != ShapeType.Model) {
+        // Response shapes participate so the read side (StructuredJsonReadableSpec) can share this
+        // map; the write side additionally restricts to Request/Model in qualifies().
+        if (type != ShapeType.Request && type != ShapeType.Model && type != ShapeType.Response) {
             return false;
         }
         if (shape.isEventStream() || shape.isEvent() || shape.isHasStreamingMember() || shape.isDocument()) {
@@ -165,9 +174,10 @@ public final class StructuredJsonWritableSpec {
 
     /**
      * The members the generic loop would marshall: exactly the members that make up the generated
-     * SDK_FIELDS list (non-streaming, non-exception-target, non-synthetic).
+     * SDK_FIELDS list (non-streaming, non-exception-target, non-synthetic). Shared with
+     * {@link StructuredJsonReadableSpec}.
      */
-    private static List<MemberModel> marshallableMembers(ShapeModel shape) {
+    static List<MemberModel> marshallableMembers(ShapeModel shape) {
         List<MemberModel> result = new ArrayList<>();
         for (MemberModel m : shape.getNonStreamingMembers()) {
             if (m.getShape() != null && m.getShape().getShapeType() == ShapeType.Exception) {

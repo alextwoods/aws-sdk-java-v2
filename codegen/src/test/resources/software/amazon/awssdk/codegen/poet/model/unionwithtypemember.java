@@ -23,7 +23,10 @@ import software.amazon.awssdk.core.traits.LocationTrait;
 import software.amazon.awssdk.core.util.SdkAutoConstructList;
 import software.amazon.awssdk.core.util.SdkAutoConstructMap;
 import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.JsonMemberTable;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
+import software.amazon.awssdk.protocols.json.StructuredJsonReader;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
@@ -236,6 +239,12 @@ public final class UnionWithTypeMember implements SdkPojo, Serializable, ToCopya
     }
   }
 
+  static UnionWithTypeMember $readJson(StructuredJsonReader reader) {
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
+  }
+
   private static <T> Function<Object, T> getter(Function<UnionWithTypeMember, T> g) {
     return obj -> g.apply((UnionWithTypeMember) obj);
   }
@@ -264,7 +273,9 @@ public final class UnionWithTypeMember implements SdkPojo, Serializable, ToCopya
     Builder typeValue(String typeValue);
   }
 
-  static final class BuilderImpl implements Builder {
+  static final class BuilderImpl implements Builder, StructuredJsonReadable {
+    private static final JsonMemberTable $JSON_MEMBER_TABLE = JsonMemberTable.of("StringMember", "Type");
+
     private String stringMember;
 
     private String typeValue;
@@ -347,6 +358,27 @@ public final class UnionWithTypeMember implements SdkPojo, Serializable, ToCopya
         this.type = Type.UNKNOWN_TO_SDK_VERSION;
       } else {
         this.type = null;
+      }
+    }
+
+    @Override
+    public final void readJsonFields(StructuredJsonReader reader) {
+      reader.readStruct(this, $JSON_MEMBER_TABLE, BuilderImpl::$readJsonMember);
+    }
+
+    private static void $readJsonMember(BuilderImpl b, int memberIndex,
+        StructuredJsonReader reader) {
+      switch (memberIndex) {
+        case 0: {
+          b.stringMember(reader.readString());
+          break;
+        }
+        case 1: {
+          b.typeValue(reader.readString());
+          break;
+        }
+        default:
+          throw new IllegalStateException("Unexpected member index: " + memberIndex);
       }
     }
   }

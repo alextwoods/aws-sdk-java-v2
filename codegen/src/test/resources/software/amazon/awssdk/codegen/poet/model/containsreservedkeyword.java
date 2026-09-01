@@ -19,7 +19,10 @@ import software.amazon.awssdk.core.protocol.MarshallLocation;
 import software.amazon.awssdk.core.protocol.MarshallingType;
 import software.amazon.awssdk.core.traits.LocationTrait;
 import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.JsonMemberTable;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
+import software.amazon.awssdk.protocols.json.StructuredJsonReader;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
@@ -139,6 +142,12 @@ public final class ContainsReservedKeyword implements SdkPojo, Serializable, ToC
     }
   }
 
+  static ContainsReservedKeyword $readJson(StructuredJsonReader reader) {
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
+  }
+
   private static <T> Function<Object, T> getter(Function<ContainsReservedKeyword, T> g) {
     return obj -> g.apply((ContainsReservedKeyword) obj);
   }
@@ -159,7 +168,9 @@ public final class ContainsReservedKeyword implements SdkPojo, Serializable, ToC
     Builder nul(String nul);
   }
 
-  static final class BuilderImpl implements Builder {
+  static final class BuilderImpl implements Builder, StructuredJsonReadable {
+    private static final JsonMemberTable $JSON_MEMBER_TABLE = JsonMemberTable.of("NULL");
+
     private String nul;
 
     private BuilderImpl() {
@@ -200,6 +211,23 @@ public final class ContainsReservedKeyword implements SdkPojo, Serializable, ToC
     @Override
     public Map<String, SdkField<?>> sdkFieldNameToField() {
       return SDK_NAME_TO_FIELD;
+    }
+
+    @Override
+    public final void readJsonFields(StructuredJsonReader reader) {
+      reader.readStruct(this, $JSON_MEMBER_TABLE, BuilderImpl::$readJsonMember);
+    }
+
+    private static void $readJsonMember(BuilderImpl b, int memberIndex,
+        StructuredJsonReader reader) {
+      switch (memberIndex) {
+        case 0: {
+          b.nul = reader.readString();
+          break;
+        }
+        default:
+          throw new IllegalStateException("Unexpected member index: " + memberIndex);
+      }
     }
   }
 }

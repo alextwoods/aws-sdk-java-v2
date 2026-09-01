@@ -20,7 +20,10 @@ import software.amazon.awssdk.core.protocol.MarshallingType;
 import software.amazon.awssdk.core.traits.LocationTrait;
 import software.amazon.awssdk.core.traits.RequiredTrait;
 import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.JsonMemberTable;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
+import software.amazon.awssdk.protocols.json.StructuredJsonReader;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
@@ -230,6 +233,12 @@ public final class NestedQueryParameterOperation implements SdkPojo, Serializabl
     }
   }
 
+  static NestedQueryParameterOperation $readJson(StructuredJsonReader reader) {
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
+  }
+
   private static <T> Function<Object, T> getter(Function<NestedQueryParameterOperation, T> g) {
     return obj -> g.apply((NestedQueryParameterOperation) obj);
   }
@@ -274,7 +283,9 @@ public final class NestedQueryParameterOperation implements SdkPojo, Serializabl
     Builder nestedStatusCode(Integer nestedStatusCode);
   }
 
-  static final class BuilderImpl implements Builder {
+  static final class BuilderImpl implements Builder, StructuredJsonReadable {
+    private static final JsonMemberTable $JSON_MEMBER_TABLE = JsonMemberTable.of("QueryParamOne", "QueryParamTwo", "NestedHeaderMember", "NestedStatusCode");
+
     private String queryParamOne;
 
     private String queryParamTwo;
@@ -362,6 +373,35 @@ public final class NestedQueryParameterOperation implements SdkPojo, Serializabl
     @Override
     public Map<String, SdkField<?>> sdkFieldNameToField() {
       return SDK_NAME_TO_FIELD;
+    }
+
+    @Override
+    public final void readJsonFields(StructuredJsonReader reader) {
+      reader.readStruct(this, $JSON_MEMBER_TABLE, BuilderImpl::$readJsonMember);
+    }
+
+    private static void $readJsonMember(BuilderImpl b, int memberIndex,
+        StructuredJsonReader reader) {
+      switch (memberIndex) {
+        case 0: {
+          b.queryParamOne = reader.readString();
+          break;
+        }
+        case 1: {
+          b.queryParamTwo = reader.readString();
+          break;
+        }
+        case 2: {
+          b.nestedHeaderMember = reader.readString();
+          break;
+        }
+        case 3: {
+          b.nestedStatusCode = reader.readInt();
+          break;
+        }
+        default:
+          throw new IllegalStateException("Unexpected member index: " + memberIndex);
+      }
     }
   }
 }

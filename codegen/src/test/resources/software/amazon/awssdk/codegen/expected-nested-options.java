@@ -17,6 +17,7 @@ import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -35,7 +36,10 @@ import software.amazon.awssdk.core.traits.MapTrait;
 import software.amazon.awssdk.core.util.DefaultSdkAutoConstructMap;
 import software.amazon.awssdk.core.util.SdkAutoConstructMap;
 import software.amazon.awssdk.protocols.json.JsonFieldNameToken;
+import software.amazon.awssdk.protocols.json.JsonMemberTable;
 import software.amazon.awssdk.protocols.json.StructuredJsonGenerator;
+import software.amazon.awssdk.protocols.json.StructuredJsonReadable;
+import software.amazon.awssdk.protocols.json.StructuredJsonReader;
 import software.amazon.awssdk.protocols.json.StructuredJsonWritable;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.awssdk.utils.builder.CopyableBuilder;
@@ -273,6 +277,12 @@ public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBui
         }
     }
 
+    static NestedOptions $readJson(StructuredJsonReader reader) {
+        BuilderImpl builder = new BuilderImpl();
+        builder.readJsonFields(reader);
+        return builder.build();
+    }
+
     private static <T> Function<Object, T> getter(Function<NestedOptions, T> g) {
         return obj -> g.apply((NestedOptions) obj);
     }
@@ -321,7 +331,10 @@ public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBui
         Builder prefixHeaders(Map<String, String> prefixHeaders);
     }
 
-    static final class BuilderImpl implements Builder {
+    static final class BuilderImpl implements Builder, StructuredJsonReadable {
+        private static final JsonMemberTable $JSON_MEMBER_TABLE = JsonMemberTable.of("pageSize", "headerParam", "queryParam",
+                "prefixHeaders");
+
         private String pageSize;
 
         private String headerParam;
@@ -412,6 +425,37 @@ public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBui
         @Override
         public Map<String, SdkField<?>> sdkFieldNameToField() {
             return SDK_NAME_TO_FIELD;
+        }
+
+        @Override
+        public final void readJsonFields(StructuredJsonReader reader) {
+            reader.readStruct(this, $JSON_MEMBER_TABLE, BuilderImpl::$readJsonMember);
+        }
+
+        private static void $readJsonMember(BuilderImpl b, int memberIndex, StructuredJsonReader reader) {
+            switch (memberIndex) {
+            case 0: {
+                b.pageSize = reader.readString();
+                break;
+            }
+            case 1: {
+                b.headerParam = reader.readString();
+                break;
+            }
+            case 2: {
+                b.queryParam = reader.readString();
+                break;
+            }
+            case 3: {
+                Map<String, String> prefixHeadersValue = new LinkedHashMap<>();
+                reader.readStringMap(prefixHeadersValue,
+                        (m0, k0, r0) -> m0.put(k0, r0.readNullIfPresent() ? null : r0.readString()));
+                b.prefixHeaders = Collections.unmodifiableMap(prefixHeadersValue);
+                break;
+            }
+            default:
+                throw new IllegalStateException("Unexpected member index: " + memberIndex);
+            }
         }
     }
 }
