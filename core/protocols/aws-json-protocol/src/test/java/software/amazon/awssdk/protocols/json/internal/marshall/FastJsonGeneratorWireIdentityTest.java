@@ -150,6 +150,45 @@ public class FastJsonGeneratorWireIdentityTest {
         }
     }
 
+    /**
+     * The ASCII fast path consumes four characters per iteration and only stores a group once the whole
+     * group is known to be safe, so where a rejecting character falls inside a group, and how the string
+     * length lines up with the group stride, both select different code. Walk one rejecting character
+     * through every offset of every length that spans the boundary cases rather than relying on the fuzz
+     * above to hit them.
+     */
+    @Test
+    public void asciiFastPathRejectionAtEveryOffset() {
+        char[] rejecting = {'"', '\\', '\n', '\u0000', '\u001f', '\u0080', '\u00e9', '\u4e2d'};
+
+        for (char bad : rejecting) {
+            for (int len = 1; len <= 13; len++) {
+                for (int at = 0; at < len; at++) {
+                    char[] chars = new char[len];
+                    for (int i = 0; i < len; i++) {
+                        chars[i] = (char) ('a' + (i % 26));
+                    }
+                    chars[at] = bad;
+                    String s = new String(chars);
+                    assertIdenticalValue(g -> g.writeValue(s));
+                }
+            }
+        }
+    }
+
+    /** Pure-ASCII strings at every length across several group strides. */
+    @Test
+    public void asciiFastPathAtEveryLength() {
+        for (int len = 0; len <= 40; len++) {
+            char[] chars = new char[len];
+            for (int i = 0; i < len; i++) {
+                chars[i] = (char) ('a' + (i % 26));
+            }
+            String s = new String(chars);
+            assertIdenticalValue(g -> g.writeValue(s));
+        }
+    }
+
     @Test
     public void randomStringFuzz() {
         Random r = new Random(42);

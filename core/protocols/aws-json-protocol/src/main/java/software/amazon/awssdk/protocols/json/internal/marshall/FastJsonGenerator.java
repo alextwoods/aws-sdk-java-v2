@@ -468,7 +468,31 @@ public final class FastJsonGenerator implements StructuredJsonGenerator {
         int p = pos;
         b[p++] = '"';
         int i = 0;
-        // The JIT auto-vectorizes this loop; any char that breaks the fast path exits to the slow path.
+        // Four characters per iteration. Both rejection tests are folded across the group so the loop
+        // carries two branches per four characters instead of two per character: any non-ASCII character
+        // shows up in the OR of all four, and any character needing an escape shows up in the OR of their
+        // four escape-table entries. The group is only stored once both tests pass, so a group containing
+        // a rejected character stores nothing and the tail loop below re-walks it one character at a time
+        // to find the exact rejection point.
+        int groupLimit = len - 3;
+        while (i < groupLimit) {
+            char c0 = val.charAt(i);
+            char c1 = val.charAt(i + 1);
+            char c2 = val.charAt(i + 2);
+            char c3 = val.charAt(i + 3);
+            if (((c0 | c1 | c2 | c3) & 0xFF80) != 0) {
+                break;
+            }
+            if ((ESCAPE[c0] | ESCAPE[c1] | ESCAPE[c2] | ESCAPE[c3]) != 0) {
+                break;
+            }
+            b[p] = (byte) c0;
+            b[p + 1] = (byte) c1;
+            b[p + 2] = (byte) c2;
+            b[p + 3] = (byte) c3;
+            p += 4;
+            i += 4;
+        }
         for (; i < len; i++) {
             char c = val.charAt(i);
             if (c >= 0x80 || (ESCAPE[c] != 0)) {
