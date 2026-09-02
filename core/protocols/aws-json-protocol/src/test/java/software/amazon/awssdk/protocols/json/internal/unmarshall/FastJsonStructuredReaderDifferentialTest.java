@@ -268,6 +268,44 @@ public class FastJsonStructuredReaderDifferentialTest {
                    + " \"LIST_LIST\" : [ [ \"x\" ] , [ ] ] , \"BOOL\" : true , \"S\" : null }");
         // Every structural position padded with each whitespace byte the reader accepts.
         assertSame("\n{\r\t \"LIST_S\"\n:\r[\t \"a\"\n,\r\t\"b\" ]\n,\r\t\"I\"\n:\r\t42\n}\r\t ");
+    }
+
+    /**
+     * The string scan clears four bytes per branch, so where a string ends, where an escape sits, and where a
+     * multi-byte character straddles a group boundary all select different paths. Walk each through every
+     * offset of every length spanning the boundary cases.
+     */
+    @Test
+    public void stringScanGroupBoundaries() throws IOException {
+        for (int len = 0; len <= 12; len++) {
+            StringBuilder plain = new StringBuilder();
+            for (int i = 0; i < len; i++) {
+                plain.append((char) ('a' + (i % 26)));
+            }
+            assertSame("{\"S\":\"" + plain + "\"}");
+
+            for (int at = 0; at < len; at++) {
+                // An escape at each offset: everything from the escape onward is decoded by the slow path.
+                StringBuilder escaped = new StringBuilder();
+                for (int i = 0; i < len; i++) {
+                    escaped.append(i == at ? "\\n" : String.valueOf((char) ('a' + (i % 26))));
+                }
+                assertSame("{\"S\":\"" + escaped + "\"}");
+
+                // A multi-byte character at each offset: legal mid-string, must not stop the scan.
+                StringBuilder wide = new StringBuilder();
+                for (int i = 0; i < len; i++) {
+                    wide.append(i == at ? '\u00e9' : (char) ('a' + (i % 26)));
+                }
+                assertSame("{\"S\":\"" + wide + "\"}");
+
+                StringBuilder threeByte = new StringBuilder();
+                for (int i = 0; i < len; i++) {
+                    threeByte.append(i == at ? '\u4e2d' : (char) ('a' + (i % 26)));
+                }
+                assertSame("{\"S\":\"" + threeByte + "\"}");
+            }
+        }
         // Top-level null and empty documents.
         assertSame("null");
         assertSame("");
