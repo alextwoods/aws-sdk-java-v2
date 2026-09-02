@@ -1914,3 +1914,83 @@ Cumulative sync batch-get from unmodified 2.54.0 (664.7 µs): now ~400 µs, **�
   the remaining unmarshall allocation if pursued.
 - `getResponses()`-style bean getters still call `copyToBuilder` per invocation; untouched (cold,
   and semantically a mutable escape hatch).
+
+## Phase E5 — union type tracking (negative result, reverted)
+
+- Not committed. Raw: `raw/e2-jmh/host-e5`
+
+E4's follow-up list pointed at builder churn on the read path: the profile attributed 42 KB/op on
+batch-get to `AttributeValue$BuilderImpl.<init>`, and every union builder carried an
+`EnumSet<Type>` plus an iterator allocation each time `handleUnionValueChange` inspected it. Since a
+large DynamoDB read constructs tens of thousands of union builders, replacing that with a `long`
+bitmask indexed by `Type.ordinal()` looked like free money.
+
+It was worth exactly nothing. Paired JMH unmarshall runs, 3 reps:
+
+| metric | result |
+|--------|--------|
+| allocation | **0.0% on every case** — identical to the byte |
+| time | −3.5% … +2.7%, no consistent sign |
+
+The reason is the useful part. The builder never escapes `$readJson` — it is constructed, written
+through, and consumed by `build()` in one inlined region — so escape analysis scalar-replaces it
+*and* its `EnumSet`, and the iterator too. There was no allocation to remove. A standalone
+thread-allocation probe agreed exactly: 34 B/value before and after.
+
+Reverted rather than kept: it changed generated output for every union in every service, added a
+63-member cap at generation time, and bought nothing.
+
+**Lesson that generalizes:** "reduce builder allocation on the read path" is a suspect target in
+this codebase. Where the builder is confined to one generated method, the JIT has already deleted
+it, and the profiler's attribution of bytes to `BuilderImpl.<init>` reflects the cases where escape
+analysis fails, not a per-value cost. Check with a probe before committing to a codegen change.
+
+## Phase E6 — four characters per iteration in the JSON string writer
+
+- Commit: `7da96a1b2a3` (`perf(json): Test four characters per iteration when writing JSON strings`)
+- Raw: `raw/e2-jmh/host-e6` (3 paired reps, arms alternating per rep)
+
+`FastJsonGenerator.writeQuotedString` was the largest single frame anywhere in the profile — 24.1%
+of batch-put client CPU. Its ASCII fast path ran two branches per character (non-ASCII check, then
+escape-table entry), so a 64 KB batch-put body cost roughly 130,000 branches to emit.
+
+The fast path now takes four characters at a time and folds both rejection tests across the group:
+a non-ASCII character shows up in the OR of all four characters, and a character needing an escape
+shows up in the OR of their four escape-table entries. Two branches per four characters. A group is
+stored only after both tests pass, so a group containing a rejected character stores nothing and a
+single-character tail loop re-walks it to locate the exact rejection point for the existing slow path.
+
+| case | rep1 | rep2 | rep3 |
+|------|-----:|-----:|-----:|
+| PutItemRequest_MixedItem_L | −6.6% | −7.0% | −5.7% |
+| PutItemRequest_MixedItem_M | −5.7% | −4.5% | −5.1% |
+| PutItemRequest_Nested_L | −3.9% | −4.4% | −4.3% |
+| PutItemRequest_BinaryData_* *(control)* | ~0 | ~0 | ~0 |
+
+`BinaryData` is a built-in control — those payloads are base64 blobs rather than quoted strings, and
+they do not move. Allocation unchanged. Correctness is byte-identity against Jackson; the existing
+5,000-string fuzz covered this probabilistically, and two deterministic tests were added because the
+change makes behaviour depend on where a rejecting character falls in a group and how the length
+lines up with the stride (eight rejecting characters × every offset × lengths 1–13, plus pure-ASCII
+at every length 0–40).
+
+### The bigger win here, deliberately not taken
+
+smithy-java goes considerably further (`JsonWriteUtils.copyJsonAscii` +
+`CompactStringAccess.latin1Bytes`): it reads the String's **internal Latin-1 byte array** and copies
+it eight bytes at a time, checking all eight for escapes with a single SWAR mask, with overlapping
+head/tail words to avoid a loop for short strings. That is a much larger reduction in instructions
+per byte than grouping by four.
+
+Two things block simply copying it, and both are decisions rather than code:
+
+1. **Java 8 source level.** This module compiles at `-source 1.8`, so `VarHandle` — which is how
+   both the byte-array word access and the trusted-lookup field access are done — is unavailable.
+2. **Reflective access into `java.lang.String`.** smithy-java reaches `String.value`/`String.coder`
+   by pulling `MethodHandles.Lookup.IMPL_LOOKUP` out with `sun.misc.Unsafe`. It is guarded (system
+   property, GraalVM check, null fallback) and it is fast, but for the production SDK it is a
+   compatibility and security-review question — JDK internals, module access, native-image — not a
+   perf question.
+
+Recorded so it can be revisited with the right people rather than decided here. If taken, the
+expected prize is the remainder of that 24%: roughly another 8–15% of batch-put CPU.
