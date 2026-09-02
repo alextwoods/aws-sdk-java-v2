@@ -1842,3 +1842,75 @@ patch is kept at `/tmp/b2b_builder_threading.patch` for the record but is not th
   Apache internals that the change cannot touch: `asprof alloc --total` scales with sample count, so two
   independently scheduled recordings do not share a denominator. The thread-allocation probe was used
   instead. Worth remembering before quoting a cross-run alloc delta.
+
+## Phase E4 — the response toBuilder() tax
+
+- Commit: `b935f474c49` (`perf(codegen): Adopt model collections in the builder copy constructor`)
+- Raw: `paired/host-20260901-2357` (A/B, 7 reps), `host-20260902-0125` (matched null),
+  profile `raw/host-20260901-2057` — all at 200k/30k on cores 32–47
+
+### Re-ranking, and a premise corrected again
+
+With D2/C/B2 done, a fresh profile of branch head re-ranked what was left: v2-sync batch-get at
+500 KB/op with 63% of CPU in unmarshall, and `BatchGetResponseMapCopier.lambda$copy$2` at 79 KB/op.
+The opportunity queue had this filed as "response copiers on the read path" (crosssdk gap #4),
+implying the parser routes its output through the generated copiers. It does not: the E3 read path
+assigns parsed collections directly into builder fields and wraps them unmodifiable — the copiers
+never run during parsing.
+
+The JFR caller chain pointed somewhere better. `BaseClientHandler.attachHttpResponseToResult`
+(BaseClientHandler.java:238) runs `response.toBuilder().sdkHttpResponse(httpFullResponse).build()`
+on **every response of every service**, to attach one metadata field. The generated builder copy
+constructor routed every member through its fluent setter, and for a list or map member that setter
+is a deep copy: a fresh collection at every nesting level plus an unmodifiable wrapper for each. So
+the SDK parsed the response once and then rebuilt its entire collection spine to record which HTTP
+response produced it.
+
+### What changed
+
+`ModelBuilderSpecs.modelCopyConstructor()` now emits `this.field = model.field` instead of
+`setter(model.field)` for list and map members. The copy was redundant by provenance: a collection
+reached through `model.<field>` is not caller-supplied — it is what the member copier or the
+generated read path produced at build time, deeply unmodifiable in both cases (or an
+`SdkAutoConstruct` sentinel). Neither side can mutate it in place, and every setter replaces its
+field wholesale, so an adopted collection and a re-copied one are observationally identical.
+
+Two deliberate limits. Only collections adopt — other setters assign rather than copy, so there is
+nothing to save and no need to audit setters that do more than assign. And unions never adopt:
+their setters maintain `type`/`setTypes` via `handleUnionValueChange`, and removing that exclusion
+fails 12 existing `UnionTypeTest` assertions (which is how the guard is mutation-verified).
+`BuilderCopyConstructorAdoptionTest` (new, 5 tests) pins the properties the adoption rests on:
+model collections are unmodifiable, setters on a derived builder do not write through to the
+original, caller-supplied collections are still defensively copied on the way in.
+
+### Measurement
+
+**Mechanism:** thread-allocation probe on a 25-item/10-attribute BatchGetItemResponse — the
+`toBuilder().build()` round trip went from **14,849 B/op to 80 B/op** (−99.5%).
+
+**End to end** (paired, 7 reps, vs phase B2b), with the matched null beside it:
+
+| client | scenario | B2b | E4 | delta | wins | null (same jar twice) |
+|--------|----------|----:|---:|------:|-----:|----------------------:|
+| v2-sync | batch-get | 466.9 | 400.7 | **−14.2%** | 7/7 | +0.3% (4/7) |
+| v2-async | batch-get | 548.9 | 479.4 | **−12.7%** | 7/7 | +0.3% (4/7) |
+| v2-sync | small-get | 101.3 | 102.1 | +0.8% | 3/7 | −2.5% (5/7) |
+| v2-async | small-get | 158.8 | 158.5 | −0.2% | 4/7 | +0.3% (3/7) |
+
+Latency agrees at 7/7: −12.8% sync, −12.0% async. Small-get is the built-in control — its response
+carries one small map, so there was almost nothing to adopt, and it reads inside the null's floor.
+This is the cleanest e2e result of the project: the effect is ~10× the measured floor with perfect
+sign consistency, on the framework path every AWS service response takes.
+
+Cumulative sync batch-get from unmodified 2.54.0 (664.7 µs): now ~400 µs, **≈ −40%**.
+
+### Follow-ups
+
+- **AttributeValue builder churn is now the batch-get ceiling**: `$readJson` 85 KB/op,
+  `BuilderImpl.build` 74 KB/op, `BuilderImpl.<init>` 42 KB/op, `decodeCached` 83 KB/op. Real work
+  rather than waste — one builder + one immutable object per attribute value is the design. The
+  smithy-java answer (one object, no builder round trip, via generated per-member deserializer
+  singletons writing final fields) needs a different generated-object shape; sized at −30…−40% of
+  the remaining unmarshall allocation if pursued.
+- `getResponses()`-style bean getters still call `copyToBuilder` per invocation; untouched (cold,
+  and semantically a mutable escape hatch).
