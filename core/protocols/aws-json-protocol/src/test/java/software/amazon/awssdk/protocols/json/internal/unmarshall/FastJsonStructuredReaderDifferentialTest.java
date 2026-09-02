@@ -259,6 +259,15 @@ public class FastJsonStructuredReaderDifferentialTest {
                    + "\"unknown4\":[\"y\",{\"z\":true}],\"S\":\"kept\"}");
         // Whitespace tolerance.
         assertSame("  {\n\t\"S\" : \"spaced\" ,\r\n \"I\"\t:\t7 }  ");
+        // Whitespace at every position the reader skips it, including inside lists, maps and nested
+        // structures. Skipping has a one-comparison fast path for the whitespace-free case that AWS
+        // responses always take, so the padded form has to be exercised through every container too.
+        assertSame("{ \"LIST_S\" : [ \"a\" , \"b\" ] , \"MAP_S\" : { \"k\" : \"v\" , \"k2\" : \"v2\" } ,"
+                   + " \"NESTED\" : { \"S\" : \"n\" , \"I\" : 1 } ,"
+                   + " \"LIST_NESTED\" : [ { \"S\" : \"a\" } , { \"I\" : 2 } ] ,"
+                   + " \"LIST_LIST\" : [ [ \"x\" ] , [ ] ] , \"BOOL\" : true , \"S\" : null }");
+        // Every structural position padded with each whitespace byte the reader accepts.
+        assertSame("\n{\r\t \"LIST_S\"\n:\r[\t \"a\"\n,\r\t\"b\" ]\n,\r\t\"I\"\n:\r\t42\n}\r\t ");
         // Top-level null and empty documents.
         assertSame("null");
         assertSame("");

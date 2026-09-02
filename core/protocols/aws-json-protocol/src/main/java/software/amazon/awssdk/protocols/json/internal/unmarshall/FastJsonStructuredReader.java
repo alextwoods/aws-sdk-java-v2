@@ -809,7 +809,24 @@ final class FastJsonStructuredReader implements StructuredJsonReader {
     // Primitives
     // ------------------------------------------------------------------
 
+    /**
+     * Positions {@link #pos} on the next non-whitespace byte.
+     *
+     * <p>Called several times per member — before the name, around the colon, and again inside whichever value
+     * reader runs — so on a response of any size this runs thousands of times, and AWS JSON responses contain no
+     * whitespace at all. The check is therefore split: every whitespace byte is {@code <= ' '} and every byte that
+     * can legally start a JSON name or value is {@code > ' '}, so one comparison settles the common case, and this
+     * method stays small enough to inline into all of its callers. Anything else, including the whitespace that
+     * hand-written or proxied JSON does contain, falls into the out-of-line loop.
+     */
     private void skipWs() {
+        if (pos < end && buf[pos] > ' ') {
+            return;
+        }
+        skipWsSlow();
+    }
+
+    private void skipWsSlow() {
         while (pos < end) {
             byte b = buf[pos];
             if (b == ' ' || b == '\n' || b == '\r' || b == '\t') {
