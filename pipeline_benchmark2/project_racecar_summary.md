@@ -2065,3 +2065,53 @@ unmarshalling's 63% share of batch-get CPU, predicts ≈ −3%, and the measurem
 sits inside its floor, as a change proportional to member count should.
 
 Cumulative sync batch-get against unmodified 2.54.0: 664.7 → ~392 µs, **≈ −41%**.
+
+## Phase E8 — grouped string scan on the read side (negative result, reverted)
+
+- Not committed (the differential test cases written for it were kept). Raw: `raw/e2-jmh/host-e8`
+
+E7 left `readString` as the largest reader frame (5.61% of batch-get CPU), and its scan tested three
+byte comparisons per byte — the closing quote, a backslash, an illegal control byte. E6 had just won
+on the write side by clearing four characters per branch, so the same shape was tried here: a
+256-entry `STRING_STOP` table, four entries OR'd together to clear a group in one branch.
+
+It made things **worse**, consistently, across all three reps:
+
+| case | rep1 | rep2 | rep3 |
+|------|-----:|-----:|-----:|
+| GetItemOutput_M | +2.5% | +2.2% | +2.4% |
+| GetItemOutput_S | +1.7% | +0.9% | +3.2% |
+| GetItemOutputBinary_S | +2.0% | +3.1% | +4.5% |
+| GetItemOutput_L | +1.2% | −0.0% | −0.2% |
+
+Why it lost, where E6 won on the same idea:
+
+- The three tests it replaced were comparisons against **constants** — immediate operands, no memory
+  traffic, and highly predictable. The replacement pays four array loads (with masking) instead.
+- The group loop only advances over safe bytes, so the byte-at-a-time loop still has to re-read the
+  group containing the terminator to classify it. E6 had no equivalent re-read: it stored as it went.
+- DynamoDB strings are short. At 10–20 bytes a group loop runs two to five times, which is not enough
+  to amortize the extra setup.
+
+E6's write-side loop was doing materially more per character to begin with — a `charAt`, a table
+lookup *and* a store — so folding its branches paid. The read-side loop was already three register
+comparisons. **The lesson: grouping pays where the per-element work is heavy, not where the loop is
+already tight; check what the existing per-element cost actually is before assuming a win.**
+
+A second idea was dropped without measuring, on the strength of this one. Strings are built with
+`new String(bytes, UTF_8)`, and constructing with `ISO_8859_1` instead would skip UTF-8's validation
+pass for the ASCII case — but knowing the string is ASCII means tracking it during the scan, and the
+scan just proved exquisitely sensitive to added work. The JDK's own check is the vectorized
+`countPositives` intrinsic, which is unlikely to be beaten by hand.
+
+### Where the read side stands
+
+`raw/host-20260902-2222` profiles branch head. batch-get is 414,723 B/op (down from 500,102 before
+E4) with unmarshall at 61% of CPU, and what remains is dominated by object materialization rather
+than parsing overhead: `$readJsonMember` 8.0%, `readString` 5.6%, `decodeCached` 4.5%,
+`AttributeValue$BuilderImpl.<init>` 4.4%, `skipWs` 4.4% (from 6.5% pre-E7), `AttributeValue.<init>`
+3.8%, `String.<init>` 3.5%, `HashMap.putVal` 2.9%. The Strings, the builders, the AttributeValues and
+the map nodes are all objects the API contract requires. Cheap parsing tricks are close to exhausted
+here; the remaining levers are the two structural ones already recorded — smithy's Latin-1/SWAR
+string handling (needs the `Unsafe`/JDK-internals decision) and a generated object shape that
+materializes values without a builder round trip.
