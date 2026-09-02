@@ -2115,3 +2115,38 @@ the map nodes are all objects the API contract requires. Cheap parsing tricks ar
 here; the remaining levers are the two structural ones already recorded — smithy's Latin-1/SWAR
 string handling (needs the `Unsafe`/JDK-internals decision) and a generated object shape that
 materializes values without a builder round trip.
+
+## Phase E9 — bulk character extraction on the write side (mixed, reverted)
+
+- Not committed. Raw: `raw/e2-jmh/host-e9`
+
+The post-E6 batch-put profile showed something unexpected: `String.charAt`, `StringLatin1.charAt`,
+`String.isLatin1` and `String.length` together were **9.2% of client CPU**. The coder check was being
+repeated per character access rather than hoisted out of the write loop. So `writeQuotedString` was
+changed to pull the characters out once with `String.getChars` into a per-generator scratch array — a
+single inflating arraycopy for a latin1 string — and scan a plain local array after that.
+
+The result is a real trade, consistent across 3 reps rather than noise:
+
+| case | rep1 | rep2 | rep3 | alloc |
+|------|-----:|-----:|-----:|------:|
+| PutItemRequest_Nested_L | **−9.1%** | **−6.8%** | **−7.0%** | +4.3% |
+| PutItemRequest_MixedItem_L | −2.1% | −3.9% | −2.5% | +1.1% |
+| PutItemRequest_MixedItem_M | −1.5% | −1.0% | −1.2% | +2.5% |
+| PutItemRequest_Baseline | **+3.8%** | **+2.8%** | **+3.5%** | +6.0% |
+| GetItemInput_Baseline | +1.5% | +1.7% | +3.7% | +6.0% |
+
+Large and deeply nested payloads gain up to 9%; tiny ones lose about 3%, because `getChars` has a
+fixed cost that a handful of characters cannot amortize. Every case also gains ~80 B/op for the
+scratch buffer.
+
+Reverted, and the reasoning is worth keeping because it is a judgement rather than a measurement
+failure. The mixed result is fixable — gate on string length, taking the array path only above ~16
+characters — but that means carrying two copies of the grouped scan loop, one reading a `String` and
+one reading a `char[]`, plus the buffer's allocation. Against that: batch-put is the target workload,
+its strings are `MixedItem`-shaped, so the honest e2e expectation is ~−1% of batch-put CPU once
+marshalling's share is applied. Not worth the surface area on this corpus.
+
+Worth revisiting if a string-heavy or deeply-nested non-DynamoDB workload becomes a target, where the
+Nested_L figure (−7…−9%) is the relevant one rather than MixedItem. The 9.2% accessor overhead it was
+attacking is real and still there.
