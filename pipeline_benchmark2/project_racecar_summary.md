@@ -1994,3 +1994,33 @@ Two things block simply copying it, and both are decisions rather than code:
 
 Recorded so it can be revisited with the right people rather than decided here. If taken, the
 expected prize is the remainder of that 24%: roughly another 8–15% of batch-put CPU.
+
+### E4+E6 end-to-end validation
+
+- Raw: `paired/host-20260902-1807` (7 reps, 200k/30k, cores 32–47), vs phase B2b
+
+| client | scenario | B2b | E4+E6 | delta | spread | wins |
+|--------|----------|----:|------:|------:|-------:|-----:|
+| v2-sync | batch-put | 318.8 | 296.9 | **−6.8%** | ±2.4% | 7/7 |
+| v2-async | batch-put | 364.4 | 341.3 | **−6.3%** | ±1.3% | 7/7 |
+| v2-sync | batch-get | 474.1 | 406.7 | **−14.2%** | ±0.6% | 7/7 |
+| v2-async | batch-get | 550.2 | 479.5 | **−12.8%** | ±0.9% | 7/7 |
+| v2-sync | small-get | 104.5 | 102.3 | −2.0% | ±4.0% | 4/7 |
+| v2-async | small-get | 160.2 | 157.0 | −2.0% | ±1.8% | 7/7 |
+
+The two changes separate cleanly by scenario, which is a useful check on both. batch-put is
+marshalling-dominated and its PutItem response is empty, so its −6.8%/−6.3% is E6 alone — and it
+lands exactly where the JMH marshall benchmarks predicted (−4…−7% on string-heavy cases). batch-get
+carries E4 and reproduces that phase's isolated measurement (−14.2%/−12.7% then, −14.2%/−12.8% now).
+
+Cumulative against the unmodified 2.54.0 absolutes from `analysis/crosssdk-254` (sync 151.6 /
+798.5 / 664.7 µs for small-get / batch-put / batch-get): now ~102 / ~297 / ~407 µs, i.e.
+**≈ −33% small-get, ≈ −63% batch-put, ≈ −39% batch-get**.
+
+**Process note.** The first attempt at this run was invalid and discarded. Two invocations of the
+launcher script each started a detached `paired-ab.sh`; they competed for the mock server port, 83 of
+84 iterations failed, and both wrote to the same log — which then reported `DONE` in five minutes.
+Two corrupted result directories (`20260902-1741`, `20260902-1756`) were deleted rather than kept.
+The launcher now refuses to start when a run is already active, and the first four iterations are
+checked for failures before leaving it unattended. Worth remembering: a suspiciously fast completion
+is a symptom, and `FAILED` lines in the run log are the thing to grep for.
