@@ -2024,3 +2024,44 @@ Two corrupted result directories (`20260902-1741`, `20260902-1756`) were deleted
 The launcher now refuses to start when a run is already active, and the first four iterations are
 checked for failures before leaving it unattended. Worth remembering: a suspiciously fast completion
 is a symptom, and `FAILED` lines in the run log are the thing to grep for.
+
+## Phase E7 — whitespace skipping in the byte reader
+
+- Commit: `8285d0c9e27` (`perf(json): Give whitespace skipping a one-comparison fast path`)
+- Raw: `raw/e2-jmh/host-e7` (component, 3 paired reps), `paired/host-20260902-2055` (e2e, 7 reps)
+
+`skipWs` was 6.5% of batch-get client CPU. It runs several times per member — before the name, around
+the colon, and again inside whichever value reader handles the value — so a response of any size calls
+it thousands of times, and it spent four byte comparisons per call discovering what AWS JSON responses
+always are: whitespace-free.
+
+Every whitespace byte JSON allows is `<= ' '` and every byte that can legally start a name or value is
+`> ' '`, so one comparison settles the common case. The loop moved out of line, leaving a stub small
+enough to inline into all its callers. Whitespace that hand-written or proxied JSON does contain takes
+the cold path unchanged.
+
+| case | rep1 | rep2 | rep3 |
+|------|-----:|-----:|-----:|
+| GetItemOutput_L | −8.5% | −8.3% | −7.6% |
+| GetItemOutputBinary_L | −9.8% | −9.5% | −9.6% |
+| GetItemOutput_M | −4.9% | −4.3% | −5.9% |
+| GetItemOutput_S | −2.1% | −1.7% | −2.6% |
+| GetItemOutput_Baseline | −1.7% | −1.2% | −1.6% |
+
+The gain scaling with document size is the signature of the mechanism: more members means more skips.
+Allocation is unchanged on every case, as it must be for a pure CPU change.
+
+End to end against phase E6 (7 reps, 200k/30k, cores 32–47), `paired/host-20260902-2055`:
+
+| client | scenario | E6 | E7 | delta | spread | wins |
+|--------|----------|---:|---:|------:|-------:|-----:|
+| v2-sync | batch-get | 405.7 | 391.9 | **−3.4%** | ±0.6% | 7/7 |
+| v2-async | batch-get | 479.0 | 465.8 | **−2.7%** | ±1.3% | 7/7 |
+| v2-sync | small-get | 106.1 | 105.5 | −0.5% | ±4.6% | 3/7 |
+| v2-async | small-get | 161.0 | 157.9 | −1.8% | ±3.8% | 5/7 |
+
+The e2e and component numbers agree without fudging: −4.9% on the medium document, times
+unmarshalling's 63% share of batch-get CPU, predicts ≈ −3%, and the measurement is −3.4%. Small-get
+sits inside its floor, as a change proportional to member count should.
+
+Cumulative sync batch-get against unmodified 2.54.0: 664.7 → ~392 µs, **≈ −41%**.
