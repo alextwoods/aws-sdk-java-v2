@@ -39,6 +39,32 @@ SCENARIOS = [("small-get", "small"), ("small-put", "small"),
 CATEGORY_ORDER = ["socket-syscall", "http-client", "pipeline-framework", "signing", "marshall",
                   "unmarshall", "json", "crypto", "retry", "endpoint-rules", "thread-sync", "other"]
 
+# Consolidated rollup for the pipeline-breakdown table. The fine-grained categories split a single
+# logical pipeline stage across the layer that orchestrates it and the leaf that implements it,
+# because attribution is deepest-frame-first: a sample inside write(2) lands in socket-syscall even
+# though its caller is the HTTP client, and a sample inside SHA-256 lands in crypto even though its
+# caller is the signer. Categories are disjoint, so a stage's cost is the sum of its parts.
+ROLLUP = {
+    "socket-syscall": "transport",       # syscall leaves below the HTTP client
+    "http-client": "transport",          # connection/protocol/buffer work above those leaves
+    "crypto": "signing",                 # SHA-256/HMAC primitives invoked by the signer
+    "signing": "signing",
+    "pipeline-framework": "pipeline-framework",
+    "marshall": "marshall",
+    "unmarshall": "unmarshall",
+    "retry": "retry",
+    "endpoint-rules": "endpoint-rules",
+    "thread-sync": "thread-sync",
+    "other": "other",
+}
+
+# "json" is the shared Jackson parser/generator engine, so it belongs to whichever direction the
+# scenario actually exercises: request serialization on a write, response deserialization on a read.
+JSON_OWNER = {"get": "unmarshall", "put": "marshall"}
+
+ROLLUP_ORDER = ["transport", "pipeline-framework", "signing", "marshall", "unmarshall", "retry",
+                "endpoint-rules", "thread-sync", "other"]
+
 # Each SDK names its phases differently and draws the boundaries differently. Read the report's
 # phase table notes before treating any row as comparable across columns -- notably V2's
 # ApiCallDuration excludes marshalling, and smithy's serialization sits outside attempt_duration.
@@ -173,25 +199,43 @@ def main(argv):
         vals = [prof.get((f"{c}_{scenario}", "ALLOC"), (None,))[0] for c in CLIENTS]
         print(ratio_row(scenario, vals, "{:,.0f}"))
 
-    banner("TABLE 2 - pipeline breakdown (estimated CPU us/op / % client CPU / B/op)")
-    print("Category CPU time is mean application CPU us/op multiplied by the CPU profile share.")
-    print("Missing profile categories are rendered as zero samples or allocation bytes.")
+    def rolled(case, scenario, mode):
+        """Consolidated {stage: (pct, bytes_per_op)} for one case, summing the disjoint parts."""
+        cats = prof.get((case, mode), (None, {}, []))[1]
+        json_owner = JSON_OWNER[scenario.split("-")[1]]
+        out = defaultdict(lambda: [0.0, 0])
+        for cat, (pct, byt) in cats.items():
+            stage = json_owner if cat == "json" else ROLLUP[cat]
+            out[stage][0] += pct
+            out[stage][1] += byt or 0
+        return out
+
+    banner("TABLE 2 - pipeline breakdown (estimated CPU us/op, % client CPU, B/op)")
+    print("Stage CPU time is mean application CPU us/op multiplied by the CPU profile share.")
+    print("Categories are consolidated: transport = http-client + socket-syscall, signing includes")
+    print("crypto, and json is folded into unmarshall on reads and marshall on writes.")
     for scenario, _ in SCENARIOS:
         print(f"\n**{scenario}**\n")
-        print("| category | " + " | ".join(CLIENTS) + " |")
-        print("|---|" + "---:|" * len(CLIENTS))
-        for cat in CATEGORY_ORDER:
+        # Markdown allows only one true header row, so the client names are the header (each spanning
+        # its three columns by leaving the next two blank) and the units follow as a bold first row.
+        names = ["stage"]
+        units = [""]
+        for client in CLIENTS:
+            names += [client, "", ""]
+            units += ["**us/op**", "**%**", "**B/op**"]
+        print("| " + " | ".join(names) + " |")
+        print("|---|" + "---:|" * (3 * len(CLIENTS)))
+        print("| " + " | ".join(units) + " |")
+        for stage in ROLLUP_ORDER:
             cells = []
             for client in CLIENTS:
                 case = f"{client}_{scenario}"
-                cpu = prof.get((case, "CPU"), (None, {}, []))[1].get(cat)
-                alloc = prof.get((case, "ALLOC"), (None, {}, []))[1].get(cat)
-                pct = cpu[0] if cpu else 0.0
+                pct = rolled(case, scenario, "CPU")[stage][0]
+                bytes_per_op = rolled(case, scenario, "ALLOC")[stage][1]
                 app_cpu = mean(client, scenario, "app_cpu_us_per_op")
-                category_cpu = app_cpu * pct / 100 if app_cpu is not None else 0.0
-                bytes_per_op = alloc[1] if alloc and alloc[1] is not None else 0
-                cells.append(f"{category_cpu:,.1f} / {pct:.1f}% / {bytes_per_op:,}")
-            print(f"| {cat} | " + " | ".join(cells) + " |")
+                stage_cpu = app_cpu * pct / 100 if app_cpu is not None else 0.0
+                cells += [f"{stage_cpu:,.1f}", f"{pct:.1f}%", f"{bytes_per_op:,}"]
+            print(f"| {stage} | " + " | ".join(cells) + " |")
 
     for mode, title, pick, floor in (
             ("CPU", "TABLE 3 - CPU by category (% of client-code samples)",
