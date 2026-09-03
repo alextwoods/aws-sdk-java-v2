@@ -2150,3 +2150,97 @@ marshalling's share is applied. Not worth the surface area on this corpus.
 Worth revisiting if a string-heavy or deeply-nested non-DynamoDB workload becomes a target, where the
 Nested_L figure (−7…−9%) is the relevant one rather than MixedItem. The 9.2% accessor overhead it was
 attacking is real and still there.
+
+## Phase E10 — single-copy async non-streaming response aggregation
+
+- Commit: `40187bba428` (`perf(sdk-core): Buffer async responses once`)
+- Paired timing: `paired/host-20260903-0404`
+- Allocation profiles: `raw/host-e10-alloc-20260903-052722`
+
+### What changed
+
+`AsyncResponseHandler` adapted non-streaming async HTTP responses to the synchronous protocol handlers
+through three copies: every transport `ByteBuffer` was first copied by `BinaryUtils.copyBytesFrom`,
+that temporary array was copied into a growing `ByteArrayOutputStream`, and `prepare()` cloned the
+complete body again with `toByteArray()` before creating the response stream. The JSON byte reader then
+allocated another exact body array and read that stream into it.
+
+E10 replaces the first three copies with one SDK-owned accumulator:
+
+- a valid `Content-Length` up to 8 MiB is a sizing hint, allocated lazily only when a chunk arrives;
+- absent, malformed, negative, and larger lengths use the small growing path;
+- inaccurate lengths do not truncate or expose trailing capacity — received bytes remain authoritative;
+- heap, sliced, read-only, and direct buffers copy straight into the owned array through a duplicate,
+  leaving the transport buffer's position and limit unchanged;
+- the protocol handler receives a count-bounded `ByteArrayInputStream` over the owned backing array,
+  with no final clone;
+- absent content remains distinct from an explicitly delivered zero-length chunk; and
+- duplicate subscriptions and aggregation/request failures cancel upstream and release body state.
+
+This is deliberately `sdk-core`-only. Generic JSON/XML/Query/custom handlers still receive the same
+`AbortableInputStream`, and CRC/gzip adaptation still runs after buffering and before protocol parsing.
+Direct handoff of the owned array to `FastJsonStructuredReader` is left as a separate follow-up so its
+module/interface work and performance are independently attributable.
+
+### Correctness
+
+- 13 focused tests cover buffer types/windows, source-buffer state, inaccurate and unsafe length hints,
+  absent versus present-empty bodies, sequential attempts, publisher/handler failures, upstream
+  cancellation, and CRC consumption.
+- A new whitebox Reactive Streams TCK runs 27 checks (13 optional checks skipped by the TCK), all green.
+- Focused async/CRC/retry suite: 46 JUnit tests plus the TCK, green.
+- Full `sdk-core`: 1,555 JUnit and 651 TestNG/TCK tests, zero failures; checkstyle and SpotBugs clean.
+- The consistent 53-module DynamoDB/Apache5/CRT build passed.
+- Local async and sync smoke runs covered all four scenarios, reconciled every server request, and
+  produced the same 11 metric names as before.
+
+### Allocation mechanism (authoritative)
+
+Both allocation profiles ran 5,000 warmup + 30,000 measured operations. They were intentionally fixed-
+warmup profiler runs and not used for CPU claims. Dividing sampled allocation totals by the same 35,000
+operations:
+
+| allocation | E10 base | E10 | delta |
+|---|---:|---:|---:|
+| client code (benchmark harness excluded) | 630,350 B/op | 495,953 B/op | **−21.3%** |
+| all `byte[]` allocation | 294,447 B/op | 164,304 B/op | **−44.2%** |
+| async response aggregation sites | 165,090 B/op | 36,790 B/op | **−128,301 B/op (−77.7%)** |
+
+The old sites disappear exactly as intended:
+
+| site | base | E10 |
+|---|---:|---:|
+| `AsyncResponseHandler$BaosSubscriber.onNext` | 91,915 B/op | **0** |
+| `BinaryUtils.copyBytesFrom` | 36,790 B/op | **0** |
+| `AsyncResponseHandler.lambda$prepare$0` full-body clone | 36,386 B/op | **0** |
+| `BufferedResponseBody.ensureCapacity` owned array | 0 | 36,790 B/op |
+
+Two body-sized allocations intentionally remain and size the next work: the JSON byte reader at
+36,341 B/op and CRT's response callback at 36,221 B/op. The former is SDK-owned and avoidable by a
+capability-preserving direct parser handoff; the latter is at the transport/native ownership boundary.
+
+### End-to-end timing (paired dedicated host)
+
+Both jars use harness commit `40187bba428`; the SDK arms are predecessor `2b39ced77cf` and E10
+`40187bba428`. Seven paired reps, 200k measured / 30k minimum warmup, concurrency 1, client cores
+32–47 and server cores 0–15:
+
+| client | scenario | base app CPU | E10 app CPU | CPU delta | spread | wins | latency delta | latency wins |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| v2-async | batch-get | 467.6 | 456.2 | **−2.4%** | ±0.8% | **7/7** | **−2.3%** | **7/7** |
+| v2-sync *(control)* | batch-get | 387.4 | 392.7 | +1.4% | ±2.5% | 3/7 | +1.3% | 2/7 |
+| v2-sync *(control)* | small-get | 106.7 | 106.3 | −0.3% | ±4.3% | 4/7 | −0.1% | 4/7 |
+| v2-async | small-get | — | — | not steady | — | — | +0.9% | 2/7 |
+
+All 14 async small-get windows were flagged non-steady, so their CPU values are discarded; latency is
+inside noise, as expected for a 470-byte response. The sync controls are also noise and certify that the
+batch-get signal is specific to the async body path. Async batch-get is steady in all 14 arm runs, has a
+paired spread well below the measured floor, wins every CPU and latency pair, and is backed by the direct
+allocation mechanism result.
+
+### Verdict and follow-up
+
+**Kept.** E10 removes about 128 KB/op of redundant response aggregation allocation and improves the
+large async read path by 2.4% CPU / 2.3% latency without affecting sync controls. The next coherent
+phase is direct handoff of this owned array to the byte-level JSON reader, eliminating the remaining
+~36 KB/op parser body copy while preserving CRC, handler wrapping, and non-JSON fallbacks.
