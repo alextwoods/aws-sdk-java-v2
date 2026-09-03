@@ -2332,3 +2332,58 @@ The E12 profile also ranks the two contained auth follow-ups. The no-change
 mostly copied `HashMap` storage, while the always-created discarded-reasons `ArrayList` is only about
 30 B/op. The next isolated phase should lazily create the interceptor-property builder and copy
 properties only after the first actual modification; lazy discarded diagnostics should follow later.
+
+## Phase E13 — lazy interceptor auth-property rebuilding
+
+- Commit: `6d81ac812ae` (`perf(sdk-core): Rebuild auth properties lazily`)
+- Paired timing: `paired/host-20260903-2014`
+- Allocation profiles: `raw/host-e13-alloc-20260903-204915`
+
+E13 removes an eager no-change rebuild in `AuthSchemeResolver.applyInterceptorModifiedProperties`.
+When the pre- and post-interceptor snapshots share the same immutable auth option, the method now
+returns before traversing properties or allocating a consumer, builder, copied property maps, or
+boolean holder. For distinct snapshots it traverses normally but creates the endpoint-resolved
+option builder only after the first signer property that differs under `Objects.equals`.
+
+The change preserves the existing null contract and fail-fast behavior, non-null-to-null overrides,
+unordered multiple-property application, current-only signer and identity properties, scheme ID,
+identity future, and signer. `AuthSchemeResolverTest` now has thirteen focused cases. The S3 sync and
+async execution-attribute compatibility suite passed five cases. The full sdk-core rerun passed
+1,565 JUnit and 651 TestNG/TCK tests after an unrelated timeout test passed its isolated rerun;
+checkstyle, SpotBugs, dependency analysis, Java 8 compilation, the 25-module dependency build, and
+the consistent 53-module benchmark build passed. Semantic review approved the final change.
+
+Equal 35,000-operation small-get profiles confirm the exact target disappeared:
+
+| client | E12 `doApplyInterceptorModifiedProperties` | E13 | delta |
+|---|---:|---:|---:|
+| v2-sync | 360 B/op | **0** | **−360 B/op** |
+| v2-async | 225 B/op | **0** | **−225 B/op** |
+
+Whole-process sampled allocation moved in conflicting directions (sync approximately −2.3 KB/op,
+async approximately +45 B/op), reflecting profile-JVM sampling/setup noise outside the changed
+method. No total-allocation claim is made; retention is based on the exact method subtree reaching
+zero and the source-level common-path early return.
+
+Dedicated-host timing used seven reversed-order repetitions at 200k/30k and concurrency one, with
+V2 sync/async as targets and smithy-java as an unaffected control (42/42 runs passed):
+
+| client | scenario | app CPU delta | paired spread | latency delta | latency spread |
+|---|---|---:|---:|---:|---:|
+| v2-sync | small-get | +0.1% | ±4.8% | +0.2% | ±3.5% |
+| v2-async | small-get | −1.1% | ±1.6% | −0.8% | ±1.3% |
+| smithy *(control)* | small-get | +0.3% | ±8.8% | +0.9% | ±6.8% |
+
+All fourteen async runs had JIT compilation in the measured window, so the async CPU direction is
+not independently claimable. Sync and control results are neutral.
+
+**Kept as an exact allocation-mechanism improvement.** Timing remains below resolution and no broad
+total-allocation claim is made.
+
+The E13 candidate profiles expose the next larger contained auth target. Checksum-free requests
+write an explicit null `CHECKSUM_ALGORITHM` into the compatibility auth option. That write copies the
+option once, and because the generated DynamoDB option has no checksum entry, the null entry then
+forces `mergePreExistingAuthSchemeProperties` to rebuild again (profile estimates approximately
+764 B/op sync and 449 B/op async). The next isolated phase should make a null checksum write a no-op
+when the current property already reads null, while preserving the existing behavior that a null
+write clears a non-null checksum. This ranks ahead of the eager discarded-reasons list (~30 B/op).

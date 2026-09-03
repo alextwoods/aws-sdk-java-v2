@@ -805,3 +805,28 @@ The current profile also chooses between the two auth follow-ups in section 5.2.
 `HashMap` nodes/table storage, while the eager discarded-reasons `ArrayList` is approximately 30
 B/op. Therefore the next isolated phase should make the interceptor-property builder lazy and defer
 copying until the first real modification. Lazy discarded diagnostics remain valid but lower priority.
+
+## E13 measured update
+
+Phase E13 (`6d81ac812ae`) makes interceptor signer-property reapplication lazy. Reference-identical
+pre/post interceptor options return before traversal; distinct options allocate a copy of the
+endpoint-resolved option only after the first value that actually changed. Null, equality,
+multi-property, fail-fast, signer, identity, and current-option preservation semantics are covered
+by focused tests and the existing S3 sync/async compatibility suite.
+
+Equal 35,000-operation profiles (`raw/host-e13-alloc-20260903-204915`) show the exact
+`doApplyInterceptorModifiedProperties` subtree falling from approximately 360 B/op to zero for
+sync and 225 B/op to zero for async. Whole-process profile totals disagree across the isolated JVMs,
+so no total-allocation delta is claimed. The exact mechanism removal is the retention signal.
+
+Paired timing (`paired/host-20260903-2014`, seven reps, 42/42 successful runs) is neutral: sync
+small-get is +0.1% application CPU / +0.2% latency; async is −1.1% CPU / −0.8% latency but every
+async run retained JIT activity; the smithy control is +0.3% CPU / +0.9% latency with broad spread.
+E13 is retained as an allocation-only improvement.
+
+The candidate profile changes the next priority. Checksum-free requests currently copy the
+compatibility auth option to insert an explicit null `CHECKSUM_ALGORITHM`; that otherwise invisible
+entry then forces `mergePreExistingAuthSchemeProperties` to copy/build the generated option again.
+The next phase should suppress that write only when both the requested checksum and existing signer
+property are null, preserving null-as-clear when an existing checksum is non-null. This proven
+cascade is larger than the approximately 30 B/op eager discarded-reasons list and should precede it.
