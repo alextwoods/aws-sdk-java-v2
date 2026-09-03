@@ -15,7 +15,6 @@
 
 package software.amazon.awssdk.core.internal.http.async;
 
-import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
@@ -28,6 +27,7 @@ import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.internal.http.TransformingAsyncResponseHandler;
+import software.amazon.awssdk.core.internal.io.BufferedResponseInputStream;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.http.SdkHttpResponse;
@@ -212,8 +212,8 @@ public final class AsyncResponseHandler<T> implements TransformingAsyncResponseH
             count += length;
         }
 
-        ByteArrayInputStream inputStream() {
-            return new ByteArrayInputStream(bytes == null ? EMPTY : bytes, 0, count);
+        BufferedResponseInputStream inputStream() {
+            return new BufferedResponseInputStream(bytes == null ? EMPTY : bytes, 0, count);
         }
 
         int capacity() {

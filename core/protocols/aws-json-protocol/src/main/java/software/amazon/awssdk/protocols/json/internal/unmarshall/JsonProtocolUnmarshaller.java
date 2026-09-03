@@ -34,6 +34,7 @@ import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.awssdk.core.document.Document;
+import software.amazon.awssdk.core.internal.io.BufferedResponseInputStream;
 import software.amazon.awssdk.core.protocol.MarshallLocation;
 import software.amazon.awssdk.core.protocol.MarshallingType;
 import software.amazon.awssdk.core.traits.ListTrait;
@@ -272,6 +273,10 @@ public class JsonProtocolUnmarshaller {
             return unmarshallResponse(sdkPojo, response);
         }
         if (useByteParser && sdkPojo instanceof StructuredJsonReadable) {
+            BufferedResponseInputStream buffered = bufferedResponseInputStream(response);
+            if (buffered != null) {
+                return byteUnmarshallFromJson((StructuredJsonReadable) sdkPojo, buffered);
+            }
             // The byte-level reader needs the body in memory. Only take it when Content-Length is
             // known (the normal case for JSON responses), so the buffer is allocated exactly once at
             // the right size; without a length, draining the stream into a growing buffer costs more
@@ -284,6 +289,27 @@ public class JsonProtocolUnmarshaller {
             }
         }
         return unmarshallFromJson(sdkPojo, response.content().get());
+    }
+
+    private BufferedResponseInputStream bufferedResponseInputStream(SdkHttpFullResponse response) {
+        InputStream delegate = response.content().get().delegate();
+        return delegate instanceof BufferedResponseInputStream ? (BufferedResponseInputStream) delegate : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private <TypeT extends SdkPojo> TypeT byteUnmarshallFromJson(StructuredJsonReadable builder,
+                                                                 BufferedResponseInputStream content) {
+        byte[] body = content.bufferUnsafe();
+        int offset = content.offset();
+        int length = content.length();
+        content.consumeToEnd();
+        boolean nonNullDocument = FastJsonStructuredReader.parseDocument(body, offset, length,
+                                                                         defaultPayloadTimestampFormat,
+                                                                         builder);
+        if (!nonNullDocument) {
+            return null;
+        }
+        return (TypeT) ((Buildable) builder).build();
     }
 
     /**

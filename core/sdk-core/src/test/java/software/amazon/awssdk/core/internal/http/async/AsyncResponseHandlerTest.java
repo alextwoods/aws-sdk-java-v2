@@ -34,6 +34,7 @@ import org.reactivestreams.Subscription;
 import software.amazon.awssdk.core.http.Crc32Validation;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.internal.io.BufferedResponseInputStream;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.http.SdkHttpResponse;
 
@@ -68,6 +69,18 @@ class AsyncResponseHandlerTest {
         assertThat(heap.limit()).isEqualTo(heapLimit);
         assertThat(direct.position()).isEqualTo(directPosition);
         assertThat(readOnly.position()).isEqualTo(readOnlyPosition);
+    }
+
+    @Test
+    void onStream_exposesOwnedBufferThroughInternalStream() {
+        AsyncResponseHandler<Boolean> handler = newHandler((response, ignored) ->
+            response.content().get().delegate() instanceof BufferedResponseInputStream);
+        CompletableFuture<Boolean> result = handler.prepare();
+        handler.onHeaders(responseWithLength(3));
+
+        handler.onStream(Flowable.just(ByteBuffer.wrap(new byte[] {1, 2, 3})));
+
+        assertThat(result.join()).isTrue();
     }
 
     @Test
