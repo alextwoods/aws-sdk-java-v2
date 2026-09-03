@@ -2452,6 +2452,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createSimpleList(List<String>)}, but stores {@code simpleList} directly instead of copying
+     * it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code simpleList} afterwards, and its contents
+     * are only safe to publish across threads if they are already unmodifiable. Callers that built the collection
+     * themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createSimpleList(List<String>)}.
+     */
+    public static AllTypesUnionStructure createSimpleListUnsafe(List<String> simpleList) {
+        if (simpleList == null || simpleList instanceof SdkAutoConstructList) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.SIMPLE_LIST, null, null, null, null, null, null, null, simpleList,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().listOfEnumsWithStrings(listOfEnums).build()} but with a single allocation.
      */
     public static AllTypesUnionStructure createListOfEnumsWithStrings(List<String> listOfEnums) {
@@ -2464,6 +2489,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
         }
         return new AllTypesUnionStructure(Type.LIST_OF_ENUMS, null, null, null, null, null, null, null,
                 DefaultSdkAutoConstructList.getInstance(), copied, DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createListOfEnumsWithStrings(List<String>)}, but stores {@code listOfEnums} directly
+     * instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code listOfEnums} afterwards, and its
+     * contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createListOfEnumsWithStrings(List<String>)}.
+     */
+    public static AllTypesUnionStructure createListOfEnumsWithStringsUnsafe(List<String> listOfEnums) {
+        if (listOfEnums == null || listOfEnums instanceof SdkAutoConstructList) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.LIST_OF_ENUMS, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), listOfEnums, DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
@@ -2498,6 +2548,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createListOfMaps(List<Map<String, String>>)}, but stores {@code listOfMaps} directly
+     * instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code listOfMaps} afterwards, and its contents
+     * are only safe to publish across threads if they are already unmodifiable. Callers that built the collection
+     * themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createListOfMaps(List<Map<String, String>>)}.
+     */
+    public static AllTypesUnionStructure createListOfMapsUnsafe(List<Map<String, String>> listOfMaps) {
+        if (listOfMaps == null || listOfMaps instanceof SdkAutoConstructList) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.LIST_OF_MAPS, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(), listOfMaps,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().listOfStructs(listOfStructs).build()} but with a single allocation.
      */
     public static AllTypesUnionStructure createListOfStructs(List<SimpleStruct> listOfStructs) {
@@ -2511,6 +2586,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
         return new AllTypesUnionStructure(Type.LIST_OF_STRUCTS, null, null, null, null, null, null, null,
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructList.getInstance(), copied, DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createListOfStructs(List<SimpleStruct>)}, but stores {@code listOfStructs} directly instead
+     * of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code listOfStructs} afterwards, and its
+     * contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createListOfStructs(List<SimpleStruct>)}.
+     */
+    public static AllTypesUnionStructure createListOfStructsUnsafe(List<SimpleStruct> listOfStructs) {
+        if (listOfStructs == null || listOfStructs instanceof SdkAutoConstructList) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.LIST_OF_STRUCTS, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), listOfStructs, DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
@@ -2546,6 +2646,32 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createListOfMapOfEnumToStringWithStrings(List<Map<String, String>>)}, but stores
+     * {@code listOfMapOfEnumToString} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code listOfMapOfEnumToString} afterwards, and
+     * its contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createListOfMapOfEnumToStringWithStrings(List<Map<String, String>>)}.
+     */
+    public static AllTypesUnionStructure createListOfMapOfEnumToStringWithStringsUnsafe(
+            List<Map<String, String>> listOfMapOfEnumToString) {
+        if (listOfMapOfEnumToString == null || listOfMapOfEnumToString instanceof SdkAutoConstructList) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.LIST_OF_MAP_OF_ENUM_TO_STRING, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(), listOfMapOfEnumToString,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().listOfMapOfStringToStruct(listOfMapOfStringToStruct).build()} but with a single
      * allocation.
      */
@@ -2561,6 +2687,32 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructList.getInstance(), copied, DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createListOfMapOfStringToStruct(List<Map<String, SimpleStruct>>)}, but stores
+     * {@code listOfMapOfStringToStruct} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code listOfMapOfStringToStruct} afterwards,
+     * and its contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createListOfMapOfStringToStruct(List<Map<String, SimpleStruct>>)}.
+     */
+    public static AllTypesUnionStructure createListOfMapOfStringToStructUnsafe(
+            List<Map<String, SimpleStruct>> listOfMapOfStringToStruct) {
+        if (listOfMapOfStringToStruct == null || listOfMapOfStringToStruct instanceof SdkAutoConstructList) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.LIST_OF_MAP_OF_STRING_TO_STRUCT, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), listOfMapOfStringToStruct, DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
@@ -2594,6 +2746,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createMapOfStringToIntegerList(Map<String, List<Integer>>)}, but stores
+     * {@code mapOfStringToIntegerList} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfStringToIntegerList} afterwards,
+     * and its contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfStringToIntegerList(Map<String, List<Integer>>)}.
+     */
+    public static AllTypesUnionStructure createMapOfStringToIntegerListUnsafe(Map<String, List<Integer>> mapOfStringToIntegerList) {
+        if (mapOfStringToIntegerList == null || mapOfStringToIntegerList instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_STRING_TO_INTEGER_LIST, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(), mapOfStringToIntegerList,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().mapOfStringToString(mapOfStringToString).build()} but with a single allocation.
      */
     public static AllTypesUnionStructure createMapOfStringToString(Map<String, String> mapOfStringToString) {
@@ -2609,6 +2786,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), copied, DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createMapOfStringToString(Map<String, String>)}, but stores {@code mapOfStringToString}
+     * directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfStringToString} afterwards, and its
+     * contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfStringToString(Map<String, String>)}.
+     */
+    public static AllTypesUnionStructure createMapOfStringToStringUnsafe(Map<String, String> mapOfStringToString) {
+        if (mapOfStringToString == null || mapOfStringToString instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_STRING_TO_STRING, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), mapOfStringToString, DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
@@ -2641,6 +2843,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createMapOfStringToSimpleStruct(Map<String, SimpleStruct>)}, but stores
+     * {@code mapOfStringToSimpleStruct} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfStringToSimpleStruct} afterwards,
+     * and its contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfStringToSimpleStruct(Map<String, SimpleStruct>)}.
+     */
+    public static AllTypesUnionStructure createMapOfStringToSimpleStructUnsafe(Map<String, SimpleStruct> mapOfStringToSimpleStruct) {
+        if (mapOfStringToSimpleStruct == null || mapOfStringToSimpleStruct instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_STRING_TO_SIMPLE_STRUCT, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), mapOfStringToSimpleStruct,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().mapOfEnumToEnumWithStrings(mapOfEnumToEnum).build()} but with a single allocation.
      */
     public static AllTypesUnionStructure createMapOfEnumToEnumWithStrings(Map<String, String> mapOfEnumToEnum) {
@@ -2657,6 +2884,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
                 DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), copied, DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createMapOfEnumToEnumWithStrings(Map<String, String>)}, but stores {@code mapOfEnumToEnum}
+     * directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfEnumToEnum} afterwards, and its
+     * contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfEnumToEnumWithStrings(Map<String, String>)}.
+     */
+    public static AllTypesUnionStructure createMapOfEnumToEnumWithStringsUnsafe(Map<String, String> mapOfEnumToEnum) {
+        if (mapOfEnumToEnum == null || mapOfEnumToEnum instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_ENUM_TO_ENUM, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), mapOfEnumToEnum, DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
@@ -2688,6 +2940,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createMapOfEnumToStringWithStrings(Map<String, String>)}, but stores
+     * {@code mapOfEnumToString} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfEnumToString} afterwards, and its
+     * contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfEnumToStringWithStrings(Map<String, String>)}.
+     */
+    public static AllTypesUnionStructure createMapOfEnumToStringWithStringsUnsafe(Map<String, String> mapOfEnumToString) {
+        if (mapOfEnumToString == null || mapOfEnumToString instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_ENUM_TO_STRING, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), mapOfEnumToString,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().mapOfStringToEnumWithStrings(mapOfStringToEnum).build()} but with a single
      * allocation.
      */
@@ -2706,6 +2983,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), copied, DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createMapOfStringToEnumWithStrings(Map<String, String>)}, but stores
+     * {@code mapOfStringToEnum} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfStringToEnum} afterwards, and its
+     * contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfStringToEnumWithStrings(Map<String, String>)}.
+     */
+    public static AllTypesUnionStructure createMapOfStringToEnumWithStringsUnsafe(Map<String, String> mapOfStringToEnum) {
+        if (mapOfStringToEnum == null || mapOfStringToEnum instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_STRING_TO_ENUM, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), mapOfStringToEnum, DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
                 null, null, null);
@@ -2737,6 +3039,32 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createMapOfEnumToSimpleStructWithStrings(Map<String, SimpleStruct>)}, but stores
+     * {@code mapOfEnumToSimpleStruct} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfEnumToSimpleStruct} afterwards, and
+     * its contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfEnumToSimpleStructWithStrings(Map<String, SimpleStruct>)}.
+     */
+    public static AllTypesUnionStructure createMapOfEnumToSimpleStructWithStringsUnsafe(
+            Map<String, SimpleStruct> mapOfEnumToSimpleStruct) {
+        if (mapOfEnumToSimpleStruct == null || mapOfEnumToSimpleStruct instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_ENUM_TO_SIMPLE_STRUCT, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), mapOfEnumToSimpleStruct,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), null, null, null, null,
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null, null,
+                null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().mapOfEnumToListOfEnumsWithStrings(mapOfEnumToListOfEnums).build()} but with a
      * single allocation.
      */
@@ -2758,6 +3086,32 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
                 DefaultSdkAutoConstructMap.getInstance(), copied, DefaultSdkAutoConstructMap.getInstance(), null, null, null,
                 null, DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null,
                 null, null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createMapOfEnumToListOfEnumsWithStrings(Map<String, List<String>>)}, but stores
+     * {@code mapOfEnumToListOfEnums} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfEnumToListOfEnums} afterwards, and
+     * its contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createMapOfEnumToListOfEnumsWithStrings(Map<String, List<String>>)}.
+     */
+    public static AllTypesUnionStructure createMapOfEnumToListOfEnumsWithStringsUnsafe(
+            Map<String, List<String>> mapOfEnumToListOfEnums) {
+        if (mapOfEnumToListOfEnums == null || mapOfEnumToListOfEnums instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_ENUM_TO_LIST_OF_ENUMS, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), mapOfEnumToListOfEnums, DefaultSdkAutoConstructMap.getInstance(), null,
+                null, null, null, DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null,
+                null, null, null, null, null, null);
     }
 
     /**
@@ -2783,6 +3137,32 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), copied, null, null, null,
                 null, DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(), null, null, null,
                 null, null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createMapOfEnumToMapOfStringToEnumWithStrings(Map<String, Map<String, String>>)}, but
+     * stores {@code mapOfEnumToMapOfStringToEnum} directly instead of copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code mapOfEnumToMapOfStringToEnum}
+     * afterwards, and its contents are only safe to publish across threads if they are already unmodifiable. Callers
+     * that built the collection themselves and hand off ownership avoid a deep copy this way; anyone else should use
+     * {@link #createMapOfEnumToMapOfStringToEnumWithStrings(Map<String, Map<String, String>>)}.
+     */
+    public static AllTypesUnionStructure createMapOfEnumToMapOfStringToEnumWithStringsUnsafe(
+            Map<String, Map<String, String>> mapOfEnumToMapOfStringToEnum) {
+        if (mapOfEnumToMapOfStringToEnum == null || mapOfEnumToMapOfStringToEnum instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.MAP_OF_ENUM_TO_MAP_OF_STRING_TO_ENUM, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(), mapOfEnumToMapOfStringToEnum,
+                null, null, null, null, DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                null, null, null, null, null, null, null);
     }
 
     /**
@@ -2889,6 +3269,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
     }
 
     /**
+     * Equivalent to {@link #createBlobMap(Map<String, SdkBytes>)}, but stores {@code blobMap} directly instead of
+     * copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code blobMap} afterwards, and its contents
+     * are only safe to publish across threads if they are already unmodifiable. Callers that built the collection
+     * themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createBlobMap(Map<String, SdkBytes>)}.
+     */
+    public static AllTypesUnionStructure createBlobMapUnsafe(Map<String, SdkBytes> blobMap) {
+        if (blobMap == null || blobMap instanceof SdkAutoConstructMap) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.BLOB_MAP, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), null, null, null, null, blobMap,
+                DefaultSdkAutoConstructList.getInstance(), null, null, null, null, null, null, null);
+    }
+
+    /**
      * Equivalent to {@code builder().listOfBlobs(listOfBlobs).build()} but with a single allocation.
      */
     public static AllTypesUnionStructure createListOfBlobs(List<SdkBytes> listOfBlobs) {
@@ -2909,6 +3314,31 @@ public final class AllTypesUnionStructure implements SdkPojo, Serializable,
                 DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
                 DefaultSdkAutoConstructMap.getInstance(), null, null, null, null, DefaultSdkAutoConstructMap.getInstance(),
                 copied, null, null, null, null, null, null, null);
+    }
+
+    /**
+     * Equivalent to {@link #createListOfBlobs(List<SdkBytes>)}, but stores {@code listOfBlobs} directly instead of
+     * copying it.
+     * <p>
+     * The returned object is only immutable if the caller never mutates {@code listOfBlobs} afterwards, and its
+     * contents are only safe to publish across threads if they are already unmodifiable. Callers that built the
+     * collection themselves and hand off ownership avoid a deep copy this way; anyone else should use {@link
+     * #createListOfBlobs(List<SdkBytes>)}.
+     */
+    public static AllTypesUnionStructure createListOfBlobsUnsafe(List<SdkBytes> listOfBlobs) {
+        if (listOfBlobs == null || listOfBlobs instanceof SdkAutoConstructList) {
+            return UNSET_INSTANCE;
+        }
+        return new AllTypesUnionStructure(Type.LIST_OF_BLOBS, null, null, null, null, null, null, null,
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructList.getInstance(), DefaultSdkAutoConstructList.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), DefaultSdkAutoConstructMap.getInstance(),
+                DefaultSdkAutoConstructMap.getInstance(), null, null, null, null, DefaultSdkAutoConstructMap.getInstance(),
+                listOfBlobs, null, null, null, null, null, null, null);
     }
 
     /**

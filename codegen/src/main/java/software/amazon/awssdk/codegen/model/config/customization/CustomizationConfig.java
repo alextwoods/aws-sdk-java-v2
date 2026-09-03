@@ -370,7 +370,11 @@ public class CustomizationConfig {
 
     /**
      * List of union shape names for which to generate per-member direct static factories (createX) that bypass the builder.
+     *
+     * @deprecated Ignored. Those factories are now generated for every union that can support them, so there is
+     *             nothing to opt into. Retained only so existing customization files keep parsing; remove the entry.
      */
+    @Deprecated
     private List<String> generateDirectUnionConstructors = Collections.emptyList();
 
     /**

@@ -136,8 +136,7 @@ public class AwsServiceModel implements ClassSpec {
 
         if (shapeModel.isUnion()) {
             specBuilder.addField(unionTypeField());
-            if (intermediateModel.getCustomizationConfig().getGenerateDirectUnionConstructors()
-                    .contains(shapeModel.getShapeName())) {
+            if (generatesDirectUnionConstructors()) {
                 specBuilder.addField(directUnionUnsetConstant());
             }
         }
@@ -542,7 +541,7 @@ public class AwsServiceModel implements ClassSpec {
 
         List<MethodSpec> unionMembers = new ArrayList<>();
         unionMembers.addAll(unionConstructors());
-        if (intermediateModel.getCustomizationConfig().getGenerateDirectUnionConstructors().contains(shapeModel.getShapeName())) {
+        if (generatesDirectUnionConstructors()) {
             unionMembers.addAll(directUnionConstructors());
         }
         unionMembers.add(unionTypeMethod());
@@ -550,14 +549,35 @@ public class AwsServiceModel implements ClassSpec {
         return unionMembers;
     }
 
+    /**
+     * Whether this shape gets the single-allocation {@code createX} factories, the private positional constructor
+     * they call, and the {@code UNSET_INSTANCE} they return for absent values.
+     *
+     * <p>Every union that can support them does. This used to be opt-in per shape through the
+     * {@code generateDirectUnionConstructors} customization, which meant only DynamoDB's {@code AttributeValue}
+     * had them; the factories are useful to any caller constructing a union value, and the generated JSON read
+     * path wants them for every union it materializes, so gating them behind a per-service allowlist only
+     * limited where the saving could apply.
+     *
+     * <p>Two conditions can still rule a union out. It must be a {@link ShapeType#Model} shape — the positional
+     * constructor assigns every member field directly, which request and response shapes with their inherited
+     * state are not shaped for. And every collection member must have a member copier, because the copying
+     * factory needs one; a union with a collection member the copier generator skipped gets no direct
+     * constructors at all rather than a partial set, so the shape's factories are all present or all absent.
+     */
+    private boolean generatesDirectUnionConstructors() {
+        if (!shapeModel.isUnion() || shapeModel.getShapeType() != ShapeType.Model) {
+            return false;
+        }
+        for (MemberModel member : shapeModel.getMembers()) {
+            if ((member.isList() || member.isMap()) && !serviceModelCopiers.copierClassFor(member).isPresent()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private Collection<MethodSpec> directUnionConstructors() {
-        intermediateModel.getCustomizationConfig().getGenerateDirectUnionConstructors().forEach(shapeName ->
-            Validate.isTrue(intermediateModel.getShapes().containsKey(shapeName),
-                            "generateDirectUnionConstructors references shape '%s' which does not exist in the model.",
-                            shapeName));
-        Validate.isTrue(shapeModel.getShapeType() == ShapeType.Model,
-                        "Direct union constructors are only supported on Model shapes, not %s (%s)",
-                        shapeModel.getShapeType(), shapeModel.getShapeName());
         List<MemberModel> members = shapeModel.getMembers();
         List<MethodSpec> methods = new ArrayList<>();
 
@@ -573,46 +593,83 @@ public class AwsServiceModel implements ClassSpec {
         methods.add(ctor.build());
 
         for (MemberModel member : members) {
-            String memberName = member.getVariable().getVariableName();
-            String factoryName = "create" + capitalize(member.getFluentSetterMethodName());
-            TypeName paramType = typeProvider.typeName(member, new TypeNameOptions().useEnumTypes(false));
-            boolean isCollection = member.isList() || member.isMap();
-
-            MethodSpec.Builder factory = MethodSpec.methodBuilder(factoryName)
-                                                   .addJavadoc("Equivalent to {@code builder().$N($N).build()} "
-                                                               + "but with a single allocation.\n",
-                                                               member.getFluentSetterMethodName(), memberName)
-                                                   .addModifiers(PUBLIC, STATIC)
-                                                   .returns(className())
-                                                   .addParameter(paramType, memberName);
-
-            String slotValue = memberName;
-            if (isCollection) {
-                factory.beginControlFlow("if ($N == null)", memberName);
-                factory.addStatement("return UNSET_INSTANCE");
-                factory.endControlFlow();
-                ClassName copier = serviceModelCopiers.copierClassFor(member)
-                    .orElseThrow(() -> new IllegalStateException(
-                        "Direct union constructor requires a copier for collection member "
-                        + memberName + " on shape " + shapeModel.getShapeName()));
-                factory.addStatement("$T copied = $T.$N($N)", paramType, copier,
-                                     serviceModelCopiers.copyMethodName(), memberName);
-                slotValue = "copied";
-                ClassName autoConstruct = member.isMap()
-                    ? ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructMap")
-                    : ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructList");
-                factory.beginControlFlow("if ($N instanceof $T)", slotValue, autoConstruct);
-                factory.addStatement("return UNSET_INSTANCE");
-            } else {
-                factory.beginControlFlow("if ($N == null)", memberName);
-                factory.addStatement("return UNSET_INSTANCE");
+            methods.add(directUnionFactory(members, member, false));
+            // A collection member's factory spends its time in the member copier, deep-rebuilding a structure
+            // the caller may already own outright. Callers that do own it — the generated JSON read path, which
+            // built the collection from the wire and wrapped it unmodifiable, or a mapper that assembled one
+            // from scratch — can hand it over instead of paying for a copy they do not need.
+            if (member.isList() || member.isMap()) {
+                methods.add(directUnionFactory(members, member, true));
             }
-            factory.endControlFlow();
-            factory.addStatement("$L", directCtorCall(members, member, slotValue));
-
-            methods.add(factory.build());
         }
         return methods;
+    }
+
+    /**
+     * One {@code createX} factory: assign a single member and construct the union in one allocation, skipping the
+     * builder entirely.
+     *
+     * @param adopt when true, emit the {@code createXUnsafe} variant, which stores a collection as given instead
+     *              of copying it defensively. Only meaningful for collection members, since no other member kind
+     *              is copied on the way in.
+     */
+    private MethodSpec directUnionFactory(List<MemberModel> members, MemberModel member, boolean adopt) {
+        String memberName = member.getVariable().getVariableName();
+        String setter = member.getFluentSetterMethodName();
+        String factoryName = "create" + capitalize(setter) + (adopt ? "Unsafe" : "");
+        TypeName paramType = typeProvider.typeName(member, new TypeNameOptions().useEnumTypes(false));
+        boolean isCollection = member.isList() || member.isMap();
+
+        MethodSpec.Builder factory = MethodSpec.methodBuilder(factoryName)
+                                               .addModifiers(PUBLIC, STATIC)
+                                               .returns(className())
+                                               .addParameter(paramType, memberName);
+
+        if (adopt) {
+            factory.addJavadoc("Equivalent to {@link #$N($T)}, but stores {@code $N} directly instead of copying "
+                               + "it.\n<p>\nThe returned object is only immutable if the caller never mutates "
+                               + "{@code $N} afterwards, and its contents are only safe to publish across threads "
+                               + "if they are already unmodifiable. Callers that built the collection themselves "
+                               + "and hand off ownership avoid a deep copy this way; anyone else should use "
+                               + "{@link #$N($T)}.\n",
+                               "create" + capitalize(setter), paramType, memberName, memberName,
+                               "create" + capitalize(setter), paramType);
+        } else {
+            factory.addJavadoc("Equivalent to {@code builder().$N($N).build()} but with a single allocation.\n",
+                               setter, memberName);
+        }
+
+        String slotValue = memberName;
+        ClassName autoConstruct = member.isMap()
+            ? ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructMap")
+            : ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructList");
+
+        if (isCollection && !adopt) {
+            factory.beginControlFlow("if ($N == null)", memberName);
+            factory.addStatement("return UNSET_INSTANCE");
+            factory.endControlFlow();
+            ClassName copier = serviceModelCopiers.copierClassFor(member)
+                .orElseThrow(() -> new IllegalStateException(
+                    "Direct union constructor requires a copier for collection member "
+                    + memberName + " on shape " + shapeModel.getShapeName()));
+            factory.addStatement("$T copied = $T.$N($N)", paramType, copier,
+                                 serviceModelCopiers.copyMethodName(), memberName);
+            slotValue = "copied";
+            factory.beginControlFlow("if ($N instanceof $T)", slotValue, autoConstruct);
+            factory.addStatement("return UNSET_INSTANCE");
+        } else if (isCollection) {
+            // An unset collection means an unset union member, exactly as the copying factory concludes after
+            // the copier hands back a sentinel.
+            factory.beginControlFlow("if ($N == null || $N instanceof $T)", memberName, memberName, autoConstruct);
+            factory.addStatement("return UNSET_INSTANCE");
+        } else {
+            factory.beginControlFlow("if ($N == null)", memberName);
+            factory.addStatement("return UNSET_INSTANCE");
+        }
+        factory.endControlFlow();
+        factory.addStatement("$L", directCtorCall(members, member, slotValue));
+
+        return factory.build();
     }
 
     private FieldSpec directUnionUnsetConstant() {
