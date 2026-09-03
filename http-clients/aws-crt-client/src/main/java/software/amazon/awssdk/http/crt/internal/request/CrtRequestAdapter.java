@@ -15,10 +15,10 @@
 
 package software.amazon.awssdk.http.crt.internal.request;
 
-import java.net.URI;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BiConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.crt.http.HttpHeader;
 import software.amazon.awssdk.crt.http.HttpRequest;
@@ -37,109 +37,97 @@ public final class CrtRequestAdapter {
     }
 
     public static HttpRequestBase toAsyncCrtRequest(CrtAsyncRequestContext request) {
-        AsyncExecuteRequest sdkExecuteRequest = request.sdkRequest();
-        SdkHttpRequest sdkRequest = sdkExecuteRequest.request();
-
-        String method = sdkRequest.method().name();
-        String encodedPath = sdkRequest.encodedPath();
-        if (encodedPath == null || encodedPath.isEmpty()) {
-            encodedPath = "/";
-        }
-
-        String encodedQueryString = sdkRequest.encodedQueryParameters()
-                                              .map(value -> "?" + value)
-                                              .orElse("");
-        String path = encodedPath + encodedQueryString;
-        CrtRequestBodyAdapter crtRequestBodyAdapter = new CrtRequestBodyAdapter(sdkExecuteRequest.requestContentPublisher(),
-                                                                                request.readBufferSize());
-        HttpHeader[] crtHeaderArray = asArray(createAsyncHttpHeaderList(sdkRequest.getUri(), sdkExecuteRequest,
-                                                                        request.protocol()));
-        return new HttpRequest(method,
-                               path,
-                               crtHeaderArray,
-                               crtRequestBodyAdapter);
+        AsyncExecuteRequest executeRequest = request.sdkRequest();
+        SdkHttpRequest sdkRequest = executeRequest.request();
+        String encodedPath = normalizedPath(sdkRequest);
+        String query = sdkRequest.encodedQueryParameters().map(value -> "?" + value).orElse("");
+        CrtRequestBodyAdapter body = new CrtRequestBodyAdapter(executeRequest.requestContentPublisher(),
+                                                               request.readBufferSize());
+        return new HttpRequest(sdkRequest.method().name(), encodedPath + query,
+                               createAsyncHttpHeaders(executeRequest, request.protocol()), body);
     }
 
     public static HttpRequest toCrtRequest(CrtRequestContext request) {
-
-        HttpExecuteRequest sdkExecuteRequest = request.sdkRequest();
-        SdkHttpRequest sdkRequest = sdkExecuteRequest.httpRequest();
-
-        String method = sdkRequest.method().name();
-        String encodedPath = sdkRequest.encodedPath();
-        if (encodedPath == null || encodedPath.isEmpty()) {
-            encodedPath = "/";
-        }
-
-        String encodedQueryString = sdkRequest.encodedQueryParameters()
-                                              .map(value -> "?" + value)
-                                              .orElse("");
-
-        HttpHeader[] crtHeaderArray = asArray(createHttpHeaderList(sdkRequest.getUri(), sdkExecuteRequest));
-
-        String finalEncodedPath = encodedPath + encodedQueryString;
-        return sdkExecuteRequest.contentStreamProvider()
-                                .map(provider -> new HttpRequest(method,
-                                                                 finalEncodedPath,
-                                                                 crtHeaderArray,
-                                                                 new CrtRequestInputStreamAdapter(provider)))
-                                .orElse(new HttpRequest(method,
-                                                        finalEncodedPath,
-                                                        crtHeaderArray, null));
+        HttpExecuteRequest executeRequest = request.sdkRequest();
+        SdkHttpRequest sdkRequest = executeRequest.httpRequest();
+        String path = normalizedPath(sdkRequest)
+                      + sdkRequest.encodedQueryParameters().map(value -> "?" + value).orElse("");
+        HttpHeader[] headers = createHttpHeaders(executeRequest);
+        return executeRequest.contentStreamProvider()
+                             .map(provider -> new HttpRequest(sdkRequest.method().name(), path, headers,
+                                                              new CrtRequestInputStreamAdapter(provider)))
+                             .orElse(new HttpRequest(sdkRequest.method().name(), path, headers, null));
     }
 
-    private static HttpHeader[] asArray(List<HttpHeader> crtHeaderList) {
-        return crtHeaderList.toArray(new HttpHeader[0]);
+    private static String normalizedPath(SdkHttpRequest request) {
+        String path = request.encodedPath();
+        return path == null || path.isEmpty() ? "/" : path;
     }
 
-    private static List<HttpHeader> createAsyncHttpHeaderList(URI uri, AsyncExecuteRequest sdkExecuteRequest,
-                                                                 Protocol protocol) {
-        SdkHttpRequest sdkRequest = sdkExecuteRequest.request();
-        // worst case we may add 3 more headers here
-        List<HttpHeader> crtHeaderList = new ArrayList<>(sdkRequest.numHeaders() + 3);
-
-        // Set Host Header if needed
-        if (!sdkRequest.firstMatchingHeader(Header.HOST).isPresent()) {
-            crtHeaderList.add(new HttpHeader(Header.HOST, uri.getHost()));
+    private static HttpHeader[] createAsyncHttpHeaders(AsyncExecuteRequest executeRequest, Protocol protocol) {
+        SdkHttpRequest request = executeRequest.request();
+        CrtHeaderArrayBuilder headers = new CrtHeaderArrayBuilder(request.numHeaders() + 3);
+        if (!request.firstMatchingHeader(Header.HOST).isPresent()) {
+            headers.add(Header.HOST, request.host());
         }
-
-        // Add Connection Keep Alive Header for HTTP/1.1 only (forbidden in HTTP/2 per RFC 7540)
-        if (protocol != Protocol.HTTP2 && !sdkRequest.firstMatchingHeader(Header.CONNECTION).isPresent()) {
-            crtHeaderList.add(new HttpHeader(Header.CONNECTION, Header.KEEP_ALIVE_VALUE));
+        if (protocol != Protocol.HTTP2 && !request.firstMatchingHeader(Header.CONNECTION).isPresent()) {
+            headers.add(Header.CONNECTION, Header.KEEP_ALIVE_VALUE);
         }
-
-        // Set Content-Length if needed, but never alongside Transfer-Encoding. RFC 7230 forbids sending both
-        Optional<Long> contentLength = sdkExecuteRequest.requestContentPublisher().contentLength();
-        if (!sdkRequest.firstMatchingHeader(Header.CONTENT_LENGTH).isPresent()
-            && !sdkRequest.firstMatchingHeader(Header.TRANSFER_ENCODING).isPresent()
+        Optional<Long> contentLength = executeRequest.requestContentPublisher().contentLength();
+        if (!request.firstMatchingHeader(Header.CONTENT_LENGTH).isPresent()
+            && !request.firstMatchingHeader(Header.TRANSFER_ENCODING).isPresent()
             && contentLength.isPresent()) {
-            crtHeaderList.add(new HttpHeader(Header.CONTENT_LENGTH, Long.toString(contentLength.get())));
+            headers.add(Header.CONTENT_LENGTH, Long.toString(contentLength.get()));
         }
-
-        // Add the rest of the Headers
-        sdkRequest.forEachHeader((key, value) -> value.stream().map(val -> new HttpHeader(key, val)).forEach(crtHeaderList::add));
-
-        return crtHeaderList;
+        request.forEachHeader(headers);
+        return headers.build();
     }
 
-    private static List<HttpHeader> createHttpHeaderList(URI uri, HttpExecuteRequest sdkExecuteRequest) {
-        SdkHttpRequest sdkRequest = sdkExecuteRequest.httpRequest();
-        // worst case we may add 3 more headers here
-        List<HttpHeader> crtHeaderList = new ArrayList<>(sdkRequest.numHeaders() + 3);
+    private static HttpHeader[] createHttpHeaders(HttpExecuteRequest executeRequest) {
+        SdkHttpRequest request = executeRequest.httpRequest();
+        CrtHeaderArrayBuilder headers = new CrtHeaderArrayBuilder(request.numHeaders() + 2);
+        if (!request.firstMatchingHeader(Header.HOST).isPresent()) {
+            headers.add(Header.HOST, request.host());
+        }
+        if (!request.firstMatchingHeader(Header.CONNECTION).isPresent()) {
+            headers.add(Header.CONNECTION, Header.KEEP_ALIVE_VALUE);
+        }
+        request.forEachHeader(headers);
+        return headers.build();
+    }
 
-        // Set Host Header if needed
-        if (!sdkRequest.firstMatchingHeader(Header.HOST).isPresent()) {
-            crtHeaderList.add(new HttpHeader(Header.HOST, uri.getHost()));
+    private static final class CrtHeaderArrayBuilder implements BiConsumer<String, List<String>> {
+        private HttpHeader[] headers;
+        private int size;
+
+        private CrtHeaderArrayBuilder(int initialCapacity) {
+            this.headers = new HttpHeader[Math.max(0, initialCapacity)];
         }
 
-        // Add Connection Keep Alive Header to reuse this Http Connection as long as possible
-        if (!sdkRequest.firstMatchingHeader(Header.CONNECTION).isPresent()) {
-            crtHeaderList.add(new HttpHeader(Header.CONNECTION, Header.KEEP_ALIVE_VALUE));
+        @Override
+        public void accept(String name, List<String> values) {
+            for (int i = 0; i < values.size(); i++) {
+                add(name, values.get(i));
+            }
         }
 
-        // Add the rest of the Headers
-        sdkRequest.forEachHeader((key, value) -> value.stream().map(val -> new HttpHeader(key, val)).forEach(crtHeaderList::add));
+        private void add(String name, String value) {
+            if (size == headers.length) {
+                grow();
+            }
+            headers[size++] = new HttpHeader(name, value);
+        }
 
-        return crtHeaderList;
+        private void grow() {
+            int newLength = headers.length == 0 ? 4 : headers.length + (headers.length >> 1) + 1;
+            if (newLength < 0) {
+                newLength = Integer.MAX_VALUE;
+            }
+            headers = Arrays.copyOf(headers, newLength);
+        }
+
+        private HttpHeader[] build() {
+            return size == headers.length ? headers : Arrays.copyOf(headers, size);
+        }
     }
 }
