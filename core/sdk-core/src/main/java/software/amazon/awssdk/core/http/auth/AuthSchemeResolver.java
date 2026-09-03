@@ -280,38 +280,57 @@ public final class AuthSchemeResolver {
         if (afterInterceptors == null) {
             return;
         }
+
+        Objects.requireNonNull(currentScheme.authSchemeOption());
+        Objects.requireNonNull(afterInterceptors.authSchemeOption());
+        if (authSchemeBeforeInterceptors == null ||
+            authSchemeBeforeInterceptors.authSchemeOption() == afterInterceptors.authSchemeOption()) {
+            return;
+        }
         doApplyInterceptorModifiedProperties(currentScheme, authSchemeBeforeInterceptors, afterInterceptors, attrs);
     }
 
-    @SuppressWarnings("unchecked")
     private static <T extends Identity> void doApplyInterceptorModifiedProperties(
             SelectedAuthScheme<T> currentScheme,
             SelectedAuthScheme<?> authSchemeBeforeInterceptors,
             SelectedAuthScheme<?> afterInterceptors,
             ExecutionAttributes attrs) {
 
-        // Start with the current endpoint resolved auth scheme as the base.
-        AuthSchemeOption.Builder mergedOption = currentScheme.authSchemeOption().toBuilder();
-        boolean[] changed = {false};
+        InterceptorModifiedPropertyConsumer modifiedProperties =
+            new InterceptorModifiedPropertyConsumer(currentScheme.authSchemeOption(), authSchemeBeforeInterceptors);
+        afterInterceptors.authSchemeOption().forEachSignerProperty(modifiedProperties);
 
-        // For each property on the post-interceptor scheme, check if the interceptor changed it.
-        // If yes, apply it onto the current scheme.
-        afterInterceptors.authSchemeOption().forEachSignerProperty(new AuthSchemeOption.SignerPropertyConsumer() {
-            @Override
-            public <S> void accept(SignerProperty<S> key, S value) {
-                if (wasModifiedByInterceptor(authSchemeBeforeInterceptors, key, value)) {
-                    mergedOption.putSignerProperty(key, value);
-                    changed[0] = true;
-                }
-            }
-        });
-
-        // Only update SELECTED_AUTH_SCHEME if at least one property was re-applied.
-        if (changed[0]) {
+        AuthSchemeOption mergedOption = modifiedProperties.buildOrNull();
+        if (mergedOption != null) {
             attrs.putAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME,
-                               new SelectedAuthScheme<>(currentScheme.identity(),
-                                                        currentScheme.signer(),
-                                                        mergedOption.build()));
+                               new SelectedAuthScheme<>(currentScheme.identity(), currentScheme.signer(), mergedOption));
+        }
+    }
+
+    private static final class InterceptorModifiedPropertyConsumer
+            implements AuthSchemeOption.SignerPropertyConsumer {
+        private final AuthSchemeOption currentOption;
+        private final SelectedAuthScheme<?> authSchemeBeforeInterceptors;
+        private AuthSchemeOption.Builder mergedOption;
+
+        private InterceptorModifiedPropertyConsumer(AuthSchemeOption currentOption,
+                                                      SelectedAuthScheme<?> authSchemeBeforeInterceptors) {
+            this.currentOption = currentOption;
+            this.authSchemeBeforeInterceptors = authSchemeBeforeInterceptors;
+        }
+
+        @Override
+        public <T> void accept(SignerProperty<T> key, T value) {
+            if (wasModifiedByInterceptor(authSchemeBeforeInterceptors, key, value)) {
+                if (mergedOption == null) {
+                    mergedOption = currentOption.toBuilder();
+                }
+                mergedOption.putSignerProperty(key, value);
+            }
+        }
+
+        private AuthSchemeOption buildOrNull() {
+            return mergedOption == null ? null : mergedOption.build();
         }
     }
 
