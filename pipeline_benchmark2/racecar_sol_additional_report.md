@@ -764,3 +764,17 @@ move is to carry that owned array through the existing response-handler wrappers
 reader, eliminating its measured remaining ~36 KB/op copy without retaining transport buffers or changing
 non-JSON behavior. After that, prioritize contained CRT/auth changes and measure the remaining framework
 setup before undertaking another broad architecture change.
+
+## E11 measured update
+
+Phase E11 (`6774e92dd1e`) completed the direct handoff proposed after E10. An internal bounded stream
+exposes the SDK-owned array/range to eligible generated JSON parsing; CRC/gzip and generic streams
+retain the old fallback automatically.
+
+Dedicated-host allocation profiles (`raw/host-e11-alloc-20260903-160054`) remove the
+`JsonProtocolUnmarshaller.byteUnmarshallFromJson` body array completely: approximately 37.8 KB/op.
+Total `byte[]` allocation falls about 36.3 KB/op and total allocation about 34.9 KB/op (7.0%).
+
+Paired timing (`paired/host-20260903-1502`, seven reps) shows async batch-get CPU −0.9% (6/7,
+±0.9%) and latency −1.2% (7/7, ±0.7%); the sync control is zero. This is retained as an exact
+allocation win, while the sub-floor CPU value is not claimed as independently significant.

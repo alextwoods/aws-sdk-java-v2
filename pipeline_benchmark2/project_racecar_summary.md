@@ -2244,3 +2244,39 @@ allocation mechanism result.
 large async read path by 2.4% CPU / 2.3% latency without affecting sync controls. The next coherent
 phase is direct handoff of this owned array to the byte-level JSON reader, eliminating the remaining
 ~36 KB/op parser body copy while preserving CRC, handler wrapping, and non-JSON fallbacks.
+
+## Phase E11 — direct async response-buffer JSON parsing
+
+- Commit: `6774e92dd1e` (`perf(json): Parse owned async response buffer`)
+- Paired timing: `paired/host-20260903-1502`
+- Allocation profiles: `raw/host-e11-alloc-20260903-160054`
+
+E11 exposes E10's SDK-owned immutable byte range through an internal bounded input stream. Eligible
+generated JSON deserialization recognizes that immediate stream delegate, consumes it to preserve
+handler drain semantics, and passes the array/range directly to `FastJsonStructuredReader`. CRC and
+gzip replace the delegate with their wrappers and therefore retain the existing copy/stream fallback;
+sync and generic response streams keep the Content-Length path unchanged.
+
+Full sdk-core (1,559 JUnit + 651 TestNG/TCK), aws-json-protocol (158), checkstyle, SpotBugs, and the
+consistent 53-module build passed.
+
+Equal 35,000-operation allocation profiles confirm the target disappeared:
+
+| site/metric | E10 | E11 | delta |
+|---|---:|---:|---:|
+| `JsonProtocolUnmarshaller.byteUnmarshallFromJson` body array | 37,838 B/op | **0** | **−37,838 B/op** |
+| all `byte[]` | 165,682 B/op | 129,401 B/op | **−36,281 B/op** |
+| total allocation | 501,106 B/op | 466,233 B/op | **−34,873 B/op (−7.0%)** |
+
+The E10 owned array (~36.7 KB/op) and CRT callback copy (~37.1 KB/op) remain, as expected.
+
+Dedicated-host timing, seven paired reps at 200k/30k:
+
+| client | scenario | E10 app CPU | E11 app CPU | CPU delta | spread | wins | latency delta | latency wins |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| v2-async | batch-get | 453.4 | 449.5 | −0.9% | ±0.9% | 6/7 | **−1.2%** | **7/7** |
+| v2-sync *(control)* | batch-get | 399.1 | 399.5 | +0.1% | ±0.8% | 1/7 | −0.0% | 3/7 |
+
+**Kept as an allocation win.** The CPU result is at/below the measured resolution floor and is not
+claimed as independently significant; latency agrees in direction with perfect sign consistency. The
+mechanism is exact, removes one full-body allocation, and leaves the sync control at zero.
