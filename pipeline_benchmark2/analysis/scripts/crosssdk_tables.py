@@ -173,10 +173,30 @@ def main(argv):
         vals = [prof.get((f"{c}_{scenario}", "ALLOC"), (None,))[0] for c in CLIENTS]
         print(ratio_row(scenario, vals, "{:,.0f}"))
 
+    banner("TABLE 2 - pipeline breakdown (estimated CPU us/op / % client CPU / B/op)")
+    print("Category CPU time is mean application CPU us/op multiplied by the CPU profile share.")
+    print("Missing profile categories are rendered as zero samples or allocation bytes.")
+    for scenario, _ in SCENARIOS:
+        print(f"\n**{scenario}**\n")
+        print("| category | " + " | ".join(CLIENTS) + " |")
+        print("|---|" + "---:|" * len(CLIENTS))
+        for cat in CATEGORY_ORDER:
+            cells = []
+            for client in CLIENTS:
+                case = f"{client}_{scenario}"
+                cpu = prof.get((case, "CPU"), (None, {}, []))[1].get(cat)
+                alloc = prof.get((case, "ALLOC"), (None, {}, []))[1].get(cat)
+                pct = cpu[0] if cpu else 0.0
+                app_cpu = mean(client, scenario, "app_cpu_us_per_op")
+                category_cpu = app_cpu * pct / 100 if app_cpu is not None else 0.0
+                bytes_per_op = alloc[1] if alloc and alloc[1] is not None else 0
+                cells.append(f"{category_cpu:,.1f} / {pct:.1f}% / {bytes_per_op:,}")
+            print(f"| {cat} | " + " | ".join(cells) + " |")
+
     for mode, title, pick, floor in (
-            ("CPU", "TABLE 2 - CPU by category (% of client-code samples)",
+            ("CPU", "TABLE 3 - CPU by category (% of client-code samples)",
              lambda v: f'{v[0]:.1f}%', lambda v: v[0] >= 0.5),
-            ("ALLOC", "TABLE 3 - allocation by category (bytes/op)",
+            ("ALLOC", "TABLE 4 - allocation by category (bytes/op)",
              lambda v: f'{v[1]:,}' if v[1] is not None else "-",
              lambda v: v[1] and v[1] > 300)):
         banner(title)
@@ -190,7 +210,7 @@ def main(argv):
                     continue
                 print(f'  {cat:20}' + "".join((pick(v) if v else "-").rjust(12) for v in found))
 
-    banner("TABLE 4 - SDK-reported phases (avg us/op, each SDK's own metric names)")
+    banner("TABLE 5 - SDK-reported phases (avg us/op, each SDK's own metric names)")
     for scenario, group in SCENARIOS:
         print(f"\n{scenario}")
         for client in CLIENTS:
@@ -198,7 +218,7 @@ def main(argv):
             got = [f'{lab}={m[k]:.1f}' for lab, k in PHASE_METRICS[client].items() if k in m]
             print(f'  {client:9} ' + "  ".join(got))
 
-    banner("TABLE 5 - top frames for the decisive cases")
+    banner("TABLE 6 - top frames for the decisive cases")
     for case in FRAME_CASES:
         for mode in ("CPU", "ALLOC"):
             frames = prof.get((case, mode), (None, {}, []))[2]

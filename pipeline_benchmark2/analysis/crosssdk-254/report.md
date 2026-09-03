@@ -114,6 +114,83 @@ run's server request count equalled its iteration count.
 
 ## 3. Where the time goes
 
+### 3.0 Pipeline breakdown (µs/op / % of client CPU / B/op)
+
+Each cell is **estimated average CPU µs/op / percent of total client-code CPU / allocation B/op**.
+The time value combines the mean application CPU from the three clean timing repetitions with the
+category's CPU profile share: `mean app CPU µs/op × category %`. It is therefore an estimate from
+separate timing and profiling JVMs, not a directly timed phase. Percentages retain §3.1's denominator
+(client-code CPU samples, excluding JIT/GC/VM and harness stacks), rather than wall-clock request
+latency. A zero allocation means the allocation profile attributed no bytes to that category.
+
+**small-get** — the per-request overhead scenario
+
+| category | V1 | V2 sync | V2 async | smithy |
+|---|---:|---:|---:|---:|
+| socket-syscall | 16.0 / 14.0% / 0 | 22.9 / 15.1% / 0 | 29.9 / 14.6% / 0 | 11.7 / 25.4% / 0 |
+| http-client | 37.6 / 32.9% / 14,860 | 31.6 / 20.9% / 13,368 | 25.9 / 12.7% / 8,645 | 7.0 / 15.2% / 1,808 |
+| pipeline-framework | 0.3 / 0.2% / 178 | 35.9 / 23.7% / 11,763 | 41.3 / 20.2% / 16,844 | 3.6 / 7.8% / 1,419 |
+| signing | 16.7 / 14.6% / 15,339 | 22.5 / 14.8% / 20,289 | 25.2 / 12.3% / 22,613 | 5.0 / 11.0% / 1,399 |
+| marshall | 3.4 / 3.0% / 675 | 6.5 / 4.3% / 1,290 | 7.6 / 3.7% / 1,800 | 0.4 / 1.0% / 3 |
+| unmarshall | 22.3 / 19.5% / 3,427 | 12.8 / 8.4% / 7,132 | 18.0 / 8.8% / 11,292 | 2.4 / 5.2% / 2,186 |
+| json | 7.3 / 6.4% / 3,433 | 7.1 / 4.7% / 3,296 | 5.9 / 2.9% / 3,255 | 7.0 / 15.2% / 3,079 |
+| crypto | 1.6 / 1.4% / 166 | 2.1 / 1.4% / 355 | 2.1 / 1.0% / 293 | 1.6 / 3.4% / 103 |
+| retry | 8.1 / 7.1% / 2,452 | 2.4 / 1.6% / 1,404 | 5.1 / 2.5% / 1,902 | 1.2 / 2.7% / 81 |
+| endpoint-rules | 0.0 / 0.0% / 0 | 6.6 / 4.4% / 1,417 | 6.8 / 3.3% / 1,286 | 2.3 / 5.0% / 458 |
+| thread-sync | 0.0 / 0.0% / 0 | 0.1 / 0.1% / 0 | 14.3 / 7.0% / 0 | 3.4 / 7.5% / 0 |
+| other | 0.9 / 0.8% / 24 | 1.0 / 0.7% / 20 | 22.1 / 10.8% / 316 | 0.3 / 0.7% / 15 |
+
+**small-put** — the small-write scenario
+
+| category | V1 | V2 sync | V2 async | smithy |
+|---|---:|---:|---:|---:|
+| socket-syscall | 19.2 / 19.9% / 0 | 24.0 / 16.8% / 0 | 29.6 / 15.0% / 0 | 14.1 / 28.4% / 0 |
+| http-client | 35.3 / 36.5% / 15,060 | 32.0 / 22.3% / 13,745 | 24.7 / 12.5% / 8,539 | 8.6 / 17.3% / 1,335 |
+| pipeline-framework | 0.2 / 0.2% / 173 | 31.3 / 21.8% / 11,088 | 40.8 / 20.7% / 17,480 | 4.6 / 9.3% / 1,264 |
+| signing | 16.5 / 17.0% / 14,849 | 21.7 / 15.1% / 20,657 | 24.6 / 12.5% / 22,879 | 5.4 / 10.9% / 1,332 |
+| marshall | 9.5 / 9.8% / 600 | 12.1 / 8.4% / 1,764 | 14.2 / 7.2% / 2,490 | 1.9 / 3.8% / 3 |
+| unmarshall | 1.4 / 1.5% / 360 | 4.6 / 3.2% / 1,432 | 8.6 / 4.3% / 3,526 | 0.6 / 1.2% / 41 |
+| json | 4.7 / 4.8% / 2,897 | 4.2 / 3.0% / 2,319 | 5.4 / 2.7% / 2,321 | 4.7 / 9.4% / 2,356 |
+| crypto | 1.7 / 1.8% / 156 | 3.4 / 2.4% / 352 | 2.3 / 1.2% / 325 | 1.7 / 3.4% / 71 |
+| retry | 7.5 / 7.8% / 2,414 | 2.8 / 2.0% / 1,592 | 5.1 / 2.6% / 1,881 | 0.8 / 1.6% / 64 |
+| endpoint-rules | 0.0 / 0.0% / 0 | 6.0 / 4.2% / 1,340 | 7.0 / 3.6% / 1,291 | 2.3 / 4.7% / 353 |
+| thread-sync | 0.1 / 0.1% / 0 | 0.2 / 0.1% / 0 | 14.2 / 7.2% / 0 | 4.3 / 8.7% / 0 |
+| other | 0.4 / 0.5% / 26 | 1.1 / 0.8% / 26 | 20.6 / 10.4% / 274 | 0.7 / 1.4% / 20 |
+
+**batch-get** — the read/response scenario
+
+| category | V1 | V2 sync | V2 async | smithy |
+|---|---:|---:|---:|---:|
+| socket-syscall | 42.1 / 2.8% / 0 | 44.3 / 6.7% / 0 | 58.3 / 7.9% / 0 | 28.7 / 8.3% / 0 |
+| http-client | 74.2 / 5.0% / 15,129 | 58.4 / 8.8% / 13,833 | 37.8 / 5.1% / 8,546 | 14.6 / 4.3% / 36,712 |
+| pipeline-framework | 0.7 / 0.1% / 135 | 80.2 / 12.1% / 53,438 | 70.7 / 9.6% / 62,180 | 7.9 / 2.3% / 1,588 |
+| signing | 22.3 / 1.5% / 14,950 | 32.2 / 4.8% / 21,717 | 24.3 / 3.3% / 23,391 | 6.8 / 2.0% / 1,540 |
+| marshall | 19.2 / 1.3% / 2,397 | 19.5 / 2.9% / 1,996 | 16.3 / 2.2% / 2,621 | 2.4 / 0.7% / 24 |
+| unmarshall | 1,109.6 / 74.1% / 159,548 | 241.9 / 36.4% / 369,401 | 278.0 / 37.5% / 576,349 | 42.9 / 12.5% / 106,637 |
+| json | 209.7 / 14.0% / 71,221 | 158.7 / 23.9% / 70,192 | 180.4 / 24.4% / 70,412 | 221.3 / 64.5% / 70,938 |
+| crypto | 2.4 / 0.2% / 157 | 5.1 / 0.8% / 318 | 3.3 / 0.4% / 262 | 2.3 / 0.7% / 54 |
+| retry | 13.8 / 0.9% / 2,576 | 4.1 / 0.6% / 1,693 | 4.7 / 0.6% / 1,723 | 3.5 / 1.0% / 186 |
+| endpoint-rules | 0.0 / 0.0% / 0 | 15.1 / 2.3% / 2,804 | 11.7 / 1.6% / 2,127 | 4.7 / 1.4% / 575 |
+| thread-sync | 0.3 / 0.0% / 0 | 0.5 / 0.1% / 0 | 14.4 / 1.9% / 0 | 6.3 / 1.8% / 0 |
+| other | 2.2 / 0.1% / 86 | 4.7 / 0.7% / 112 | 40.6 / 5.5% / 348 | 1.8 / 0.5% / 51 |
+
+**batch-put** — the write/marshalling scenario
+
+| category | V1 | V2 sync | V2 async | smithy |
+|---|---:|---:|---:|---:|
+| socket-syscall | 73.0 / 10.0% / 0 | 59.6 / 7.5% / 0 | 35.4 / 4.5% / 0 | 35.6 / 11.7% / 0 |
+| http-client | 75.0 / 10.3% / 14,932 | 55.5 / 7.0% / 13,725 | 34.3 / 4.4% / 9,010 | 16.7 / 5.5% / 1,235 |
+| pipeline-framework | 0.9 / 0.1% / 243 | 46.1 / 5.8% / 11,449 | 76.5 / 9.8% / 175,059 | 8.5 / 2.8% / 1,212 |
+| signing | 24.5 / 3.4% / 14,982 | 32.3 / 4.0% / 20,832 | 40.2 / 5.1% / 23,690 | 8.2 / 2.7% / 1,437 |
+| marshall | 370.6 / 50.7% / 2,147 | 407.9 / 51.1% / 37,081 | 356.9 / 45.5% / 37,052 | 18.9 / 6.2% / 16 |
+| unmarshall | 4.4 / 0.6% / 780 | 7.7 / 1.0% / 1,585 | 9.3 / 1.2% / 3,850 | 0.3 / 0.1% / 233 |
+| json | 139.9 / 19.1% / 155,130 | 140.8 / 17.6% / 120,299 | 141.1 / 18.0% / 117,043 | 173.2 / 56.9% / 118,054 |
+| crypto | 26.7 / 3.6% / 277 | 26.6 / 3.3% / 241 | 31.6 / 4.0% / 412 | 27.7 / 9.1% / 78 |
+| retry | 12.6 / 1.7% / 2,567 | 4.7 / 0.6% / 1,491 | 6.8 / 0.9% / 2,105 | 2.7 / 0.9% / 249 |
+| endpoint-rules | 0.0 / 0.0% / 0 | 12.6 / 1.6% / 2,315 | 14.0 / 1.8% / 2,636 | 6.8 / 2.2% / 567 |
+| thread-sync | 1.3 / 0.2% / 0 | 0.8 / 0.1% / 0 | 15.3 / 1.9% / 0 | 4.1 / 1.4% / 0 |
+| other | 2.3 / 0.3% / 96 | 3.9 / 0.5% / 74 | 22.7 / 2.9% / 445 | 1.6 / 0.5% / 105 |
+
 ### 3.1 CPU by category (% of client-code samples)
 
 **small-get** — the per-request overhead scenario
@@ -204,7 +281,7 @@ reads, and a fixed per-call tax that only shows up on small operations.
 
 ### 4.1 Marshalling — the largest gap (batch-put: 595 vs 206 µs/op, 2.9×)
 
-Two independent causes.
+Two independent causes. 
 
 **Buffer growth.** `SdkByteArrayOutputStream.write` is **56% of V2 sync batch-put allocation
 (117,759 B/op)**. The generator starts at 1 KB and doubles to reach a ~50 KB body, so it allocates
