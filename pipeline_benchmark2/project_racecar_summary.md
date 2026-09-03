@@ -2280,3 +2280,55 @@ Dedicated-host timing, seven paired reps at 200k/30k:
 **Kept as an allocation win.** The CPU result is at/below the measured resolution floor and is not
 claimed as independently significant; latency agrees in direction with perfect sign consistency. The
 mechanism is exact, removes one full-body allocation, and leaves the sync control at zero.
+
+## Phase E12 — direct CRT request-header array construction
+
+- Commit: `79687b4e359` (`perf(aws-crt-client): Build headers directly`)
+- Paired timing: `paired/host-20260903-1743`
+- Allocation profiles: `raw/host-e12-alloc-20260903-191748`
+
+E12 replaces the CRT adapter's intermediate `ArrayList<HttpHeader>`, per-value stream/lambda
+pipeline, and final `toArray` copy with a one-pass growable `HttpHeader[]`. It also obtains the
+synthetic Host value from `SdkHttpRequest.host()` instead of materializing a full URI. Per-value
+`HttpHeader` objects and CRT JNI marshalling remain unchanged.
+
+The focused adapter suite expanded from four to fifteen tests and covers exact synthetic/header
+ordering, duplicate and multi-values, empty lists, original casing, explicit and derived Host values
+(DNS, IPv4, and bracketed IPv6), HTTP/1.1 and HTTP/2 Connection behavior, known/unknown content
+length, Transfer-Encoding, and source immutability. The complete `aws-crt-client` build passed 319
+tests (two skipped), checkstyle, SpotBugs, dependency analysis, Java 8 compilation, and the
+consistent 53-module benchmark build.
+
+Equal 35,000-operation async small-get allocation profiles confirm the old adapter path disappeared:
+
+| site/metric | E11 | E12 | delta |
+|---|---:|---:|---:|
+| `CrtRequestAdapter.createAsyncHttpHeaderList` list/stream/lambda site | 2,247 B/op | **0** | **−2,247 B/op** |
+| HTTP-client category | 8,478 B/op | 7,175 B/op | **−1,303 B/op (−15.4%)** |
+| total sampled allocation | 44,242 B/op | 42,564 B/op | **−1,678 B/op (−3.8%)** |
+
+The candidate's replacement builder/array sites are approximately 479 B/op combined in this
+sample. `HttpHeader.<init>` and `HttpRequestBase.marshalForJni` remain, as intended.
+
+Dedicated-host timing used seven paired, reversed-order repetitions at 200k/30k, concurrency one,
+with async CRT small-get/small-put as targets and Apache5 sync as a control (56/56 runs passed):
+
+| client | scenario | app CPU delta | paired spread | latency delta | latency spread |
+|---|---|---:|---:|---:|---:|
+| v2-async | small-get | +0.3% | ±3.5% | +0.4% | ±2.2% |
+| v2-async | small-put | +0.2% | ±2.5% | −0.0% | ±1.8% |
+| v2-sync *(control)* | small-get | +1.7% | ±2.3% | +1.3% | ±2.4% |
+| v2-sync *(control)* | small-put | +1.2% | ±5.3% | +0.9% | ±3.9% |
+
+All 28 async timing runs still had JIT compilation in the measured window, so their CPU values are
+not independently claimable. Latency and both controls likewise place the change below the timing
+resolution floor.
+
+**Kept as an allocation-only improvement.** E12 removes the exact profiled adapter mechanism and
+reduces total small-get allocation without a measurable timing effect.
+
+The E12 profile also ranks the two contained auth follow-ups. The no-change
+`AuthSchemeResolver.doApplyInterceptorModifiedProperties` path accounts for approximately 494 B/op,
+mostly copied `HashMap` storage, while the always-created discarded-reasons `ArrayList` is only about
+30 B/op. The next isolated phase should lazily create the interceptor-property builder and copy
+properties only after the first actual modification; lazy discarded diagnostics should follow later.

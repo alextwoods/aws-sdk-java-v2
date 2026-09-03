@@ -778,3 +778,30 @@ Total `byte[]` allocation falls about 36.3 KB/op and total allocation about 34.9
 Paired timing (`paired/host-20260903-1502`, seven reps) shows async batch-get CPU −0.9% (6/7,
 ±0.9%) and latency −1.2% (7/7, ±0.7%); the sync control is zero. This is retained as an exact
 allocation win, while the sub-floor CPU value is not claimed as independently significant.
+
+## E12 measured update
+
+Phase E12 (`79687b4e359`) completed the direct CRT header-array change proposed in section 5.1. The
+adapter now fills a growable `HttpHeader[]` in one pass, avoids the intermediate list, value streams,
+lambdas, and `toArray`, and derives synthetic Host directly from `SdkHttpRequest.host()`. Existing
+header ordering, casing, multi-value, empty-list, HTTP/2, Content-Length/Transfer-Encoding, and host
+semantics are covered by fifteen focused tests.
+
+Dedicated-host allocation profiles (`raw/host-e12-alloc-20260903-191748`) used 35,000 equal async
+small-get operations per arm. The former `createAsyncHttpHeaderList` allocation site falls from
+approximately 2,247 B/op to zero. The replacement builder/array sites are approximately 479 B/op,
+the HTTP-client category falls about 1,303 B/op (15.4%), and total sampled allocation falls from
+44,242 to 42,564 B/op: approximately **−1,678 B/op (−3.8%)**. Per-value `HttpHeader` and CRT JNI
+allocations remain, as expected.
+
+Paired timing (`paired/host-20260903-1743`, seven reps, 56/56 successful runs) is neutral within the
+measurement floor. Async small-get is +0.3% application CPU / +0.4% latency, and async small-put is
++0.2% CPU / −0.0% latency; paired spreads are 1.8–3.5%. All async timing runs had residual JIT, so no
+CPU effect is claimed. Apache5 sync controls also moved within noise. E12 is retained strictly as an
+exact allocation-mechanism win.
+
+The current profile also chooses between the two auth follow-ups in section 5.2. The no-change
+`doApplyInterceptorModifiedProperties` path samples at approximately 494 B/op, dominated by copied
+`HashMap` nodes/table storage, while the eager discarded-reasons `ArrayList` is approximately 30
+B/op. Therefore the next isolated phase should make the interceptor-property builder lazy and defer
+copying until the first real modification. Lazy discarded diagnostics remain valid but lower priority.
