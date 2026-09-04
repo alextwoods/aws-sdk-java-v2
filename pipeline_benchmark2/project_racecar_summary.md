@@ -2387,3 +2387,80 @@ forces `mergePreExistingAuthSchemeProperties` to rebuild again (profile estimate
 764 B/op sync and 449 B/op async). The next isolated phase should make a null checksum write a no-op
 when the current property already reads null, while preserving the existing behavior that a null
 write clears a non-null checksum. This ranks ahead of the eager discarded-reasons list (~30 B/op).
+
+## Phase E14 — reading unions without a builder
+
+- Commits: `a4ac3496b07` (fixture reformat, semantically inert), `09e00bc4578` (direct union factories for
+  every union + non-copying variants), `c9e8722cd97` (the read path uses them)
+- Raw: `raw/e2-jmh/host-g11` (component, flat — see below), `paired/host-20260904-0452` (e2e, 7 reps)
+
+### The mechanism, and why the component benchmark could not see it
+
+A union's `$readJson` allocated a builder, pushed members through `readStruct`, and called `build()`.
+`readStruct` hands each member to a consumer, and generated code supplies **one consumer implementation
+per shape**, so the call site inside the reader is megamorphic across a real client. Two costs follow:
+it cannot be inlined, so the builder handed to it escapes and cannot be scalar-replaced; and every
+member pays a virtual dispatch on top. The batch-get profile showed 4.4% of client CPU in
+`AttributeValue$BuilderImpl.<init>` and 2.5% in itable stubs, with ~275 `AttributeValue`s materialized
+per 25-item BatchGetItem response.
+
+This resolves the contradiction phase E5 left behind. E5 measured the union builder as costing exactly
+nothing — allocation identical to the byte — and concluded escape analysis had already deleted it. That
+was true *of that harness*: a JMH benchmark exercising one shape makes the consumer call site
+monomorphic, so the builder really is free there. It is not free in a client with hundreds of shapes.
+**The component benchmark is structurally blind to this optimization**, and duly reported flat again
+here (`host-g11`: time noise, allocation identical to the byte). Only the e2e measurement can see it.
+
+### What changed
+
+`StructuredJsonReader` gained `beginStruct()` and `nextMember(table)` — a caller-driven alternative to
+`readStruct`, implemented in both readers. A union's `$readJson` now drives the member loop itself,
+keeps the value in a **local**, and constructs once through the direct factories: `createX` for a scalar
+member, `createXUnsafe` for a collection, adopting the collection the parser just built instead of
+copying it (the same provenance argument as E4).
+
+The enabling commit generalized those factories: they were opt-in per shape via the
+`generateDirectUnionConstructors` customization, so in practice only DynamoDB's `AttributeValue` had
+them. They now apply to every union that can support them — a `Model` shape whose collection members all
+have copiers — and collection members additionally get the non-copying `Unsafe` variant, named after the
+`SdkBytes.fromByteArrayUnsafe` precedent. The customization is deprecated and its entries removed.
+
+Malformed documents are reproduced rather than rejected, which is what lets this be one path with no
+fallback and no reader rewind (the Jackson-backed reader could not support rewind): no members set gives
+`UNSET_INSTANCE`; more than one member gives the positional constructor with a **null type**, exactly
+what `handleUnionValueChange` leaves behind on seeing a second member.
+
+### Measurement
+
+| client | scenario | base | direct | delta | spread | wins | latency |
+|--------|----------|-----:|-------:|------:|-------:|-----:|--------:|
+| v2-sync | batch-get | 391.8 | 328.9 | **−16.1%** | ±0.9% | 7/7 | −14.4% |
+| v2-async | batch-get | 447.5 | 384.8 | **−14.0%** | ±1.5% | 7/7 | −13.3% |
+| v2-sync | small-get | 105.5 | 103.5 | −1.9% | ±2.9% | 4/7 | −1.3% |
+| v2-async | small-get | 155.9 | 151.1 | −3.1% | ±3.3% | 5/7 | −2.4% |
+
+Well beyond the −3…−6% predicted, against a batch-get floor of +0.3% at 4/7. The harness was identical
+across arms, so the SDK is the only difference. small-get moves less because a GetItem response carries
+about ten attribute values rather than 275 — the gain tracks union count, which is the signature of the
+mechanism.
+
+Cumulative sync batch-get against unmodified 2.54.0 (664.7 µs): now ~329 µs, **≈ −50%**.
+
+### Correctness
+
+Differential, at the level where the risk is. Every document in
+`FastJsonStructuredReaderDifferentialTest` — including its 500 randomized ones and all the whitespace,
+escape and malformed cases — is now additionally read through `beginStruct`/`nextMember` on **both**
+readers and asserted equal to the `readStruct` result. Mutation-verified three ways: not skipping a
+null-valued member, mis-setting the first-member flag, and not skipping an unknown member's value each
+fail the suite. Generated builders keep `readJsonFields`, so the builder path remains available and is
+what the differential compares against. protocol-tests 726 exercises real generated unions end to end.
+
+### Follow-ups
+
+- **Non-union structures still use `readStruct`** and so still pay the megamorphic dispatch and an
+  escaping builder. The same treatment applies, but a structure sets many members at once, so it needs
+  locals plus a positional constructor per shape rather than single-member factories — the Option B
+  shape. Given the −16% this bought on unions, that is now the most valuable thing in the queue.
+- The `Unsafe` factories have no other caller yet. dynamodb-enhanced's converters build collections they
+  own (`JsonNodeToAttributeValueMapConverter.visitObject`, `StaticImmutableTableSchema`) and could adopt.
