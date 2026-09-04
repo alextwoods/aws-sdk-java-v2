@@ -1,0 +1,687 @@
+{
+  "pbtResults": {
+    "2.2 Write property test for credential round-trip preservation": {
+      "status": "passed",
+      "lastRunTimestamp": 1784820091543
+    },
+    "2.3 Write property test for credential resolution error wrapping": {
+      "status": "passed",
+      "lastRunTimestamp": 1784820137684
+    },
+    "3.2 Write property test for protocol trait resolution": {
+      "status": "passed",
+      "lastRunTimestamp": 1784826060965
+    },
+    "4.2 Write property test for auth scheme selection order": {
+      "status": "passed",
+      "lastRunTimestamp": 1784826387359
+    },
+    "5.2 Write property test for retry configuration bridge preservation": {
+      "status": "passed",
+      "lastRunTimestamp": 1784826480465
+    },
+    "7.5 Write property test for shared ExecutionAttributes": {
+      "status": "passed",
+      "lastRunTimestamp": 1785169051156
+    },
+    "7.4 Write property test for interceptor hook dispatch fidelity": {
+      "status": "passed",
+      "lastRunTimestamp": 1785169154648
+    },
+    "7.6 Write property test for interceptor exception transparency": {
+      "status": "passed",
+      "lastRunTimestamp": 1785170599892
+    },
+    "9.6 Write property test for CallException unwrapping": {
+      "status": "passed",
+      "lastRunTimestamp": 1785251243975
+    },
+    "9.7 Write property test for non-SDK CallException mapping": {
+      "status": "passed",
+      "lastRunTimestamp": 1785251244986
+    },
+    "9.8 Write property test for transport exception wrapping": {
+      "status": "passed",
+      "lastRunTimestamp": 1785251831474
+    },
+    "9.10 Write property test for unsupported operation detection": {
+      "status": "passed",
+      "lastRunTimestamp": 1785251835312
+    },
+    "9.11 Write property test for endpoint override bypass": {
+      "status": "passed",
+      "lastRunTimestamp": 1785251839919
+    },
+    "9.9 Write property test for request ID extraction": {
+      "status": "passed",
+      "lastRunTimestamp": 1785252182161
+    },
+    "9.12 Write property test for signing parameter resolution": {
+      "status": "passed",
+      "lastRunTimestamp": 1785252185813
+    },
+    "11.2 Write property test for interceptor registration order preservation": {
+      "status": "passed",
+      "lastRunTimestamp": 1785252453580
+    }
+  },
+  "executionHistory": {
+    "1.1 Add new smithy-java Maven dependencies to `core/smithy-java-bridge/pom.xml`": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244739
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748266314
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784749908473
+      }
+    ],
+    "1.2 Create package directories for new components": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244781
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748267100
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784749909246
+      }
+    ],
+    "2.1 Create `V2CredentialsBridge` class in `auth` package": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244815
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784749932417
+      }
+    ],
+    "2.2 Write property test for credential round-trip preservation": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244849
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784819897187
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826082194
+      }
+    ],
+    "2.3 Write property test for credential resolution error wrapping": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244878
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784819898697
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826082963
+      }
+    ],
+    "2.4 Write unit tests for V2CredentialsBridge": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244904
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784819899078
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826083913
+      }
+    ],
+    "3.1 Create `ProtocolResolver` class in `protocol` package": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244929
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784749933376
+      }
+    ],
+    "3.2 Write property test for protocol trait resolution": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244954
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784819900106
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826084802
+      }
+    ],
+    "3.3 Write unit tests for ProtocolResolver": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748244979
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784819901061
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826085604
+      }
+    ],
+    "4.1 Create `AuthSchemeResolver` class in `auth` package": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245003
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784749934380
+      }
+    ],
+    "4.2 Write property test for auth scheme selection order": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245029
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826096818
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826495090
+      }
+    ],
+    "4.3 Write unit tests for AuthSchemeResolver": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245052
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826097638
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826495767
+      }
+    ],
+    "5.1 Create `V2RetryBridge` class in `retry` package": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245073
+      },
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784749935316
+      }
+    ],
+    "5.2 Write property test for retry configuration bridge preservation": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245102
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826098377
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826496608
+      }
+    ],
+    "5.3 Write unit tests for V2RetryBridge": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245128
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826099150
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826497441
+      }
+    ],
+    "6. Checkpoint - Ensure all tests pass for independent components": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245151
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826529869
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785114735865
+      }
+    ],
+    "7.1 Create `FullV2InterceptorBridge` class in `interceptors` package": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245183
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784826530803
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785166227141
+      }
+    ],
+    "7.2 Implement forward hook mappings in FullV2InterceptorBridge": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245218
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785166234903
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785167095552
+      }
+    ],
+    "7.3 Implement completion hook mappings in FullV2InterceptorBridge": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245245
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785166235738
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785167096355
+      }
+    ],
+    "7.4 Write property test for interceptor hook dispatch fidelity": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245269
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785167105396
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785170617407
+      }
+    ],
+    "7.5 Write property test for shared ExecutionAttributes": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245296
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785167106129
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785170618136
+      }
+    ],
+    "7.6 Write property test for interceptor exception transparency": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245320
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785167106924
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785170618999
+      }
+    ],
+    "7.7 Write unit tests for FullV2InterceptorBridge": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245345
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785167107778
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785170619997
+      }
+    ],
+    "8. Checkpoint - Ensure all tests pass for interceptor bridge": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245373
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785170633792
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171232147
+      }
+    ],
+    "9.1 Rewrite `SmithyJavaPipeline` constructor to build a smithy-java `Client`": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245404
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785170634904
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171233142
+      }
+    ],
+    "9.2 Rewrite `SmithyJavaPipeline.execute()` to delegate to `Client.call()`": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245429
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171241809
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171315366
+      }
+    ],
+    "9.3 Implement exception mapping in `SmithyJavaPipeline.execute()`": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245454
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171242627
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171316134
+      }
+    ],
+    "9.4 Implement endpoint resolution logic": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245480
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171243415
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171316997
+      }
+    ],
+    "9.5 Ensure `supportsOperation()` returns false for unsupported operations": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245504
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171244292
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171317869
+      }
+    ],
+    "9.6 Write property test for CallException unwrapping": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245531
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171326038
+      }
+    ],
+    "9.7 Write property test for non-SDK CallException mapping": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245555
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171326781
+      }
+    ],
+    "9.8 Write property test for transport exception wrapping": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245580
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171327629
+      }
+    ],
+    "9.9 Write property test for request ID extraction": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245605
+      }
+    ],
+    "9.10 Write property test for unsupported operation detection": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245636
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171328504
+      }
+    ],
+    "9.11 Write property test for endpoint override bypass": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245662
+      },
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785171329367
+      }
+    ],
+    "9.12 Write property test for signing parameter resolution": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245703
+      }
+    ],
+    "10. Checkpoint - Ensure all tests pass for expanded pipeline": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245727
+      }
+    ],
+    "11.1 Verify `SmithyJavaPipelineProvider` registration and priority": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245753
+      }
+    ],
+    "11.2 Write property test for interceptor registration order preservation": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245778
+      }
+    ],
+    "11.3 Write unit tests for SPI compatibility": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245803
+      }
+    ],
+    "12.1 Write integration test for full pipeline execution with DynamoDB Local": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245829
+      }
+    ],
+    "12.2 Write integration test verifying full interceptor hook sequence": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245856
+      }
+    ],
+    "12.3 Write integration test for retry behavior": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245886
+      }
+    ],
+    "13. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784748245913
+      }
+    ],
+    "1. Add Maven dependencies and set up project structure": [
+      {
+        "executionId": "82d34890-7460-420f-8260-bb3a3fa485a6",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1784749909272
+      }
+    ],
+    "7. Implement FullV2InterceptorBridge": [
+      {
+        "executionId": "9580dd28-28f3-483c-be76-e85756f712a0",
+        "chatSessionId": "sess_4d9635c8-e682-4e1b-9cce-ea2b4eb1b17b",
+        "timestamp": 1785170620029
+      }
+    ]
+  }
+}
