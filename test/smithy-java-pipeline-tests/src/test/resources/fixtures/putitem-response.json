@@ -1,0 +1,6 @@
+{
+  "Attributes": {
+    "pk": {"S": "test-key"},
+    "sk": {"N": "42"}
+  }
+}
