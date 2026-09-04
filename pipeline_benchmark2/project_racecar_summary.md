@@ -2464,3 +2464,95 @@ what the differential compares against. protocol-tests 726 exercises real genera
   shape. Given the −16% this bought on unions, that is now the most valuable thing in the queue.
 - The `Unsafe` factories have no other caller yet. dynamodb-enhanced's converters build collections they
   own (`JsonNodeToAttributeValueMapConverter.visitObject`, `StaticImmutableTableSchema`) and could adopt.
+
+---
+
+## Phase E15 — smithy-java's latin1 + SWAR string write: rejected, and the reason generalises
+
+Asked for directly: port smithy-java's write-side string optimisation, which reads a `String`'s internal
+latin1 byte array and copies it to the wire eight bytes at a time behind a SWAR escape mask. Estimated
+prize was the remainder of `writeQuotedString`'s share of batch-put, 8–15%.
+
+**Not committed.** Raw: `raw/e2-jmh/host-e15` (component, rep 1 of 3; run stopped early, see below).
+
+### Two corrections to the original framing
+
+An earlier note in this document gave two blockers: Java 8 has no `VarHandle`, and reaching
+`String.value` needs `sun.misc.Unsafe`. The first is wrong and the second understates the problem.
+
+1. **Java 8 was never the blocker.** `sun.misc.Unsafe` supplies both halves at Java 8 source level:
+   `objectFieldOffset`/`getObject` for `String.value` and `coder`, and `getLong` for the SWAR word reads.
+   `VarHandle` is the tidy modern spelling, not a requirement.
+2. **The real blockers are three, and each is independently fatal for this repository.**
+   - `sun.misc.Unsafe::objectFieldOffset` is *terminally deprecated*. On JDK 24+ the runtime prints a
+     warning naming the calling library on first use, and a future release removes the method. This
+     session's own build logs contain that warning, emitted by Guava and ByteBuddy on the JDK 25 in use.
+     Shipping it would put a scary warning attributed to the AWS SDK in every customer JVM on 24+.
+   - The build forbids it outright. `maven.compiler.release=8` restricts javac to the documented API, so
+     `package sun.misc does not exist` — a compile error, not a warning. That setting is what backs the
+     Java 8 compatibility promise, so working around it is not a local decision.
+   - There is no precedent: `sun.misc.Unsafe` appears nowhere in the SDK's main sources (`core`, `utils`,
+     `http-clients`, `services-custom`).
+
+   Reflection or `MethodHandles` could dodge the compile error, but not the deprecation, and per-word
+   reflective reads would defeat the entire purpose.
+
+### The sound subset was measured, and it is a regression
+
+The technique decomposes into two wins: (a) bulk-copying the bytes instead of storing them one at a
+time, and (b) scanning eight bytes per iteration instead of four chars. Only (b) strictly needs the
+internal array. (a) has a supported route: `String.getBytes(int,int,byte[],int)` copies the low byte of
+each char with no allocation, and on JDK 9+ for a latin1 string it is a plain `System.arraycopy`. Its
+usual hazard — silently truncating chars above `0xFF` — cannot arise if only the prefix the scan has
+already proven to be below `0x80` is copied.
+
+So `writeQuotedString` was split: scan for the verbatim-copyable prefix (store-free), then copy that run
+in one move. Four arms, two jars, `JsonRpc10MarshallBenchmark`, alternating per rep, `taskset -c 32-47`.
+`bulkCopyMin` selects the shortest run copied with `getBytes` rather than per-char stores.
+
+Rep 1, % change vs base (negative is better):
+
+| case | bulk0 (always bulk) | bulk16 (gated) | nobulk (split only) |
+|---|---:|---:|---:|
+| MixedItem_L | +7.4% | +29.4% | +29.8% |
+| MixedItem_M | +7.5% | +29.1% | +29.4% |
+| MixedItem_S | −0.1% | +19.2% | +14.3% |
+| ShallowMap_L | +6.4% | +21.7% | +22.4% |
+| ShallowMap_M | +0.4% | +14.4% | +15.0% |
+| ShallowMap_S | +3.8% | +17.4% | +15.1% |
+| Nested_L | −3.6% | +10.3% | +9.8% |
+| Nested_M | −0.6% | +17.8% | +11.8% |
+| GetItemInput_Baseline | +0.2% | +4.1% | +7.1% |
+| PutItemRequest_Baseline | −4.0% | +5.5% | +1.8% |
+
+Stopped after rep 1 of 3. The effects are +10…+30%, an order of magnitude outside the ±1–2% this host
+has shown across seven-rep collections, and all three candidate arms agree in direction and rank. The
+remaining host time was worth more on the next phase than on tightening an interval around a clear
+rejection.
+
+### Why, and why it generalises
+
+**Splitting the scan from the copy turns one pass over the string into two.** Base (E6) reads each char
+once and stores it. `nobulk` reads every char twice — once to scan, once to copy — and pays +10…+30% for
+it. `bulk16` is no better because DynamoDB strings are mostly shorter than 16 chars, so they take the
+per-char copy path anyway; the gate protects nothing. `bulk0` is only *near* neutral because `getBytes`
+makes the second pass a memcpy rather than a `charAt` loop — and it still loses 6–7% on the map-heavy
+cases, which are the ones batch-put is made of.
+
+The general lesson, and the reason the remaining prize should not be chased in another form: **the SWAR
+win and the bulk-copy win are not separable.** Both are consequences of holding the byte array, where
+the scan and the copy read the same cheap array and the second pass is nearly free. Extracting only the
+sound half forces an extra pass over `charAt` and costs more than the stores it removes. There is no
+partial-credit version of this optimisation, so the write side is done at E6 until the byte array is
+reachable by supported means.
+
+The word-at-a-time technique itself is *not* dead — it just belongs on the **read** side, where the
+parser already owns a `byte[]`. SWAR there needs no internals at all and no `Unsafe`: a cached
+`ByteBuffer` wrapping the reader's own buffer gives intrinsified `getLong` at Java 8 source level. That
+is the form worth trying, and E8's failure (four table lookups per group) does not predict it.
+
+### Gates
+aws-json-protocol 158, checkstyle 0, dynamodb 61. protocol-tests 726 with one error, `QueryExceptionTests`
+`SocketException: Connection reset` inside WireMock's own client — infrastructure, and 18/18 clean on
+re-run. codegen-generated-classes-test 1981 with the 6 known-pre-existing `DelegatingAsyncClientTest`
+errors.
