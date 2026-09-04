@@ -2556,3 +2556,137 @@ aws-json-protocol 158, checkstyle 0, dynamodb 61. protocol-tests 726 with one er
 `SocketException: Connection reset` inside WireMock's own client — infrastructure, and 18/18 clean on
 re-run. codegen-generated-classes-test 1981 with the 6 known-pre-existing `DelegatingAsyncClientTest`
 errors.
+
+---
+
+## Phase E16 — smithy-java's HTTP client as an SDK transport
+
+The cross-SDK breakdown (`analysis/crosssdk-254/report.md` §3.0) put smithy-java's transport at 18.7 µs/op
+and 1.8 KB on small-get against v2-sync's 54.5 µs and 13.4 KB. Splitting that by profile category, the
+HTTP client framework itself was roughly 7 µs/op for smithy against roughly 32 µs for Apache5 — about 16%
+of v2-sync's small-get client CPU. This phase makes smithy's client an SDK HTTP client so that difference
+can be measured *inside* the SDK pipeline instead of inferred across two different stacks.
+
+- Commits: `b1cd7d1a67f` (the client), `422bfc449e7` (the benchmark arms)
+- Raw: `raw/e16-smithyhttp/all-results.txt`
+- New module: `http-clients/smithy-http-client`, artifact `smithy-http-client`
+
+### What was built
+
+`SmithyHttpClient` (sync) and `SmithyAsyncHttpClient` (async), neither registered in
+`META-INF/services`, so nothing enters the default-client priority table and both are reachable only by
+being passed to a builder explicitly.
+
+The synchronous client is a faithful mapping — smithy's client is blocking, which is the shape of
+`SdkHttpClient` — and passes the shared `SdkHttpClientTestSuite`. **The asynchronous client is a bridge,
+not a port**: smithy's HTTP client contains no `CompletableFuture` anywhere, so each request runs on a
+virtual thread. That is smithy's intended execution model, but it is a hand-off a natively asynchronous
+client does not pay, and the response body is buffered before publishing. Its numbers are a bridge's
+numbers.
+
+### Measurement
+
+One jar, four client arms. `v2-sync-smithy` and `v2-async-smithy` are identical to `v2-sync` and
+`v2-async` except for the transport, so each pair isolates the HTTP client with the rest of the pipeline
+fixed — a cleaner comparison than the existing `smithy` arm, which differs in serialization, signing and
+client framework too. 200,000 iterations, 30,000 warmup, 7 repetitions, client pinned to 32–47 and server
+to 0–15, client order reversed on even repetitions so drift across a repetition cannot masquerade as a
+transport difference. 112 results, no failures.
+
+**Verified before trusting any of it:** `Epoll.isAvailable() == true` on the host (Linux aarch64, JDK
+25.0.4) and smithy's `EpollAccess` bridge loads. Without that check a silent fallback to smithy's
+portable socket transport would have measured the wrong thing entirely — and it does silently fall back,
+which is how the local macOS smoke run produced a +8% batch-get "regression" that did not reproduce here.
+
+app CPU µs/op, mean of 7 paired repetitions:
+
+| scenario | v2-sync (Apache5) | +smithy | delta | spread | wins | latency delta |
+|---|---:|---:|---:|---:|---:|---:|
+| small-get | 101.8 | 94.6 | −7.0% | ±7.3% | 7/7 | −5.4% |
+| small-put | 97.9 | 89.9 | −8.0% | ±7.1% | 7/7 | −5.6% |
+| batch-get | 334.4 | 327.8 | −2.0% | ±3.2% | 5/7 | −2.5% |
+| batch-put | 303.6 | 300.0 | −1.1% | ±4.2% | 5/7 | −1.6% |
+
+| scenario | v2-async (CRT) | +smithy | delta | spread | wins | latency delta |
+|---|---:|---:|---:|---:|---:|---:|
+| small-get | 152.5 | **126.4** | **−17.1%** | ±2.7% | 7/7 | −15.1% |
+| small-put | 148.1 | 129.3 | **−12.7%** | ±3.9% | 7/7 | −11.8% |
+| batch-get | 393.1 | 378.3 | −3.8% | ±1.8% | 7/7 | −4.2% |
+| batch-put | 349.0 | 336.6 | −3.6% | ±1.9% | 7/7 | −5.6% |
+
+Per-repetition small-get deltas, which matter for how much to believe each number:
+
+```
+sync :  -10.5  -3.7  -2.1  -7.3  -9.3 -15.3  -0.7     mean  -7.0%
+async:  -15.9 -17.3 -20.1 -14.7 -17.0 -18.8 -15.7     mean -17.1%
+```
+
+**The async result is solid**: every repetition between −14.7% and −20.1%, spread far below the effect.
+**The sync result is a reliable win of poorly determined size**: every repetition is negative, and 7/7 in
+one direction is a 1-in-128 coincidence per scenario, but the magnitude ranges from −0.7% to −15.3%, so
+"−7%" should be read as "somewhere around 5–10%".
+
+Batch scenarios barely move in either, which is the expected shape: transport is a fixed per-request cost,
+so it is a large share of a small operation and a rounding error next to marshalling 25 items.
+
+### Why sync fell short of the predicted 16%
+
+The prediction came from comparing whole stacks, and two things that comparison folded into "transport"
+do not move when only the client is swapped.
+
+1. **Much of V2's transport cost is V2's, not the client's.** Building `SdkHttpFullRequest`, the header
+   multimap, `ContentStreamProvider`, `AbortableInputStream` wrapping and metric collection all stay
+   exactly where they were. Only the part below that boundary was replaced.
+2. **An adapter pays a translation the native stacks do not.** Every request converts
+   `SdkHttpRequest` → smithy `HttpRequest` (a `SmithyUri.of` parse plus a header copy) and every response
+   converts back. That cost is proportional to header count and is *added* to smithy's cheap transport, so
+   the achievable saving is smithy's advantage minus this translation. This is a hypothesis consistent
+   with the numbers, not something the profile has confirmed yet — see follow-ups.
+
+The general point is worth keeping: **a transport's advantage is partly an advantage of the request and
+response types it consumes natively.** Reaching the full 16% would mean pushing smithy's types further up
+the SDK pipeline, not just plugging its socket layer in underneath.
+
+The async gain is larger mostly because its baseline is worse: CRT costs 152.5 µs/op on small-get against
+Apache5's 101.8 in this harness at concurrency 1, so there is more to recover. **That is a finding
+independent of smithy: the SDK's async small-operation cost carries roughly 26 µs/op that a blocking
+client on a virtual thread does not**, and it is worth understanding on its own.
+
+### Constraints, all inherited from the dependency
+
+- **Java 21.** smithy-java publishes class file major version 65, so the module sets `release 21` while
+  every other module targets Java 8. This alone rules the client out as a default.
+- **Linux for the fast path.** smithy reaches epoll through Netty's *package-private* internals, in a
+  class that lives in `io.netty.channel.epoll`. The split package rules out the module path, a Netty
+  upgrade can break it, and elsewhere it silently falls back to a portable socket transport.
+- **`trustAll` covers issuer trust only.** smithy's `JdkTlsProvider` unconditionally forces
+  `setEndpointIdentificationAlgorithm("HTTPS")` after copying caller-supplied `SSLParameters`, so a
+  certificate whose name does not match the host still fails. Overriding it would mean supplying a custom
+  `TlsProvider`, and one that did not report `supportsEpoll()` would silently drop the client onto the
+  slow transport — a worse failure than the limitation.
+- Consequently the shared **async** conformance suite cannot run against this client at all: it drives
+  every request over HTTPS against a self-signed certificate. Behavioural coverage was written over HTTP
+  instead, which is also the configuration measured here, so **this client's TLS behaviour is essentially
+  untested**.
+
+### Correctness
+`SdkHttpClientTestSuite` 20/20 for the sync client (with `testTrustAllWorks` overridden and documented as
+unsupported), 9 behavioural tests for the async client covering status, headers, body integrity at 512 KB,
+HEAD, connection reuse, request bodies and failure propagation. Checkstyle 0, spotbugs 0.
+
+Four bugs the SPI conformance work exposed, all fixed: HEAD responses must expose no body *and* must not
+be read (reading blocks for bytes that never arrive); smithy wraps TLS handshake failures in a generic
+`IOException`, so the handshake exception is pulled back out of the cause chain for the retry policy;
+a rejected execution on a closed async client was thrown synchronously instead of reported through the
+returned future; and request headers were being copied with `headers()`, which deep-copies on every
+request — caught by the SDK's own spotbugs rule, and exactly the sort of per-request cost this client
+exists to remove.
+
+### Follow-ups
+- **Profile the sync arm to test the translation hypothesis.** If `SmithyHttpClient`'s conversion shows up
+  as a meaningful frame, the adapter boundary is the ceiling and the number is what it is; if it does not,
+  the missing saving is elsewhere and worth chasing.
+- **CRT's 26 µs/op on small operations.** The async comparison says more about the current async default
+  than about smithy. Worth its own investigation at concurrency 1 and higher.
+- Not shippable as-is, for the reasons above. What it establishes is the size of the prize and where the
+  boundary of an adapter-shaped solution lies.
