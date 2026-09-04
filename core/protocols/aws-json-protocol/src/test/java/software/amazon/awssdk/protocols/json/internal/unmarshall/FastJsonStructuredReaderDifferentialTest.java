@@ -52,7 +52,7 @@ public class FastJsonStructuredReaderDifferentialTest {
      * including a recursive union-ish shape.
      */
     static final class TestShape implements StructuredJsonReadable {
-        private static final JsonMemberTable TABLE = JsonMemberTable.of(
+        static final JsonMemberTable TABLE = JsonMemberTable.of(
             "S", "I", "L", "D", "F", "BOOL", "BYTES", "TS_DEFAULT", "TS_ISO", "BIG",
             "LIST_S", "MAP_S", "NESTED", "LIST_NESTED", "MAP_NESTED", "LIST_LIST", "LongerFieldName");
 
@@ -85,7 +85,7 @@ public class FastJsonStructuredReaderDifferentialTest {
             return shape;
         }
 
-        private static void readMember(TestShape b, int memberIndex, StructuredJsonReader reader) {
+        static void readMember(TestShape b, int memberIndex, StructuredJsonReader reader) {
             switch (memberIndex) {
                 case 0:
                     b.s = reader.readString();
@@ -220,6 +220,57 @@ public class FastJsonStructuredReaderDifferentialTest {
         TestShape jackson = parseJackson(json);
         TestShape fast = parseFast(json);
         assertThat(fast).as("document: %s", json).isEqualTo(jackson);
+
+        // The caller-driven member loop must reach the same end state as readStruct, on both readers.
+        assertThat(parseCallerDrivenFast(json)).as("caller-driven, byte reader: %s", json).isEqualTo(fast);
+        assertThat(parseCallerDrivenJackson(json)).as("caller-driven, jackson reader: %s", json).isEqualTo(jackson);
+    }
+
+    /**
+     * Reads with {@link StructuredJsonReader#beginStruct()} and {@link StructuredJsonReader#nextMember} instead of
+     * {@link StructuredJsonReader#readStruct}, the way generated union code does. Shares {@code TestShape}'s member
+     * handling so the only difference under test is how the structure is iterated.
+     */
+    static final class CallerDrivenShape implements StructuredJsonReadable {
+        private final TestShape delegate = new TestShape();
+
+        @Override
+        public void readJsonFields(StructuredJsonReader reader) {
+            reader.beginStruct();
+            for (int memberIndex = reader.nextMember(TestShape.TABLE);
+                 memberIndex != StructuredJsonReader.MEMBER_END;
+                 memberIndex = reader.nextMember(TestShape.TABLE)) {
+                if (memberIndex != StructuredJsonReader.MEMBER_SKIPPED) {
+                    TestShape.readMember(delegate, memberIndex, reader);
+                }
+            }
+        }
+    }
+
+    private static TestShape parseCallerDrivenFast(String json) {
+        CallerDrivenShape shape = new CallerDrivenShape();
+        boolean nonNull = FastJsonStructuredReader.parseDocument(
+            json.getBytes(StandardCharsets.UTF_8), 0, json.getBytes(StandardCharsets.UTF_8).length,
+            TimestampFormatTrait.Format.UNIX_TIMESTAMP, shape);
+        return nonNull ? shape.delegate : null;
+    }
+
+    private static TestShape parseCallerDrivenJackson(String json) throws IOException {
+        byte[] body = json.getBytes(StandardCharsets.UTF_8);
+        try (JsonParser parser = AwsStructuredPlainJsonFactory.SDK_JSON_FACTORY.getJsonFactory().createParser(body)) {
+            software.amazon.awssdk.thirdparty.jackson.core.JsonToken first = parser.nextToken();
+            if (first == null) {
+                return new TestShape();
+            }
+            if (first == software.amazon.awssdk.thirdparty.jackson.core.JsonToken.VALUE_NULL) {
+                return null;
+            }
+            JacksonStructuredJsonReader reader = new JacksonStructuredJsonReader(
+                parser, TimestampFormatTrait.Format.UNIX_TIMESTAMP, first);
+            CallerDrivenShape shape = new CallerDrivenShape();
+            shape.readJsonFields(reader);
+            return shape.delegate;
+        }
     }
 
     @Test

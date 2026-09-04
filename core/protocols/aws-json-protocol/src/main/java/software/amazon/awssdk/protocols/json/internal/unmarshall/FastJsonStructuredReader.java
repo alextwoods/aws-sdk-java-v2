@@ -80,6 +80,14 @@ final class FastJsonStructuredReader implements StructuredJsonReader {
     private final TimestampFormatTrait.Format defaultTimestampFormat;
     private int pos;
     private int depth;
+
+    /**
+     * True between {@link #beginStruct()} and the first {@link #nextMember} call at that nesting level, which is how
+     * {@code nextMember} knows not to expect a comma yet. A single flag suffices however deeply structures nest,
+     * because every {@code beginStruct} is followed immediately by a {@code nextMember} at the same level, which
+     * clears it before any value — and therefore any nested {@code beginStruct} — is read.
+     */
+    private boolean structAtFirstMember;
     private StringCache stringCache;
 
     private FastJsonStructuredReader(byte[] buf, int offset, int length,
@@ -131,43 +139,14 @@ final class FastJsonStructuredReader implements StructuredJsonReader {
             depth--;
             return;
         }
+        boolean first = true;
         while (true) {
-            skipWs();
-            if (peek() != '"') {
-                throw error("Expected field name");
+            if (!first && !advanceToNextMember()) {
+                return;
             }
-            pos++;
-            // Scan the name; escape-free names match directly against the table's bytes.
-            int nameStart = pos;
-            boolean escaped = false;
-            while (pos < end) {
-                byte b = buf[pos];
-                if (b == '"') {
-                    break;
-                }
-                if (b == '\\') {
-                    escaped = true;
-                    pos++;
-                }
-                pos++;
-            }
-            if (pos >= end) {
-                throw error("Unterminated field name");
-            }
-            int nameEnd = pos;
-            pos++; // closing quote
+            first = false;
 
-            int memberIndex;
-            if (!escaped) {
-                memberIndex = table.indexOf(buf, nameStart, nameEnd);
-            } else {
-                String decoded = decodeEscapedString(nameStart, nameEnd);
-                memberIndex = table.indexOf(decoded);
-            }
-
-            skipWs();
-            expect(':');
-            skipWs();
+            int memberIndex = readMemberName(table);
 
             if (memberIndex >= 0) {
                 if (!readNullIfPresent()) {
@@ -176,19 +155,104 @@ final class FastJsonStructuredReader implements StructuredJsonReader {
             } else {
                 skipValue();
             }
+        }
+    }
 
+    @Override
+    public void beginStruct() {
+        expect('{');
+        if (++depth > MAX_DEPTH) {
+            throw error("Maximum nesting depth exceeded");
+        }
+        structAtFirstMember = true;
+    }
+
+    @Override
+    public int nextMember(JsonMemberTable table) {
+        if (structAtFirstMember) {
+            structAtFirstMember = false;
             skipWs();
-            byte b = peek();
-            if (b == ',') {
-                pos++;
-            } else if (b == '}') {
+            if (peek() == '}') {
                 pos++;
                 depth--;
-                return;
-            } else {
-                throw error("Expected ',' or '}'");
+                return MEMBER_END;
             }
+        } else if (!advanceToNextMember()) {
+            return MEMBER_END;
         }
+
+        int memberIndex = readMemberName(table);
+        if (memberIndex < 0) {
+            skipValue();
+            return MEMBER_SKIPPED;
+        }
+        if (readNullIfPresent()) {
+            return MEMBER_SKIPPED;
+        }
+        return memberIndex;
+    }
+
+    /**
+     * Consumes the separator following a member's value. Returns false once the structure's closing brace has been
+     * consumed, true when another member follows.
+     */
+    private boolean advanceToNextMember() {
+        skipWs();
+        byte b = peek();
+        if (b == ',') {
+            pos++;
+            return true;
+        }
+        if (b == '}') {
+            pos++;
+            depth--;
+            return false;
+        }
+        throw error("Expected ',' or '}'");
+    }
+
+    /**
+     * Reads a member name and the colon after it, leaving the reader positioned at the member's value. Returns the
+     * member's ordinal in {@code table}, or a negative value when the name is not one of the table's members.
+     */
+    private int readMemberName(JsonMemberTable table) {
+        skipWs();
+        if (peek() != '"') {
+            throw error("Expected field name");
+        }
+        pos++;
+        // Scan the name; escape-free names match directly against the table's bytes.
+        int nameStart = pos;
+        boolean escaped = false;
+        while (pos < end) {
+            byte b = buf[pos];
+            if (b == '"') {
+                break;
+            }
+            if (b == '\\') {
+                escaped = true;
+                pos++;
+            }
+            pos++;
+        }
+        if (pos >= end) {
+            throw error("Unterminated field name");
+        }
+        int nameEnd = pos;
+        pos++; // closing quote
+
+        int memberIndex;
+        if (!escaped) {
+            memberIndex = table.indexOf(buf, nameStart, nameEnd);
+        } else {
+            String decoded = decodeEscapedString(nameStart, nameEnd);
+            memberIndex = table.indexOf(decoded);
+        }
+
+        skipWs();
+        expect(':');
+        skipWs();
+        return memberIndex;
     }
 
     @Override

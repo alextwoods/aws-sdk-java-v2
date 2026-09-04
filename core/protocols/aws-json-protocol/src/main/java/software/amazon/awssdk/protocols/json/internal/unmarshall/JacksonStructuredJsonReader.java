@@ -70,6 +70,43 @@ final class JacksonStructuredJsonReader implements StructuredJsonReader {
     }
 
     @Override
+    public void beginStruct() {
+        try {
+            expect(advance(), JsonToken.START_OBJECT);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public int nextMember(JsonMemberTable table) {
+        try {
+            JsonToken current = parser.nextToken();
+            if (current == JsonToken.END_OBJECT) {
+                return MEMBER_END;
+            }
+            if (current != JsonToken.FIELD_NAME) {
+                throw new JsonParseException("expecting field name, got: " + current);
+            }
+            // Jackson canonicalizes field names, so this String is cached across documents.
+            int memberIndex = table.indexOf(parser.getText());
+            JsonToken valueToken = parser.nextToken();
+            if (memberIndex < 0) {
+                skipValue(valueToken);
+                return MEMBER_SKIPPED;
+            }
+            if (valueToken == JsonToken.VALUE_NULL) {
+                // Null-valued members are skipped, leaving the same end state as readStruct.
+                return MEMBER_SKIPPED;
+            }
+            pending = valueToken;
+            return memberIndex;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
     public <T> void readStruct(T state, JsonMemberTable table, StructMemberConsumer<T> consumer) {
         try {
             JsonToken token = advance();

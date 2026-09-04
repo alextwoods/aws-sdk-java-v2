@@ -35,12 +35,44 @@ import software.amazon.awssdk.core.traits.TimestampFormatTrait;
 public interface StructuredJsonReader {
 
     /**
+     * Returned by {@link #nextMember} when the structure has no members left; its closing brace has been consumed.
+     */
+    int MEMBER_END = -1;
+
+    /**
+     * Returned by {@link #nextMember} when a member was consumed but the caller has nothing to do with it — an
+     * unrecognized key, or a key whose value was JSON {@code null}. Both are skipped entirely, matching
+     * {@link #readStruct}. The caller must not read a value; it should call {@link #nextMember} again.
+     */
+    int MEMBER_SKIPPED = -2;
+
+    /**
      * Reads a JSON object as a structure: for each key matched by {@code table}, invokes
      * {@code consumer} with the member's ordinal, positioned to read the member's value. Members
      * with JSON {@code null} values and unknown keys are skipped entirely (the consumer is not
      * invoked), matching the generic unmarshalling loop's end state.
      */
     <T> void readStruct(T state, JsonMemberTable table, StructMemberConsumer<T> consumer);
+
+    /**
+     * Begins reading a JSON object as a structure, consuming its opening brace.
+     *
+     * <p>Pairs with {@link #nextMember} as a caller-driven alternative to {@link #readStruct}. {@code readStruct}
+     * pushes members through a consumer, which for generated code means one consumer implementation per shape and
+     * therefore a megamorphic call site inside the reader: the state object cannot be scalar-replaced and every
+     * member pays a virtual dispatch. Driving the loop from the caller keeps member handling in the caller's own
+     * frame, so parse state can live in locals.
+     */
+    void beginStruct();
+
+    /**
+     * Advances to the next member of the structure opened by {@link #beginStruct}, returning that member's ordinal
+     * in {@code table} and leaving the reader positioned to read its value.
+     *
+     * <p>Returns {@link #MEMBER_END} when the structure is exhausted, or {@link #MEMBER_SKIPPED} when a member was
+     * consumed that the caller should ignore. Callers loop until {@code MEMBER_END}.
+     */
+    int nextMember(JsonMemberTable table);
 
     /**
      * Reads a JSON array, invoking {@code consumer} once per element, positioned to read the

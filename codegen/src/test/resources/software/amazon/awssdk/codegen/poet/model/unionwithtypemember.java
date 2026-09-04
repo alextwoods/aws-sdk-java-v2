@@ -242,9 +242,44 @@ public final class UnionWithTypeMember implements SdkPojo, Serializable,
     }
 
     static UnionWithTypeMember $readJson(StructuredJsonReader reader) {
-        BuilderImpl builder = new BuilderImpl();
-        builder.readJsonFields(reader);
-        return builder.build();
+        String stringMember = null;
+        String typeValue = null;
+        int setCount = 0;
+        int setIndex = -1;
+        reader.beginStruct();
+        for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
+                .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
+            switch (memberIndex) {
+            case 0: {
+                stringMember = reader.readString();
+                setCount++;
+                setIndex = 0;
+                break;
+            }
+            case 1: {
+                typeValue = reader.readString();
+                setCount++;
+                setIndex = 1;
+                break;
+            }
+            default:
+                break;
+            }
+        }
+        if (setCount == 1) {
+            switch (setIndex) {
+            case 0:
+                return createStringMember(stringMember);
+            case 1:
+                return createTypeValue(typeValue);
+            default:
+                break;
+            }
+        }
+        if (setCount == 0) {
+            return UNSET_INSTANCE;
+        }
+        return new UnionWithTypeMember(null, stringMember, typeValue);
     }
 
     private static <T> Function<Object, T> getter(Function<UnionWithTypeMember, T> g) {

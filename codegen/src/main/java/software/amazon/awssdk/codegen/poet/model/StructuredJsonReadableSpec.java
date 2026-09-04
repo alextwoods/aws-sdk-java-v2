@@ -15,6 +15,8 @@
 
 package software.amazon.awssdk.codegen.poet.model;
 
+import static software.amazon.awssdk.codegen.internal.Utils.capitalize;
+
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
@@ -43,6 +45,12 @@ import software.amazon.awssdk.protocols.json.StructuredJsonReader;
  * built exactly once. Produces objects identical to the generic unmarshalling loop it bypasses.
  */
 public final class StructuredJsonReadableSpec {
+
+    private static final ClassName DEFAULT_SDK_AUTO_CONSTRUCT_LIST =
+        ClassName.get("software.amazon.awssdk.core.util", "DefaultSdkAutoConstructList");
+
+    private static final ClassName DEFAULT_SDK_AUTO_CONSTRUCT_MAP =
+        ClassName.get("software.amazon.awssdk.core.util", "DefaultSdkAutoConstructMap");
 
     private final IntermediateModel intermediateModel;
     private final ShapeModel shapeModel;
@@ -139,6 +147,103 @@ public final class StructuredJsonReadableSpec {
                          .addStatement("builder.readJsonFields(reader)")
                          .addStatement("return builder.build()")
                          .build();
+    }
+
+    /**
+     * The builder-free {@code $readJson} for unions: drives the member loop itself, holds the value in a local, and
+     * constructs the shape once.
+     *
+     * <p>Worth the separate shape because of where the cost is. {@link StructuredJsonReader#readStruct} pushes members
+     * through a consumer, and generated code supplies one consumer implementation per shape, so the call site inside
+     * the reader is megamorphic across a client: it cannot be inlined, which means the state object it is handed
+     * cannot be scalar-replaced, and every member additionally pays a virtual dispatch. A union materializes once per
+     * value — tens of thousands of times in a large DynamoDB response — so that is one builder allocation and one
+     * megamorphic call each. Reading members with {@link StructuredJsonReader#nextMember} keeps all of it in this
+     * frame, where the value lives in a local and the object is built by the direct factories.
+     *
+     * <p>The single-member case, which is what a union is for, ends in {@code createX} — or {@code createXUnsafe} for
+     * a collection member, adopting the collection this method just built rather than copying it. The other cases are
+     * reproduced exactly rather than rejected: no members set yields {@code UNSET_INSTANCE}, and a document setting
+     * more than one member yields the positional constructor with a null type, which is what
+     * {@code handleUnionValueChange} leaves behind when it sees a second member.
+     */
+    public MethodSpec readJsonUnionStaticMethod() {
+        List<MemberModel> tableMembers = StructuredJsonWritableSpec.marshallableMembers(shapeModel);
+        MethodSpec.Builder method = MethodSpec.methodBuilder("$readJson")
+                                              .addModifiers(Modifier.STATIC)
+                                              .returns(shapeName)
+                                              .addParameter(ClassName.get(StructuredJsonReader.class), "reader");
+
+        // One local per member of the shape, defaulted exactly as the builder's fields are, so the
+        // more-than-one-member case can hand every slot to the positional constructor.
+        for (MemberModel m : shapeModel.getMembers()) {
+            String var = m.getVariable().getVariableName();
+            if (m.isList()) {
+                method.addStatement("$T $N = $T.getInstance()", typeProvider.fieldType(m), var,
+                                    DEFAULT_SDK_AUTO_CONSTRUCT_LIST);
+            } else if (m.isMap()) {
+                method.addStatement("$T $N = $T.getInstance()", typeProvider.fieldType(m), var,
+                                    DEFAULT_SDK_AUTO_CONSTRUCT_MAP);
+            } else {
+                method.addStatement("$T $N = null", typeProvider.fieldType(m), var);
+            }
+        }
+        method.addStatement("int setCount = 0");
+        method.addStatement("int setIndex = -1");
+
+        method.addStatement("reader.beginStruct()");
+        method.addCode("for (int memberIndex = reader.nextMember($T.$$JSON_MEMBER_TABLE);\n"
+                       + "     memberIndex != $T.MEMBER_END;\n"
+                       + "     memberIndex = reader.nextMember($T.$$JSON_MEMBER_TABLE)) {\n$>",
+                       builderImplName, ClassName.get(StructuredJsonReader.class), builderImplName);
+        method.beginControlFlow("switch (memberIndex)");
+        for (int i = 0; i < tableMembers.size(); i++) {
+            MemberModel m = tableMembers.get(i);
+            String var = m.getVariable().getVariableName();
+            method.addCode("case $L: {\n$>", i);
+            if (m.isList() || m.isMap()) {
+                String collectVar = var + "Value";
+                method.addCode(containerRead(m, collectVar, 0, "reader"));
+                method.addStatement("$N = $L", var, wrapUnmodifiable(m, collectVar));
+            } else {
+                method.addStatement("$N = $L", var, scalarOrPojoReadExpr(m, "reader", true));
+            }
+            method.addStatement("setCount++");
+            method.addStatement("setIndex = $L", i);
+            method.addStatement("break");
+            method.addCode("$<}\n");
+        }
+        // MEMBER_SKIPPED: an unknown key or a null-valued member, already consumed by the reader.
+        method.addCode("default:\n$>");
+        method.addStatement("break");
+        method.addCode("$<");
+        method.endControlFlow();
+        method.addCode("$<}\n");
+
+        method.beginControlFlow("if (setCount == 1)");
+        method.beginControlFlow("switch (setIndex)");
+        for (int i = 0; i < tableMembers.size(); i++) {
+            MemberModel m = tableMembers.get(i);
+            String factory = "create" + capitalize(m.getFluentSetterMethodName())
+                             + (m.isList() || m.isMap() ? "Unsafe" : "");
+            method.addStatement("case $L: return $N($N)", i, factory, m.getVariable().getVariableName());
+        }
+        method.addCode("default:\n$>");
+        method.addStatement("break");
+        method.addCode("$<");
+        method.endControlFlow();
+        method.endControlFlow();
+
+        method.beginControlFlow("if (setCount == 0)");
+        method.addStatement("return UNSET_INSTANCE");
+        method.endControlFlow();
+
+        CodeBlock.Builder ctorArgs = CodeBlock.builder().add("null");
+        for (MemberModel m : shapeModel.getMembers()) {
+            ctorArgs.add(", $N", m.getVariable().getVariableName());
+        }
+        method.addStatement("return new $T($L)", shapeName, ctorArgs.build());
+        return method.build();
     }
 
     private CodeBlock memberRead(MemberModel m) {

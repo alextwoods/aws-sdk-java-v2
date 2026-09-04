@@ -131,7 +131,14 @@ public class AwsServiceModel implements ClassSpec {
                                                                                      className(),
                                                                                      modelBuilderSpecs.builderImplName());
         if (jsonReadableSpec.qualifies()) {
-            specBuilder.addMethod(jsonReadableSpec.readJsonStaticMethod());
+            // A union with direct factories can be read straight into locals and constructed once, with no builder
+            // and no megamorphic member dispatch; see readJsonUnionStaticMethod. Everything else, and any union
+            // without the factories to construct it, goes through the builder.
+            if (shapeModel.isUnion() && generatesDirectUnionConstructors()) {
+                specBuilder.addMethod(jsonReadableSpec.readJsonUnionStaticMethod());
+            } else {
+                specBuilder.addMethod(jsonReadableSpec.readJsonStaticMethod());
+            }
         }
 
         if (shapeModel.isUnion()) {
