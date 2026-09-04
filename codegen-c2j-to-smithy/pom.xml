@@ -65,12 +65,12 @@
         <dependency>
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-model</artifactId>
-            <version>1.71.0</version>
+            <version>${smithy.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-aws-traits</artifactId>
-            <version>1.71.0</version>
+            <version>${smithy.version}</version>
         </dependency>
         <!-- Reuse smithy-java's own type/schema code generator (types mode) instead of
              re-implementing schema-literal emission. The v2 pipeline becomes
@@ -78,12 +78,12 @@
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>codegen-plugin</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-build</artifactId>
-            <version>1.71.0</version>
+            <version>${smithy.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

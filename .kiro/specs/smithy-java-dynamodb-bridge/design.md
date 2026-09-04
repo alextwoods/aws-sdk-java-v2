@@ -70,7 +70,7 @@ responses entirely through smithy-java — no v2 marshallers or unmarshallers in
 <dependency>
     <groupId>software.amazon.smithy.java</groupId>
     <artifactId>aws-client-awsjson</artifactId>
-    <version>1.4.2-rebased</version>
+    <version>${smithy.java.version}</version>
 </dependency>
 ```
 

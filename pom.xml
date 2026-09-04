@@ -134,6 +134,12 @@
         <jmh.version>1.37</jmh.version>
         <awscrt.version>0.46.1</awscrt.version>
 
+        <!-- Smithy reference implementation and smithy-java runtime/codegen, used by the
+             C2J->Smithy front-end, the v2<->smithy-java bridge, and the generated clients.
+             smithy.version must match the smithy-model version smithy-java is built against. -->
+        <smithy.version>1.73.0</smithy.version>
+        <smithy.java.version>1.6.1</smithy.java.version>
+
         <!--Test dependencies -->
         <junit5.version>5.10.3</junit5.version>
         <mockito.junit5.version>4.6.0</mockito.junit5.version>

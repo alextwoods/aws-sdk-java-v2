@@ -32,10 +32,6 @@
         v2 SdkHttpClient -&gt; smithy-java ClientTransport. Experimental.
     </description>
 
-    <properties>
-        <smithy.java.version>1.4.2-rebased</smithy.java.version>
-    </properties>
-
     <build>
         <plugins>
             <plugin>
@@ -111,7 +107,7 @@
         <dependency>
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-model</artifactId>
-            <version>1.71.0</version>
+            <version>${smithy.version}</version>
         </dependency>
 
         <dependency>

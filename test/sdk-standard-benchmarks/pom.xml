@@ -64,52 +64,52 @@
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>dynamic-client</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>aws-client-restjson</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>aws-client-awsjson</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>aws-client-awsquery</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>aws-client-restxml</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>client-rpcv2-cbor</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>client-core</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>core</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>json-codec</artifactId>
-            <version>1.4.2-rebased</version>
+            <version>${smithy.java.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-aws-traits</artifactId>
-            <version>1.71.0</version>
+            <version>${smithy.version}</version>
         </dependency>
 
         <dependency>

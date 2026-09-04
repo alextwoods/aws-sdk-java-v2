@@ -293,7 +293,7 @@ public class JsonProtocolSpec implements ProtocolSpec {
                           ClassName.get("software.amazon.awssdk.core.exception", "SdkServiceException"),
                           ClassName.get("software.amazon.awssdk.core.exception", "SdkServiceException"));
         code.addStatement("throw $T.builder().message(e.getMessage()).cause(e).build()",
-                          ClassName.get("software.amazon.awssdk.services.dynamodb.model", "DynamoDbException"));
+                          baseExceptionClassName(model));
         code.endControlFlow();
 
         return code.build();
