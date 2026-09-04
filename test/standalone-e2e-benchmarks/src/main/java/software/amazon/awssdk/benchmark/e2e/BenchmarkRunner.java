@@ -31,6 +31,8 @@ public final class BenchmarkRunner {
                                   v1        V1, Apache 4.x
                                   v2-sync   V2 sync, Apache5
                                   v2-async  V2 async, CRT
+                                  v2-sync-smithy   V2 sync, smithy-java transport
+                                  v2-async-smithy  V2 async, smithy-java transport
                                   smithy    smithy-java, HTTP/1.1
           --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
           --iterations N        measured operations per scenario (default: 10000)

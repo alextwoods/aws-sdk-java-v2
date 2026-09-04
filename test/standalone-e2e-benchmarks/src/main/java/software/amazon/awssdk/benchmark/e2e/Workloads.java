@@ -108,9 +108,27 @@ interface Workloads {
             case "v1":
                 return v1(endpoint, metrics, concurrency);
             case "v2-sync":
-                return v2Sync(endpoint, metrics, concurrency);
+                return v2Sync(endpoint, metrics,
+                              software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
+                                                                                   .maxConnections(concurrency),
+                              "apache5");
             case "v2-async":
-                return v2Async(endpoint, metrics, concurrency);
+                return v2Async(endpoint, metrics,
+                               AwsCrtAsyncHttpClient.builder().maxConcurrency(concurrency).build(),
+                               "crt");
+            // The two arms below differ from the two above only in transport, so a paired run against
+            // their counterpart isolates the HTTP client and nothing else.
+            case "v2-sync-smithy":
+                return v2Sync(endpoint, metrics,
+                              software.amazon.awssdk.http.smithy.SmithyHttpClient.builder()
+                                                                                 .maxConnections(concurrency),
+                              "smithy-http");
+            case "v2-async-smithy":
+                return v2Async(endpoint, metrics,
+                               software.amazon.awssdk.http.smithy.SmithyAsyncHttpClient.builder()
+                                                                                       .maxConcurrency(concurrency)
+                                                                                       .build(),
+                               "smithy-http");
             case "smithy":
                 return smithy(endpoint, metrics, concurrency);
             default:
@@ -257,12 +275,14 @@ interface Workloads {
     // 4.x for `v2-sync` while Apache5 was in fact what ran. Naming it here means the priority table,
     // and anything new that lands on the classpath, cannot change what is under test.
 
-    private static Workload v2Sync(URI endpoint, boolean metrics, int concurrency) {
+    private static Workload v2Sync(URI endpoint,
+                                   boolean metrics,
+                                   software.amazon.awssdk.http.SdkHttpClient.Builder<?> httpClientBuilder,
+                                   String transportName) {
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
-            .httpClientBuilder(software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
-                                                                                   .maxConnections(concurrency))
+            .httpClientBuilder(httpClientBuilder)
             .overrideConfiguration(v2Override(metrics, publisher))
             .build();
 
@@ -289,7 +309,7 @@ interface Workloads {
             }
 
             public String transport() {
-                return "apache5";
+                return transportName;
             }
 
             public void resetMetrics() {
@@ -313,11 +333,14 @@ interface Workloads {
     // pick Netty (priority 1 in ClasspathSdkHttpServiceProvider's async table), so this benchmark is
     // deliberately measuring the intended long-term default rather than today's fallback.
 
-    private static Workload v2Async(URI endpoint, boolean metrics, int concurrency) {
+    private static Workload v2Async(URI endpoint,
+                                    boolean metrics,
+                                    software.amazon.awssdk.http.async.SdkAsyncHttpClient httpClient,
+                                    String transportName) {
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
-            .httpClient(AwsCrtAsyncHttpClient.builder().maxConcurrency(concurrency).build())
+            .httpClient(httpClient)
             .overrideConfiguration(v2Override(metrics, publisher))
             .build();
 
@@ -364,7 +387,7 @@ interface Workloads {
             }
 
             public String transport() {
-                return "crt";
+                return transportName;
             }
 
             public void resetMetrics() {

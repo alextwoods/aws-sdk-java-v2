@@ -94,7 +94,7 @@ if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
     # Installing a *consistent* set matters: installing a single core module on its own has
     # previously desynchronized ~/.m2 and produced VerifyErrors at runtime.
     (cd "$REPO" && mvn clean install \
-        -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
+        -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,:smithy-http-client,!:codegen-maven-plugin' \
         --am -P quick -Dmaven.test.skip=true -q)
 fi
 

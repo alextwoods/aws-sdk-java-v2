@@ -2,7 +2,8 @@
 # Coordinated launcher: starts the mock server out-of-process, waits for readiness, runs the
 # benchmark client (optionally under a profiler), and tears the server down on exit.
 #
-# Usage: scripts/benchmark.sh --client <v1|v2-sync|v2-async|smithy> [runner options] [launcher options]
+# Usage: scripts/benchmark.sh --client <v1|v2-sync|v2-async|v2-sync-smithy|v2-async-smithy|smithy>
+#            [runner options] [launcher options]
 #
 # Launcher-only options (everything else is passed through to BenchmarkRunner):
 #   --port N              port for the auto-launched mock server (default: 19080)
