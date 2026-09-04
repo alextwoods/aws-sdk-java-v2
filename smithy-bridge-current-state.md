@@ -501,8 +501,21 @@ Most of the documentation above lives in the working tree rather than in git. Ve
 | `output/`, `reference/`, `pipeline_benchmark/` | **untracked on every branch** |
 | `pipeline_benchmark2/` | tracked on `feature/poc/racecar`; untracked here |
 | `.kiro/steering/`, `.kiro/settings/` | tracked |
-| `.kiro/specs/`, `.kiro/reference/` | **untracked** |
+| `.kiro/reference/` | **untracked, deliberately** — contains symlinks to directories this repo does not own |
+| `.kiro/specs/` | committed 2026-09-04, per branch (below) |
 
-So the specs, the port-issue ledger, the fast-JSON results, the signer PR write-up, the profile report
-and the `reference/smithy-java` checkout that `1.4.2-rebased` depends on all exist only on this
-machine. Back them up, or commit them.
+The specs are now carried by the branch whose code they describe, so switching branches adds and
+removes them from the working tree:
+
+| spec | branch |
+|---|---|
+| `smithy-java-dynamodb-bridge/` (Phase 1) | `smithy-java-bridge-alexwoo`, also on `smithy-java-spi-bridge-poc` |
+| `smithy-java-client-pipeline/` (Phase 2) | `smithy-java-bridge-alexwoo`, also on `smithy-java-spi-bridge-poc` |
+| `smithy-java-full-pipeline/` | `smithy-java-spi-bridge-poc` |
+| `smithy-java-spi-pipeline-poc.md` | `smithy-java-spi-bridge-poc` |
+| `disable-request-override/` | `alexwoo/no-request-override-poc` |
+| `sso-token-refresh-bug/` | still untracked — the fix merged to `master` as #7097, so it has no obvious home |
+
+Still untracked and existing only on this machine: the port-issue ledger, the fast-JSON results, the
+signer PR write-up, the profile report, `output/` generally, and the `reference/smithy-java` checkout
+that `1.4.2-rebased` is built from. Back those up.
