@@ -2855,3 +2855,84 @@ costs nothing, so the consumers can now be moved onto it one commit at a time.
    metadata/unmarshalling; the same representation applies, with the `Serializable`/transient quirk
    of `DefaultSdkHttpFullResponse` to preserve.
 3. **Query parameters**, for query-protocol services (out of DynamoDB's blast radius).
+
+## Investigation follow-up — the CRT premium does not amortize with concurrency
+
+The attribution above ended with a hypothesis: CRT's per-request event-loop wake cycle should
+amortize under load, so the ~24 µs/op premium ought to shrink as concurrency rises. A sweep tests
+it directly: `v2-async` (CRT) vs `v2-async-smithy`, small-get, c = 1…32, in **both** drive modes —
+in-flight (one submitter, N outstanding; known submitter ceiling) and join (N threads, no
+submitter ceiling, thread-per-request overhead common to both arms). 300k iterations per point,
+client pinned to 32 cores (16–47) fixed across levels, server 0–15.
+
+- Raw: `sweeps/host-crt-sweep-20260905-183815` (24 runs, jar `racecar-e16-smithyhttp-422bfc449e7`)
+
+CRT's application CPU per op relative to smithy's, and the throughput ratio:
+
+| mode | c=1 | c=2 | c=4 | c=8 | c=16 | c=32 |
+|---|---:|---:|---:|---:|---:|---:|
+| inflight, CPU premium | +27.7 (1.22×) | +18.4 | +30.7 | +31.1 | +27.9 | +32.1 (1.31×) |
+| join, CPU premium | +32.2 (1.26×) | +30.9 | +29.3 | +17.0 | +37.3 | +30.9 (1.19×) |
+| inflight, throughput | 0.82× | 0.89× | 0.81× | 0.71× | 0.72× | 0.70× |
+| join, throughput | 0.82× | 0.82× | 0.85× | 0.87× | 0.80× | 0.86× |
+
+**The hypothesis is rejected.** The premium is ~17–37 µs/op at every level in both modes, with no
+downward trend — it is per-operation and structural, not a fixed cost being divided across more
+in-flight work. Absolute throughput tells the same story from the other side: in-flight mode
+plateaus at ~26k ops/s for CRT against ~36k for smithy (both submitter-bound, but the ceiling
+differs because per-op submit cost differs), and in join mode both scale to c=32 with smithy ahead
+throughout (129k vs 111k ops/s).
+
+Caveats, honestly stated: every async run at 300k iterations on these cores carries residual JIT
+(all 24 flagged not-steady), so absolute CPU values are a few percent contaminated — but the
+cross-arm comparison at each level is like-for-like and the effect is an order of magnitude above
+that. One run per cell, no reps; at 13–31% the effect dwarfs the measured ±2.5% floor. And the
+scope qualifier matters: this is plaintext HTTP/1.1 over loopback. CRT's value proposition includes
+TLS (aws-lc), connection management at scale, and off-heap memory behavior — none of which this
+apparatus measures. What it does establish: **on per-operation CPU efficiency for small requests,
+plaintext, the CRT transport is structurally more expensive than a lean blocking client at every
+concurrency level tested, and the gap does not close under load.** Any TLS-inclusive re-run should
+be done before drawing transport-strategy conclusions beyond this workload.
+
+## Phase H2 — per-entry header iteration for flat-stored requests
+
+The consumer half of H1: requests backed by the strided store now expose per-entry iteration
+(`FlatHeaderAccess.forEachHeaderEntry`, internal), and the three hot-path consumers use it with
+their `forEachHeader` fallbacks intact — `FastV4HeaderSigner.collectSourceHeaders` feeds the
+strided signing buffer pair-by-pair, `Apache5HttpRequestFactory` adds headers per entry, and
+`CrtRequestAdapter`'s array builder implements both consumer shapes. No per-name `List`
+materialization, identical iteration order, names with empty value lists skipped (matching an
+empty-list callback contributing nothing).
+
+- Commit: `6a37d10d7b4`
+- Raw: `paired/host-20260905-1855` (small, 7 reps), `host-20260905-1959` (batch-put, 5 reps),
+  `raw/host-h2-alloc-20260905-201630` (mechanism profiles)
+- Correctness: the signer differential suite exercises the fast path through real request objects
+  (canonical request byte-identical by construction and by test); 3 new `forEachEntry` tests
+  including an exact equivalence check against `forEach`; apache5/crt suites green; smoke 8/8 with
+  metric-set identity.
+
+### Measurement
+
+Timing is **flat**: every small-op and batch cell within its pair spread (deltas −0.5% to +2.6%,
+wins 2–5/7), smithy control zero. The mechanism moved as designed, at modest size — equal
+40k-op profiles:
+
+| B/op | sync base | sync H2 | async base | async H2 |
+|---|---:|---:|---:|---:|
+| stacks through `forEachHeader` | 1,062 | 524 | 3,473 | 2,687 |
+| stacks through `StridedHeaders` (forEach wrappers) | 1,940 | 1,468 | 3,906 | 2,870 |
+| signer header collection | 2,386 | 2,005 | 2,189 | 2,372 † |
+| **profile total** | 33,050 | **32,578** | 38,817 | **37,323** |
+
+† async signer site is sampling noise across arms; the async win concentrates in the CRT adapter
+and forEach wrappers.
+
+### Verdict
+
+Kept, on the E12/E13 standard: an exact allocation-mechanism win (−0.5 KB/op sync, −1.5 KB/op
+async) with no timing effect claimable at this rig's floor and no regression anywhere. The
+0.5–1.5 KB/op is 1.5–4% of small-op allocation, which the established alloc→CPU conversion
+(~1:4 at best on small ops) puts well under the ±2.5% CPU floor — the flat timing is the expected
+result, not a disappointment. H1+H2 together close out the request-side header representation;
+the remaining strided-store items are the response side and query parameters, both smaller.
