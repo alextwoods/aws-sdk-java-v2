@@ -209,7 +209,7 @@ public class JsonProtocolSpec implements ProtocolSpec {
         // When smithy-java serde is enabled, use the smithy-java protocol directly instead of
         // the v2 ClientExecutionParams + Marshaller pipeline.
         if (ClientClassUtils.usesSmithyPipeline(model, opModel)) {
-            return smithyJavaExecutionHandler(opModel);
+            return ClientClassUtils.smithyJavaExecutionHandler(model, opModel);
         }
 
         TypeName responseType = getPojoResponseType(opModel, poetExtensions);
@@ -248,25 +248,6 @@ public class JsonProtocolSpec implements ProtocolSpec {
         }
 
         return codeBlock.add("$L);", opModel.hasStreamingOutput() ? ", responseTransformer" : "")
-                        .build();
-    }
-
-    /**
-     * Generates the smithy-java execution path: hand the request to the smithy-java client and let it
-     * run the whole call — serialization, endpoint resolution, auth, signing, retries, deserialization,
-     * and interceptors. The v2 {@code ClientExecutionParams} pipeline is bypassed entirely.
-     *
-     * <p>Error translation happens inside {@code SmithyBridgeClient#invoke}, not here, so nothing
-     * service-specific is emitted per operation.
-     */
-    private CodeBlock smithyJavaExecutionHandler(OperationModel opModel) {
-        String operationsPackage = model.getMetadata().getFullModelPackageName().replace(".model", ".operations");
-        ClassName operationClass = ClassName.get(operationsPackage, opModel.getOperationName() + "Operation");
-
-        return CodeBlock.builder()
-                        .add("\n\n")
-                        .addStatement("return smithyClient.invoke($L, $T.instance())",
-                                      opModel.getInput().getVariableName(), operationClass)
                         .build();
     }
 

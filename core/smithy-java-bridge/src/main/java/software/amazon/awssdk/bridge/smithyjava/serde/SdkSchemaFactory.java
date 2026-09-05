@@ -36,9 +36,11 @@ import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.traits.HttpHeaderTrait;
 import software.amazon.smithy.model.traits.HttpLabelTrait;
 import software.amazon.smithy.model.traits.HttpPayloadTrait;
+import software.amazon.smithy.model.traits.HttpPrefixHeadersTrait;
 import software.amazon.smithy.model.traits.HttpQueryTrait;
 import software.amazon.smithy.model.traits.JsonNameTrait;
 import software.amazon.smithy.model.traits.Trait;
+import software.amazon.smithy.model.traits.XmlFlattenedTrait;
 import software.amazon.smithy.model.traits.XmlNameTrait;
 
 /**
@@ -73,7 +75,8 @@ public final class SdkSchemaFactory {
         SchemaBuilder builder = Schema.structureBuilder(id);
         inProgress.put(id, builder);
         for (SdkField<?> field : sdkFields) {
-            putMember(builder, field.memberName(), field, field.memberName(), inProgress, true);
+            putMember(builder, smithyMemberName(field), field, field.memberName(), inProgress,
+                      bindingTraits(field, field.memberName()));
         }
         return builder.build();
     }
@@ -81,19 +84,20 @@ public final class SdkSchemaFactory {
     // Adds one member to {@code parent}. Uses putMember(name, SchemaBuilder) for in-flight nested
     // structs (recursion) and putMember(name, Schema) for everything resolved.
     //
-    // {@code bindMember} is true for STRUCTURE members (which carry HTTP-binding / wire-name traits
-    // translated from the v2 SdkField); it is false for list/map element members, which have no
-    // such binding. This is the "C2J as a runtime shim over smithy": the v2 SDK_FIELDS trait
-    // vocabulary (LocationTrait/PayloadTrait/...) is mapped onto smithy's binding traits so the
-    // smithy HttpBindingSerializer routes each member to URI/header/query/payload/body correctly.
+    // {@code traits} is supplied by the caller rather than derived here because the two kinds of member
+    // get their traits from different places: a STRUCTURE member from its own SdkField's binding
+    // metadata (see bindingTraits), a list/map element from the *container's* ListTrait/MapTrait, which
+    // is where v2 records the element's XML element name. This is the "C2J as a runtime shim over
+    // smithy": the v2 SDK_FIELDS trait vocabulary (LocationTrait/PayloadTrait/...) is mapped onto
+    // smithy's binding traits so the smithy HttpBindingSerializer routes each member to
+    // URI/header/query/payload/body correctly.
     private static void putMember(SchemaBuilder parent, String memberName, SdkField<?> field,
-                                  String name, Map<ShapeId, SchemaBuilder> inProgress, boolean bindMember) {
-        Trait[] traits = bindMember ? bindingTraits(field, memberName) : NO_TRAITS;
+                                  String name, Map<ShapeId, SchemaBuilder> inProgress, Trait[] traits) {
         MarshallingType<?> t = field.marshallingType();
         if (t == MarshallingType.SDK_POJO) {
             SdkPojo nested = nestedPojo(field);
             if (nested != null) {
-                ShapeId nestedId = syntheticId(name + "Struct");
+                ShapeId nestedId = nestedId(nested, name);
                 SchemaBuilder existing = inProgress.get(nestedId);
                 if (existing != null) {
                     parent.putMember(memberName, existing, traits);   // recursive back-edge
@@ -101,7 +105,8 @@ public final class SdkSchemaFactory {
                     SchemaBuilder nestedBuilder = Schema.structureBuilder(nestedId);
                     inProgress.put(nestedId, nestedBuilder);
                     for (SdkField<?> f : nested.sdkFields()) {
-                        putMember(nestedBuilder, f.memberName(), f, f.memberName(), inProgress, true);
+                        putMember(nestedBuilder, smithyMemberName(f), f, f.memberName(), inProgress,
+                                  bindingTraits(f, f.memberName()));
                     }
                     wireBuilderSupplier(nestedBuilder, field);
                     parent.putMember(memberName, nestedBuilder, traits);
@@ -110,6 +115,37 @@ public final class SdkSchemaFactory {
             }
         }
         parent.putMember(memberName, memberSchema(field, name, inProgress), traits);
+    }
+
+    /**
+     * The name to register a structure member under in the smithy schema.
+     *
+     * <p>Normally the v2 member name. The exception is URI labels: {@code @httpLabel} carries no name of
+     * its own, so smithy matches a label to a member by <em>member name</em>, and the member name has to
+     * be the name in the URI pattern. v2's member name is the Java-facing one and codegen is free to
+     * change it — S3's {@code customization.config} renames CopyObject's {@code Bucket}/{@code Key} to
+     * {@code DestinationBucket}/{@code DestinationKey} — which left the {@code /{Key+}} label unbound
+     * and every CopyObject failing with "URI label `Key` not set". The {@code locationName} is the
+     * modeled name and does not move, so labels bind to that.
+     *
+     * <p>Safe to differ only because a label member is never also a body member: body element names come
+     * from the member name, but a PATH-located member is not in the body. Header and query members keep
+     * the v2 member name, since their wire name travels in {@code @httpHeader}/{@code @httpQuery}
+     * instead. Member <em>order</em> — and therefore {@code memberIndex()}, which generated
+     * {@code serializeMembers} and {@code SmithyMemberConsumer} switch on — is untouched.
+     */
+    private static String smithyMemberName(SdkField<?> field) {
+        LocationTrait loc = field.getTrait(LocationTrait.class);
+        if (loc == null || loc.locationName() == null) {
+            return field.memberName();
+        }
+        switch (loc.location()) {
+            case PATH:
+            case GREEDY_PATH:
+                return loc.locationName();
+            default:
+                return field.memberName();
+        }
     }
 
     // Translate a v2 SdkField's binding/wire metadata into smithy member traits. FAIL LOUD on any
@@ -138,7 +174,15 @@ public final class SdkSchemaFactory {
                     traits.add(new HttpLabelTrait());
                     break;
                 case HEADER:
-                    traits.add(new HttpHeaderTrait(wireName));
+                    // v2 spells a header *map* as a HEADER-located map whose locationName is the shared
+                    // prefix ("x-amz-meta-"); smithy has a separate trait for that. Without the split,
+                    // the map got a plain @httpHeader and smithy silently wrote nothing at all — every
+                    // CopyObject/PutObject user metadata entry vanished with no error anywhere.
+                    if (field.marshallingType() == MarshallingType.MAP) {
+                        traits.add(new HttpPrefixHeadersTrait(wireName));
+                    } else {
+                        traits.add(new HttpHeaderTrait(wireName));
+                    }
                     break;
                 case QUERY_PARAM:
                     traits.add(new HttpQueryTrait(wireName));
@@ -171,6 +215,18 @@ public final class SdkSchemaFactory {
             traits.add(new XmlNameTrait(loc.locationName()));
         }
 
+        // @xmlFlattened: v2 spells this on the container trait, smithy on the member. A flattened list
+        // repeats its item element directly under the parent; a non-flattened one nests them inside a
+        // wrapper named after the member. Getting this wrong is a silent wrong-bytes bug, not an error:
+        // S3's CompleteMultipartUpload wants <Part>..</Part><Part>..</Part> and without the trait
+        // smithy emits <Part><member>..</member><member>..</member></Part>, which S3 rejects. It is
+        // equally wrong on the read side, where it surfaces as "Expected list item 'member'".
+        ListTrait listTrait = field.getTrait(ListTrait.class);
+        MapTrait mapTrait = field.getTrait(MapTrait.class);
+        if ((listTrait != null && listTrait.isFlattened()) || (mapTrait != null && mapTrait.isFlattened())) {
+            traits.add(new XmlFlattenedTrait());
+        }
+
         // Timestamp format (epoch/iso8601/rfc822) — affects both header and body timestamps.
         TimestampFormatTrait tsFormat = field.getTrait(TimestampFormatTrait.class);
         if (tsFormat != null) {
@@ -179,6 +235,25 @@ public final class SdkSchemaFactory {
         }
 
         return traits.isEmpty() ? NO_TRAITS : traits.toArray(new Trait[0]);
+    }
+
+    /**
+     * The {@code @xmlName} for a list item or map key/value, or no traits if it is already the default.
+     *
+     * <p>v2 records this on the container ({@code ListTrait.memberLocationName}, {@code MapTrait}'s
+     * key/value location names) rather than on the element itself, and leaves it null when the element
+     * uses smithy's default name. S3's {@code Tagging} needs it:
+     * {@code <TagSet><Tag>..</Tag></TagSet>}, not {@code <TagSet><member>..</member></TagSet>}.
+     *
+     * <p>Only {@code @xmlName} is emitted, not the {@code @jsonName} that {@link #bindingTraits} pairs
+     * it with. A JSON list item has no name at all, so a {@code jsonName} on one would either be inert
+     * or actively wrong; there is nothing to be defensive about.
+     */
+    private static Trait[] elementNameTrait(String locationName, String defaultName) {
+        if (locationName == null || locationName.equals(defaultName)) {
+            return NO_TRAITS;
+        }
+        return new Trait[] {new XmlNameTrait(locationName)};
     }
 
     private static String smithyTimestampFormat(TimestampFormatTrait.Format format) {
@@ -229,7 +304,8 @@ public final class SdkSchemaFactory {
             ListTrait lt = field.getTrait(ListTrait.class);
             SchemaBuilder list = Schema.listBuilder(syntheticId(name));
             if (lt != null) {
-                putMember(list, "member", lt.memberFieldInfo(), name + "Member", inProgress, false);
+                putMember(list, "member", lt.memberFieldInfo(), name + "Member", inProgress,
+                          elementNameTrait(lt.memberLocationName(), "member"));
             } else {
                 list.putMember("member", Schema.createString(syntheticId(name + "Member")));
             }
@@ -237,10 +313,13 @@ public final class SdkSchemaFactory {
         } else if (t == MarshallingType.MAP) {
             MapTrait mt = field.getTrait(MapTrait.class);
             SchemaBuilder map = Schema.mapBuilder(syntheticId(name));
-            map.putMember("key", Schema.createString(syntheticId(name + "Key")));
             if (mt != null) {
-                putMember(map, "value", mt.valueFieldInfo(), name + "Value", inProgress, false);
+                map.putMember("key", Schema.createString(syntheticId(name + "Key")),
+                              elementNameTrait(mt.keyLocationName(), "key"));
+                putMember(map, "value", mt.valueFieldInfo(), name + "Value", inProgress,
+                          elementNameTrait(mt.valueLocationName(), "value"));
             } else {
+                map.putMember("key", Schema.createString(syntheticId(name + "Key")));
                 map.putMember("value", Schema.createString(syntheticId(name + "Value")));
             }
             return map.build();
@@ -262,6 +341,34 @@ public final class SdkSchemaFactory {
                         : null;
             });
         }
+    }
+
+    /**
+     * The {@link ShapeId} to give a nested structure: its real modeled id when the shape can tell us,
+     * otherwise a synthetic one derived from the member name.
+     *
+     * <p>The synthetic id is not as inert as it looks. For JSON it genuinely never reaches the wire —
+     * element names come from {@code putMember(memberName, ...)}. XML is different: the root element of
+     * an {@code @httpPayload} structure is named from the *target shape's* id, so a payload whose
+     * synthetic id was {@code TaggingStruct} went out as {@code <TaggingStruct>} where S3 requires
+     * {@code <Tagging>}. Using the real id also removes a latent collision: the synthetic id keys only
+     * on the member name, so two distinct shapes reached through same-named members in different
+     * sub-trees would share one entry in {@code inProgress} and the second would silently get the
+     * first's schema.
+     *
+     * <p>Returns the synthetic id when {@code schema()} is null, which is what a self-referential shape
+     * reports while its own static {@code $SCHEMA} initializer is still on the stack. That is the
+     * DynamoDB {@code AttributeValue} case, and it must keep working: falling back preserves the
+     * pre-existing recursion guard exactly.
+     */
+    private static ShapeId nestedId(SdkPojo nested, String memberName) {
+        if (nested instanceof software.amazon.smithy.java.core.schema.ShapeBuilder) {
+            Schema own = ((software.amazon.smithy.java.core.schema.ShapeBuilder<?>) nested).schema();
+            if (own != null) {
+                return own.id();
+            }
+        }
+        return syntheticId(memberName + "Struct");
     }
 
     private static SdkPojo nestedPojo(SdkField<?> field) {

@@ -338,6 +338,7 @@ public final class Utils {
                 .withAction(operation.getName())
                 .withVerb(operation.getHttp().getMethod())
                 .withRequestUri(operation.getHttp().getRequestUri())
+                .withResponseCode(operation.getHttp().getResponseCode())
                 .withProtocol(protocol);
         Input input = operation.getInput();
         if (input != null) {

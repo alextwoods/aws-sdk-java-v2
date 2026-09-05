@@ -55,6 +55,19 @@
     </build>
 
     <dependencies>
+        <!-- The smithy-java pipeline, enabled for this service by "generateSmithyJavaSerde" in
+             customization.config. aws-xml-protocol below is still needed: the streaming operations
+             remain on the v2 marshallers until the smithy path handles them. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-java-bridge</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-restxml</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-xml-protocol</artifactId>

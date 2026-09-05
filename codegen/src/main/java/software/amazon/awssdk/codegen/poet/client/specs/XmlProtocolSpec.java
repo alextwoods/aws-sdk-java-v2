@@ -34,6 +34,7 @@ import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.poet.PoetExtension;
+import software.amazon.awssdk.codegen.poet.client.ClientClassUtils;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumRequiredTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.RequestCompressionTrait;
@@ -116,6 +117,10 @@ public final class XmlProtocolSpec extends QueryProtocolSpec {
 
     @Override
     public CodeBlock executionHandler(OperationModel opModel) {
+        if (ClientClassUtils.usesSmithyPipeline(model, opModel)) {
+            return ClientClassUtils.smithyJavaExecutionHandler(model, opModel);
+        }
+
         if (opModel.hasStreamingOutput()) {
             return streamingExecutionHandler(opModel);
         }

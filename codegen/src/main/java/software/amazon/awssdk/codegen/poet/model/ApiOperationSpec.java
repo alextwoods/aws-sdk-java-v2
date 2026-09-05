@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
+import software.amazon.awssdk.codegen.model.intermediate.Protocol;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeMarshaller;
 import software.amazon.awssdk.codegen.poet.ClassSpec;
 import software.amazon.awssdk.codegen.poet.PoetExtension;
 import software.amazon.awssdk.codegen.poet.PoetUtils;
@@ -39,6 +41,8 @@ public class ApiOperationSpec implements ClassSpec {
 
     private static final ClassName SCHEMA = ClassName.get("software.amazon.smithy.java.core.schema", "Schema");
     private static final ClassName SHAPE_ID = ClassName.get("software.amazon.smithy.model.shapes", "ShapeId");
+    private static final ClassName HTTP_TRAIT = ClassName.get("software.amazon.smithy.model.traits", "HttpTrait");
+    private static final ClassName URI_PATTERN = ClassName.get("software.amazon.smithy.model.pattern", "UriPattern");
     private static final ClassName API_OPERATION = ClassName.get("software.amazon.smithy.java.core.schema", "ApiOperation");
     private static final ClassName API_SERVICE = ClassName.get("software.amazon.smithy.java.core.schema", "ApiService");
     private static final ClassName SHAPE_BUILDER = ClassName.get("software.amazon.smithy.java.core.schema", "ShapeBuilder");
@@ -109,11 +113,98 @@ public class ApiOperationSpec implements ClassSpec {
                         .build();
     }
 
+    /**
+     * The operation schema, carrying an {@code @http} trait whenever the model has one.
+     *
+     * <p>awsJson never needed it — every call is {@code POST /} and the operation is named by the
+     * {@code X-Amz-Target} header — so the original version of this method emitted a bare
+     * {@code createOperation(id)}. A REST protocol cannot build a request line without it:
+     * {@code HttpBindingClientProtocol} takes the method, the URI pattern that
+     * {@code @httpLabel} members are substituted into, and the success status code from this trait.
+     * Without it every member bound to the URI has nowhere to go.
+     *
+     * <p>The values come from the input shape's marshaller, which is where C2J's {@code http} block
+     * lands in the intermediate model. Only the REST protocols get the trait (see
+     * {@link #httpTraitInfo()}), so awsJson output is byte-for-byte what it was.
+     */
     private FieldSpec schemaField() {
+        HttpTraitInfo http = httpTraitInfo();
+        if (http == null) {
+            return FieldSpec.builder(SCHEMA, "$SCHEMA", Modifier.STATIC, Modifier.FINAL)
+                            .initializer("$T.createOperation($T.from($S))",
+                                         SCHEMA, SHAPE_ID, smithyOperationId())
+                            .build();
+        }
+        CodeBlock.Builder init = CodeBlock.builder()
+            .add("$T.createOperation($T.from($S),\n", SCHEMA, SHAPE_ID, smithyOperationId())
+            .add("    $T.builder().method($S).uri($T.parse($S))",
+                 HTTP_TRAIT, http.method, URI_PATTERN, http.uri);
+        if (http.code != null) {
+            init.add(".code($L)", http.code);
+        }
+        init.add(".build())");
         return FieldSpec.builder(SCHEMA, "$SCHEMA", Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$T.createOperation($T.from($S))",
-                                     SCHEMA, SHAPE_ID, smithyOperationId())
+                        .initializer(init.build())
                         .build();
+    }
+
+    private static final class HttpTraitInfo {
+        private final String method;
+        private final String uri;
+        private final String code;
+
+        private HttpTraitInfo(String method, String uri, String code) {
+            this.method = method;
+            this.uri = uri;
+            this.code = code;
+        }
+    }
+
+    /**
+     * Returns null for the RPC protocols, which do not want an {@code @http} trait.
+     *
+     * <p>The gate is on protocol rather than on the marshaller having a verb, because C2J writes
+     * {@code {"method": "POST", "requestUri": "/"}} for awsJson and query too — reading it
+     * unconditionally would emit a trait on every existing service and change generated output that
+     * is currently byte-stable and benchmarked.
+     */
+    private HttpTraitInfo httpTraitInfo() {
+        Protocol protocol = model.getMetadata().getProtocol();
+        if (protocol != Protocol.REST_XML && protocol != Protocol.REST_JSON) {
+            return null;
+        }
+        if (operationModel.getInputShape() == null || operationModel.getInputShape().getMarshaller() == null) {
+            return null;
+        }
+        ShapeMarshaller marshaller = operationModel.getInputShape().getMarshaller();
+        String verb = marshaller.getVerb();
+        String requestUri = marshaller.getRequestUri();
+        if (verb == null || requestUri == null) {
+            return null;
+        }
+        // smithy requires an absolute path pattern; C2J writes "/" for the RPC protocols and a real
+        // path for the REST ones, but be defensive about a leading slash either way.
+        String uri = requestUri.startsWith("/") ? requestUri : "/" + requestUri;
+        return new HttpTraitInfo(verb, uri, successStatusCode(marshaller));
+    }
+
+    /**
+     * The modeled success status code, or null to let smithy default it to 200.
+     *
+     * <p>Most operations do not model one; S3 is unusual in that several do (204 on DeleteObject, 206
+     * on a ranged GetObject). An unparseable value defers to smithy rather than guessing, since a
+     * wrong number here would misdescribe a successful response.
+     */
+    private String successStatusCode(ShapeMarshaller marshaller) {
+        String code = marshaller.getResponseCode();
+        if (code == null) {
+            return null;
+        }
+        try {
+            return String.valueOf(Integer.parseInt(code.trim()));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

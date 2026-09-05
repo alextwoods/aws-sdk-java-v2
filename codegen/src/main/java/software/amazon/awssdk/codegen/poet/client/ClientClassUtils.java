@@ -71,7 +71,7 @@ public final class ClientClassUtils {
      *
      * <p>Streaming operations are excluded: the bridge has no equivalent of {@code RequestBody} /
      * {@code ResponseTransformer} yet, so they keep the v2 path. Both the method body in
-     * {@code SyncClientClass} and the execution handler in {@code JsonProtocolSpec} must agree on this,
+     * {@code SyncClientClass} and the execution handler in the protocol specs must agree on this,
      * which is why the predicate lives here.
      */
     public static boolean usesSmithyPipeline(IntermediateModel model, OperationModel opModel) {
@@ -79,6 +79,27 @@ public final class ClientClassUtils {
                && model.getCustomizationConfig().isGenerateSmithyJavaSerde()
                && !opModel.hasStreamingInput()
                && !opModel.hasStreamingOutput();
+    }
+
+    /**
+     * Generates the smithy-java execution path: hand the request to the smithy-java client and let it
+     * run the whole call — serialization, endpoint resolution, auth, signing, retries, deserialization,
+     * and interceptors. The v2 {@code ClientExecutionParams} pipeline is bypassed entirely.
+     *
+     * <p>Error translation happens inside {@code SmithyBridgeClient#invoke}, so nothing
+     * service-specific is emitted per operation. Identical for every protocol — the protocol only
+     * decides the wire format, which the {@code ClientProtocol} passed at client construction owns —
+     * so it lives here rather than in each {@code ProtocolSpec}.
+     */
+    public static CodeBlock smithyJavaExecutionHandler(IntermediateModel model, OperationModel opModel) {
+        String operationsPackage = model.getMetadata().getFullModelPackageName().replace(".model", ".operations");
+        ClassName operationClass = ClassName.get(operationsPackage, opModel.getOperationName() + "Operation");
+
+        return CodeBlock.builder()
+                        .add("\n\n")
+                        .addStatement("return smithyClient.invoke($L, $T.instance())",
+                                      opModel.getInput().getVariableName(), operationClass)
+                        .build();
     }
 
     static MethodSpec consumerBuilderVariant(MethodSpec spec, String javadoc) {

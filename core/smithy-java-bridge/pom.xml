@@ -175,6 +175,25 @@
             <artifactId>aws-client-awsjson</artifactId>
             <version>${smithy.java.version}</version>
         </dependency>
+        <!-- rest-xml, for S3. The protocol class is a thin HttpBindingClientProtocol subclass; the
+             XML reading and writing lives in xml-codec, and the request-line/header/query/label
+             binding in http-binding. Maven Central's search index still lists these at 0.0.x, but
+             ${smithy.java.version} is published; check maven-metadata.xml, not the search UI. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-restxml</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>xml-codec</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>http-binding</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
             <artifactId>aws-sdkv2-retries</artifactId>

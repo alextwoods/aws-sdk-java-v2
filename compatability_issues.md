@@ -1,7 +1,13 @@
 # V2-on-smithy-java: compatibility issue ledger
 
-Branch: `smithy-java-bridge-alexwoo-full`. Scope: **DynamoDB, sync client, non-streaming
-operations only.** smithy-java 1.6.1 / smithy 1.73.0 / AWS SDK for Java v2 2.46.11-SNAPSHOT.
+Branch: `smithy-java-bridge-alexwoo-full`. Scope: **DynamoDB (awsJson) and S3 (rest-xml), sync
+client, non-streaming operations.** smithy-java 1.6.1 / smithy 1.73.0 / AWS SDK for Java v2
+2.46.11-SNAPSHOT.
+
+S3 findings (section 12) come from `test/wire-diff`, which captures the request at the
+`SdkHttpClient` boundary — after marshalling, endpoint resolution and signing — and diffs it against a
+golden capture from a stock build. Anything in section 12 quoted as a wire snippet was observed, not
+reasoned about.
 
 This is an **exhaustive inventory of behavioral differences**, not a fix list. The goal of the
 prototype is to learn where a smithy-java-based pipeline cannot reproduce v2 semantics, and what
@@ -950,6 +956,238 @@ Consequences to keep in mind:
   today because the header is unused there, but it is a latent trap if another protocol is added.
 
 ---
+---
+
+## 12. rest-xml and S3
+
+Everything in this section was found by `test/wire-diff` on the six non-streaming S3 cases in
+`S3Cases`. Entries marked **fixed** were repaired in `SdkSchemaFactory` during this pass and are
+recorded anyway, because each was a *silent* wrong-bytes bug and the class of mistake will recur for
+the next protocol.
+
+### 12.1 fixed (was `BLOCKED`) — flattened lists gained a `<member>` wrapper, in both directions
+
+v2 records flattening on the container (`ListTrait.isFlattened()`, `MapTrait.isFlattened()`); smithy
+records it on the member (`@xmlFlattened`). `SdkSchemaFactory` never translated it, so every flattened
+XML list was wrong on the wire *and* unreadable off it:
+
+```
+stock v2:  <CompleteMultipartUpload><Part>..</Part><Part>..</Part></CompleteMultipartUpload>
+bridge:    <CompleteMultipartUpload><Part><member>..</member><member>..</member></Part></...>
+```
+
+The read side failed loudly — `ListObjectsV2` died with
+`Expected list item 'member' but found 'Key'` while parsing `<Contents>` — but the write side did not.
+S3 would have answered `MalformedXML` in production and the harness is what turned that into a
+one-line diff.
+
+### 12.2 fixed (was `BLOCKED`) — list and map element names fell back to smithy's defaults
+
+v2 puts the element's XML name on the container too (`ListTrait.memberLocationName`,
+`MapTrait.keyLocationName`/`valueLocationName`). Untranslated, a non-flattened list serialized its
+items as `<member>`:
+
+```
+stock v2:  <TagSet><Tag><Key>env</Key>..</Tag></TagSet>
+bridge:    <TagSet><member><Key>env</Key>..</member></TagSet>
+```
+
+Fixed by emitting `@xmlName` on the list's `member` / the map's `key` and `value`. Note this is a
+*second*, independent gap from 12.1 — `Tagging.TagSet` is not flattened but does rename its item, and
+`CompletedMultipartUpload.Parts` is flattened; a fix for either one alone leaves the other broken.
+
+### 12.3 fixed (was `BLOCKED`) — synthetic nested `ShapeId`s reached the wire as XML element names
+
+`SdkSchemaFactory` minted nested structure shape ids as `<memberName> + "Struct"`, on the documented
+assumption that "synthetic ids never affect wire output" — element names come from
+`putMember(memberName, ...)`. That holds for JSON. It does not hold for XML: the root element of an
+`@httpPayload` structure is named from the **target shape's id**, so `PutObjectTagging` went out as
+
+```
+stock v2:  <Tagging><TagSet>..</TagSet></Tagging>
+bridge:    <TaggingStruct><TagSet>..</TagSet></TaggingStruct>
+```
+
+Fixed by reading the nested shape's real id off its generated `$SCHEMA` (via `ShapeBuilder.schema()`),
+falling back to the synthetic id when that returns null — which is what a self-referential shape
+reports while its own static initializer is still running, i.e. the DynamoDB `AttributeValue` case.
+
+The same change removes a latent collision: the synthetic id keyed only on the member name, so two
+distinct shapes reached through same-named members in different sub-trees shared one `inProgress`
+entry and the second silently inherited the first's schema.
+
+### 12.4 fixed (was `BLOCKED`) — a codegen member rename unbound its URI label
+
+`@httpLabel` carries no name; smithy matches a label to a member **by member name**. v2's member name
+is the Java-facing one and `customization.config` is free to change it. S3 renames CopyObject's
+`Bucket`/`Key` to `DestinationBucket`/`DestinationKey`, so `/{Key+}` had nothing to bind to and every
+CopyObject threw before a single byte was sent:
+
+```
+java.lang.IllegalStateException: URI label `Key` not set for com.amazonaws.s3#CopyObjectRequest
+```
+
+Fixed by registering PATH/GREEDY_PATH members under their `locationName` instead of their member name.
+Safe only because a label member is never also a body member; header and query members keep the v2
+member name because their wire name travels in `@httpHeader`/`@httpQuery`.
+
+This is the rest-xml twin of 11.1: another place where a codegen naming choice is silently load-bearing
+on the wire, with no test in the SDK that would catch it.
+
+### 12.5 fixed (was `MISSING`) — header maps were dropped entirely
+
+v2 spells a header map as a HEADER-located **map** whose `locationName` is the shared prefix
+(`x-amz-meta-`). `SdkSchemaFactory` gave it a plain `@httpHeader`, and smithy wrote **nothing** — every
+user-metadata entry on CopyObject/PutObject/CreateMultipartUpload vanished with no error on either
+side. Fixed by emitting `@httpPrefixHeaders` when a HEADER-located member is a map.
+
+Worth noting as the worst failure shape in this whole ledger: silent data loss on a documented,
+commonly-used feature, invisible to any test that does not inspect the request.
+
+### 12.6 `DEGRADED` — customization-injected members become body members
+
+CopyObject's `SourceBucket`/`SourceKey`/`SourceVersionId` are injected by `customization.config` and
+consumed by a `preClientExecutionRequestCustomizer` before marshalling; they never go on the wire.
+Codegen still gives them `MarshallLocation.PAYLOAD`, so the bridge believes CopyObject has body members
+and emits an empty document plus a content type:
+
+```
+stock v2:  (0 bytes, no Content-Type)
+bridge:    <CopyObjectRequest></CopyObjectRequest>  +  content-type: application/xml
+```
+
+The asymmetry is structural, not a missing mapping. v2 does not decide "has a body" from `SDK_FIELDS`
+at all — it reads `hasPayloadMembers` off the operation's `ShapeMarshaller`, which C2J computed from
+the real model. The bridge infers it from `SDK_FIELDS`, where a synthetic member is indistinguishable
+from a modeled one. Fixing it means carrying `hasPayloadMembers` into the operation schema, or marking
+injected members in codegen.
+
+Affects any operation with customization-injected members: CopyObject, UploadPartCopy, and
+`UploadPartRequest.SdkPartType` (whose own documentation says "will not be included in the request
+payload").
+
+### 12.7 `DEGRADED` — duplicate `Content-Type`
+
+A consequence of 12.6, but it deserves its own line because it is the part S3 would reject rather than
+ignore. CopyObject models a `ContentType` header member, and `RestXmlClientProtocol` adds its own
+`application/xml` for the (spurious) body, so two `Content-Type` headers go out:
+
+```
+content-type: application/xml
+content-type: text/plain
+```
+
+Even without 12.6 this needs an answer: for any operation that both has an XML body and models
+`Content-Type` as a header, v2 lets the modeled value win and smithy-java appends.
+
+### 12.8 `DEGRADED` — `x-amz-content-sha256` is a real body hash where v2 sends `UNSIGNED-PAYLOAD`
+
+Over HTTPS, v2's S3 signer sends `UNSIGNED-PAYLOAD` and never hashes the body. smithy-java's SigV4
+signer computes the actual SHA-256 every time:
+
+```
+stock v2:  x-amz-content-sha256: UNSIGNED-PAYLOAD
+bridge:    x-amz-content-sha256: aea5b2b0b6c6ca0468d92393adf0455d6e6343683dddedd81ab2c3837ea1d186
+```
+
+Both are accepted, so this is invisible functionally — and it is the **single most important finding
+for streaming**. A payload hash cannot be computed without reading the whole body, so on this path a
+`PutObject` of a 5 GiB file either buffers it or reads the stream twice. Whether smithy-java can be
+told to send `UNSIGNED-PAYLOAD` for S3 is the gating question for P1, ahead of any `DataStream` work,
+because if it cannot then streaming PUT is not merely slower than v2 but bounded by heap.
+
+### 12.9 `MISSING` — request checksums (`@httpChecksum`)
+
+v2 computes a request checksum for operations that model one, and for those where S3 requires one it is
+not optional. `PutObjectTagging`:
+
+```
+stock v2:  x-amz-checksum-crc32: 4afhuQ==
+           x-amz-sdk-checksum-algorithm: CRC32
+bridge:    (absent)
+```
+
+S3 answers `MissingContentMD5`/`InvalidRequest` for `PutObjectTagging`, `PutBucketPolicy`,
+`DeleteObjects` and the rest of the "checksum required" set, so this is a **functional break**, not a
+degradation, for every one of those operations. Trailing checksums (`aws-chunked` + a trailer) are a
+separate and larger problem on the streaming path.
+
+Related: 6.1 already records that CRC32 *response* validation is missing.
+
+### 12.10 `MISSING` — `amz-sdk-invocation-id` and `amz-sdk-request`
+
+Absent from every bridged request. v2 sends both on every attempt:
+
+```
+stock v2:  amz-sdk-invocation-id: <uuid>
+           amz-sdk-request: attempt=1; max=4
+bridge:    (absent)
+```
+
+`amz-sdk-invocation-id` correlates the attempts of one API call in service-side logs;
+`amz-sdk-request` is what AWS's adaptive-retry and client-health telemetry reads. Nothing breaks for
+the caller, but a customer who bridges loses the ability to have AWS support correlate a retry storm,
+and AWS loses the signal it uses to detect misbehaving clients. Cheap to add in the bridge.
+
+### 12.11 `DEGRADED` — `host` and `Content-Length` are not in the request header map
+
+The bridge's request reaches the v2 `SdkHttpClient` without a `host` or `Content-Length` header, where
+stock v2 sets both explicitly. `host` *is* covered by the signature, so signing is not the issue —
+smithy signs from the URI. In practice the v2 HTTP clients add both, so requests still go out
+correctly, and the harness sees the difference only because it captures before the transport.
+
+It is still a real difference for anything that reads headers off `SdkHttpRequest`: a v2
+`ExecutionInterceptor` doing `request.firstMatchingHeader("Content-Length")`, an
+`SdkHttpClient` implementation that trusts the header rather than the stream, or a customer's
+`RequestBody`-size assertion.
+
+### 12.12 `DEGRADED` — an empty URI pattern adds a trailing slash
+
+Operations whose C2J `requestUri` has no path (`?list-type=2`, which becomes the smithy pattern
+`/?list-type=2`) get the pattern's `/` appended to the endpoint path:
+
+```
+stock v2:  GET /wirediff-bucket
+bridge:    GET /wirediff-bucket/
+```
+
+Benign for S3 — both address the bucket, and each arm signs what it sends — but it is a wire
+difference on every bucket-level operation, and for a service that routes on exact path it would not
+be benign. The joining happens inside smithy-java's endpoint/`UriPattern` composition, so the bridge
+cannot fix it without either post-processing the URI or teaching codegen to emit a pattern that
+composes cleanly.
+
+### 12.13 `DEGRADED` — XML prolog, root namespace, and quote escaping
+
+Three cosmetic codec differences, all accepted by S3, listed so they are not re-investigated:
+
+| | stock v2 | bridge |
+|---|---|---|
+| prolog | `<?xml version="1.0" encoding="UTF-8"?>` | absent |
+| root namespace | `xmlns="http://s3.amazonaws.com/doc/2006-03-01/"` | absent |
+| `"` in element text | `&quot;` | `"` |
+
+The namespace is the only one with a path to a fix in the bridge: C2J carries it as
+`ShapeMarshaller.getXmlNameSpaceUri()` and smithy has `@xmlNamespace`, but the trait belongs on the
+*payload* shape (`Tagging`), not the request shape, and `SdkSchemaFactory` has no operation context
+when it builds a nested shape. The prolog is an `xml-codec` behavior with no setting. The escaping is
+correct XML either way — `&quot;` is only required inside attribute values.
+
+### 12.14 what rest-xml got right
+
+Recorded because it bounds the problem: after 12.1-12.5, these were byte-identical to stock v2 with no
+bridge-specific work.
+
+- Greedy path labels, including percent-encoding: `nested/path/with spaces/object.txt` →
+  `/nested/path/with%20spaces/object.txt`, slashes preserved, space encoded.
+- Literal query parameters baked into the URI pattern (`?list-type=2`), merged with bound `@httpQuery`
+  members and not duplicated.
+- Valueless query parameters (`?tagging`, not `?tagging=`).
+- Modeled non-200 success codes (204 on DeleteObject) via `HttpTrait.code`.
+- Header-only operations (HeadObject) including conditional headers.
+- `@httpPrefixHeaders` values and ordering, once the trait was emitted.
+- Nested XML structures and lists, once 12.1-12.3 were fixed: `Tagging`, `CompletedMultipartUpload`,
+  and the `ListObjectsV2` response all round-trip.
 
 ## Open questions
 
@@ -971,3 +1209,14 @@ Consequences to keep in mind:
 6. Do the `v2-sync-strip-*` arms resolve individually above the noise floor, or is the bridging tax
    only measurable in aggregate (`v2-sync-stripped`)? If only in aggregate, per-component attribution
    needs allocation profiling rather than timing.
+7. Can smithy-java's SigV4 signer be told to send `UNSIGNED-PAYLOAD` (12.8)? This is the gating
+   question for streaming: if it cannot, a bridged `PutObject` must read the body to hash it, and
+   large-object upload becomes heap-bounded rather than merely slower. Everything in P1 depends on the
+   answer, so it should be settled before any `DataStream` work.
+8. Where should "does this operation have a body?" come from (12.6)? v2 reads `hasPayloadMembers` off
+   the operation's `ShapeMarshaller`; the bridge infers it from `SDK_FIELDS`, where a
+   customization-injected member is indistinguishable from a modeled one. Carrying the flag into the
+   operation schema is the smaller change; marking injected members in codegen is the more correct one.
+9. Does anything besides `@httpChecksum` (12.9) make a bridged S3 operation outright fail? The wire
+   diff covers six operations; the checksum-required set alone is larger than that, and 200-with-error
+   body, `modifyException`, and virtual-host addressing are all still unexercised.

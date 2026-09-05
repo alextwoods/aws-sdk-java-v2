@@ -37,8 +37,8 @@ import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.smithy.java.aws.client.auth.scheme.sigv4.SigV4AuthScheme;
 import software.amazon.smithy.java.aws.client.auth.scheme.sigv4.SigV4Settings;
-import software.amazon.smithy.java.aws.client.awsjson.AwsJson1Protocol;
 import software.amazon.smithy.java.aws.sdkv2.retries.SdkRetryStrategy;
+import software.amazon.smithy.java.client.core.ClientProtocol;
 import software.amazon.smithy.java.core.schema.ApiService;
 
 /**
@@ -121,6 +121,9 @@ public final class V2ConfigTranslator {
      *
      * @param v2Config             the v2 client configuration.
      * @param service              the generated service shape.
+     * @param protocol             the wire protocol, e.g. {@code AwsJson1Protocol} or
+     *                             {@code RestXmlClientProtocol}. Generated code picks it, because the
+     *                             protocol is a fact about the model and this module has no model.
      * @param endpointResolver     composition of the generated {@code ruleParams} and the endpoint provider.
      * @param replacedInterceptors v2 interceptor classes whose job smithy-java now does, and which must
      *                             therefore not be run twice. Generated code passes the auth-scheme,
@@ -132,6 +135,7 @@ public final class V2ConfigTranslator {
     public static SmithyBridgeClient.Builder newClientBuilder(
             SdkClientConfiguration v2Config,
             ApiService service,
+            ClientProtocol<?, ?> protocol,
             V2EndpointResolverBridge.V2RuleParamsResolver endpointResolver,
             Set<Class<? extends ExecutionInterceptor>> replacedInterceptors,
             Supplier<? extends AwsServiceException.Builder> baseExceptionBuilder
@@ -139,7 +143,7 @@ public final class V2ConfigTranslator {
         SmithyBridgeClient.Builder builder = SmithyBridgeClient.builder();
 
         builder.service(service)
-               .protocol(new AwsJson1Protocol(service.schema().id()))
+               .protocol(protocol)
                .transport(new V2TransportBridge(v2Config.option(SdkClientOption.SYNC_HTTP_CLIENT)))
                .baseExceptionBuilder(baseExceptionBuilder);
 

@@ -84,6 +84,10 @@ public class SyncClientClass extends SyncClientInterface {
         ClassName.get("software.amazon.awssdk.bridge.smithyjava.client", "SmithyBridgeClient");
     private static final ClassName V2_CONFIG_TRANSLATOR =
         ClassName.get("software.amazon.awssdk.bridge.smithyjava.client", "V2ConfigTranslator");
+    private static final ClassName AWS_JSON_1_PROTOCOL =
+        ClassName.get("software.amazon.smithy.java.aws.client.awsjson", "AwsJson1Protocol");
+    private static final ClassName REST_XML_PROTOCOL =
+        ClassName.get("software.amazon.smithy.java.aws.client.restxml", "RestXmlClientProtocol");
 
     private final IntermediateModel model;
     private final PoetExtension poetExtensions;
@@ -267,6 +271,7 @@ public class SyncClientClass extends SyncClientInterface {
 
         builder.addCode("this.smithyClient = $T.newClientBuilder(this.clientConfiguration,\n", V2_CONFIG_TRANSLATOR);
         builder.addCode("    $T.instance(),\n", apiService);
+        builder.addCode("    new $T($T.instance().schema().id()),\n", smithyProtocolClass(), apiService);
         builder.addCode("    (request, executionAttributes) -> endpointProvider.resolveEndpoint("
                         + "$T.ruleParams(request, executionAttributes)).join(),\n",
                         endpointRulesSpecUtils.resolverInterceptorName());
@@ -284,6 +289,27 @@ public class SyncClientClass extends SyncClientInterface {
         // unmodeled error retryable at all.
         builder.addCode("    $T::builder)\n", baseException);
         builder.addStatement("    .build()");
+    }
+
+    /**
+     * The smithy-java protocol implementation for this service's wire protocol.
+     *
+     * <p>Fails loudly rather than defaulting: silently generating an awsJson client for, say, a query
+     * service would produce a client that compiles, builds, and then sends the wrong bytes at runtime.
+     * A protocol added here also needs its binding traits mapped in {@code SdkSchemaFactory}.
+     */
+    private ClassName smithyProtocolClass() {
+        switch (model.getMetadata().getProtocol()) {
+            case AWS_JSON:
+                return AWS_JSON_1_PROTOCOL;
+            case REST_XML:
+                return REST_XML_PROTOCOL;
+            default:
+                throw new UnsupportedOperationException(
+                    "generateSmithyJavaSerde is enabled for " + model.getMetadata().getServiceName()
+                    + ", but its protocol " + model.getMetadata().getProtocol().getValue()
+                    + " has no smithy-java protocol wired up in SyncClientClass.");
+        }
     }
 
     @Override

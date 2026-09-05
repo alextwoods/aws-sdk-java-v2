@@ -25,6 +25,16 @@ public class ShapeMarshaller {
 
     private String requestUri;
 
+    /**
+     * The modeled success status code from C2J's {@code http.responseCode}, as a string because the
+     * models omit it far more often than they set it and null is the "not modeled" signal.
+     *
+     * <p>Carried so the smithy {@code @http} trait can be emitted with the right code. Most operations
+     * do not model one; S3 is unusual in that several do (204 on DeleteObject, 206 on a ranged
+     * GetObject), and defaulting those to 200 would misdescribe a successful response.
+     */
+    private String responseCode;
+
     private String locationName;
 
     private String xmlNameSpaceUri;
@@ -56,6 +66,19 @@ public class ShapeMarshaller {
 
     public ShapeMarshaller withVerb(String verb) {
         setVerb(verb);
+        return this;
+    }
+
+    public String getResponseCode() {
+        return responseCode;
+    }
+
+    public void setResponseCode(String responseCode) {
+        this.responseCode = responseCode;
+    }
+
+    public ShapeMarshaller withResponseCode(String responseCode) {
+        setResponseCode(responseCode);
         return this;
     }
 
