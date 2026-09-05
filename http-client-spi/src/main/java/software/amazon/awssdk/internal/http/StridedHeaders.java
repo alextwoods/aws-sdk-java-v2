@@ -25,7 +25,6 @@ import java.util.function.Predicate;
 import software.amazon.awssdk.annotations.NotThreadSafe;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.annotations.ThreadSafe;
-import software.amazon.awssdk.utils.Lazy;
 
 /**
  * A header store backed by a flat, strided {@code String[]}: even indices hold header names (original casing), odd
@@ -439,12 +438,18 @@ public final class StridedHeaders {
     public static final class ForBuildable {
         private final String[] pairs;
         private final int pairCount;
-        private final Lazy<Map<String, List<String>>> externalMap;
+
+        /**
+         * Cached result of {@link #externalMap()}. Lazily initialized with a benign race: concurrent callers may
+         * each build the map, but the results are equal and immutable, so whichever write wins is correct. A plain
+         * volatile field instead of {@link software.amazon.awssdk.utils.Lazy} because this object is created on
+         * every {@code build()}, and the wrapper plus its capturing lambda are measurable per-request garbage.
+         */
+        private volatile Map<String, List<String>> externalMap;
 
         private ForBuildable(ForBuilder builder) {
             this.pairs = builder.pairs;
             this.pairCount = builder.pairCount;
-            this.externalMap = new Lazy<>(() -> toExternalMap(this.pairs, this.pairCount));
         }
 
         public String firstValue(String name) {
@@ -464,7 +469,12 @@ public final class StridedHeaders {
         }
 
         public Map<String, List<String>> externalMap() {
-            return externalMap.getValue();
+            Map<String, List<String>> map = externalMap;
+            if (map == null) {
+                map = toExternalMap(pairs, pairCount);
+                externalMap = map;
+            }
+            return map;
         }
 
         public ForBuilder forBuilder() {
