@@ -30,6 +30,7 @@ import java.util.function.Predicate;
 import software.amazon.awssdk.annotations.Immutable;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.internal.http.LowCopyListMap;
+import software.amazon.awssdk.internal.http.StridedHeaders;
 import software.amazon.awssdk.utils.CollectionUtils;
 import software.amazon.awssdk.utils.StringUtils;
 import software.amazon.awssdk.utils.ToString;
@@ -48,7 +49,7 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
     private final Integer port;
     private final String path;
     private final LowCopyListMap.ForBuildable queryParameters;
-    private final LowCopyListMap.ForBuildable headers;
+    private final StridedHeaders.ForBuildable headers;
     private final SdkHttpMethod httpMethod;
     private final ContentStreamProvider contentStreamProvider;
 
@@ -118,22 +119,17 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
     @Override
     public Map<String, List<String>> headers() {
-        return headers.forExternalRead();
+        return headers.externalMap();
     }
 
     @Override
     public List<String> matchingHeaders(String header) {
-        return unmodifiableList(headers.forInternalRead().getOrDefault(header, emptyList()));
+        return headers.valuesFor(header);
     }
 
     @Override
     public Optional<String> firstMatchingHeader(String headerName) {
-        List<String> headers = this.headers.forInternalRead().get(headerName);
-        if (headers == null || headers.isEmpty()) {
-            return Optional.empty();
-        }
-
-        String header = headers.get(0);
+        String header = headers.firstValue(headerName);
         if (StringUtils.isEmpty(header)) {
             return Optional.empty();
         }
@@ -155,7 +151,7 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
     @Override
     public void forEachHeader(BiConsumer<? super String, ? super List<String>> consumer) {
-        headers.forInternalRead().forEach((k, v) -> consumer.accept(k, Collections.unmodifiableList(v)));
+        headers.forEach(consumer);
     }
 
     @Override
@@ -165,7 +161,7 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
     @Override
     public int numHeaders() {
-        return headers.forInternalRead().size();
+        return headers.distinctNames();
     }
 
     @Override
@@ -240,7 +236,7 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
                        .add("host", host)
                        .add("port", port)
                        .add("encodedPath", path)
-                       .add("headers", headers.forInternalRead().keySet())
+                       .add("headers", headers.externalMap().keySet())
                        .add("queryParameters", queryParameters.forInternalRead().keySet())
                        .build();
     }
@@ -254,13 +250,13 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
         private Integer port;
         private String path;
         private LowCopyListMap.ForBuilder queryParameters;
-        private LowCopyListMap.ForBuilder headers;
+        private StridedHeaders.ForBuilder headers;
         private SdkHttpMethod httpMethod;
         private ContentStreamProvider contentStreamProvider;
 
         Builder() {
             queryParameters = LowCopyListMap.emptyQueryParameters();
-            headers = LowCopyListMap.emptyHeaders();
+            headers = StridedHeaders.emptyHeaders();
         }
 
         Builder(DefaultSdkHttpFullRequest request) {
@@ -367,14 +363,13 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
         @Override
         public DefaultSdkHttpFullRequest.Builder putHeader(String headerName, List<String> headerValues) {
-            this.headers.forInternalWrite().put(headerName, new ArrayList<>(headerValues));
+            this.headers.put(headerName, headerValues);
             return this;
         }
 
         @Override
         public SdkHttpFullRequest.Builder appendHeader(String headerName, String headerValue) {
-            this.headers.forInternalWriteWithListMutation()
-                        .computeIfAbsent(headerName, k -> new ArrayList<>()).add(headerValue);
+            this.headers.append(headerName, headerValue);
             return this;
         }
 
@@ -386,7 +381,7 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
         @Override
         public SdkHttpFullRequest.Builder removeHeader(String headerName) {
-            this.headers.forInternalWrite().remove(headerName);
+            this.headers.remove(headerName);
             return this;
         }
 
@@ -398,22 +393,17 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
         @Override
         public Map<String, List<String>> headers() {
-            return CollectionUtils.unmodifiableMapOfLists(this.headers.forInternalRead());
+            return this.headers.externalMapSnapshot();
         }
 
         @Override
         public List<String> matchingHeaders(String header) {
-            return unmodifiableList(headers.forInternalRead().getOrDefault(header, emptyList()));
+            return headers.valuesFor(header);
         }
 
         @Override
         public Optional<String> firstMatchingHeader(String headerName) {
-            List<String> headers = this.headers.forInternalRead().get(headerName);
-            if (headers == null || headers.isEmpty()) {
-                return Optional.empty();
-            }
-
-            String header = headers.get(0);
+            String header = this.headers.firstValue(headerName);
             if (StringUtils.isEmpty(header)) {
                 return Optional.empty();
             }
@@ -435,7 +425,7 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
         @Override
         public void forEachHeader(BiConsumer<? super String, ? super List<String>> consumer) {
-            headers.forInternalRead().forEach((k, v) -> consumer.accept(k, unmodifiableList(v)));
+            headers.forEach(consumer);
         }
 
         @Override
@@ -445,18 +435,12 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
 
         @Override
         public boolean anyMatchingHeader(Predicate<String> predicate) {
-            for (String headerKey : headers.forInternalRead().keySet()) {
-                if (predicate.test(headerKey)) {
-                    return true;
-                }
-            }
-
-            return false;
+            return headers.anyName(predicate);
         }
 
         @Override
         public int numHeaders() {
-            return headers.forInternalRead().size();
+            return headers.distinctNames();
         }
 
         @Override

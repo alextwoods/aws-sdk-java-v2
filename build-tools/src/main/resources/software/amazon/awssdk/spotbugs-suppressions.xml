@@ -45,6 +45,17 @@
         <Bug pattern="OBL_UNSATISFIED_OBLIGATION" />
     </Match>
 
+    <!-- StridedHeaders uses a private String instance as an identity-compared sentinel for "name present with an
+         empty value list"; the == comparisons against it are intentional and correct. -->
+    <Match>
+        <Or>
+            <Class name="software.amazon.awssdk.internal.http.StridedHeaders"/>
+            <Class name="software.amazon.awssdk.internal.http.StridedHeaders$ForBuilder"/>
+            <Class name="software.amazon.awssdk.internal.http.StridedHeaders$ForBuildable"/>
+        </Or>
+        <Bug pattern="ES_COMPARING_STRINGS_WITH_EQ" />
+    </Match>
+
     <!-- We do not have control over these objects being serializable, but we do not intend for them to fully function
          after serialization. -->
     <Match>
