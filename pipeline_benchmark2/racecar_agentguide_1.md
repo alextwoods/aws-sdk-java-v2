@@ -128,8 +128,12 @@ cd test/standalone-e2e-benchmarks
 ### 4.2 The bare-metal host (where real numbers come from)
 
 ```bash
-ssh -i /Users/alexwoo/alexwoo-ec2-us-east-1.pem ec2-user@ec2-44-203-70-75.compute-1.amazonaws.com
+ssh -i /Users/alexwoo/alexwoo-ec2-us-east-1.pem ec2-user@ec2-52-87-223-88.compute-1.amazonaws.com
 ```
+
+(The original host was terminated; the address above is the reprovisioned replacement,
+i-0cec9172b237e9113. If it too is gone, find the current one with
+`aws ec2 describe-instances --filters Name=instance-type,Values=c6g.metal Name=instance-state-name,Values=running`.)
 
 c6g.metal: Graviton2 Neoverse-N1, 64 physical cores (no SMT), 126 GiB, Amazon Linux 2023, JDK 25,
 async-profiler 4.5 (`asprof`/`jfrconv` on PATH). Layout on host: `~/racecar/repo/...` mirrors the
@@ -141,7 +145,7 @@ Driving it from the laptop (never hand-roll ssh/scp from the interactive shell â
 targets; the bash scripts work):
 
 ```bash
-export RACECAR_REMOTE_TARGET=ec2-user@ec2-44-203-70-75.compute-1.amazonaws.com
+export RACECAR_REMOTE_TARGET=ec2-user@ec2-52-87-223-88.compute-1.amazonaws.com
 export RACECAR_REMOTE_KEY=/Users/alexwoo/alexwoo-ec2-us-east-1.pem
 ./scripts/deploy-remote.sh --target "$RACECAR_REMOTE_TARGET" --key "$RACECAR_REMOTE_KEY" \
     --jar ../../pipeline_benchmark2/jars/racecar-phaseE2-<sha>.jar     # scripts always refreshed

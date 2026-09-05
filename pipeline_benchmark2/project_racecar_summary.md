@@ -2690,3 +2690,168 @@ exists to remove.
   than about smithy. Worth its own investigation at concurrency 1 and higher.
 - Not shippable as-is, for the reasons above. What it establishes is the size of the prize and where the
   boundary of an adapter-shaped solution lies.
+
+## Investigation — where CRT's async small-operation premium lives
+
+E16 left a follow-up: at concurrency 1, `v2-async` on CRT costs ~26 µs/op more than the same client
+on smithy's blocking transport bridged over a virtual thread, and ~50 µs/op more than sync Apache5.
+This investigation attributes that premium. It is an investigation, not a phase — no SDK change, no
+verdict to keep or revert.
+
+- Raw: `raw/host-crt-invest-20260905-154639` (local copy; also on the host under
+  `~/racecar/runs/crt-invest-20260905-154639`), jar `racecar-e16-smithyhttp-422bfc449e7`.
+- **Host note:** the original c6g.metal was terminated; this and all later runs are on a
+  reprovisioned instance of the same type and setup (i-0cec9172b237e9113, JDK 25.0.4,
+  `ec2-52-87-223-88.compute-1.amazonaws.com`). Within-session comparisons are unaffected; absolute
+  numbers may drift a percent or two against older sections.
+
+### Method
+
+One profiled JVM per arm (`small-get`, concurrency 1, 300k iterations, quiescence warmup, pinned
+32–47 / server 0–15, standard TUNE args), async-profiler CPU in JFR, converted to collapsed stacks.
+Attribution is by **self frame**, grouped into functional buckets, rather than by whole-stack
+category: response processing runs on whatever thread completes the future, so stack-marker
+categorization bleeds SDK work into transport buckets — self-frame grouping does not. `epoll.available`
+verified `true` before trusting the smithy arm. Absolute µs/op figures scale each profile's shares by
+its own run's `app_cpu_us_per_op`; both async runs carried residual JIT (3.9% and 2.7% of wall,
+flagged not-steady, chronic for async), so treat the µs values as ±a few percent. The check that the
+method holds: the SDK-side groups (`sdk-java` + `jdk-stdlib`) come out equal across all three arms —
+66.4 / 64.4 / 66.0 µs/op — exactly as they should, since the pipeline above the transport is
+identical.
+
+### Result
+
+`app_cpu_us_per_op`: CRT 154.8, smithy-http 130.3, sync Apache5 110.1. Premium under attribution:
+CRT − smithy = 24.5 µs/op. Self-frame groups, µs/op:
+
+| group | CRT | smithy-http | sync apache5 |
+|---|---:|---:|---:|
+| sdk-java + jdk-stdlib (pipeline, serde, signing…) | 66.4 | 64.4 | 66.0 |
+| syscall-io (send/recv/read/write/epoll) | 28.8 | 16.4 | 21.9 |
+| thread-signal (futex/cond/park) | 10.5 | 17.2 | 0.1 |
+| async-machinery (CompletableFuture, FJP, continuations) | 3.6 | 13.4 | 0.0 |
+| crt-native-code (self time inside libaws-crt-jni) | 15.3 | – | – |
+| jni-bridge + native-mem (transitions, malloc/free) | 7.6 | 0.3 | 0.1 |
+| other-native | 16.0 | 10.6 | 18.1 |
+| jvm-stubs | 4.2 | 2.9 | 3.9 |
+
+The premium decomposes as: **+15.3 native code execution, +7.3 JNI transitions and native
+malloc/free, +12.4 extra syscalls, +5.4 other-native, minus a 16.5 µs coordination advantage** —
+CRT's event-loop handoff (14.1 µs of signal + future machinery) is actually cheaper than the virtual
+thread bridge's (30.6 µs). Sums to ~24 µs against the measured 24.5.
+
+The syscall shape explains itself: the smithy arm's blocking socket does essentially
+send + recv per operation (11.3 + 3.0 µs, epoll 1.1). CRT's cross-thread submission does
+send (12.4) **plus a full event-loop wake cycle per operation** — epoll_pwait 6.7, an
+eventfd-style write 2.8, a separate read 4.7. At concurrency 1 every request pays the whole wake
+cycle; under load those wakes batch, which is presumably where this design earns its keep.
+
+Allocation is not part of the story: 41.4 vs 40.8 KB/op whole-process sampled bytes over equal
+35k-operation runs.
+
+### What this settles
+
+- **The premium is below the Java boundary.** The SDK adapter's own self time is ~2.5 µs/op — E12
+  already trimmed it, and there is nothing meaningful left to take on the Java side. No SDK-side
+  change can recover the ~24 µs; it belongs to CRT's native execution, its JNI crossings, and its
+  per-request wake pattern at low concurrency.
+- **CRT's coordination model is good** — better than a virtual-thread bridge at handing work across
+  threads. What it pays for that is native-side cost that a pure-Java blocking transport simply does
+  not have at this concurrency.
+- Practical reading for the transport strategy: at low concurrency, a lean blocking client (on a
+  platform or virtual thread) is structurally cheaper per operation than any event-loop transport
+  crossed per request; CRT's costs should amortize with concurrency, and a follow-up sweep
+  (CRT vs smithy arm at c = 4/16/32) would show where the lines cross. That, not adapter work, is
+  the decision-relevant next measurement.
+
+## Phase H1 — flat strided-array request header storage
+
+The first slice of the "compact flat-array HTTP headers" strategic item (sol report §7.1): replace
+the representation behind `DefaultSdkHttpFullRequest`, keep every public contract, change no
+consumer. The point of this phase is as much to prove the representation swap is safe and cheap as
+to bank its direct win — the direct consumer paths (signer, transport adapters) build on it.
+
+- Commits: `b440db2c035` (the store), `1a3cea4f721` (drop the `Lazy` wrapper from the map cache;
+  see mechanism check below)
+- Raw: `paired/host-20260905-1623` (small ops, 7 reps, 84 runs), `paired/host-20260905-1727`
+  (batch, 5 reps, 40 runs), `raw/host-flathdr-alloc-20260905-180306` (mechanism profiles)
+- Jars: `racecar-flatHdrBase-bdc9a156fb1` vs `racecar-flatHdr-b440db2c035`, identical harness
+  commit, both smoke-tested locally before deploy
+
+### What changed
+
+`StridedHeaders` (new, `http-client-spi` internal): request headers as a flat `String[]` of
+alternating name/value pairs, sorted case-insensitively and stable within a name, with the same
+`ForBuilder`/`ForBuildable` copy-on-write split as `LowCopyListMap`. The TreeMap representation paid
+a red-black node per header on every lookup and **a full tree clone on the first mutation of every
+builder derived from a built request** — a boundary the pipeline crosses 3–4 times per call
+(transaction-id stamp, signer, async content-length round trip). That transition is now one array
+copy; lookups are binary searches; `headers()` still materializes a lazy, cached, deeply
+unmodifiable case-insensitive `TreeMap` so external readers see exactly what they saw before.
+
+Behavior parity was pinned in a 31-test suite (aliasing matrix, casing retention on replace,
+empty-value-list sentinel, multi-value order, sorted iteration, case-insensitive map `get`,
+equality across casings). One deliberate delta: `Builder.headers()` returns a per-call snapshot
+rather than a live unmodifiable view (not on any hot path; the legacy `SignerUtils.addHostHeader`
+reads it once per signing pass on the non-fast path).
+
+Query parameters keep `LowCopyListMap`; responses are untouched.
+
+### Measurement (paired, host, 200k/30k small + 80k/15k batch, concurrency 1)
+
+Application CPU per op, with the smithy arm as an untouched control:
+
+| client | scenario | base | flatHdr | delta | spread | wins | latency |
+|--------|----------|-----:|--------:|------:|-------:|-----:|--------:|
+| v2-async | small-get | 155.2 | 150.7 | **−2.9%** | ±1.6% | 7/7 | −2.3% (6/7) |
+| v2-async | small-put | 149.8 | 146.9 | −1.8% | ±5.3% | 4/7 | −2.0% |
+| v2-sync | small-get | 108.3 | 107.2 | −0.9% | ±3.9% | 4/7 | −0.4% |
+| v2-sync | small-put | 104.4 | 103.2 | −1.0% | ±6.1% | 4/7 | −0.2% |
+| smithy (control) | small-get | 49.1 | 50.8 | +4.3% | ±12.4% | 3/7 | +1.5% |
+| smithy (control) | small-put | 46.8 | 48.1 | +3.1% | ±6.2% | 3/7 | +1.8% |
+
+Batch scenarios are neutral (−0.7% to +0.3%, all inside their pair spreads at 2–4/5 wins), which is
+the expected shape: headers are a per-request fixed cost. The control reads zero within its (wide)
+spread, certifying the session. Async small runs were flagged not-steady on 28/84 (chronic);
+latency agrees with CPU there. The one clean cell is async small-get: −2.9% at 7/7 with ±1.6%
+spread — above this rig's floor. Sync small ops read −1% at 4/7: consistent in sign, below the
+floor, not claimable on timing alone.
+
+### Mechanism check (equal 40k-op alloc profiles per arm)
+
+| site / type (B/op) | sync base | sync flatHdr | async base | async flatHdr |
+|---|---:|---:|---:|---:|
+| `TreeMap$Entry` | 1,075 | 131 | 1,429 | 354 |
+| stacks through `putHeader` | 1,783 | 642 | 3,342 | 1,285 |
+| stacks through `LowCopyListMap` | 2,753 | 1,153 | 2,595 | 1,088 |
+| stacks through `DefaultSdkHttpFullRequest` | 5,348 | 3,932 | 7,392 | 5,308 |
+| **profile total** | 34,426 | 34,518 | 41,045 | **38,345** |
+
+The TreeMap machinery is gone as designed. Async banks the full −2.7 KB/op because it crosses the
+mutation boundary once more per call (the content-length round trip in `MakeAsyncHttpRequestStage`)
+and re-reads headers in the CRT adapter; sync's savings were offset almost exactly by the new
+store's own costs — splice copies (+446 B/op of `String[]`), per-build `ForBuildable` + `Lazy` +
+lambda (~650 B/op), and `forEach` singleton wrappers. The `Lazy` + lambda part (~400 B/op) was
+avoidable and `1a3cea4f721` removes it (exact-mechanism change, verified in the profile sites, not
+separately host-measured).
+
+### Verdict
+
+Kept. The async −2.9% CPU at 7/7 plus the exact mechanism removal carries it; sync is
+allocation-neutral and timing-neutral-to-slightly-positive, i.e. the representation swap is free
+where it doesn't yet pay. That is the result this phase needed: the strided store is behaviorally
+safe (81 pinning tests, sdk-core 651, protocol-tests 726, signer differential, japicmp clean) and
+costs nothing, so the consumers can now be moved onto it one commit at a time.
+
+### Follow-ups, in value order
+
+1. **Direct consumer paths (H2).** Expose per-entry iteration (`forEachEntry(String,String)`-shaped,
+   internal) plus a bulk path for the signer: `FastV4HeaderSigner.collectSourceHeaders` can filter-copy
+   the strided array straight into `V4SigningResources`' strided buffer (same layout, no `List`
+   wrappers, no lambda), and the Apache5/CRT adapters can iterate entries without per-name list
+   materialization. The remaining `forEachHeader` wrapper costs (~0.7–3 KB/op) and the signer's
+   collection pass are the target.
+2. **Response-side store.** Response headers are built once by the transport and read by
+   metadata/unmarshalling; the same representation applies, with the `Serializable`/transient quirk
+   of `DefaultSdkHttpFullResponse` to preserve.
+3. **Query parameters**, for query-protocol services (out of DynamoDB's blast radius).
