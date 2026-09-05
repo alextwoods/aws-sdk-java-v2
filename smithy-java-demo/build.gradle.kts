@@ -1,8 +1,22 @@
 plugins {
     `java-library`
     application
+    // Publishes the generated native smithy-java DynamoDB client to mavenLocal, where
+    // test/standalone-e2e-benchmarks consumes it as the `smithy` benchmark arm.
+    `maven-publish`
     // Smithy Gradle plugin drives codegen via smithy-build.json. From Maven Central.
     id("software.amazon.smithy.gradle.smithy-base") version "1.4.0"
+}
+
+group = "software.amazon.awssdk.benchmark"
+version = "1.0-SNAPSHOT"
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+        }
+    }
 }
 
 java {

@@ -40,3 +40,8 @@ bin/
 # Other
 .attach_pid*
 .ddb-local/
+
+# Benchmark arm jars: 23 shaded jars, ~1.3 GB, and rebuildable. Each one embeds a
+# benchmark-provenance.properties (phase + commit) that every run manifest records, so a result stays
+# traceable to the code that produced it via scripts/build-jar.sh without the binary in git.
+pipeline_benchmark2/jars/

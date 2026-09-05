@@ -73,6 +73,7 @@ final class AddMetadata {
                 .withBaseResponseName(String.format(Constant.BASE_RESPONSE_NAME_PATTERN, serviceName))
                 .withProtocol(Protocol.fromValue(ProtocolUtils.resolveProtocol(serviceMetadata)))
                 .withJsonVersion(serviceMetadata.getJsonVersion())
+                .withTargetPrefix(serviceMetadata.getTargetPrefix())
                 .withEndpointPrefix(serviceMetadata.getEndpointPrefix())
                 .withSigningName(serviceMetadata.getSigningName())
                 .withAuthType(serviceMetadata.getSignatureVersion() != null ?

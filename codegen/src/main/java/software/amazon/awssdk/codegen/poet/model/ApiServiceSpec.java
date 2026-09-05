@@ -100,14 +100,22 @@ public class ApiServiceSpec implements ClassSpec {
                          .build();
     }
 
+    /**
+     * The service shape id, whose <em>name</em> is load-bearing rather than cosmetic: for awsJson
+     * protocols smithy-java builds the {@code X-Amz-Target} header as
+     * {@code <serviceShapeName>.<operationName>}, so the name has to be the model's target prefix
+     * ({@code DynamoDB_20120810}) and not the SDK's Java-friendly service name ({@code DynamoDb}), which
+     * would produce a target no service recognizes.
+     *
+     * <p>The namespace is not on the wire for awsJson, so the conventional {@code com.amazonaws.<prefix>}
+     * is good enough. Services with no target prefix (non-awsJson protocols) fall back to the service
+     * name; the target header is unused there.
+     */
     private String smithyServiceId() {
         String namespace = "com.amazonaws." + model.getMetadata().getEndpointPrefix();
-        // Use the service's uid or serviceId for the shape name; fall back to service name
-        String uid = model.getMetadata().getUid();
-        if (uid != null && !uid.isEmpty()) {
-            // uid is like "dynamodb-2012-08-10" — convert to a shape name
-            return namespace + "#" + model.getMetadata().getServiceId().replace(" ", "")
-                   + "_" + model.getMetadata().getApiVersion().replace("-", "");
+        String targetPrefix = model.getMetadata().getTargetPrefix();
+        if (targetPrefix != null && !targetPrefix.isEmpty()) {
+            return namespace + "#" + targetPrefix;
         }
         return namespace + "#" + model.getMetadata().getServiceName();
     }

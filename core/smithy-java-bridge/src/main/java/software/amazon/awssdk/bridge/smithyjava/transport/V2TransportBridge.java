@@ -50,6 +50,14 @@ import software.amazon.smithy.java.io.datastream.DataStream;
  * buffered: the request body is exposed to v2 as a {@link ContentStreamProvider} that
  * re-opens the smithy {@link DataStream} on demand (so v2 retries get a fresh stream), and
  * the response body is the v2 stream handed straight to {@link DataStream#ofInputStream}.
+ *
+ * <p>Streaming has a consequence worth stating, because it decides which failures are retried:
+ * {@link #send} returns as soon as the response <em>headers</em> arrive, so a failure while reading the
+ * body happens outside this class, inside the pipeline's {@code deserialize}, and is retried like any
+ * other deserialization failure. What this class sees is only the earlier failures — connect, TLS
+ * handshake, request send, response-header read — and smithy-java retries none of them. That is not
+ * something this class can change from here; see the comment on its catch clause, and
+ * {@code compatability_issues.md} section 3.6.
  */
 @SdkPublicApi
 public final class V2TransportBridge implements ClientTransport<HttpRequest, HttpResponse> {
@@ -69,6 +77,14 @@ public final class V2TransportBridge implements ClientTransport<HttpRequest, Htt
             return toSmithyResponse(v2Response);
         } catch (IOException e) {
             // Contract: transports must only throw TransportException/CallException subtypes.
+            //
+            // Every failure caught here is one v2 would retry -- its retryable set contains IOException,
+            // matched against the whole cause chain -- and none of them are retried, no matter what is
+            // thrown from here. ClientPipeline drives retries from inside `deserialize`, and
+            // `afterIdentity` wraps the send and the deserialize in one try, so a failure in the send is
+            // remapped and rethrown having never reached the code that would retry it. Marking the error
+            // retry-safe, or substituting a V2RetryableError for it, was tried and measured: inert, for
+            // that reason. See compatability_issues.md section 3.6.
             throw ClientTransport.remapExceptions(e);
         }
     }

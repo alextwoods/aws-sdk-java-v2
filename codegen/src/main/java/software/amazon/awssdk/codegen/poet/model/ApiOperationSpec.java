@@ -46,6 +46,8 @@ public class ApiOperationSpec implements ClassSpec {
         ClassName.get("software.amazon.smithy.java.core.schema", "SerializableStruct");
     private static final ClassName TYPE_REGISTRY =
         ClassName.get("software.amazon.smithy.java.core.serde", "TypeRegistry");
+    private static final ClassName V2_MODELED_ERROR =
+        ClassName.get("software.amazon.awssdk.bridge.smithyjava.error", "V2ModeledError");
     private static final ClassName LIST = ClassName.get("java.util", "List");
 
     private final IntermediateModel model;
@@ -114,6 +116,16 @@ public class ApiOperationSpec implements ClassSpec {
                         .build();
     }
 
+    /**
+     * Registers every modeled error of this operation under the {@code V2ModeledError} shim.
+     *
+     * <p>The obvious registration — {@code putType(id, SomeException.class, SomeException::builder)} —
+     * cannot work: smithy-java's {@code HttpErrorDeserializer} looks builders up with
+     * {@code createBuilder(id, ModeledException.class)}, and a v2 exception already extends
+     * {@code AwsServiceException} so it cannot also extend {@code ModeledException}. The shim is a
+     * {@code ModeledException} whose builder delegates to the v2 exception's generated builder, so
+     * deserialization still produces a real v2 exception instance.
+     */
     private FieldSpec typeRegistryField() {
         CodeBlock.Builder builder = CodeBlock.builder()
             .add("$T.builder()\n", TYPE_REGISTRY);
@@ -124,8 +136,8 @@ public class ApiOperationSpec implements ClassSpec {
 
         for (String exceptionName : exceptions) {
             ClassName exceptionClass = poetExtensions.getModelClass(exceptionName);
-            builder.add("    .putType($T.$$SCHEMA.id(), $T.class, $T::builder)\n",
-                        exceptionClass, exceptionClass, exceptionClass);
+            builder.add("    .putType($T.$$SCHEMA.id(), $T.class, $T.builderFactory($T.$$SCHEMA, $T::builder))\n",
+                        exceptionClass, V2_MODELED_ERROR, V2_MODELED_ERROR, exceptionClass, exceptionClass);
         }
         builder.add("    .build()");
 

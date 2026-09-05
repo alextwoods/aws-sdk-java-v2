@@ -38,6 +38,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -54,12 +55,14 @@ import software.amazon.awssdk.codegen.model.intermediate.Protocol;
 import software.amazon.awssdk.codegen.model.service.PreClientExecutionRequestCustomizer;
 import software.amazon.awssdk.codegen.poet.PoetExtension;
 import software.amazon.awssdk.codegen.poet.PoetUtils;
+import software.amazon.awssdk.codegen.poet.auth.scheme.AuthSchemeSpecUtils;
 import software.amazon.awssdk.codegen.poet.client.specs.Ec2ProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.JsonProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.ProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.QueryProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.XmlProtocolSpec;
 import software.amazon.awssdk.codegen.poet.model.ServiceClientConfigurationUtils;
+import software.amazon.awssdk.codegen.poet.rules.EndpointRulesSpecUtils;
 import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
@@ -76,6 +79,11 @@ import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.Logger;
 
 public class SyncClientClass extends SyncClientInterface {
+
+    private static final ClassName SMITHY_BRIDGE_CLIENT =
+        ClassName.get("software.amazon.awssdk.bridge.smithyjava.client", "SmithyBridgeClient");
+    private static final ClassName V2_CONFIG_TRANSLATOR =
+        ClassName.get("software.amazon.awssdk.bridge.smithyjava.client", "V2ConfigTranslator");
 
     private final IntermediateModel model;
     private final PoetExtension poetExtensions;
@@ -125,18 +133,9 @@ public class SyncClientClass extends SyncClientInterface {
             .addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
 
         if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
-            type.addField(FieldSpec.builder(
-                    ClassName.get("software.amazon.smithy.java.aws.client.awsjson", "AwsJson1Protocol"),
-                    "smithyProtocol", PRIVATE, FINAL).build())
-                .addField(FieldSpec.builder(
-                    ParameterizedTypeName.get(
-                        ClassName.get("software.amazon.smithy.java.client.core", "ClientTransport"),
-                        ClassName.get("software.amazon.smithy.java.http.api", "HttpRequest"),
-                        ClassName.get("software.amazon.smithy.java.http.api", "HttpResponse")),
-                    "smithyTransport", PRIVATE, FINAL).build())
-                .addField(FieldSpec.builder(
-                    ClassName.get("software.amazon.smithy.java.io.uri", "SmithyUri"),
-                    "smithyEndpoint", PRIVATE, FINAL).build());
+            // One smithy-java client owns the whole pipeline: protocol, transport, endpoints, auth,
+            // signing, retries, and interceptors. Operations delegate to it and do nothing else.
+            type.addField(FieldSpec.builder(SMITHY_BRIDGE_CLIENT, "smithyClient", PRIVATE, FINAL).build());
         }
     }
 
@@ -240,23 +239,51 @@ public class SyncClientClass extends SyncClientInterface {
         }
 
         if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
-            ClassName shapeId = ClassName.get("software.amazon.smithy.model.shapes", "ShapeId");
-            ClassName awsJson1Protocol = ClassName.get("software.amazon.smithy.java.aws.client.awsjson", "AwsJson1Protocol");
-            ClassName v2TransportBridge = ClassName.get("software.amazon.awssdk.bridge.smithyjava.transport", "V2TransportBridge");
-            ClassName smithyUri = ClassName.get("software.amazon.smithy.java.io.uri", "SmithyUri");
-            String serviceShapeId = "com.amazonaws." + model.getMetadata().getEndpointPrefix() + "#"
-                + model.getMetadata().getServiceId().replace(" ", "")
-                + "_" + model.getMetadata().getApiVersion().replace("-", "");
-            builder.addStatement("this.smithyProtocol = new $T($T.from($S))",
-                                 awsJson1Protocol, shapeId, serviceShapeId);
-            builder.addStatement("this.smithyTransport = new $T(clientConfiguration.option($T.SYNC_HTTP_CLIENT))",
-                                 v2TransportBridge, SdkClientOption.class);
-            builder.addStatement("this.smithyEndpoint = $T.of(clientConfiguration.option($T.CLIENT_ENDPOINT_PROVIDER)"
-                                 + ".clientEndpoint().toString())",
-                                 smithyUri, SdkClientOption.class);
+            addSmithyClientConstruction(builder);
         }
 
         return builder.build();
+    }
+
+    /**
+     * Emits the construction of the one smithy-java client the generated operations delegate to.
+     *
+     * <p>Everything service-specific is passed in here rather than looked up inside the bridge: the
+     * generated {@code ApiService}, a lambda composing the endpoint provider with the generated
+     * {@code ruleParams}, the built-in interceptors smithy-java replaces, and the service base
+     * exception used for unmodeled failures.
+     */
+    private void addSmithyClientConstruction(MethodSpec.Builder builder) {
+        EndpointRulesSpecUtils endpointRulesSpecUtils = new EndpointRulesSpecUtils(model);
+        AuthSchemeSpecUtils authSchemeSpecUtils = new AuthSchemeSpecUtils(model);
+        String operationsPackage = model.getMetadata().getFullModelPackageName().replace(".model", ".operations");
+        ClassName apiService = ClassName.get(operationsPackage, model.getMetadata().getServiceName() + "ApiService");
+        ClassName baseException = poetExtensions.getModelClass(model.getMetadata().getBaseExceptionName());
+
+        // The rules-engine provider, resolved by the client builder. Held in a local so the endpoint
+        // lambda closes over it once instead of reading the option on every resolution.
+        builder.addStatement("$1T endpointProvider = ($1T) clientConfiguration.option($2T.ENDPOINT_PROVIDER)",
+                             endpointRulesSpecUtils.providerInterfaceName(), SdkClientOption.class);
+
+        builder.addCode("this.smithyClient = $T.newClientBuilder(this.clientConfiguration,\n", V2_CONFIG_TRANSLATOR);
+        builder.addCode("    $T.instance(),\n", apiService);
+        builder.addCode("    (request, executionAttributes) -> endpointProvider.resolveEndpoint("
+                        + "$T.ruleParams(request, executionAttributes)).join(),\n",
+                        endpointRulesSpecUtils.resolverInterceptorName());
+        // These three do work that smithy-java now owns; running them again would resolve an endpoint
+        // and an auth scheme that nothing downstream reads.
+        builder.addCode("    $T.of($T.class, $T.class, $T.class),\n",
+                        Set.class,
+                        authSchemeSpecUtils.authSchemeInterceptor(),
+                        endpointRulesSpecUtils.resolverInterceptorName(),
+                        endpointRulesSpecUtils.requestModifierInterceptorName());
+        // The service's base exception, used for any failure with no more specific v2 type: a transport
+        // error, or an error response whose shape is not in the operation's registry. Passed as a
+        // builder supplier rather than a finished exception because V2ErrorEnricher populates it from
+        // the HTTP response -- status code, request ID, awsErrorDetails -- which is what makes an
+        // unmodeled error retryable at all.
+        builder.addCode("    $T::builder)\n", baseException);
+        builder.addStatement("    .build()");
     }
 
     @Override
@@ -278,12 +305,19 @@ public class SyncClientClass extends SyncClientInterface {
         MethodSpec.Builder method = SyncClientInterface.operationMethodSignature(model, opModel)
                                                        .addAnnotation(Override.class);
 
+        // On the smithy-java path the response and error handlers, the per-request configuration copy,
+        // and endpoint discovery are all dead weight: smithy-java deserializes responses and errors
+        // itself, and it reads only the client configuration captured at construction time. Emitting
+        // them anyway would cost a handler pair and a configuration copy on every single call.
+        boolean smithyPipeline = ClientClassUtils.usesSmithyPipeline(model, opModel);
+
         addRequestModifierCode(opModel, model).ifPresent(method::addCode);
-        method.addCode(protocolSpec.responseHandler(model, opModel));
+        if (!smithyPipeline) {
+            method.addCode(protocolSpec.responseHandler(model, opModel));
+            protocolSpec.errorResponseHandler(opModel).ifPresent(method::addCode);
+        }
 
-        protocolSpec.errorResponseHandler(opModel).ifPresent(method::addCode);
-
-        if (opModel.getEndpointDiscovery() != null) {
+        if (opModel.getEndpointDiscovery() != null && !smithyPipeline) {
             method.addStatement("boolean endpointDiscoveryEnabled = "
                                 + "clientConfiguration.option(SdkClientOption.ENDPOINT_DISCOVERY_ENABLED)");
             method.addStatement("boolean endpointOverridden = "
@@ -342,12 +376,15 @@ public class SyncClientClass extends SyncClientInterface {
             method.endControlFlow();
         }
 
-        method.addStatement("$T clientConfiguration = updateSdkClientConfiguration($L, this.clientConfiguration)",
-                            SdkClientConfiguration.class, opModel.getInput().getVariableName());
+        if (!smithyPipeline) {
+            method.addStatement("$T clientConfiguration = updateSdkClientConfiguration($L, this.clientConfiguration)",
+                                SdkClientConfiguration.class, opModel.getInput().getVariableName());
+        }
         method.addStatement("$T<$T> metricPublishers = "
-                            + "resolveMetricPublishers(clientConfiguration, $N.overrideConfiguration().orElse(null))",
+                            + "resolveMetricPublishers($L, $N.overrideConfiguration().orElse(null))",
                             List.class,
                             MetricPublisher.class,
+                            smithyPipeline ? "this.clientConfiguration" : "clientConfiguration",
                             opModel.getInput().getVariableName())
               .addStatement("$1T apiCallMetricCollector = metricPublishers.isEmpty() ? $2T.create() : $1T.create($3S)",
                             MetricCollector.class, NoOpMetricCollector.class, "ApiCall");

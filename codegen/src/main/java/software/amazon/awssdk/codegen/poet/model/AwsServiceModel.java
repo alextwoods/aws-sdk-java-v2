@@ -462,9 +462,17 @@ public class AwsServiceModel implements ClassSpec {
         ClassName.get("software.amazon.smithy.java.core.serde", "ShapeDeserializer", "StructMemberConsumer");
 
     private String smithyShapeId() {
-        // Synthetic namespace + the shape's name; member ordering/identity is what matters for serde.
+        // Synthetic namespace + the shape's name AS THE MODEL SPELLS IT, which is the C2J name and not
+        // the generated Java class name. For most shapes the two agree and the choice is cosmetic --
+        // member ordering/identity is what matters for serde. For errors it is load-bearing: v2's
+        // naming strategy appends "Exception" to error shapes, so `InternalServerError` becomes the
+        // class `InternalServerErrorException`, and an id built from the class name never matches the
+        // `__type` the service puts on the wire. The error would then miss the operation's
+        // TypeRegistry and fall through to the unmodeled path, losing its v2 exception type, its error
+        // code, and -- because retries are classified from the v2 exception -- its retryability.
+        String name = shapeModel.getC2jName() != null ? shapeModel.getC2jName() : shapeModel.getShapeName();
         return "com.amazonaws." + intermediateModel.getMetadata().getServiceName().toLowerCase(java.util.Locale.US)
-               + "#" + shapeModel.getShapeName();
+               + "#" + name;
     }
 
     private FieldSpec smithySchemaField() {

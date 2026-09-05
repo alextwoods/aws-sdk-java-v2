@@ -91,6 +91,13 @@ public class Metadata {
 
     private String jsonVersion;
 
+    /**
+     * The awsJson {@code X-Amz-Target} prefix, e.g. {@code DynamoDB_20120810}. Carried through from the
+     * service model because the smithy-java protocol layer derives the target header from the service
+     * shape's name, so the generated {@code ApiService} shape has to be named after this prefix.
+     */
+    private String targetPrefix;
+
     private Map<String, String> awsQueryCompatible;
 
     private String endpointPrefix;
@@ -527,6 +534,19 @@ public class Metadata {
 
     public Metadata withJsonVersion(String jsonVersion) {
         setJsonVersion(jsonVersion);
+        return this;
+    }
+
+    public String getTargetPrefix() {
+        return targetPrefix;
+    }
+
+    public void setTargetPrefix(String targetPrefix) {
+        this.targetPrefix = targetPrefix;
+    }
+
+    public Metadata withTargetPrefix(String targetPrefix) {
+        setTargetPrefix(targetPrefix);
         return this;
     }
 

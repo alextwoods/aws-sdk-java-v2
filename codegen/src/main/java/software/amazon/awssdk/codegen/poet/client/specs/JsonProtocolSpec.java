@@ -41,6 +41,7 @@ import software.amazon.awssdk.codegen.model.intermediate.Protocol;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.poet.PoetExtension;
+import software.amazon.awssdk.codegen.poet.client.ClientClassUtils;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumRequiredTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.LongPollTrait;
@@ -207,8 +208,7 @@ public class JsonProtocolSpec implements ProtocolSpec {
     public CodeBlock executionHandler(OperationModel opModel) {
         // When smithy-java serde is enabled, use the smithy-java protocol directly instead of
         // the v2 ClientExecutionParams + Marshaller pipeline.
-        if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()
-            && !opModel.hasStreamingInput() && !opModel.hasStreamingOutput()) {
+        if (ClientClassUtils.usesSmithyPipeline(model, opModel)) {
             return smithyJavaExecutionHandler(opModel);
         }
 
@@ -252,51 +252,22 @@ public class JsonProtocolSpec implements ProtocolSpec {
     }
 
     /**
-     * Generates the smithy-java execution path: serialize → transport → deserialize.
-     * Bypasses the v2 ClientExecutionParams pipeline entirely.
+     * Generates the smithy-java execution path: hand the request to the smithy-java client and let it
+     * run the whole call — serialization, endpoint resolution, auth, signing, retries, deserialization,
+     * and interceptors. The v2 {@code ClientExecutionParams} pipeline is bypassed entirely.
+     *
+     * <p>Error translation happens inside {@code SmithyBridgeClient#invoke}, not here, so nothing
+     * service-specific is emitted per operation.
      */
-    @SuppressWarnings("unchecked")
     private CodeBlock smithyJavaExecutionHandler(OperationModel opModel) {
-        TypeName responseType = getPojoResponseType(opModel, poetExtensions);
-        String inputVar = opModel.getInput().getVariableName();
-
-        // The generated ApiOperation class for this operation
         String operationsPackage = model.getMetadata().getFullModelPackageName().replace(".model", ".operations");
         ClassName operationClass = ClassName.get(operationsPackage, opModel.getOperationName() + "Operation");
-        ClassName serializableStruct = ClassName.get("software.amazon.smithy.java.core.schema", "SerializableStruct");
-        ClassName context = ClassName.get("software.amazon.smithy.java.context", "Context");
-        ClassName callException = ClassName.get("software.amazon.smithy.java.core.error", "CallException");
-        ClassName apiOperation = ClassName.get("software.amazon.smithy.java.core.schema", "ApiOperation");
 
-        CodeBlock.Builder code = CodeBlock.builder();
-        code.add("\n\n");
-        code.addStatement("$T smithyContext = $T.create()", context, context);
-        // Cast operation to raw ApiOperation to avoid generic type inference issues
-        code.addStatement("@SuppressWarnings(\"unchecked\") $T<$T, $T> op = ($T) $T.instance()",
-                          apiOperation, serializableStruct, serializableStruct,
-                          apiOperation, operationClass);
-        code.addStatement("$T httpRequest = smithyProtocol.createRequest(\n"
-                          + "    op, ($T) $L, smithyContext, smithyEndpoint)",
-                          ClassName.get("software.amazon.smithy.java.http.api", "HttpRequest"),
-                          serializableStruct, inputVar);
-        code.addStatement("$T httpResponse = smithyTransport.send(smithyContext, httpRequest)",
-                          ClassName.get("software.amazon.smithy.java.http.api", "HttpResponse"));
-        code.beginControlFlow("try");
-        code.addStatement("return ($T) smithyProtocol.deserializeResponse(\n"
-                          + "    op, smithyContext,\n"
-                          + "    op.errorRegistry(),\n"
-                          + "    httpRequest, httpResponse)",
-                          responseType);
-        code.nextControlFlow("catch ($T e)", callException);
-        // smithy-java CallException wraps the modeled error — extract the cause if it's a v2 exception
-        code.addStatement("if (e.getCause() instanceof $T) throw ($T) e.getCause()",
-                          ClassName.get("software.amazon.awssdk.core.exception", "SdkServiceException"),
-                          ClassName.get("software.amazon.awssdk.core.exception", "SdkServiceException"));
-        code.addStatement("throw $T.builder().message(e.getMessage()).cause(e).build()",
-                          baseExceptionClassName(model));
-        code.endControlFlow();
-
-        return code.build();
+        return CodeBlock.builder()
+                        .add("\n\n")
+                        .addStatement("return smithyClient.invoke($L, $T.instance())",
+                                      opModel.getInput().getVariableName(), operationClass)
+                        .build();
     }
 
     @Override

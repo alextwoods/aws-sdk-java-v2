@@ -65,6 +65,22 @@ public final class ClientClassUtils {
     private ClientClassUtils() {
     }
 
+    /**
+     * Whether this operation's sync implementation delegates to the smithy-java pipeline instead of the
+     * v2 {@code ClientExecutionParams} pipeline.
+     *
+     * <p>Streaming operations are excluded: the bridge has no equivalent of {@code RequestBody} /
+     * {@code ResponseTransformer} yet, so they keep the v2 path. Both the method body in
+     * {@code SyncClientClass} and the execution handler in {@code JsonProtocolSpec} must agree on this,
+     * which is why the predicate lives here.
+     */
+    public static boolean usesSmithyPipeline(IntermediateModel model, OperationModel opModel) {
+        return model.getCustomizationConfig() != null
+               && model.getCustomizationConfig().isGenerateSmithyJavaSerde()
+               && !opModel.hasStreamingInput()
+               && !opModel.hasStreamingOutput();
+    }
+
     static MethodSpec consumerBuilderVariant(MethodSpec spec, String javadoc) {
         Validate.validState(spec.parameters.size() > 0, "A first parameter is required to generate a consumer-builder method.");
         Validate.validState(spec.parameters.get(0).type instanceof ClassName, "The first parameter must be a class.");
