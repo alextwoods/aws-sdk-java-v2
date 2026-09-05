@@ -46,6 +46,7 @@ import software.amazon.awssdk.http.SdkHttpRequest;
 import software.amazon.awssdk.http.apache5.internal.Apache5HttpRequestConfig;
 import software.amazon.awssdk.http.apache5.internal.RepeatableInputStreamRequestEntity;
 import software.amazon.awssdk.http.apache5.internal.utils.Apache5Utils;
+import software.amazon.awssdk.internal.http.FlatHeaderAccess;
 import software.amazon.awssdk.utils.StringUtils;
 import software.amazon.awssdk.utils.http.SdkHttpUtils;
 
@@ -227,6 +228,17 @@ public class Apache5HttpRequestFactory {
      */
     private void addHeadersToRequest(HttpUriRequestBase httpRequest, SdkHttpRequest request) {
         httpRequest.addHeader(HttpHeaders.HOST, getHostHeaderValue(request));
+
+        if (request instanceof FlatHeaderAccess) {
+            // Flat-stored headers: one callback per name/value pair, no per-name List materialization. Same
+            // iteration order as forEachHeader.
+            ((FlatHeaderAccess) request).forEachHeaderEntry((name, value) -> {
+                if (!isIgnoredHeader(name)) {
+                    httpRequest.addHeader(name, value);
+                }
+            });
+            return;
+        }
 
         // Copy over any other headers already in our request
         request.forEachHeader((name, value) -> {

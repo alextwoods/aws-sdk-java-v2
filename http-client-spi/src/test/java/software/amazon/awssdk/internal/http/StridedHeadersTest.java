@@ -255,6 +255,49 @@ class StridedHeadersTest {
         assertThat(visited.get("b")).containsExactly("3");
     }
 
+    @Test
+    void forEachEntry_visitsPairsInForEachOrder() {
+        StridedHeaders.ForBuilder builder = StridedHeaders.emptyHeaders();
+        builder.put("delta", singletonList("4"));
+        builder.put("Alpha", asList("1a", "1b"));
+        builder.put("charlie", singletonList("3"));
+
+        List<String> entries = new ArrayList<>();
+        builder.forBuildable().forEachEntry((name, value) -> entries.add(name + "=" + value));
+
+        assertThat(entries).containsExactly("Alpha=1a", "Alpha=1b", "charlie=3", "delta=4");
+    }
+
+    @Test
+    void forEachEntry_skipsEmptyValueListNames() {
+        StridedHeaders.ForBuilder builder = StridedHeaders.emptyHeaders();
+        builder.put("a", singletonList("1"));
+        builder.put("b", emptyList());
+        builder.put("c", singletonList("3"));
+
+        List<String> entries = new ArrayList<>();
+        builder.forBuildable().forEachEntry((name, value) -> entries.add(name + "=" + value));
+
+        assertThat(entries).containsExactly("a=1", "c=3");
+    }
+
+    @Test
+    void forEachEntry_matchesForEachExactly() {
+        StridedHeaders.ForBuilder builder = StridedHeaders.emptyHeaders();
+        builder.put("X-Multi", asList("1", "2", "3"));
+        builder.put("b-empty", emptyList());
+        builder.put("Content-Type", singletonList("application/json"));
+        builder.append("x-multi", "4");
+        StridedHeaders.ForBuildable buildable = builder.forBuildable();
+
+        List<String> viaForEach = new ArrayList<>();
+        buildable.forEach((name, values) -> values.forEach(v -> viaForEach.add(name + "=" + v)));
+        List<String> viaEntries = new ArrayList<>();
+        buildable.forEachEntry((name, value) -> viaEntries.add(name + "=" + value));
+
+        assertThat(viaEntries).isEqualTo(viaForEach);
+    }
+
     // ----------------------------------------------------------------------------------------------------
     // Map-representation edge cases.
     // ----------------------------------------------------------------------------------------------------

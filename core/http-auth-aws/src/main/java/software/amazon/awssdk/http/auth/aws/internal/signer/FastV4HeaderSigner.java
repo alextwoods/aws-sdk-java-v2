@@ -45,6 +45,7 @@ import software.amazon.awssdk.http.auth.spi.signer.SignRequest;
 import software.amazon.awssdk.http.auth.spi.signer.SignedRequest;
 import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
 import software.amazon.awssdk.identity.spi.AwsSessionCredentialsIdentity;
+import software.amazon.awssdk.internal.http.FlatHeaderAccess;
 import software.amazon.awssdk.utils.http.SdkHttpUtils;
 
 /**
@@ -287,6 +288,30 @@ final class FastV4HeaderSigner {
      * defensive copy {@code headers()} performs on each call.
      */
     private static boolean collectSourceHeaders(SdkHttpRequest source, boolean isSession, V4SigningResources r) {
+        if (source instanceof FlatHeaderAccess) {
+            // The default request implementation stores headers as flat name/value pairs in exactly the layout the
+            // strided signing buffer wants, so iterate entries directly: no per-name List materialization, no
+            // grouping pass. Order matches forEachHeader (name-sorted, values in insertion order), so the canonical
+            // request is byte-identical to the fallback path's.
+            boolean[] sawHostFlat = {false};
+            ((FlatHeaderAccess) source).forEachHeaderEntry((rawName, value) -> {
+                String name = V4SigningResources.lowercaseIfNeeded(rawName);
+                if (isSignerManaged(name, isSession)) {
+                    if ("host".equals(name)) {
+                        sawHostFlat[0] = true;
+                        // fall through to include the user's Host value
+                    } else {
+                        return;
+                    }
+                }
+                if (isIgnoredHeader(name)) {
+                    return;
+                }
+                r.addHeaderCanonical(name, value);
+            });
+            return sawHostFlat[0];
+        }
+
         boolean[] sawHost = {false};
         source.forEachHeader((rawName, values) -> {
             String name = V4SigningResources.lowercaseIfNeeded(rawName);

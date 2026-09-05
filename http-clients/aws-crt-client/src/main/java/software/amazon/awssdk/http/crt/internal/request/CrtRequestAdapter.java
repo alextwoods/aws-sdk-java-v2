@@ -30,6 +30,8 @@ import software.amazon.awssdk.http.SdkHttpRequest;
 import software.amazon.awssdk.http.async.AsyncExecuteRequest;
 import software.amazon.awssdk.http.crt.internal.CrtAsyncRequestContext;
 import software.amazon.awssdk.http.crt.internal.CrtRequestContext;
+import software.amazon.awssdk.internal.http.FlatHeaderAccess;
+import software.amazon.awssdk.internal.http.HeaderEntryConsumer;
 
 @SdkInternalApi
 public final class CrtRequestAdapter {
@@ -79,8 +81,20 @@ public final class CrtRequestAdapter {
             && contentLength.isPresent()) {
             headers.add(Header.CONTENT_LENGTH, Long.toString(contentLength.get()));
         }
-        request.forEachHeader(headers);
+        addRequestHeaders(headers, request);
         return headers.build();
+    }
+
+    /**
+     * Per-entry iteration when the request stores headers flat (no per-name List materialization); the general
+     * callback otherwise. Same order either way.
+     */
+    private static void addRequestHeaders(CrtHeaderArrayBuilder headers, SdkHttpRequest request) {
+        if (request instanceof FlatHeaderAccess) {
+            ((FlatHeaderAccess) request).forEachHeaderEntry(headers);
+        } else {
+            request.forEachHeader(headers);
+        }
     }
 
     private static HttpHeader[] createHttpHeaders(HttpExecuteRequest executeRequest) {
@@ -92,11 +106,11 @@ public final class CrtRequestAdapter {
         if (!request.firstMatchingHeader(Header.CONNECTION).isPresent()) {
             headers.add(Header.CONNECTION, Header.KEEP_ALIVE_VALUE);
         }
-        request.forEachHeader(headers);
+        addRequestHeaders(headers, request);
         return headers.build();
     }
 
-    private static final class CrtHeaderArrayBuilder implements BiConsumer<String, List<String>> {
+    private static final class CrtHeaderArrayBuilder implements BiConsumer<String, List<String>>, HeaderEntryConsumer {
         private HttpHeader[] headers;
         private int size;
 
@@ -109,6 +123,11 @@ public final class CrtRequestAdapter {
             for (int i = 0; i < values.size(); i++) {
                 add(name, values.get(i));
             }
+        }
+
+        @Override
+        public void accept(String name, String value) {
+            add(name, value);
         }
 
         private void add(String name, String value) {

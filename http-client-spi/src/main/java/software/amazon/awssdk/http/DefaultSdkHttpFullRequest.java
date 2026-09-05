@@ -29,6 +29,8 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import software.amazon.awssdk.annotations.Immutable;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.internal.http.FlatHeaderAccess;
+import software.amazon.awssdk.internal.http.HeaderEntryConsumer;
 import software.amazon.awssdk.internal.http.LowCopyListMap;
 import software.amazon.awssdk.internal.http.StridedHeaders;
 import software.amazon.awssdk.utils.CollectionUtils;
@@ -43,7 +45,7 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
  */
 @SdkInternalApi
 @Immutable
-final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
+final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest, FlatHeaderAccess {
     private final String protocol;
     private final String host;
     private final Integer port;
@@ -152,6 +154,11 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
     @Override
     public void forEachHeader(BiConsumer<? super String, ? super List<String>> consumer) {
         headers.forEach(consumer);
+    }
+
+    @Override
+    public void forEachHeaderEntry(HeaderEntryConsumer consumer) {
+        headers.forEachEntry(consumer);
     }
 
     @Override

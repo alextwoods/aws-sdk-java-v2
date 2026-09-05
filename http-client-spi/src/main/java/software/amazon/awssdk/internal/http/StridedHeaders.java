@@ -136,6 +136,16 @@ public final class StridedHeaders {
         return Collections.unmodifiableList(values);
     }
 
+    private static void forEachEntry(String[] pairs, int pairCount, HeaderEntryConsumer consumer) {
+        for (int i = 0; i < pairCount; i++) {
+            String value = pairs[i * 2 + 1];
+            if (value == EMPTY_MARKER) {
+                continue;
+            }
+            consumer.accept(pairs[i * 2], value);
+        }
+    }
+
     private static void forEach(String[] pairs, int pairCount, BiConsumer<? super String, ? super List<String>> consumer) {
         int i = 0;
         while (i < pairCount) {
@@ -462,6 +472,14 @@ public final class StridedHeaders {
 
         public void forEach(BiConsumer<? super String, ? super List<String>> consumer) {
             StridedHeaders.forEach(pairs, pairCount, consumer);
+        }
+
+        /**
+         * One call per name/value pair, in the same order {@link #forEach} would produce, skipping names mapped to an
+         * empty value list.
+         */
+        public void forEachEntry(HeaderEntryConsumer consumer) {
+            StridedHeaders.forEachEntry(pairs, pairCount, consumer);
         }
 
         public int distinctNames() {
