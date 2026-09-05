@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>software.amazon.awssdk.benchmark</groupId>
+    <artifactId>standalone-e2e-benchmarks</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Standalone E2E DynamoDB Benchmarks</name>
+    <description>
+        Fixed-iteration DynamoDB benchmarks comparing AWS SDK for Java V1, V2 (sync and async),
+        and smithy-java against an out-of-process mock HTTP server.
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>21</maven.compiler.release>
+        <!-- V2 version: must match the locally-built repo version (mvn install from the repo root).
+             When prototyping SDK optimizations, the benchmark runs against your working tree's
+             artifacts in ~/.m2/repository. Keep this in sync with the root pom.xml <version>. -->
+        <aws.sdk.v2.version>2.46.11-SNAPSHOT</aws.sdk.v2.version>
+        <aws.sdk.v1.version>1.12.797</aws.sdk.v1.version>
+        <smithy.java.version>1.6.1</smithy.java.version>
+        <netty.version>4.2.0.Final</netty.version>
+        <jetty.version>9.4.45.v20220203</jetty.version>
+        <otel.version>1.64.0</otel.version>
+
+        <!-- Provenance stamped into the jar. `benchmark.phase` is the human label for what this
+             build represents; override it per build, e.g.
+                 mvn package -Dbenchmark.phase=phaseA
+             The git values are filled in by git-commit-id-maven-plugin; the defaults here apply
+             when git metadata is unavailable. -->
+        <benchmark.phase>unspecified</benchmark.phase>
+        <benchmark.git.commit>${git.commit.id}</benchmark.git.commit>
+        <benchmark.git.branch>${git.branch}</benchmark.git.branch>
+        <benchmark.git.dirty>${git.dirty}</benchmark.git.dirty>
+        <!-- The commit the *SDK inside the jar* was built from, which is not always the commit the
+             harness was built from: a baseline jar pairs today's harness with an older SDK
+             installed in ~/.m2, and comparing two jars is only sound if the harness is identical.
+             Defaults to "unrecorded" rather than to the harness commit, so an unverified value is
+             never mistaken for a verified one. scripts/build-jar.sh sets it. -->
+        <benchmark.sdk.commit>unrecorded</benchmark.sdk.commit>
+        <benchmark.build.time>${maven.build.timestamp}</benchmark.build.time>
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <!-- Shaded jar name; keeps the phase label and commit in the filename so an archive of
+             these is browsable, while the embedded provenance remains authoritative. -->
+        <benchmark.jar.name>bridge-${benchmark.phase}</benchmark.jar.name>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Pin Netty to 4.2.x for smithy-java compatibility -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- ==================== AWS SDK V1 ====================
+             The DynamoDB module (which pulls aws-java-sdk-core transitively) rather than the
+             monolithic `aws-java-sdk` artifact. The benchmark only touches dynamodbv2 plus core
+             (ClientConfiguration, auth, metrics), so runtime behavior is identical, and the leaner
+             tree is what makes a shaded uber-jar practical. -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-dynamodb</artifactId>
+            <version>${aws.sdk.v1.version}</version>
+        </dependency>
+
+        <!-- ==================== AWS SDK V2 ==================== -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+        <!-- ==================== V2 HTTP transports ====================
+             Apache5 for sync and CRT for async: the transports V2 is standardizing on, and therefore
+             the only two worth measuring here. Both are declared explicitly because the benchmark
+             names them in code rather than letting V2 resolve a default — `dynamodb` drags
+             apache5-client and netty-nio-client in transitively, so more than one SdkHttpService can
+             be on the classpath and V2 picks by an internal priority table rather than failing.
+             Relying on that made the transport an invisible variable: this module's README claimed
+             Apache 4.x for `v2-sync` while Apache5 was what actually ran. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache5-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-crt-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+
+        <!-- ==================== Smithy-Java ==================== -->
+        <!-- Generated DynamoDB client; built and published to mavenLocal by
+             ../../smithy-java-demo (./gradlew publishToMavenLocal) -->
+        <dependency>
+            <groupId>software.amazon.awssdk.benchmark</groupId>
+            <artifactId>smithy-java-dynamodb-demo</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <exclusions>
+                <!-- The demo module depends on a released V2 (for its own V2TransportBridge demo),
+                     which would put a second V2 version on this classpath alongside
+                     ${aws.sdk.v2.version} and make it ambiguous which V2 the bridged arm exercised.
+                     The smithy arm here uses smithy-java's own HTTP transport, so this is unused. -->
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>url-connection-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-core</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-core</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-http-smithy</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>http-client</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-auth-api</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>retries-api</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <!-- Full retry strategy implementations (StandardRetryStrategy) so smithy-java runs
+             retries equivalent to SDK V2's default RetryMode.STANDARD (fairness fix #1). -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>retries</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>rulesengine</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>aws-client-rulesengine</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <!-- Needed at runtime by smithy-java endpoint resolution -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-rules-engine</artifactId>
+            <version>1.73.0</version>
+        </dependency>
+
+        <!-- Smithy-java client metrics plugin + in-memory OTel pipeline (only used in metrics mode) -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>client-metrics-otel</artifactId>
+            <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+            <version>${otel.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-testing</artifactId>
+            <version>${otel.version}</version>
+        </dependency>
+
+        <!-- ==================== Mock HTTP server (Jetty) ==================== -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-servlet</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+
+        <!-- Cross-platform process CPU time with user/system split (Linux procfs, macOS proc_pidinfo) -->
+        <dependency>
+            <groupId>com.github.oshi</groupId>
+            <artifactId>oshi-core</artifactId>
+            <version>7.6.0</version>
+        </dependency>
+
+        <!-- Silence SDK logging so stdout stays clean -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>2.0.9</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <!-- Only the provenance file is filtered; everything else is copied verbatim so binary
+                 resources cannot be corrupted by filtering. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>benchmark-provenance.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>benchmark-provenance.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <!-- Stamp the build's git provenance into a filtered resource, so the shaded jar is
+                 self-describing: an archived artifact can be traced to a commit after being renamed
+                 or copied to another host. Failures here are non-fatal (the properties fall back to
+                 "unknown") so a benchmark run never depends on git being available. -->
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>7.0.0</version>
+                <executions>
+                    <execution>
+                        <id>resolve-git-properties</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
+                    <generateGitPropertiesFile>false</generateGitPropertiesFile>
+                    <injectAllReactorProjects>true</injectAllReactorProjects>
+                    <dirty>-dirty</dirty>
+                    <includeOnlyProperties>
+                        <property>^git.commit.id$</property>
+                        <property>^git.branch$</property>
+                        <property>^git.dirty$</property>
+                    </includeOnlyProperties>
+                </configuration>
+            </plugin>
+            <!-- Shaded uber-jar. Switching V1 from the monolithic `aws-java-sdk` artifact to
+                 `aws-java-sdk-dynamodb` is what makes this practical: one file to scp to a
+                 benchmark host, and one file per phase to keep in an archive for re-runs. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+                            <finalName>${benchmark.jar.name}</finalName>
+                            <!-- Nothing is relocated on purpose. There are no package collisions
+                                 (V2 already relocates its Jackson to
+                                 software.amazon.awssdk.thirdparty.jackson, smithy-java uses
+                                 upstream Jackson, and V1/V2 packages are disjoint), and relocating
+                                 would risk breaking reflection and ServiceLoader lookups. -->
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>software.amazon.awssdk.benchmark.e2e.BenchmarkRunner</mainClass>
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                                <!-- MANDATORY: V2 discovers SdkHttpService/SdkAsyncHttpService (and
+                                     smithy-java its ClientTransportFactory) through META-INF/services.
+                                     Without merging, HTTP client resolution fails at runtime with a
+                                     "no HTTP client found" style error rather than a build error. -->
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- V2's global execution interceptors live in a newline-delimited
+                                     resource that is NOT under META-INF/services and appears in
+                                     multiple jars. Shade's default would keep one copy and silently
+                                     drop the rest, changing pipeline behavior. -->
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>software/amazon/awssdk/global/handlers/execution.interceptors</resource>
+                                </transformer>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <!-- Signed jars fail verification once repackaged. -->
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/INDEX.LIST</exclude>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- The resolved runtime classpath is still written out, so runs can be done without
+                 the uber-jar (java -cp "target/classes:$(cat target/classpath.txt)"). Kept as the
+                 reference path for validating the shaded jar against. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>build-classpath</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <outputFile>${project.build.directory}/classpath.txt</outputFile>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
