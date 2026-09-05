@@ -1,0 +1,3 @@
+pinning: client=[0,1] server=[unpinned]
+COLDSTART client=v2-sync scenario=small-get ops=5 client_build_ms=509.1 first_call_ms=186.0 build_plus_first_ms=695.1 jvm_to_first_response_ms=1080 jit_ms=811 call2_us=6795 call3_us=4087 call4_us=4160 call5_us=4923
+=== build: phase=coldbase commit=ee9a74f69db sdkCommit=published-2.46.10 branch=smithy-java-bridge-alexwoo-full dirty=true built=2026-09-04T23:40:59Z sdkV2=2.46.10 sdkV1=1.12.797 smithy=1.6.1

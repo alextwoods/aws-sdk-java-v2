@@ -1,0 +1,9 @@
+READY port=19080 pid=8089 threads=200 selectors=1 (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B)
+pinning: client=[0,1] server=[4,5,6]
+=== standalone-e2e-benchmark client=v2-sync-stripped transport=apache5 scenarios=batch-put iterations=50,000 warmup=30,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=8164
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=baseline commit=ee9a74f69db sdkCommit=published-2 branch=smithy-java-bridge-alexwoo-full dirty=true built=2026-09-04T21:26:59Z sdkV2=2.46.10 sdkV1=1.12.797 smithy=1.6.1
+=== warmup batch-put: ops=67,500 wall=62.1s jit=11927ms settled=false (hit --warmup-max-seconds 60 while still compiling)
+=== WARNING batch-put: JVM had not settled; per-operation CPU from this run is not steady-state
+RESULT client=v2-sync-stripped transport=apache5 scenario=batch-put iterations=50000 concurrency=1 async_mode=n/a wall_ms=39902 ops_per_wall_sec=1253.1 cpu_ms=38060 cpu_user_ms=34450 cpu_sys_ms=3610 ops_per_cpu_sec=1313.7 ops_per_user_cpu_sec=1451.4 cpu_us_per_op=761.2 app_cpu_ms=37754 app_cpu_us_per_op=755.1 unattributed_ms=306 avg_us_per_op=798.0 mean_lat_us=797.9 p50_us=785.7 p90_us=821.9 p99_us=1351.8 p999_us=2019.2 max_us=16809.6 jit_ms=72 gc_ms=116 gc_count=116 steady_state=true warmup_ops=67500 warmup_settled=false server_cpu_ms=7930 server_requests=50000
+DONE total_wall_s=102.6

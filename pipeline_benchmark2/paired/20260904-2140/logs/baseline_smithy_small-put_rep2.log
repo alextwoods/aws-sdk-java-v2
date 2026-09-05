@@ -1,0 +1,8 @@
+READY port=19080 pid=11121 threads=200 selectors=1 (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B)
+pinning: client=[0,1] server=[4,5,6]
+=== standalone-e2e-benchmark client=smithy transport=smithy-http1 scenarios=small-put iterations=50,000 warmup=30,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=11187
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=baseline commit=ee9a74f69db sdkCommit=published-2 branch=smithy-java-bridge-alexwoo-full dirty=true built=2026-09-04T21:26:59Z sdkV2=2.46.10 sdkV1=1.12.797 smithy=1.6.1
+=== warmup small-put: ops=157,500 wall=18.7s jit=6997ms settled=true (compilation quiet for 3000ms)
+RESULT client=smithy transport=smithy-http1 scenario=small-put iterations=50000 concurrency=1 async_mode=n/a wall_ms=4653 ops_per_wall_sec=10746.4 cpu_ms=3040 cpu_user_ms=1740 cpu_sys_ms=1300 ops_per_cpu_sec=16447.4 ops_per_user_cpu_sec=28735.6 cpu_us_per_op=60.8 app_cpu_ms=2949 app_cpu_us_per_op=59.0 unattributed_ms=91 avg_us_per_op=93.1 mean_lat_us=92.9 p50_us=87.2 p90_us=108.4 p99_us=175.5 p999_us=837.2 max_us=10119.0 jit_ms=70 gc_ms=6 gc_count=4 steady_state=true warmup_ops=157500 warmup_settled=true server_cpu_ms=4840 server_requests=50000
+DONE total_wall_s=23.9

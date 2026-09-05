@@ -1,0 +1,9 @@
+READY port=19080 pid=26841 threads=200 selectors=1 (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B)
+pinning: client=[0,1] server=[4,5,6]
+=== standalone-e2e-benchmark client=smithy transport=smithy-http1 scenarios=small-get iterations=50,000 warmup=30,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=26937
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bridge commit=ee9a74f69db sdkCommit=ee9a74f69db branch=smithy-java-bridge-alexwoo-full dirty=true built=2026-09-04T21:26:41Z sdkV2=2.46.11-SNAPSHOT sdkV1=1.12.797 smithy=1.6.1
+=== warmup small-get: ops=165,000 wall=17.8s jit=6589ms settled=true (compilation quiet for 3000ms)
+=== WARNING small-get: 110 ms of JIT compilation inside the measured window (2.5% of wall); code was still changing, so per-operation numbers are not steady-state; the window is only 4.5s — raise --iterations
+RESULT client=smithy transport=smithy-http1 scenario=small-get iterations=50000 concurrency=1 async_mode=n/a wall_ms=4484 ops_per_wall_sec=11151.1 cpu_ms=3120 cpu_user_ms=1780 cpu_sys_ms=1340 ops_per_cpu_sec=16025.6 ops_per_user_cpu_sec=28089.9 cpu_us_per_op=62.4 app_cpu_ms=2987 app_cpu_us_per_op=59.7 unattributed_ms=133 avg_us_per_op=89.7 mean_lat_us=89.5 p50_us=83.5 p90_us=105.8 p99_us=167.7 p999_us=682.7 max_us=15052.7 jit_ms=110 gc_ms=7 gc_count=6 steady_state=false warmup_ops=165000 warmup_settled=true server_cpu_ms=4380 server_requests=50000
+DONE total_wall_s=22.8
