@@ -24,6 +24,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.http.Protocol;
 import software.amazon.awssdk.http.SdkHttpConfigurationOption;
 import software.amazon.awssdk.http.TlsKeyManagersProvider;
 import software.amazon.awssdk.http.TlsTrustManagersProvider;
@@ -58,9 +59,22 @@ final class SmithyClientOptions {
             builder.maxConnectionsPerRoute(maxConnections);
         }
 
+        // Protocol version. The explicit builder flag wins; otherwise the SDK's own PROTOCOL option decides, and if
+        // neither is set the policy is pinned to HTTP/1.1.
+        //
+        // Pinning the fallback matters: smithy's default policy prefers HTTP/2 and, over TLS, offers "h2" first via
+        // ALPN. A server that does not negotiate ALPN then leaves the connection on HTTP/1.1 while the pool has
+        // already committed to its H2 path, which fails the request outright with "Expected H2 connection but got
+        // HTTP/1.1". Every other SDK transport defaults to HTTP/1.1 and only speaks HTTP/2 when PROTOCOL asks for it,
+        // so leaving smithy's preference in place made this client the only one whose default behaviour changed the
+        // wire protocol as soon as the endpoint was https.
         if (http2Enabled != null) {
             builder.httpVersionPolicy(http2Enabled ? HttpVersionPolicy.AUTOMATIC
                                                    : HttpVersionPolicy.ENFORCE_HTTP_1_1);
+        } else {
+            builder.httpVersionPolicy(options.get(SdkHttpConfigurationOption.PROTOCOL) == Protocol.HTTP2
+                                      ? HttpVersionPolicy.AUTOMATIC
+                                      : HttpVersionPolicy.ENFORCE_HTTP_1_1);
         }
 
         SSLContext sslContext = sslContext(options);

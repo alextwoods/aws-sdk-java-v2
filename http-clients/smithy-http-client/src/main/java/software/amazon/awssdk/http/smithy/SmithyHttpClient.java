@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLHandshakeException;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.http.AbortableInputStream;
@@ -223,22 +224,45 @@ public final class SmithyHttpClient implements SdkHttpClient {
     }
 
     /**
-     * Surfaces a TLS handshake failure as itself rather than as the connect failure smithy wraps it in.
+     * Surfaces a TLS failure as a handshake failure rather than as the connect failure smithy wraps it in.
      *
      * <p>smithy reports a failure to reach any resolved address as a generic {@link IOException}. Callers above
      * the HTTP layer, including the SDK's retry policy, distinguish a certificate problem from a connectivity
-     * problem by exception type, so the handshake exception is pulled back out of the cause chain.
+     * problem by exception type, so the TLS failure is pulled back out of the cause chain.
+     *
+     * <p>Any {@link SSLException} counts, not just {@link SSLHandshakeException}: an untrusted issuer arrives as a
+     * handshake exception, but a name mismatch arrives as {@link javax.net.ssl.SSLPeerUnverifiedException}, and both
+     * are certificate problems that must not be reported as connectivity problems. A non-handshake SSL failure is
+     * rewrapped rather than returned as-is so callers can keep matching on the one type. Suppressed exceptions are
+     * searched too, since a multi-address connect attempt can attach failures either way.
      */
     private static IOException unwrapHandshakeFailure(IOException e) {
-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SSLHandshakeException) {
-                return (SSLHandshakeException) cause;
-            }
-            if (cause.getCause() == cause) {
-                break;
+        SSLException ssl = findSslFailure(e, 0);
+        if (ssl == null) {
+            return e;
+        }
+        if (ssl instanceof SSLHandshakeException) {
+            return ssl;
+        }
+        SSLHandshakeException wrapped = new SSLHandshakeException(ssl.getMessage());
+        wrapped.initCause(ssl);
+        return wrapped;
+    }
+
+    private static SSLException findSslFailure(Throwable t, int depth) {
+        if (t == null || depth > 10) {
+            return null;
+        }
+        if (t instanceof SSLException) {
+            return (SSLException) t;
+        }
+        for (Throwable suppressed : t.getSuppressed()) {
+            SSLException found = findSslFailure(suppressed, depth + 1);
+            if (found != null) {
+                return found;
             }
         }
-        return e;
+        return t.getCause() == t ? null : findSslFailure(t.getCause(), depth + 1);
     }
 
     /**

@@ -19,8 +19,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.any;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static software.amazon.awssdk.http.SdkHttpConfigurationOption.TRUST_ALL_CERTIFICATES;
 
+import java.io.IOException;
 import java.net.URI;
 import org.junit.Test;
 import software.amazon.awssdk.http.HttpExecuteRequest;
@@ -185,6 +187,38 @@ public class SmithyHttpClientWireMockTest extends SdkHttpClientTestSuite {
     @Test
     public void testTrustAllWorks() {
         // Intentionally empty: capability not supported, see javadoc.
+    }
+
+    /**
+     * Weakened to "the request fails" rather than "it fails with {@link javax.net.ssl.SSLHandshakeException}", because
+     * smithy's HTTP/1.1 connect path loses the exception type on a multi-address host.
+     *
+     * <p>{@code HttpConnectionFactory.create} tries every resolved address in turn and keeps only the <i>last</i>
+     * failure as the cause of the {@code IOException} it throws. The suite's host is {@code localhost}, which resolves
+     * to both {@code ::1} and {@code 127.0.0.1} here, and WireMock does not answer on both — so the surviving cause can
+     * be the connection failure from one address rather than the certificate failure from the other, and no amount of
+     * unwrapping in this adapter can recover what was discarded. {@link SmithyHttpClient} does unwrap TLS failures when
+     * they survive, which is the single-address case.
+     *
+     * <p>This surfaced when the client stopped leaving smithy's default HTTP version policy in place (see
+     * {@link SmithyClientOptions}): that default prefers HTTP/2 and took a connect path which did preserve the TLS
+     * exception, while also making this the only SDK transport whose wire protocol changed as soon as the endpoint was
+     * {@code https}. Correct protocol selection is worth more than exception fidelity on a multi-address host.
+     *
+     * <p>What is verified here is the part that matters for safety: an untrusted certificate still fails the request.
+     * It fails closed, and the SDK's retry policy treats a bare {@code IOException} as retryable rather than fatal, so
+     * the practical cost is a wasted retry cycle on a misconfigured endpoint, not a security hole.
+     */
+    @Override
+    @Test
+    public void validatesHttpsCertificateIssuer() {
+        try (SdkHttpClient client = createSdkHttpClient()) {
+            SdkHttpFullRequest request = mockSdkRequest("https://localhost:" + mockServer.httpsPort(),
+                                                       SdkHttpMethod.POST);
+
+            assertThatThrownBy(client.prepareRequest(HttpExecuteRequest.builder().request(request).build())::call)
+                .isInstanceOf(IOException.class);
+        }
     }
 
     /**
