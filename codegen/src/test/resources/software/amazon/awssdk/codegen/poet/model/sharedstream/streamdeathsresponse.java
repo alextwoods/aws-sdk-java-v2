@@ -94,9 +94,16 @@ public final class StreamDeathsResponse extends SharedEventStreamResponse implem
   }
 
   static StreamDeathsResponse $readJson(StructuredJsonReader reader) {
-    BuilderImpl builder = new BuilderImpl();
-    builder.readJsonFields(reader);
-    return builder.build();
+      BuilderImpl b = new BuilderImpl();
+      reader.beginStruct();
+      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
+              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
+          switch (memberIndex) {
+          default:
+              break;
+          }
+      }
+      return b.build();
   }
 
   @Mutable

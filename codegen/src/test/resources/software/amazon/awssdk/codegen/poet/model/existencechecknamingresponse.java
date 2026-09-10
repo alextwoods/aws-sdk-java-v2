@@ -289,9 +289,42 @@ public final class ExistenceCheckNamingResponse extends JsonProtocolTestsRespons
   }
 
   static ExistenceCheckNamingResponse $readJson(StructuredJsonReader reader) {
-    BuilderImpl builder = new BuilderImpl();
-    builder.readJsonFields(reader);
-    return builder.build();
+      BuilderImpl b = new BuilderImpl();
+      reader.beginStruct();
+      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
+              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
+          switch (memberIndex) {
+          case 0: {
+              List<String> buildValue = new ArrayList<>();
+              reader.readList(buildValue, (l0, r0) -> l0.add(r0.readNullIfPresent() ? null : r0.readString()));
+              b.build = Collections.unmodifiableList(buildValue);
+              break;
+          }
+          case 1: {
+              List<String> superValueValue = new ArrayList<>();
+              reader.readList(superValueValue, (l0, r0) -> l0.add(r0.readNullIfPresent() ? null : r0.readString()));
+              b.superValue = Collections.unmodifiableList(superValueValue);
+              break;
+          }
+          case 2: {
+              Map<String, String> toStringValueValue = new LinkedHashMap<>();
+              reader.readStringMap(toStringValueValue,
+                      (m0, k0, r0) -> m0.put(k0, r0.readNullIfPresent() ? null : r0.readString()));
+              b.toStringValue = Collections.unmodifiableMap(toStringValueValue);
+              break;
+          }
+          case 3: {
+              Map<String, String> equalsValueValue = new LinkedHashMap<>();
+              reader.readStringMap(equalsValueValue,
+                      (m0, k0, r0) -> m0.put(k0, r0.readNullIfPresent() ? null : r0.readString()));
+              b.equalsValue = Collections.unmodifiableMap(equalsValueValue);
+              break;
+          }
+          default:
+              break;
+          }
+      }
+      return b.build();
   }
 
   private static <T> Function<Object, T> getter(Function<ExistenceCheckNamingResponse, T> g) {

@@ -143,9 +143,20 @@ public final class SubTypeOne implements SdkPojo, Serializable, ToCopyableBuilde
   }
 
   static SubTypeOne $readJson(StructuredJsonReader reader) {
-    BuilderImpl builder = new BuilderImpl();
-    builder.readJsonFields(reader);
-    return builder.build();
+      BuilderImpl b = new BuilderImpl();
+      reader.beginStruct();
+      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
+              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
+          switch (memberIndex) {
+          case 0: {
+              b.subTypeOneMember = reader.readString();
+              break;
+          }
+          default:
+              break;
+          }
+      }
+      return b.build();
   }
 
   private static <T> Function<Object, T> getter(Function<SubTypeOne, T> g) {

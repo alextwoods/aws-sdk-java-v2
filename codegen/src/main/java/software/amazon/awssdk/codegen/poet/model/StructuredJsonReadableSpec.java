@@ -150,6 +150,55 @@ public final class StructuredJsonReadableSpec {
     }
 
     /**
+     * The structure counterpart of {@link #readJsonUnionStaticMethod()}: drives the member loop in this frame instead
+     * of handing a consumer to {@link StructuredJsonReader#readStruct}.
+     *
+     * <p>Same mechanism as the union case, for the same reason. {@code readStruct} takes a per-shape consumer, so the
+     * call site inside the reader is megamorphic once a client has more than a handful of shapes: it cannot be
+     * inlined, every member pays a virtual dispatch, and the builder handed across that boundary escapes and so
+     * cannot be scalar-replaced. Reading the members here keeps the builder a frame-local field bag written through
+     * direct field assignments, with a monomorphic {@code build()} at the end — the shape escape analysis can remove
+     * the builder from entirely.
+     *
+     * <p>The builder is kept rather than replaced by a positional constructor because it costs nothing extra once it
+     * does not escape, and it keeps defaults, {@code SdkField} metadata and the auto-construct-collection sentinels
+     * in exactly one place. Whether the JIT actually removes it is a measurement, not an assumption — the profile
+     * decides whether a positional constructor is worth generating on top of this.
+     *
+     * <p>{@code readJsonFields} stays on the builder: it is the entry point for top-level responses, and the
+     * differential test compares this path against it.
+     */
+    public MethodSpec readJsonStructStaticMethod() {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("$readJson")
+                                              .addModifiers(Modifier.STATIC)
+                                              .returns(shapeName)
+                                              .addParameter(ClassName.get(StructuredJsonReader.class), "reader");
+        method.addStatement("$T b = new $T()", builderImplName, builderImplName);
+        method.addStatement("reader.beginStruct()");
+        method.addCode("for (int memberIndex = reader.nextMember($T.$$JSON_MEMBER_TABLE);\n"
+                       + "     memberIndex != $T.MEMBER_END;\n"
+                       + "     memberIndex = reader.nextMember($T.$$JSON_MEMBER_TABLE)) {\n$>",
+                       builderImplName, ClassName.get(StructuredJsonReader.class), builderImplName);
+        method.beginControlFlow("switch (memberIndex)");
+        List<MemberModel> members = StructuredJsonWritableSpec.marshallableMembers(shapeModel);
+        for (int i = 0; i < members.size(); i++) {
+            // Each case body is braced: member reads declare locals, and switch cases share scope.
+            method.addCode("case $L: {\n$>", i);
+            method.addCode(memberRead(members.get(i)));
+            method.addStatement("break");
+            method.addCode("$<}\n");
+        }
+        // MEMBER_SKIPPED: an unknown key or a null-valued member, already consumed by the reader.
+        method.addCode("default:\n$>");
+        method.addStatement("break");
+        method.addCode("$<");
+        method.endControlFlow();
+        method.addCode("$<}\n");
+        method.addStatement("return b.build()");
+        return method.build();
+    }
+
+    /**
      * The builder-free {@code $readJson} for unions: drives the member loop itself, holds the value in a local, and
      * constructs the shape once.
      *

@@ -234,9 +234,32 @@ public final class NestedQueryParameterOperation implements SdkPojo, Serializabl
   }
 
   static NestedQueryParameterOperation $readJson(StructuredJsonReader reader) {
-    BuilderImpl builder = new BuilderImpl();
-    builder.readJsonFields(reader);
-    return builder.build();
+      BuilderImpl b = new BuilderImpl();
+      reader.beginStruct();
+      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
+              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
+          switch (memberIndex) {
+          case 0: {
+              b.queryParamOne = reader.readString();
+              break;
+          }
+          case 1: {
+              b.queryParamTwo = reader.readString();
+              break;
+          }
+          case 2: {
+              b.nestedHeaderMember = reader.readString();
+              break;
+          }
+          case 3: {
+              b.nestedStatusCode = reader.readInt();
+              break;
+          }
+          default:
+              break;
+          }
+      }
+      return b.build();
   }
 
   private static <T> Function<Object, T> getter(Function<NestedQueryParameterOperation, T> g) {
