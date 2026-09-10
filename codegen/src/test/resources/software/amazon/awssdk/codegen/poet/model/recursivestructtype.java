@@ -307,38 +307,9 @@ public final class RecursiveStructType implements SdkPojo, Serializable, ToCopya
   }
 
   static RecursiveStructType $readJson(StructuredJsonReader reader) {
-      BuilderImpl b = new BuilderImpl();
-      reader.beginStruct();
-      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
-              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
-          switch (memberIndex) {
-          case 0: {
-              b.noRecurse = reader.readString();
-              break;
-          }
-          case 1: {
-              b.recursiveStruct = RecursiveStructType.$readJson(reader);
-              break;
-          }
-          case 2: {
-              List<RecursiveStructType> recursiveListValue = new ArrayList<>();
-              reader.readList(recursiveListValue,
-                      (l0, r0) -> l0.add(r0.readNullIfPresent() ? null : RecursiveStructType.$readJson(r0)));
-              b.recursiveList = Collections.unmodifiableList(recursiveListValue);
-              break;
-          }
-          case 3: {
-              Map<String, RecursiveStructType> recursiveMapValue = new LinkedHashMap<>();
-              reader.readStringMap(recursiveMapValue,
-                      (m0, k0, r0) -> m0.put(k0, r0.readNullIfPresent() ? null : RecursiveStructType.$readJson(r0)));
-              b.recursiveMap = Collections.unmodifiableMap(recursiveMapValue);
-              break;
-          }
-          default:
-              break;
-          }
-      }
-      return b.build();
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
   }
 
   private static <T> Function<Object, T> getter(Function<RecursiveStructType, T> g) {

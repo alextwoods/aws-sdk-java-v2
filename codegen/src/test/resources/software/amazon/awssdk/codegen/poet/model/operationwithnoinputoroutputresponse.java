@@ -92,16 +92,9 @@ public final class OperationWithNoInputOrOutputResponse extends JsonProtocolTest
   }
 
   static OperationWithNoInputOrOutputResponse $readJson(StructuredJsonReader reader) {
-      BuilderImpl b = new BuilderImpl();
-      reader.beginStruct();
-      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
-              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
-          switch (memberIndex) {
-          default:
-              break;
-          }
-      }
-      return b.build();
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
   }
 
   @Mutable

@@ -280,87 +280,9 @@ public final class NestedContainersResponse extends JsonProtocolTestsResponse im
   }
 
   static NestedContainersResponse $readJson(StructuredJsonReader reader) {
-      BuilderImpl b = new BuilderImpl();
-      reader.beginStruct();
-      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
-              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
-          switch (memberIndex) {
-          case 0: {
-              List<List<String>> listOfListOfStringsValue = new ArrayList<>();
-              reader.readList(
-                      listOfListOfStringsValue,
-                      (l0, r0) -> {
-                          if (r0.readNullIfPresent()) {
-                              l0.add(null);
-                          } else {
-                              List<String> listOfListOfStringsValue0 = new ArrayList<>();
-                              r0.readList(listOfListOfStringsValue0,
-                                      (l1, r1) -> l1.add(r1.readNullIfPresent() ? null : r1.readString()));
-                              l0.add(Collections.unmodifiableList(listOfListOfStringsValue0));
-                          }
-                      });
-              b.listOfListOfStrings = Collections.unmodifiableList(listOfListOfStringsValue);
-              break;
-          }
-          case 1: {
-              List<List<List<String>>> listOfListOfListOfStringsValue = new ArrayList<>();
-              reader.readList(
-                      listOfListOfListOfStringsValue,
-                      (l0, r0) -> {
-                          if (r0.readNullIfPresent()) {
-                              l0.add(null);
-                          } else {
-                              List<List<String>> listOfListOfListOfStringsValue0 = new ArrayList<>();
-                              r0.readList(
-                                      listOfListOfListOfStringsValue0,
-                                      (l1, r1) -> {
-                                          if (r1.readNullIfPresent()) {
-                                              l1.add(null);
-                                          } else {
-                                              List<String> listOfListOfListOfStringsValue01 = new ArrayList<>();
-                                              r1.readList(listOfListOfListOfStringsValue01,
-                                                      (l2, r2) -> l2.add(r2.readNullIfPresent() ? null : r2.readString()));
-                                              l1.add(Collections.unmodifiableList(listOfListOfListOfStringsValue01));
-                                          }
-                                      });
-                              l0.add(Collections.unmodifiableList(listOfListOfListOfStringsValue0));
-                          }
-                      });
-              b.listOfListOfListOfStrings = Collections.unmodifiableList(listOfListOfListOfStringsValue);
-              break;
-          }
-          case 2: {
-              Map<String, List<List<String>>> mapOfStringToListOfListOfStringsValue = new LinkedHashMap<>();
-              reader.readStringMap(
-                      mapOfStringToListOfListOfStringsValue,
-                      (m0, k0, r0) -> {
-                          if (r0.readNullIfPresent()) {
-                              m0.put(k0, null);
-                          } else {
-                              List<List<String>> mapOfStringToListOfListOfStringsValue0 = new ArrayList<>();
-                              r0.readList(
-                                      mapOfStringToListOfListOfStringsValue0,
-                                      (l1, r1) -> {
-                                          if (r1.readNullIfPresent()) {
-                                              l1.add(null);
-                                          } else {
-                                              List<String> mapOfStringToListOfListOfStringsValue01 = new ArrayList<>();
-                                              r1.readList(mapOfStringToListOfListOfStringsValue01,
-                                                      (l2, r2) -> l2.add(r2.readNullIfPresent() ? null : r2.readString()));
-                                              l1.add(Collections.unmodifiableList(mapOfStringToListOfListOfStringsValue01));
-                                          }
-                                      });
-                              m0.put(k0, Collections.unmodifiableList(mapOfStringToListOfListOfStringsValue0));
-                          }
-                      });
-              b.mapOfStringToListOfListOfStrings = Collections.unmodifiableMap(mapOfStringToListOfListOfStringsValue);
-              break;
-          }
-          default:
-              break;
-          }
-      }
-      return b.build();
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
   }
 
   private static <T> Function<Object, T> getter(Function<NestedContainersResponse, T> g) {

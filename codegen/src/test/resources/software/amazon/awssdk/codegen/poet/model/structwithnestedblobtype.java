@@ -145,20 +145,9 @@ public final class StructWithNestedBlobType implements SdkPojo, Serializable, To
   }
 
   static StructWithNestedBlobType $readJson(StructuredJsonReader reader) {
-      BuilderImpl b = new BuilderImpl();
-      reader.beginStruct();
-      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
-              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
-          switch (memberIndex) {
-          case 0: {
-              b.nestedBlob = reader.readSdkBytes();
-              break;
-          }
-          default:
-              break;
-          }
-      }
-      return b.build();
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
   }
 
   private static <T> Function<Object, T> getter(Function<StructWithNestedBlobType, T> g) {

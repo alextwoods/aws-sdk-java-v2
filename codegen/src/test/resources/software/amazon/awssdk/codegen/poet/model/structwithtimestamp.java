@@ -144,20 +144,9 @@ public final class StructWithTimestamp implements SdkPojo, Serializable, ToCopya
   }
 
   static StructWithTimestamp $readJson(StructuredJsonReader reader) {
-      BuilderImpl b = new BuilderImpl();
-      reader.beginStruct();
-      for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
-              .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
-          switch (memberIndex) {
-          case 0: {
-              b.nestedTimestamp = reader.readInstant(null);
-              break;
-          }
-          default:
-              break;
-          }
-      }
-      return b.build();
+    BuilderImpl builder = new BuilderImpl();
+    builder.readJsonFields(reader);
+    return builder.build();
   }
 
   private static <T> Function<Object, T> getter(Function<StructWithTimestamp, T> g) {

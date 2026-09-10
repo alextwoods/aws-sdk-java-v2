@@ -278,35 +278,9 @@ public final class NestedOptions implements SdkPojo, Serializable, ToCopyableBui
     }
 
     static NestedOptions $readJson(StructuredJsonReader reader) {
-        BuilderImpl b = new BuilderImpl();
-        reader.beginStruct();
-        for (int memberIndex = reader.nextMember(BuilderImpl.$JSON_MEMBER_TABLE); memberIndex != StructuredJsonReader.MEMBER_END; memberIndex = reader
-                .nextMember(BuilderImpl.$JSON_MEMBER_TABLE)) {
-            switch (memberIndex) {
-            case 0: {
-                b.pageSize = reader.readString();
-                break;
-            }
-            case 1: {
-                b.headerParam = reader.readString();
-                break;
-            }
-            case 2: {
-                b.queryParam = reader.readString();
-                break;
-            }
-            case 3: {
-                Map<String, String> prefixHeadersValue = new LinkedHashMap<>();
-                reader.readStringMap(prefixHeadersValue,
-                        (m0, k0, r0) -> m0.put(k0, r0.readNullIfPresent() ? null : r0.readString()));
-                b.prefixHeaders = Collections.unmodifiableMap(prefixHeadersValue);
-                break;
-            }
-            default:
-                break;
-            }
-        }
-        return b.build();
+        BuilderImpl builder = new BuilderImpl();
+        builder.readJsonFields(reader);
+        return builder.build();
     }
 
     private static <T> Function<Object, T> getter(Function<NestedOptions, T> g) {
