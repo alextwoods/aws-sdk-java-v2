@@ -18,7 +18,9 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
+import software.amazon.awssdk.http.SdkHttpConfigurationOption;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.utils.AttributeMap;
 
 import software.amazon.smithy.java.aws.client.core.settings.RegionSetting;
 import software.amazon.smithy.java.client.http.smithy.SmithyHttpClientTransport;
@@ -118,6 +120,9 @@ interface Workloads {
      *                    none is given a larger pool than another.
      */
     static Workload create(String client, URI endpoint, boolean metrics, int concurrency) {
+        // Recorded in the transport column so a results file states which stack AND whether it was
+        // encrypted, rather than leaving it to be inferred from the run script.
+        String tlsSuffix = "https".equalsIgnoreCase(endpoint.getScheme()) ? "+tls" : "";
         switch (client) {
             case "v1":
                 return v1(endpoint, metrics, concurrency);
@@ -125,29 +130,53 @@ interface Workloads {
                 return v2Sync(endpoint, metrics,
                               software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
                                                                                    .maxConnections(concurrency),
-                              "apache5");
+                              "apache5" + tlsSuffix);
             case "v2-async":
                 return v2Async(endpoint, metrics,
-                               AwsCrtAsyncHttpClient.builder().maxConcurrency(concurrency).build(),
-                               "crt");
+                               AwsCrtAsyncHttpClient.builder()
+                                                    .maxConcurrency(concurrency)
+                                                    .buildWithDefaults(crtTlsDefaults(endpoint)),
+                               "crt" + tlsSuffix);
             // The two arms below differ from the two above only in transport, so a paired run against
             // their counterpart isolates the HTTP client and nothing else.
             case "v2-sync-smithy":
                 return v2Sync(endpoint, metrics,
                               software.amazon.awssdk.http.smithy.SmithyHttpClient.builder()
                                                                                  .maxConnections(concurrency),
-                              "smithy-http");
+                              "smithy-http" + tlsSuffix);
             case "v2-async-smithy":
                 return v2Async(endpoint, metrics,
                                software.amazon.awssdk.http.smithy.SmithyAsyncHttpClient.builder()
                                                                                        .maxConcurrency(concurrency)
                                                                                        .build(),
-                               "smithy-http");
+                               "smithy-http" + tlsSuffix);
             case "smithy":
                 return smithy(endpoint, metrics, concurrency);
             default:
                 throw new IllegalArgumentException("unknown client: " + client);
         }
+    }
+
+    /**
+     * Trust configuration for the CRT client under {@code --tls}.
+     *
+     * <p>Every other client here does TLS through the JDK, so it picks the benchmark's throwaway certificate up from
+     * the {@code javax.net.ssl.trustStore} the launcher sets, and verifies a real chain against a real hostname. CRT
+     * does TLS natively (aws-lc) and ignores that truststore, and the SDK's CRT client exposes no hook for a custom
+     * CA — only {@link SdkHttpConfigurationOption#TRUST_ALL_CERTIFICATES}, which maps to CRT's
+     * {@code withVerifyPeer(false)}. So CRT verifies nothing while the others verify fully.
+     *
+     * <p>That asymmetry cannot bias what is being measured: certificate verification happens once per handshake, and
+     * these runs reuse pooled connections across 200,000 operations, so any per-handshake cost is divided by five
+     * orders of magnitude. It would matter for a handshake-per-request workload, which this is not.
+     */
+    private static AttributeMap crtTlsDefaults(URI endpoint) {
+        if (!"https".equalsIgnoreCase(endpoint.getScheme())) {
+            return AttributeMap.empty();
+        }
+        return AttributeMap.builder()
+                           .put(SdkHttpConfigurationOption.TRUST_ALL_CERTIFICATES, true)
+                           .build();
     }
 
     // ==================== V1 ====================

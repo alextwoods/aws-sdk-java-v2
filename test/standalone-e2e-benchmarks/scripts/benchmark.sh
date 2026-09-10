@@ -8,6 +8,14 @@
 # Launcher-only options (everything else is passed through to BenchmarkRunner):
 #   --port N              port for the auto-launched mock server (default: 19080)
 #   --no-server           do not launch a server; requires --endpoint pointing at a running one
+#   --tls                serve HTTPS instead of plaintext. Generates a throwaway self-signed
+#                        certificate (SAN naming 127.0.0.1) plus the matching truststore, hands the
+#                        keystore to the server and the truststore to the client JVM, and points the
+#                        client at https://. Every JDK-TLS client then verifies a real chain against
+#                        a real hostname; the CRT client uses its own native TLS stack and is
+#                        configured trust-all instead, because the SDK exposes no CA hook for it.
+#                        Verification is per handshake and connections are pooled, so that asymmetry
+#                        cannot move per-operation cost.
 #   --profile MODE        jfr | cpu | alloc | wall  (cpu/alloc/wall need async-profiler)
 #   --profile-format FMT  html | jfr — output format for cpu/alloc/wall modes (default: html)
 #   --profile-file PATH   exact profiler output path (default: <profile-out>/<client>-<mode>-<ts>.<ext>)
@@ -32,6 +40,7 @@ JAR=""
 ENDPOINT=""
 PIN_CLIENT=""
 PIN_SERVER=""
+TLS=0
 RUNNER_ARGS=()
 CLIENT="client"
 
@@ -47,6 +56,7 @@ while [[ $# -gt 0 ]]; do
         --server-jvm-args) SERVER_JVM_ARGS="$2"; shift 2 ;;
         --pin-client)  PIN_CLIENT="$2"; shift 2 ;;
         --pin-server)  PIN_SERVER="$2"; shift 2 ;;
+        --tls)         TLS=1; shift ;;
         --jar)         JAR="$2"; shift 2 ;;
         --endpoint)    ENDPOINT="$2"; LAUNCH_SERVER=0; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         --client)      CLIENT="$2"; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
@@ -105,9 +115,60 @@ cleanup() {
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
     fi
+    # One trap, all jobs: a second `trap ... EXIT` would silently replace this one and leave the
+    # server running, so the TLS material and the server log are removed here too.
+    if [[ -n "${SERVER_LOG:-}" ]]; then
+        if grep -q "^TLS negotiated " "$SERVER_LOG" 2>/dev/null; then
+            grep "^TLS negotiated " "$SERVER_LOG"
+        elif [[ ${TLS:-0} -eq 1 ]]; then
+            echo "warning: server never reported a TLS handshake; was the run actually encrypted?" >&2
+        fi
+        rm -f "$SERVER_LOG"
+    fi
+    if [[ -n "${TLS_DIR:-}" ]]; then
+        rm -rf "$TLS_DIR"
+    fi
 }
 trap cleanup EXIT
 
+# ---- TLS material ----
+# The launcher owns the certificate because both processes need part of it: the server needs the key,
+# the client needs to trust it. The SAN names 127.0.0.1 so that clients which force hostname
+# verification (smithy-java's TLS provider does, unconditionally) can be measured without weakening
+# verification differently per client.
+TLS_DIR=""
+TLS_ARGS=()
+if [[ $TLS -eq 1 ]]; then
+    if [[ $LAUNCH_SERVER -eq 0 ]]; then
+        echo "error: --tls generates material for the server it launches; it cannot be combined with --endpoint" >&2
+        exit 2
+    fi
+    TLS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mockddb-tls.XXXXXXXX")"
+    TLS_PASS="benchmark"
+    KEYTOOL="${JAVA_HOME:+$JAVA_HOME/bin/}keytool"
+    "$KEYTOOL" -genkeypair -alias mockddb -keyalg RSA -keysize 2048 -validity 1 \
+        -dname "CN=mockddb-benchmark" -ext "SAN=IP:127.0.0.1,DNS:localhost" \
+        -keystore "$TLS_DIR/server.p12" -storetype PKCS12 \
+        -storepass "$TLS_PASS" -keypass "$TLS_PASS" > "$TLS_DIR/keytool.log" 2>&1 || {
+        echo "error: keytool could not generate the benchmark certificate" >&2
+        sed 's/^/  /' "$TLS_DIR/keytool.log" >&2
+        exit 1
+    }
+    "$KEYTOOL" -exportcert -alias mockddb -keystore "$TLS_DIR/server.p12" -storetype PKCS12 \
+        -storepass "$TLS_PASS" -rfc -file "$TLS_DIR/server.crt" >> "$TLS_DIR/keytool.log" 2>&1
+    "$KEYTOOL" -importcert -noprompt -alias mockddb -file "$TLS_DIR/server.crt" \
+        -keystore "$TLS_DIR/trust.p12" -storetype PKCS12 \
+        -storepass "$TLS_PASS" >> "$TLS_DIR/keytool.log" 2>&1 || {
+        echo "error: keytool could not build the benchmark truststore" >&2
+        sed 's/^/  /' "$TLS_DIR/keytool.log" >&2
+        exit 1
+    }
+    TLS_ARGS=(--tls --keystore "$TLS_DIR/server.p12" --keystore-password "$TLS_PASS")
+    # JDK-TLS clients pick the truststore up from these; the CRT client ignores them (native stack).
+    EXTRA_JVM_ARGS="$EXTRA_JVM_ARGS -Djavax.net.ssl.trustStore=$TLS_DIR/trust.p12"
+    EXTRA_JVM_ARGS="$EXTRA_JVM_ARGS -Djavax.net.ssl.trustStorePassword=$TLS_PASS"
+    EXTRA_JVM_ARGS="$EXTRA_JVM_ARGS -Djavax.net.ssl.trustStoreType=PKCS12"
+fi
 if [[ $LAUNCH_SERVER -eq 1 ]]; then
     # Readiness is confirmed from OUR child's own READY line, not from the port answering /ping.
     # A /ping probe cannot tell our server apart from someone else's: a stale MockDdbServer left
@@ -121,9 +182,14 @@ if [[ $LAUNCH_SERVER -eq 1 ]]; then
     ${SERVER_PREFIX[@]+"${SERVER_PREFIX[@]}"} \
         java --enable-native-access=ALL-UNNAMED ${SERVER_JVM_ARGS:+$SERVER_JVM_ARGS} \
         -cp "$CP" \
-        software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" > "$SERVER_LOG" 2>&1 &
+        software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" \
+        ${TLS_ARGS[@]+"${TLS_ARGS[@]}"} > "$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
-    ENDPOINT="http://127.0.0.1:$PORT"
+    if [[ $TLS -eq 1 ]]; then
+        ENDPOINT="https://127.0.0.1:$PORT"
+    else
+        ENDPOINT="http://127.0.0.1:$PORT"
+    fi
     RUNNER_ARGS+=(--endpoint "$ENDPOINT")
 
     server_failed() {
@@ -164,7 +230,13 @@ if [[ $LAUNCH_SERVER -eq 1 ]]; then
     fi
     # Surface the server's own line so the run log records which server answered.
     grep "^READY " "$SERVER_LOG"
-    rm -f "$SERVER_LOG"
+    # Under --tls the log is kept until the end so the negotiated protocol and cipher can be reported
+    # from the server's own view. Assuming them is exactly the kind of thing that has bitten this
+    # harness before: two clients on different cipher suites are not doing the same work.
+    if [[ $TLS -eq 0 ]]; then
+        rm -f "$SERVER_LOG"
+        SERVER_LOG=""
+    fi
 fi
 
 # ---- Profiler flags ----

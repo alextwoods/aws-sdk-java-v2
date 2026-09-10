@@ -4,15 +4,22 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.eclipse.jetty.http.HttpVersion;
 import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 /**
@@ -63,12 +70,24 @@ public final class MockDdbServer {
     public static void main(String[] args) throws Exception {
         int port = DEFAULT_PORT;
         int maxThreads = DEFAULT_MAX_THREADS;
+        boolean tls = false;
+        String keystore = null;
+        String keystorePassword = "benchmark";
         for (int i = 0; i < args.length; i++) {
             if ("--port".equals(args[i]) && i + 1 < args.length) {
                 port = Integer.parseInt(args[++i]);
             } else if ("--threads".equals(args[i]) && i + 1 < args.length) {
                 maxThreads = Integer.parseInt(args[++i]);
+            } else if ("--tls".equals(args[i])) {
+                tls = true;
+            } else if ("--keystore".equals(args[i]) && i + 1 < args.length) {
+                keystore = args[++i];
+            } else if ("--keystore-password".equals(args[i]) && i + 1 < args.length) {
+                keystorePassword = args[++i];
             }
+        }
+        if (tls && keystore == null) {
+            throw new IllegalArgumentException("--tls requires --keystore (the launcher generates it; see benchmark.sh)");
         }
 
         Map<String, byte[]> responses = new HashMap<>();
@@ -81,7 +100,8 @@ public final class MockDdbServer {
         QueuedThreadPool pool = new QueuedThreadPool(maxThreads, 8);
         pool.setName("mockddb");
         Server server = new Server(pool);
-        ServerConnector connector = new ServerConnector(server);
+        ServerConnector connector = tls ? tlsConnector(server, keystore, keystorePassword)
+                                       : new ServerConnector(server);
         connector.setPort(port);
         server.setConnectors(new Connector[] {connector});
         ServletContextHandler context = new ServletContextHandler(server, "/", ServletContextHandler.NO_SESSIONS);
@@ -89,10 +109,11 @@ public final class MockDdbServer {
         server.setHandler(context);
         server.start();
 
-        System.out.printf("READY port=%d pid=%d threads=%d selectors=%d"
+        System.out.printf("READY port=%d pid=%d threads=%d selectors=%d scheme=%s"
                           + " (GetItem=%dB PutItem=%dB BatchGetItem=%dB BatchWriteItem=%dB DescribeTable=%dB)%n",
                           port, ProcessHandle.current().pid(), maxThreads,
                           connector.getSelectorManager().getSelectorCount(),
+                          tls ? "https" : "http",
                           responses.get(TARGET_PREFIX + "GetItem").length,
                           responses.get(TARGET_PREFIX + "PutItem").length,
                           responses.get(TARGET_PREFIX + "BatchGetItem").length,
@@ -100,6 +121,30 @@ public final class MockDdbServer {
                           responses.get(TARGET_PREFIX + "DescribeTable").length);
         System.out.flush();
         server.join();
+    }
+
+    /**
+     * An HTTPS connector using a keystore supplied by the launcher.
+     *
+     * <p>The launcher owns the certificate because the client JVM needs the matching trust material, and it generates
+     * one whose {@code SAN} names the endpoint ({@code IP:127.0.0.1,DNS:localhost}). Trusting an arbitrary issuer and
+     * matching the hostname are separate things: at least one client under test (smithy-java's
+     * {@code JdkTlsProvider}) forces {@code setEndpointIdentificationAlgorithm("HTTPS")} regardless of what the caller
+     * configured, so a certificate that does not name the endpoint fails there even with trust-all set. Naming the
+     * endpoint keeps every client on the same footing instead of having each weaken verification differently.
+     */
+    private static ServerConnector tlsConnector(Server server, String keystorePath, String keystorePassword) {
+        SslContextFactory.Server ssl = new SslContextFactory.Server();
+        ssl.setKeyStorePath(keystorePath);
+        ssl.setKeyStorePassword(keystorePassword);
+        ssl.setKeyStoreType("PKCS12");
+
+        HttpConfiguration httpsConfig = new HttpConfiguration();
+        // SNI host checking off: the benchmark connects to a literal 127.0.0.1, which is not an SNI name.
+        httpsConfig.addCustomizer(new SecureRequestCustomizer(false));
+        return new ServerConnector(server,
+                                   new SslConnectionFactory(ssl, HttpVersion.HTTP_1_1.asString()),
+                                   new HttpConnectionFactory(httpsConfig));
     }
 
     private static byte[] utf8(String s) {
@@ -113,6 +158,13 @@ public final class MockDdbServer {
         private final CpuTimeSource cpuSource;
         private final AtomicLong requests = new AtomicLong();
         private final AtomicLong errors = new AtomicLong();
+        /**
+         * TLS parameters as actually negotiated, reported once. Which cipher and version a client ends up on is not
+         * something to assume when the point of the run is to compare TLS costs across stacks: two clients on
+         * different cipher suites are not measuring the same work. Printed rather than counted per request so the
+         * hot path stays untouched after the first request.
+         */
+        private final AtomicBoolean tlsReported = new AtomicBoolean();
 
         DdbServlet(Map<String, byte[]> responses, QueuedThreadPool pool) {
             this.responses = responses;
@@ -124,6 +176,14 @@ public final class MockDdbServer {
 
         @Override
         protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            if (req.isSecure() && tlsReported.compareAndSet(false, true)) {
+                // Cipher suite and key size are the servlet-spec TLS attributes; the negotiated version has no
+                // standard attribute, but the TLS 1.3 suites are named distinctly enough to identify it.
+                System.out.printf("TLS negotiated cipher=%s keySize=%s%n",
+                                  req.getAttribute("javax.servlet.request.cipher_suite"),
+                                  req.getAttribute("javax.servlet.request.key_size"));
+                System.out.flush();
+            }
             if (STATS_PATH.equals(req.getRequestURI())) {
                 // Answered before the body read and before any counter is touched: polling stats
                 // must not perturb the counters the client is about to compare against.
