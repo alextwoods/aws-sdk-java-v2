@@ -3043,3 +3043,114 @@ What remains is ~40 bytes per structure, and DynamoDB responses contain few stru
 - The corollary for method choice: **removing a megamorphic dispatch is not automatically a win.** Here
   the replacement cost more than the dispatch, and only an e2e paired measurement could show it — the
   same lesson E14 taught in the opposite direction, where a component benchmark was blind to the gain.
+
+## The TLS-inclusive transport comparison
+
+Every number in this document up to here was plaintext HTTP/1.1 over loopback. That left the
+transport conclusion explicitly open, because plaintext removes the one dimension in which these
+stacks differ most: **CRT encrypts natively in aws-lc, Apache5 and the smithy client go through the
+JDK's SSLEngine.** The sweep's own caveat said a TLS re-run was a prerequisite for any
+transport-strategy conclusion. This is that run.
+
+- Commits: `feb0f8247b0` (an adapter bug this found — see below), `4f063479471` (the TLS harness)
+- Raw: `raw/host-tls-compare-20260910-180611` (one jar, 4 transports × {plaintext, TLS} ×
+  {small-get, batch-get}; 5 reps small, 3 reps batch, cells cycled within each rep and client order
+  reversed on even reps so session drift cannot land on one cell)
+
+### The apparatus, and the fairness checks that matter here
+
+`--tls` generates a throwaway certificate and truststore with `keytool`, gives the keystore to the
+server and the truststore to the client JVM. The certificate's SAN names `127.0.0.1` on purpose:
+trusting an issuer and matching a hostname are separate things, and smithy's TLS provider forces
+hostname verification regardless of configuration, so naming the endpoint is what lets every client
+be measured without each one weakening verification differently.
+
+Two checks, because assuming either would have invalidated the result:
+
+- **Same crypto everywhere.** The server reports the negotiated suite from its own view. All four
+  transports come out on `TLS_AES_256_GCM_SHA384`, so no part of the difference below is one client
+  quietly using a cheaper cipher.
+- **The one asymmetry, and why it is harmless.** CRT ignores the JDK truststore and the SDK exposes
+  no CA hook for it, so CRT gets trust-all while the others verify a real chain. Certificate
+  verification happens once per *handshake*, and these runs reuse pooled connections across 200,000
+  operations, so that cost is divided by five orders of magnitude. It would matter for a
+  handshake-per-request workload; that is a different measurement.
+
+**Scope, stated plainly: this measures steady-state encrypted transfer on established connections.**
+Handshake cost is amortized away by construction. A connection-churning workload is not covered.
+
+### Result
+
+Application CPU per operation, mean of reps:
+
+**small-get** (≈500 B request, ≈500 B response — the fixed-cost scenario)
+
+| transport | plaintext | TLS | TLS adds | as % |
+|---|---:|---:|---:|---:|
+| v2-sync (apache5, JDK TLS) | 106.6 | 118.8 | **+12.3** | +11.5% |
+| v2-sync (smithy-http, JDK TLS) | 104.2 | 114.2 | **+10.0** | +9.6% |
+| v2-async (CRT, native TLS) | 150.5 | 163.9 | **+13.4** | +8.9% |
+| v2-async (smithy-http, JDK TLS) | 124.0 | 135.0 | **+11.0** | +8.9% |
+
+**batch-get** (≈38 KB response — the byte-scaled scenario)
+
+| transport | plaintext | TLS | TLS adds | as % |
+|---|---:|---:|---:|---:|
+| v2-sync (apache5) | 331.3 | 389.9 | +58.5 | +17.7% |
+| v2-sync (smithy-http) | 325.7 | 386.9 | +61.2 | +18.8% |
+| v2-async (CRT) | 400.0 | 449.7 | **+49.8** | +12.4% |
+| v2-async (smithy-http) | 383.1 | 445.0 | +61.9 | +16.2% |
+
+The comparison the run exists to settle:
+
+| | plaintext | TLS |
+|---|---:|---:|
+| CRT vs smithy-http (sync), small-get | +46.3 µs (1.44×) | +49.7 µs (1.43×) |
+| CRT vs apache5, small-get | +43.9 µs (1.41×) | +45.0 µs (1.38×) |
+| CRT vs smithy-http (sync), batch-get | +74.2 µs (1.23×) | +62.8 µs (**1.16×**) |
+| CRT vs apache5, batch-get | +68.6 µs (1.21×) | +59.9 µs (**1.15×**) |
+
+### What it settles
+
+1. **TLS does not rescue CRT on small operations.** The ratio moves from 1.44× to 1.43× against the
+   blocking smithy client and 1.41× to 1.38× against Apache5 — and the *absolute* gap slightly
+   widens. The earlier plaintext finding stands: for small requests, CRT's per-operation cost is
+   structurally higher, and encryption does not change that.
+2. **On large payloads native TLS is genuinely cheaper per byte.** CRT's TLS increment on batch-get
+   is +49.8 µs against +58.5 to +61.9 for the three JDK-TLS arms — consistent across all of them, so
+   it is aws-lc versus SSLEngine rather than noise. It recovers roughly 9–12 µs of a ~70 µs gap,
+   narrowing the ratio to 1.15–1.16×. Real, directionally in CRT's favour, and about one sixth of
+   the gap: it does not overturn the conclusion, it qualifies it.
+3. **The per-request TLS tax is mostly not cipher work.** 10–13 µs/op for ~1 KB of payload is far
+   more than AES-GCM on 1 KB can account for. The profile pair agrees: of Apache5's increment, only
+   ~3.7 µs lands in crypto (`jdk-crypto` + intrinsics), with the rest in buffer and engine handling
+   (+4.9 µs of JDK stdlib frames) and extra socket work (+3.2 µs). That is *why* the small-operation
+   increment barely differs across stacks — they are all paying framing and plumbing, not
+   arithmetic. On batch-get, where bulk encryption dominates, the stacks separate.
+4. **Therefore the transport recommendation is payload-shaped, not TLS-shaped.** For small-request,
+   high-rate workloads a lean blocking client remains the cheaper per-operation choice even
+   encrypted; CRT's native TLS earns its keep as payloads grow. Nothing here speaks to connection
+   churn, HTTP/2, or CRT's operational advantages at scale.
+
+Async caveats unchanged: the CRT and smithy-async arms are chronically `steady_state=false` on this
+host, so their absolute per-operation CPU is soft. Latency agrees on direction throughout (p50
+increments +21.9 µs apache5, +22.0 µs CRT on small-get). Rep spread was 1.5–9.8%.
+
+### The bug this found, which is the other reason to run it
+
+Pointing the benchmark at HTTPS broke both smithy-transport arms outright: every request failed with
+`Expected H2 connection but got HTTP/1.1`. The adapter mapped only its own `http2Enabled` flag onto
+smithy's version policy and ignored the SDK's `PROTOCOL` option, so with neither set it inherited
+smithy's default, which prefers HTTP/2 and offers `h2` first via ALPN. Against a server that does not
+negotiate ALPN the connection stays on HTTP/1.1 while the pool has already committed to its H2 path.
+
+**This client was the only SDK transport whose wire protocol changed as soon as the endpoint became
+`https`** — exactly the TLS path E16 recorded as untested. Fixed in `feb0f8247b0`: `PROTOCOL` decides
+when the explicit flag is unset, and the fallback is pinned to HTTP/1.1. TLS failure unwrapping was
+broadened from `SSLHandshakeException` to any `SSLException` at the same time, since a name mismatch
+arrives as `SSLPeerUnverifiedException` and is equally a certificate problem.
+
+One conformance test was weakened as a consequence, documented on the override: smithy's HTTP/1.1
+connect path keeps only the last address's failure, so on a host resolving to both `::1` and
+`127.0.0.1` the surviving cause can be a connection failure rather than the certificate failure. The
+request still fails closed; only the exception type is less specific.

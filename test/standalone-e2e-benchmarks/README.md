@@ -336,6 +336,15 @@ structurally identical data.
 ```
 --port N            port for the auto-launched mock server (default: 19080)
 --no-server         don't launch a server (requires --endpoint)
+--tls               serve HTTPS instead of plaintext. Generates a throwaway certificate whose
+                    SAN names 127.0.0.1, hands the keystore to the server and the truststore to
+                    the client JVM, and points the client at https://. JDK-TLS clients (apache5,
+                    smithy-http) verify a real chain; the CRT client uses native TLS, ignores the
+                    JDK truststore and has no SDK-exposed CA hook, so it is configured trust-all
+                    instead -- which cannot bias per-operation cost, since verification is per
+                    handshake and connections are pooled. The server reports the negotiated cipher
+                    suite so a run cannot silently compare two different ciphers, and the
+                    transport column carries "+tls".
 --profile MODE      jfr | cpu | alloc | wall
 --profile-out DIR   profiler output directory (default: ./profiles)
 --jvm-args "..."    extra JVM args for the client JVM
