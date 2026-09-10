@@ -2936,3 +2936,110 @@ async) with no timing effect claimable at this rig's floor and no regression any
 (~1:4 at best on small ops) puts well under the ±2.5% CPU floor — the flat timing is the expected
 result, not a disappointment. H1+H2 together close out the request-side header representation;
 the remaining strided-store items are the response side and query parameters, both smaller.
+
+## Phase H3 — one-object structure construction: negative result, reverted
+
+Asked for directly as the next item after H1/H2: the sol report's §7.3 "one-object generated response
+construction", i.e. give non-union structures the treatment E14 gave unions. E14 removed a union's
+builder and its megamorphic member dispatch and bought **−16% CPU on batch-get**, so the structure
+counterpart looked like the largest remaining codegen lever.
+
+It is not. The mechanism was half achieved and bought nothing end to end.
+
+- Commits: `f32c3064155` (the scenario — **kept**), `29e342d45e1` (the codegen change),
+  `0b89a6bdd02` (revert)
+- Raw: `paired/host-20260910-1548` (describe-table + small-put control, 7 reps),
+  `host-20260910-1639` (batch-get + small-get, 5 reps),
+  `raw/host-h3-prof-20260910-170716` (alloc + CPU profiles, both arms)
+- Host note: measurements on the restarted c6g.metal (`ec2-34-226-246-228`), same setup.
+
+### The existing scenarios could not have measured this, which is the first finding
+
+A DynamoDB item is a map of `AttributeValue`, and `AttributeValue` is a **union**. So a
+get/put/batch response materializes hundreds of unions and *essentially one structure* — the response
+shape itself. Everything the four item scenarios can say about generated deserialization, E14 already
+said. Nothing in the matrix could resolve a change to the structure path, and running it there would
+have produced a confident-looking zero.
+
+So the phase started by building a scenario that can: **`describe-table`**, still DynamoDB, still a
+canned byte-identical response, but 4,347 bytes containing **45 nested structures and no unions** — a
+`TableDescription`, 6 `AttributeDefinition`, 2 `KeySchemaElement`, a
+`ProvisionedThroughputDescription`, 5 GSIs and 2 LSIs each with their own key schema, projection and
+throughput, plus stream and SSE descriptions. Verified to deserialize rather than silently parse
+empty (collection sizes, nested non-key attributes, per-index throughput, timestamp and SSE enum all
+land). It is deliberately outside `--scenario all`, so no existing collection changes meaning.
+
+The allocation profile confirms the design: **~46–49 builders per operation**, against ~1 for the item
+scenarios.
+
+### What changed, and what the JIT did with it
+
+`$readJson` for a non-union structure drove the member loop in its own frame with `beginStruct`/
+`nextMember` — E14's primitives — writing directly into a frame-local builder and ending in a
+monomorphic `build()`. The builder was kept deliberately, on the argument that once it no longer
+escapes it is free, and that defaults, `SdkField` metadata and the auto-construct sentinels stay in
+one place. All 194 DynamoDB shapes moved to the new path.
+
+That argument was wrong, and the profiles say so precisely:
+
+| | base | candidate | delta |
+|---|---:|---:|---:|
+| itable stub (megamorphic dispatch), % client CPU | 4.51% | 2.84% | **−1.67pp** |
+| `nextMember` frames, % client CPU | 0.00% | 5.08% | **+5.08pp** |
+| `$readJson` frames, % client CPU | 14.62% | 16.66% | +2.04pp |
+| `BuilderImpl` allocation, B/op | 1,953 | 1,848 | −105 (−5%) |
+| total allocation, B/op | 42,159 | 42,959 | +800 (within cross-run noise) |
+
+1. **The dispatch really was removed** — itable stubs fell by a third.
+2. **The builder was not scalar-replaced.** Both arms allocate ~46–49 of them per operation. Removing
+   the consumer boundary was supposed to let escape analysis delete it; it did not, so the premise for
+   keeping the builder instead of generating positional constructors failed.
+3. **The saving was spent driving the loop.** `nextMember` appears at 5.08% of client CPU where the
+   base had none, and `$readJson` frames rise 2.04pp: `readStruct`'s internal loop is simply better at
+   this than a generated caller-driven one calling back into the reader per member.
+
+### Measurement
+
+Whole-call application CPU per operation, paired, concurrency 1:
+
+| client | scenario | base | H3 | delta | spread | wins |
+|--------|----------|-----:|---:|------:|-------:|-----:|
+| v2-sync | describe-table | 131.9 | 132.8 | +0.7% | ±3.0% | 4/7 |
+| v2-async | describe-table | 174.0 | 177.8 | +2.2% † | ±3.3% | 2/7 |
+| v2-sync | small-put (control) | 101.0 | 101.3 | +0.5% | ±5.2% | 5/7 |
+| v2-async | small-put (control) | 147.0 | 145.6 | −0.9% | ±3.7% | 4/7 |
+| v2-sync | batch-get | 329.7 | 328.9 | −0.2% | ±1.1% | 2/5 |
+
+† async runs flagged not-steady; latency agrees in direction (+1.5%, 2/7).
+
+The two independent quiescence-warmed profiling runs agree: 131.4 → 133.8 µs/op, both
+`steady_state=true`. Nothing here is outside the floor, and every sign that is resolvable points the
+wrong way.
+
+### Reverted, and why the rest of Option B was not attempted
+
+The obvious next move is to finish the job — generate positional constructors so the builder really
+disappears. The numbers say don't bother: the builders are **1,848 B/op of 42,159**, i.e. 4.4% of
+allocation on a response deliberately built to maximize them. At this project's measured
+allocation→CPU conversion (~1:4 on small operations, worse on large ones) that is ~1% of the call,
+against a ±3% floor — unmeasurable even if perfectly executed, and it would cost a positional
+constructor per generated shape plus special handling for response shapes, which need
+`super(builder)`.
+
+**The sol report's sizing of §7.3 was drawn from the pre-E4, pre-E14 profile**, where the generated
+model layer was 332 KB/op on batch-get and "a builder-to-immutable transition for every nested value"
+was a real cost. E4 (collection adoption) and E14 (direct union construction) already collected that.
+What remains is ~40 bytes per structure, and DynamoDB responses contain few structures.
+
+### What is kept
+
+- `describe-table`, which is independently valuable: the project had measured four shapes of one
+  protocol, all union-dominated, and this is the first scenario that exercises structure
+  deserialization at all. Any future codegen read-path work should be measured here.
+- The finding that **escape analysis does not remove a generated builder even when the consumer
+  boundary is gone.** That kills the "keep the builder, it's free once it doesn't escape" design for
+  any future attempt: the only version of one-object construction worth building is the one that
+  never allocates a builder.
+- The corollary for method choice: **removing a megamorphic dispatch is not automatically a win.** Here
+  the replacement cost more than the dispatch, and only an e2e paired measurement could show it — the
+  same lesson E14 taught in the opposite direction, where a component benchmark was blind to the gain.

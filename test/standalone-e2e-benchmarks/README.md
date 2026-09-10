@@ -307,7 +307,13 @@ structurally identical data.
 
 ```
 --client X            SDK under test (see the client table above; required)
---scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
+--scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all).
+                      describe-table is a fifth scenario, outside "all": a structure-heavy
+                      read (45 nested structures per response, no unions) implemented by the
+                      V1 and V2 arms only. The item scenarios are union-dominated -- an item
+                      is a map of AttributeValue, which is a union -- so this is the only
+                      scenario that exercises generated *structure* deserialization. Request
+                      it by name.
 --iterations N        measured operations per scenario (default: 10000)
 --warmup N            unmeasured warmup operations per scenario (default: min(2000, iterations))
 --concurrency N       operations kept in flight (default: 2)

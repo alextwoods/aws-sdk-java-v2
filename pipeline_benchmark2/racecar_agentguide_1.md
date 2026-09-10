@@ -128,7 +128,7 @@ cd test/standalone-e2e-benchmarks
 ### 4.2 The bare-metal host (where real numbers come from)
 
 ```bash
-ssh -i /Users/alexwoo/alexwoo-ec2-us-east-1.pem ec2-user@ec2-52-87-223-88.compute-1.amazonaws.com
+ssh -i /Users/alexwoo/alexwoo-ec2-us-east-1.pem ec2-user@ec2-34-226-246-228.compute-1.amazonaws.com
 ```
 
 (The original host was terminated; the address above is the reprovisioned replacement,
@@ -145,7 +145,7 @@ Driving it from the laptop (never hand-roll ssh/scp from the interactive shell â
 targets; the bash scripts work):
 
 ```bash
-export RACECAR_REMOTE_TARGET=ec2-user@ec2-52-87-223-88.compute-1.amazonaws.com
+export RACECAR_REMOTE_TARGET=ec2-user@ec2-34-226-246-228.compute-1.amazonaws.com
 export RACECAR_REMOTE_KEY=/Users/alexwoo/alexwoo-ec2-us-east-1.pem
 ./scripts/deploy-remote.sh --target "$RACECAR_REMOTE_TARGET" --key "$RACECAR_REMOTE_KEY" \
     --jar ../../pipeline_benchmark2/jars/racecar-phaseE2-<sha>.jar     # scripts always refreshed
