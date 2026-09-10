@@ -98,8 +98,11 @@ if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
     #
     # The repo's Maven wrapper, not `mvn`: the wrapper is 3.9.5 and the system mvn on the benchmark
     # host is 3.0.5, too old for this repo's plugins.
+    # s3 is in the set for the streaming scenarios, and it must be built from the same tree as
+    # dynamodb: the two share the bridge and the codegen plugin, so installing one without the other
+    # is how a jar ends up with a bridged S3 and an unbridged DynamoDB.
     (cd "$REPO" && "$REPO/mvnw" clean install \
-        -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,:codegen-maven-plugin' \
+        -pl ':dynamodb,:s3,:apache-client,:apache5-client,:aws-crt-client,:codegen-maven-plugin' \
         --am -P quick -Dpmd.skip=true -Dmaven.test.skip=true -q)
 fi
 

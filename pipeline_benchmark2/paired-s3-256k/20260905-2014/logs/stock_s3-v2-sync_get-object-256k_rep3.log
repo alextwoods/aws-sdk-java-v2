@@ -1,0 +1,8 @@
+READY port=19080 pid=5881 threads=200 selectors=4 tls=true (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B)
+=== standalone-e2e-benchmark client=s3-v2-sync transport=apache5-tls scenarios=get-object-256k iterations=20,000 warmup=10,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=https://127.0.0.1:19080 metrics=off pid=5969
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=s3-stock commit=697d4f08734 sdkCommit=published-2.46.10 branch=smithy-java-bridge-alexwoo-full dirty=true built=2026-09-05T19:17:38Z sdkV2=2.46.10 sdkV1=1.12.797 smithy=1.6.1
+=== warmup get-object-256k: ops=42,500 wall=27.6s jit=15060ms settled=true (compilation quiet for 3000ms)
+=== WARNING get-object-256k: 288 ms of JIT compilation inside the measured window (2.8% of wall); code was still changing, so per-operation numbers are not steady-state
+RESULT client=s3-v2-sync transport=apache5-tls scenario=get-object-256k iterations=20000 concurrency=1 async_mode=n/a wall_ms=10452 ops_per_wall_sec=1913.4 cpu_ms=9640 cpu_user_ms=6760 cpu_sys_ms=2880 ops_per_cpu_sec=2074.7 ops_per_user_cpu_sec=2958.6 cpu_us_per_op=482.0 app_cpu_ms=9238 app_cpu_us_per_op=461.9 unattributed_ms=402 avg_us_per_op=522.6 mean_lat_us=521.8 p50_us=491.0 p90_us=637.6 p99_us=918.1 p999_us=1377.3 max_us=4882.9 jit_ms=288 gc_ms=38 gc_count=72 steady_state=false warmup_ops=42500 warmup_settled=true server_cpu_ms=10520 server_requests=20000
+DONE total_wall_s=38.6

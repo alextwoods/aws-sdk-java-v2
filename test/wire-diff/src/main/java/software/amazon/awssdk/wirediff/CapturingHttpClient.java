@@ -34,8 +34,13 @@ public final class CapturingHttpClient implements SdkHttpClient {
     private final String responseContentType;
 
     public CapturingHttpClient(int responseStatus, String responseBody, String responseContentType) {
+        this(responseStatus, responseBody.getBytes(StandardCharsets.UTF_8), responseContentType);
+    }
+
+    /** For a response body that is not text: an object's bytes, rather than an XML document. */
+    public CapturingHttpClient(int responseStatus, byte[] responseBody, String responseContentType) {
         this.responseStatus = responseStatus;
-        this.responseBody = responseBody.getBytes(StandardCharsets.UTF_8);
+        this.responseBody = responseBody;
         this.responseContentType = responseContentType;
     }
 

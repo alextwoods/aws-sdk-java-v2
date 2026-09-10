@@ -16,6 +16,8 @@
 package software.amazon.awssdk.codegen.poet.client;
 
 import static javax.lang.model.element.Modifier.PRIVATE;
+import static software.amazon.awssdk.codegen.internal.Constant.SYNC_STREAMING_INPUT_PARAM;
+import static software.amazon.awssdk.codegen.internal.Constant.SYNC_STREAMING_OUTPUT_PARAM;
 import static software.amazon.awssdk.codegen.poet.PoetUtils.classNameFromFqcn;
 
 import com.squareup.javapoet.ClassName;
@@ -62,6 +64,13 @@ import software.amazon.awssdk.utils.Validate;
 
 public final class ClientClassUtils {
 
+    /**
+     * Referenced by name rather than by class so that the code generator does not need a compile-time
+     * dependency on the bridge, which depends on the generated code's runtime in turn.
+     */
+    private static final ClassName STREAMING_INVOKER =
+        ClassName.get("software.amazon.awssdk.bridge.smithyjava.streaming", "V2StreamingInvoker");
+
     private ClientClassUtils() {
     }
 
@@ -69,16 +78,17 @@ public final class ClientClassUtils {
      * Whether this operation's sync implementation delegates to the smithy-java pipeline instead of the
      * v2 {@code ClientExecutionParams} pipeline.
      *
-     * <p>Streaming operations are excluded: the bridge has no equivalent of {@code RequestBody} /
-     * {@code ResponseTransformer} yet, so they keep the v2 path. Both the method body in
-     * {@code SyncClientClass} and the execution handler in the protocol specs must agree on this,
-     * which is why the predicate lives here.
+     * <p>Both the method body in {@code SyncClientClass} and the execution handler in the protocol specs
+     * must agree on this, which is why the predicate lives here.
+     *
+     * <p>Streaming operations are included; see {@code V2StreamingInvoker}. Event streams are not, but
+     * they are already filtered out before this is reached, in {@code SyncClientClass#operations}.
      */
     public static boolean usesSmithyPipeline(IntermediateModel model, OperationModel opModel) {
         return model.getCustomizationConfig() != null
                && model.getCustomizationConfig().isGenerateSmithyJavaSerde()
-               && !opModel.hasStreamingInput()
-               && !opModel.hasStreamingOutput();
+               && !opModel.hasEventStreamInput()
+               && !opModel.hasEventStreamOutput();
     }
 
     /**
@@ -90,16 +100,36 @@ public final class ClientClassUtils {
      * service-specific is emitted per operation. Identical for every protocol — the protocol only
      * decides the wire format, which the {@code ClientProtocol} passed at client construction owns —
      * so it lives here rather than in each {@code ProtocolSpec}.
+     *
+     * <p>A streaming operation goes through {@code V2StreamingInvoker} instead, which threads the
+     * caller's {@code RequestBody} and {@code ResponseTransformer} past the schema layer. It has to be a
+     * separate entry point rather than an extra argument to {@code invoke}, because the body is not part
+     * of the shape: v2's generator strips a streaming member from the POJO, so there is nothing for the
+     * serializer to write.
      */
     public static CodeBlock smithyJavaExecutionHandler(IntermediateModel model, OperationModel opModel) {
         String operationsPackage = model.getMetadata().getFullModelPackageName().replace(".model", ".operations");
         ClassName operationClass = ClassName.get(operationsPackage, opModel.getOperationName() + "Operation");
+        String input = opModel.getInput().getVariableName();
 
-        return CodeBlock.builder()
-                        .add("\n\n")
-                        .addStatement("return smithyClient.invoke($L, $T.instance())",
-                                      opModel.getInput().getVariableName(), operationClass)
-                        .build();
+        CodeBlock.Builder body = CodeBlock.builder().add("\n\n");
+
+        if (opModel.hasStreamingOutput()) {
+            // The request body argument is null for an operation that only streams its response; the
+            // invoker takes it either way so that the both-directions case needs no third overload.
+            return body.addStatement("return $T.invoke(smithyClient, $L, $T.instance(), $L, $L)",
+                                     STREAMING_INVOKER, input, operationClass,
+                                     opModel.hasStreamingInput() ? SYNC_STREAMING_INPUT_PARAM : "null",
+                                     SYNC_STREAMING_OUTPUT_PARAM)
+                       .build();
+        }
+        if (opModel.hasStreamingInput()) {
+            return body.addStatement("return $T.invoke(smithyClient, $L, $T.instance(), $L)",
+                                     STREAMING_INVOKER, input, operationClass, SYNC_STREAMING_INPUT_PARAM)
+                       .build();
+        }
+        return body.addStatement("return smithyClient.invoke($L, $T.instance())", input, operationClass)
+                   .build();
     }
 
     static MethodSpec consumerBuilderVariant(MethodSpec spec, String javadoc) {

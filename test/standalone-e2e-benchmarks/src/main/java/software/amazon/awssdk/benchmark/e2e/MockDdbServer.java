@@ -8,12 +8,18 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.eclipse.jetty.http.HttpVersion;
 import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.Request;
+import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 /**
@@ -33,6 +39,29 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool;
  * <p>The request body is read fully and discarded (realistic socket behavior, no parsing). Requests
  * without an {@code X-Amz-Target} header get {@code 200 "ok"} — used by the launch scripts as a
  * readiness probe ({@code GET /ping}). Unknown targets get a 400 so client-side mistakes fail fast.
+ *
+ * <h2>S3 routes</h2>
+ *
+ * <p>The same process also answers the S3 streaming scenarios, routed on the path rather than on a
+ * header ({@code rest-xml} has no operation header):
+ *
+ * <pre>
+ *   PUT /benchmark-bucket/objects/&lt;n&gt;  -&gt; drain the body, 200 with an ETag and no body
+ *   GET /benchmark-bucket/objects/&lt;n&gt;  -&gt; 200 with &lt;n&gt; bytes of application/octet-stream
+ * </pre>
+ *
+ * <p>One server for both services, because a paired A/B is only sound if both arms talk to the same
+ * server process started the same way; a second server class would be a second thing to keep identical.
+ * The object length comes from the path ({@link S3Objects}), so no scenario needs to reconfigure it.
+ *
+ * <p>Fault injection applies to DynamoDB operations only. The armed faults are DynamoDB JSON error
+ * documents, and {@code ErrorBehaviorProbe} — the only thing that arms them — is a DynamoDB probe.
+ *
+ * <h2>TLS</h2>
+ *
+ * <p>{@code --tls} makes the listener HTTPS, using the committed key pair in {@link BenchmarkTls}.
+ * Required for the S3 {@code PutObject} scenarios and harmless for the rest; see {@link BenchmarkTls}
+ * for why a streaming body cannot be compared over plain HTTP.
  *
  * <p>{@code GET /stats} reports server-side counters as {@code key=value} lines. Once the client
  * runs operations concurrently, the server stops being free: it shares the host's cores, so a
@@ -59,7 +88,7 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool;
  * is the point — for a transport failure the server's count is the <em>only</em> evidence of how many
  * times the client tried, since the exception it ends up with carries no attempt number.
  *
- * <p>Usage: {@code MockDdbServer [--port N] [--threads N]} (default port {@value #DEFAULT_PORT}).
+ * <p>Usage: {@code MockDdbServer [--port N] [--threads N] [--tls]} (default port {@value #DEFAULT_PORT}).
  * Prints {@code READY port=N} on stdout once the listener is up, then runs until killed.
  */
 public final class MockDdbServer {
@@ -82,11 +111,14 @@ public final class MockDdbServer {
     public static void main(String[] args) throws Exception {
         int port = DEFAULT_PORT;
         int maxThreads = DEFAULT_MAX_THREADS;
+        boolean tls = false;
         for (int i = 0; i < args.length; i++) {
             if ("--port".equals(args[i]) && i + 1 < args.length) {
                 port = Integer.parseInt(args[++i]);
             } else if ("--threads".equals(args[i]) && i + 1 < args.length) {
                 maxThreads = Integer.parseInt(args[++i]);
+            } else if ("--tls".equals(args[i])) {
+                tls = true;
             }
         }
 
@@ -99,7 +131,7 @@ public final class MockDdbServer {
         QueuedThreadPool pool = new QueuedThreadPool(maxThreads, 8);
         pool.setName("mockddb");
         Server server = new Server(pool);
-        ServerConnector connector = new ServerConnector(server);
+        ServerConnector connector = tls ? tlsConnector(server) : new ServerConnector(server);
         connector.setPort(port);
         server.setConnectors(new Connector[] {connector});
         ServletContextHandler context = new ServletContextHandler(server, "/", ServletContextHandler.NO_SESSIONS);
@@ -107,10 +139,10 @@ public final class MockDdbServer {
         server.setHandler(context);
         server.start();
 
-        System.out.printf("READY port=%d pid=%d threads=%d selectors=%d"
+        System.out.printf("READY port=%d pid=%d threads=%d selectors=%d tls=%b"
                           + " (GetItem=%dB PutItem=%dB BatchGetItem=%dB BatchWriteItem=%dB)%n",
                           port, ProcessHandle.current().pid(), maxThreads,
-                          connector.getSelectorManager().getSelectorCount(),
+                          connector.getSelectorManager().getSelectorCount(), tls,
                           responses.get(TARGET_PREFIX + "GetItem").length,
                           responses.get(TARGET_PREFIX + "PutItem").length,
                           responses.get(TARGET_PREFIX + "BatchGetItem").length,
@@ -123,8 +155,38 @@ public final class MockDdbServer {
         return s.getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * An HTTPS connector over the committed benchmark key pair.
+     *
+     * <p>HTTP/1.1 only, matching the plain connector: both SDK sync transports speak 1.1, and letting
+     * ALPN negotiate anything else here would make the protocol a hidden variable between runs.
+     */
+    private static ServerConnector tlsConnector(Server server) {
+        SslContextFactory.Server ssl = new SslContextFactory.Server();
+        ssl.setKeyStore(BenchmarkTls.keyStore());
+        ssl.setKeyStorePassword(BenchmarkTls.PASSWORD);
+        ssl.setKeyManagerPassword(BenchmarkTls.PASSWORD);
+        HttpConfiguration https = new HttpConfiguration();
+        // Marks the request secure and fills in the TLS attributes. SNI is not checked either way: the
+        // client connects to 127.0.0.1, so it sends no SNI extension at all.
+        https.addCustomizer(new SecureRequestCustomizer());
+        return new ServerConnector(server,
+                                   new SslConnectionFactory(ssl, HttpVersion.HTTP_1_1.asString()),
+                                   new HttpConnectionFactory(https));
+    }
+
     private static final class DdbServlet extends HttpServlet {
         private static final byte[] OK = "ok".getBytes(StandardCharsets.UTF_8);
+        /** Every S3 response body is a prefix of this, so no scenario allocates one. */
+        private static final byte[] OBJECT_SOURCE = S3Objects.payload(S3Objects.MAX_BYTES);
+        /**
+         * Per-thread drain buffer for streamed request bodies. Not {@code readAllBytes()}: an 8 MiB
+         * {@code PutObject} would allocate 8 MiB per request in the server, and a server in GC arrives
+         * at the client as latency it will attribute to the SDK.
+         */
+        private static final ThreadLocal<byte[]> DRAIN_BUFFER = ThreadLocal.withInitial(() -> new byte[64 * 1024]);
+        private static final String ETAG = "\"9a0364b9e99bb480dd25e1f0284c8555\"";
+        private static final String REQUEST_ID = "BENCHMARK00000000";
         private final Map<String, byte[]> responses;
         private final QueuedThreadPool pool;
         private final CpuTimeSource cpuSource;
@@ -156,6 +218,12 @@ public final class MockDdbServer {
             }
             if (FAULTS_PATH.equals(req.getRequestURI())) {
                 armFault(req, resp);
+                return;
+            }
+
+            int objectLength = S3Objects.lengthFromPath(req.getRequestURI());
+            if (objectLength >= 0) {
+                serveObject(req, resp, objectLength);
                 return;
             }
 
@@ -220,6 +288,38 @@ public final class MockDdbServer {
             resp.setContentType(CONTENT_TYPE);
             resp.setContentLength(body.length);
             resp.getOutputStream().write(body);
+        }
+
+        /**
+         * {@code GET} or {@code PUT} of {@code /benchmark-bucket/objects/<n>}.
+         *
+         * <p>The request body is always drained, even on a {@code GET} where there is none: reading to
+         * EOF is what lets Jetty reuse the connection, and it is also what answers an
+         * {@code Expect: 100-continue} — which v2's {@code StreamingRequestInterceptor} sends on a
+         * {@code PutObject} above 1 MiB, on both arms.
+         */
+        private void serveObject(HttpServletRequest req, HttpServletResponse resp, int length)
+                throws IOException {
+            byte[] scratch = DRAIN_BUFFER.get();
+            try (java.io.InputStream in = req.getInputStream()) {
+                while (in.read(scratch) >= 0) {
+                    // Discarded: the benchmark measures moving the bytes, not storing them.
+                }
+            }
+
+            requests.incrementAndGet();
+
+            resp.setStatus(200);
+            resp.setHeader("ETag", ETAG);
+            resp.setHeader("x-amz-request-id", REQUEST_ID);
+            if ("GET".equals(req.getMethod())) {
+                resp.setContentType("application/octet-stream");
+                resp.setContentLength(length);
+                resp.getOutputStream().write(OBJECT_SOURCE, 0, length);
+            } else {
+                // PutObject and UploadPart answer with headers only, as S3 does.
+                resp.setContentLength(0);
+            }
         }
 
         /**

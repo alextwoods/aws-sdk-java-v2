@@ -1,0 +1,9 @@
+READY port=19080 pid=25712 threads=200 selectors=4 tls=true (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B)
+=== standalone-e2e-benchmark client=s3-v2-sync transport=apache5-tls scenarios=get-object-8m iterations=1,000 warmup=250/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=https://127.0.0.1:19080 metrics=off pid=25783
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=s3-stock commit=697d4f08734 sdkCommit=published-2.46.10 branch=smithy-java-bridge-alexwoo-full dirty=true built=2026-09-05T19:17:38Z sdkV2=2.46.10 sdkV1=1.12.797 smithy=1.6.1
+=== warmup get-object-8m: ops=4,750 wall=60.4s jit=6144ms settled=false (hit --warmup-max-seconds 60 while still compiling)
+=== WARNING get-object-8m: JVM had not settled; per-operation CPU from this run is not steady-state
+=== WARNING get-object-8m: 1851 ms of JIT compilation inside the measured window (14.9% of wall); code was still changing, so per-operation numbers are not steady-state
+RESULT client=s3-v2-sync transport=apache5-tls scenario=get-object-8m iterations=1000 concurrency=1 async_mode=n/a wall_ms=12428 ops_per_wall_sec=80.5 cpu_ms=12890 cpu_user_ms=9090 cpu_sys_ms=3800 ops_per_cpu_sec=77.6 ops_per_user_cpu_sec=110.0 cpu_us_per_op=12890.0 app_cpu_ms=10984 app_cpu_us_per_op=10984.2 unattributed_ms=1906 avg_us_per_op=12428.0 mean_lat_us=12425.9 p50_us=11853.2 p90_us=14916.9 p99_us=17138.6 p999_us=28641.3 max_us=28641.3 jit_ms=1851 gc_ms=18 gc_count=26 steady_state=false warmup_ops=4750 warmup_settled=false server_cpu_ms=13640 server_requests=1000
+DONE total_wall_s=73.4

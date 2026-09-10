@@ -7,6 +7,10 @@
 # Launcher-only options (everything else is passed through to BenchmarkRunner):
 #   --port N              port for the auto-launched mock server (default: 19080)
 #   --no-server           do not launch a server; requires --endpoint pointing at a running one
+#   --tls / --no-tls      serve HTTPS instead of HTTP. Default: on for the S3 *-object scenarios,
+#                         off for everything else. The S3 streaming scenarios cannot be compared
+#                         over plain HTTP (see BenchmarkTls); DynamoDB is measured without TLS so
+#                         the number stays about the SDK rather than about cipher suites.
 #   --profile MODE        jfr | cpu | alloc | wall  (cpu/alloc/wall need async-profiler)
 #   --profile-format FMT  html | jfr — output format for cpu/alloc/wall modes (default: html)
 #   --profile-file PATH   exact profiler output path (default: <profile-out>/<client>-<mode>-<ts>.<ext>)
@@ -33,11 +37,16 @@ PIN_CLIENT=""
 PIN_SERVER=""
 RUNNER_ARGS=()
 CLIENT="client"
+SCENARIO=""
+TLS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --port)        PORT="$2"; shift 2 ;;
         --no-server)   LAUNCH_SERVER=0; shift ;;
+        --tls)         TLS=1; shift ;;
+        --no-tls)      TLS=0; shift ;;
+        --scenario)    SCENARIO="$2"; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         --profile)        PROFILE="$2"; shift 2 ;;
         --profile-format) PROFILE_FORMAT="$2"; shift 2 ;;
         --profile-file)   PROFILE_FILE="$2"; shift 2 ;;
@@ -56,6 +65,12 @@ done
 if [[ $LAUNCH_SERVER -eq 0 && -z "$ENDPOINT" ]]; then
     echo "error: --no-server requires --endpoint" >&2
     exit 2
+fi
+
+# TLS defaults from the scenario, so the S3 scenarios work through every script that shells out to
+# this one (paired-ab.sh, collect.sh, concurrency-sweep.sh) without each having to learn a new flag.
+if [[ -z "$TLS" ]]; then
+    if [[ "$SCENARIO" == *-object-* ]]; then TLS=1; else TLS=0; fi
 fi
 
 # ---- CPU pinning ----
@@ -119,12 +134,19 @@ if [[ $LAUNCH_SERVER -eq 1 ]]; then
     SERVER_LOG="$(mktemp "${TMPDIR:-/tmp}/mockddb.XXXXXXXX.log")"
     # --enable-native-access silences the JNA warning oshi triggers when the server reads its own
     # CPU for /stats. Four lines per server start is four lines times every run in a collection.
+    SERVER_TLS_ARGS=()
+    SCHEME="http"
+    if [[ "$TLS" == "1" ]]; then
+        SERVER_TLS_ARGS+=(--tls)
+        SCHEME="https"
+    fi
     ${SERVER_PREFIX[@]+"${SERVER_PREFIX[@]}"} \
         java --enable-native-access=ALL-UNNAMED ${SERVER_JVM_ARGS:+$SERVER_JVM_ARGS} \
         -cp "$CP" \
-        software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" > "$SERVER_LOG" 2>&1 &
+        software.amazon.awssdk.benchmark.e2e.MockDdbServer --port "$PORT" \
+        ${SERVER_TLS_ARGS[@]+"${SERVER_TLS_ARGS[@]}"} > "$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
-    ENDPOINT="http://127.0.0.1:$PORT"
+    ENDPOINT="$SCHEME://127.0.0.1:$PORT"
     RUNNER_ARGS+=(--endpoint "$ENDPOINT")
 
     server_failed() {

@@ -1,13 +1,15 @@
 # V2-on-smithy-java: compatibility issue ledger
 
-Branch: `smithy-java-bridge-alexwoo-full`. Scope: **DynamoDB (awsJson) and S3 (rest-xml), sync
-client, non-streaming operations.** smithy-java 1.6.1 / smithy 1.73.0 / AWS SDK for Java v2
-2.46.11-SNAPSHOT.
+Branch: `smithy-java-bridge-alexwoo-full`. Scope: **DynamoDB (awsJson) and S3 (rest-xml), sync client**,
+covering non-streaming operations (sections 1-12), sync streaming (13) and multipart through a sync-backed
+async façade (14). smithy-java 1.6.1 / smithy 1.73.0 / AWS SDK for Java v2 2.46.11-SNAPSHOT.
 
 S3 findings (section 12) come from `test/wire-diff`, which captures the request at the
 `SdkHttpClient` boundary — after marshalling, endpoint resolution and signing — and diffs it against a
 golden capture from a stock build. Anything in section 12 quoted as a wire snippet was observed, not
-reasoned about.
+reasoned about. Sections 13 and 14 come from the behavioral tests in the same module
+(`S3StreamingTest`, `S3MultipartTest`), which assert on bytes moved and errors raised rather than on
+request text.
 
 This is an **exhaustive inventory of behavioral differences**, not a fix list. The goal of the
 prototype is to learn where a smithy-java-based pipeline cannot reproduce v2 semantics, and what
@@ -855,11 +857,13 @@ ledger. This branch builds at `jre.version=21`.
 `DynamoDbAsyncClient`, are untouched. smithy-java's async client path exists but the transport
 bridge here is sync-only.
 
-### 10.3 out of scope — streaming and event streams
+### 10.3 partly fixed — streaming and event streams
 
-Operations with streaming input or output fall back to the v2 pipeline
-(`JsonProtocolSpec.executionHandler` only diverts non-streaming operations). No DynamoDB operation
-streams, so the whole API is on the smithy path.
+Sync streaming input and output are now on the smithy path; see section 13. `usesSmithyPipeline` still
+excludes **event streams** in both directions, which remain on the v2 pipeline: they need a duplex
+frame codec and `@streaming` union handling, neither of which the bridge attempts.
+
+Async streaming is out of scope with the rest of async (10.2).
 
 ### 10.4 prototype-only codegen shortcuts
 
@@ -1090,11 +1094,15 @@ stock v2:  x-amz-content-sha256: UNSIGNED-PAYLOAD
 bridge:    x-amz-content-sha256: aea5b2b0b6c6ca0468d92393adf0455d6e6343683dddedd81ab2c3837ea1d186
 ```
 
-Both are accepted, so this is invisible functionally — and it is the **single most important finding
-for streaming**. A payload hash cannot be computed without reading the whole body, so on this path a
-`PutObject` of a 5 GiB file either buffers it or reads the stream twice. Whether smithy-java can be
-told to send `UNSIGNED-PAYLOAD` for S3 is the gating question for P1, ahead of any `DataStream` work,
-because if it cannot then streaming PUT is not merely slower than v2 but bounded by heap.
+Both are accepted, so this is invisible functionally, but the cost is not: the bridge reads the body to
+hash it where v2 does not.
+
+**Now scoped to non-streaming operations only.** Streaming operations send `UNSIGNED-PAYLOAD`, because
+otherwise they could not stream at all; 13.1 has the mechanism. So this entry is a per-request CPU and
+allocation cost on small request bodies, not the heap ceiling it was originally feared to be. Making
+non-streaming requests match v2 as well would mean setting the same header for every S3 operation,
+which is a one-line change to the config translator and has not been made because nothing here needs
+it.
 
 ### 12.9 `MISSING` — request checksums (`@httpChecksum`)
 
@@ -1189,6 +1197,296 @@ bridge-specific work.
 - Nested XML structures and lists, once 12.1-12.3 were fixed: `Tagging`, `CompletedMultipartUpload`,
   and the `ListObjectsV2` response all round-trip.
 
+## 13. Sync streaming (S3 GetObject / PutObject / UploadPart)
+
+Scope: `S3Client.putObject(request, RequestBody)`, `getObject(request, ResponseTransformer)`, and
+`uploadPart`, on the smithy pipeline. Verified by `test/wire-diff` — `S3WireDiffTest` for the request
+bytes against stock v2 and `S3StreamingTest` for behavior a wire diff cannot see. `put-object` and
+`upload-part` are **byte-identical** to stock v2 modulo the section 12 normalizations; `get-object`
+differs only by 13.6.
+
+### 13.1 fixed (was the gating question) — a streaming body cannot live in the shape, so it travels beside it
+
+This closes open question 7, and the answer arrived with a complication that mattered more than the
+question.
+
+**The signer.** `SigV4Signer` resolves the payload hash in three steps: `SigV4Settings.PAYLOAD_HASH_OVERRIDE`
+from the context, then an `x-amz-content-sha256` header that is already on the request, then hashing the
+body. Step three is unusable for streaming at any size — an unknown-length body throws
+`UnsupportedOperationException("Cannot SigV4-sign a body whose length is unknown without
+UNSIGNED-PAYLOAD or chunked signing, neither of which is implemented yet.")`, and a known-length body
+calls `DataStream.asByteBuffer()`, pulling the whole object into the heap. Either of the first two steps
+avoids it, so streaming is possible; `V2StreamingBridge` uses the header, which needs no context
+plumbing and is what v2's S3 signer sends anyway.
+
+**The complication.** v2's generator *removes* a streaming member from the shape: `PutObjectRequest` has
+no `Body` field, `GetObjectResponse` has no `Body` field, because v2 passes the body beside the request
+and the response body to a `ResponseTransformer`. So `SdkSchemaFactory` has no `SdkField` to translate
+into an `@httpPayload @streaming` member, and synthesizing one would not help — there is no value on the
+POJO for it to serialize. The body has to travel out of band, exactly as it does in v2.
+
+It does so in a per-call `RequestOverrideConfig`: the body (or a holder for the response body) goes in
+the call context, and the interceptor that applies it is added to that call only. A non-streaming
+operation never walks past it, so the DynamoDB numbers in the benchmark section are unaffected.
+
+`V2DataStreams` adapts both directions without copying: v2 `RequestBody` → a `DataStream` over its
+`ContentStreamProvider` (reporting `isReplayable() == true`, which is what lets a retry re-send it), and
+`DataStream` → `AbortableInputStream` for the response.
+
+Confirmed by `S3StreamingTest.streamsBodiesLargerThanTheHeap`, which moves 1 GiB in each direction under
+a 256 MiB heap and compares position-dependent CRCs, so a pipeline that buffered, truncated, or
+reordered would fail rather than pass on a large host.
+
+### 13.2 `MISSING` — chunked (`aws-chunked`) signing; the bridge refuses to stream over plain HTTP
+
+Over HTTPS, sending `UNSIGNED-PAYLOAD` is what v2 does. Over plain HTTP v2 does **not**: it switches to
+chunked signing so the body stays authenticated on an unencrypted connection. `AwsChunkedDataStream`
+exists in `aws-sigv4-1.6.1`, but nothing wires it into the signer, so the bridge has no equivalent.
+
+The bridge therefore refuses, with a message naming the reason, rather than silently downgrading the
+request's integrity protection to "signed headers only". Asserted by
+`S3StreamingTest.refusesToStreamOverPlainHttp`. A caller who uses an `http://` endpoint override — local
+testing against MinIO, or a proxy — works on v2 and fails here.
+
+The check runs at `readAfterSigning`, not with the rest of the streaming setup, because the endpoint is
+not on the request any earlier: `ClientPipeline` calls `modifyBeforeSigning` and only then
+`setServiceEndpoint`, so `uri().getScheme()` is null in every hook before signing. This is the same
+ordering problem as 2.1 and open question 4, reached from a different direction. Nothing is transmitted
+either way, so the caller sees the same refusal; the only cost is one wasted signature.
+
+### 13.3 `MISSING` — trailing request checksums, and what that costs the wire diff
+
+v2 defaults `requestChecksumCalculation` to `WHEN_SUPPORTED`, and for a streaming `PutObject` that is not
+a header: it adds `x-amz-checksum-crc32`, `content-encoding: aws-chunked` and
+`x-amz-decoded-content-length`, and **rewrites the body into chunk framing with the checksum in a
+trailer**. The bridge computes no checksums at all (12.9), so it sends the raw bytes.
+
+This is 12.9 again, but the streaming form is worse in two ways. Functionally, the framing is part of the
+protocol: a service that expects `aws-chunked` gets a body that is not. And methodologically, it makes a
+naive golden diff useless — comparing chunk framing against raw bytes reports one enormous difference
+that says nothing about the HTTP binding.
+
+So `S3Cases.client` sets `requestChecksumCalculation(WHEN_REQUIRED)` on **both** arms. That is a
+precondition of the harness, not a fix: with v2's default, `put-object` and `upload-part` do not match
+and cannot be made to match without implementing trailing checksums. Anyone reading a green
+`S3WireDiffTest` should read it as "the binding matches, with checksums off".
+
+### 13.4 `DEGRADED` — the response transformer runs outside the retry loop
+
+In v2, `ResponseTransformer.transform` runs inside the retry loop, so a `RetryableException` thrown from
+it — a truncated body, a checksum mismatch the caller detects — retries the whole call. Here the
+transformer runs after `Client#call` returns, because the response body is handed out through the call
+context and there is no smithy hook that owns "the caller has finished reading the body". Retries are
+over by then, and the exception propagates.
+
+`V2StreamingInvoker.transform` otherwise mirrors `BaseSyncClientHandler.transformResponse`: interrupt
+checks either side, `RetryableException`/`AbortedException` rethrown as-is, `InterruptedException`
+converted to `AbortedException` with the interrupt flag restored, everything else wrapped in
+`NonRetryableException`. It also closes the body unless the transformer asked for the connection to be
+left open (`toInputStream()`), and closes it regardless if the transformer threw — a transformer that
+failed partway is not going to close what it never finished reading.
+
+Related and smaller: `DataStream` has no abort concept, so `AbortableInputStream.abort()` maps to
+`close()`. For the case that matters the stream underneath is v2's own abortable stream, handed through
+by the transport bridge, so the connection is released; for any other `DataStream` implementation the
+abort is a close.
+
+### 13.5 fixed (was `DEGRADED`) — bridged v2 interceptors could not see the streaming body
+
+The first wire diff of `put-object` showed the bridge sending `expect: 100-continue` where stock v2 did
+not, and the cause was two independent omissions, both of which are now fixed:
+
+1. **The body was attached too late.** `V2InterceptorBridge` runs v2's `modifyHttpRequest` at
+   `modifyBeforeSigning`, and the streaming bridge originally attached the body at the same hook, so
+   whether a v2 interceptor saw a `Content-Length` came down to interceptor ordering. S3's
+   `StreamingRequestInterceptor` decides whether to send `Expect: 100-continue` from exactly that header,
+   and its no-header fallback is `.orElse(true)`. The body is now attached at `modifyBeforeRetryLoop`,
+   which is before every `modifyBeforeSigning`, so the ordering question does not arise.
+2. **`SERVICE_CONFIG` was absent from the bridged execution attributes.** Omitting it does not disable
+   the interceptors that read it — it sends them down their no-configuration path. Here that meant an
+   `expectContinueThresholdInBytes` of 0 instead of the 1 MiB default, so every `PutObject` of any size
+   got the header. `V2InterceptorBridge` now translates `SdkClientOption.SERVICE_CONFIGURATION` into
+   `SdkExecutionAttribute.SERVICE_CONFIG`.
+
+The general lesson is worth more than the header: **a v2 interceptor that reads client configuration or
+request content does not fail when the bridge withholds it, it takes a different branch.** Section 2.1
+lists what is still absent from the attribute map, and each entry there should be read as "some
+interceptor silently behaves differently", not "some interceptor is unavailable".
+
+### 13.6 `MISSING` — `GetObject` trailing MD5 validation (`x-amz-te: append-md5`), deliberately not enabled
+
+Stock v2 sends `x-amz-te: append-md5` on `GetObject` and validates the trailing MD5 S3 appends;
+`EnableTrailingChecksumInterceptor.modifyResponse` also subtracts the 16 trailer bytes from the
+response's `contentLength`. The bridge sends nothing, because `RESPONSE_CHECKSUM_VALIDATION` is not in
+the bridged execution attributes and the interceptor's predicate requires it to be `WHEN_SUPPORTED`.
+
+Unlike 13.5, translating that attribute would be **actively harmful**: `modifyResponse` is not one of the
+four bridged hooks (2.1), so the request would ask for a trailer that nothing strips or verifies. The
+caller would get 16 extra bytes appended to every object and a `contentLength` that disagrees with what
+they read. Silent body corruption is worse than a missing integrity check, so the header stays off until
+the response half is bridged.
+
+This is the only remaining difference in the `get-object` wire diff. `WireFormat` drops the header, with
+this entry named, so the rest of that request — path, range, signing coverage — is still compared.
+
+Related: 6.1 (CRC32 response validation) is the modern form of the same gap.
+
+### 13.7 `DEGRADED` — v2 interceptors never see the `RequestBody`
+
+`V2InterceptorBridge` builds an `SdkHttpRequest` for the v2 chain, not an `SdkHttpFullRequest` with a
+content stream, and `InterceptorContext.requestBody()` is empty. So `modifyHttpContent` cannot replace a
+streaming body, and any interceptor that inspects the body — rather than its length — sees nothing. v2
+uses this: `LegacyMd5Plugin` and the checksum interceptors read the body to compute over it.
+
+Fixing it means threading the `RequestBody` from generated client code into the interceptor bridge, which
+is a wider change than the context key the streaming bridge uses today.
+
+### 13.8 what streaming got right
+
+- **No buffering anywhere in either direction**, under a heap 4x smaller than the payload, with CRCs
+  proving the bytes were not merely counted.
+- `put-object` and `upload-part` are byte-identical to stock v2 (checksums off, per 13.3), including the
+  `Content-Type` v2 derives from the `RequestBody`, `x-amz-meta-*` user metadata, and the bound query
+  parameters on `UploadPart`.
+- `x-amz-content-sha256: UNSIGNED-PAYLOAD` is inside `SignedHeaders`, so S3 will accept it.
+- Header-bound response members survive the interceptor taking the body away: `GetObjectResponse`
+  still carries `contentLength`, `contentType`, and the rest. (`responseMetadata()`/`sdkHttpResponse()`
+  do not, but that is 1.4 and applies to every successful response, streaming or not.)
+- Modeled errors still work on streaming operations: the interceptor leaves a non-2xx response's body
+  alone, so `V2ErrorEnricher` can still build the exception from the XML.
+
+### 13.9 what streaming costs
+
+Measured, paired against published v2 2.46.10 — see `pipeline_benchmark2/RESULTS.md`, *Streaming*. Short
+version: the bridge saves a **fixed ~50 µs per call** on `GetObject`, the same amount it saves on a
+DynamoDB `GetItem`, so the win is −33% on an 8 KiB object and indistinguishable from parity on an 8 MiB
+one. `PutObject` additionally gains about **0.04 µs per KiB uploaded** (unexplained; a hypothesis about
+one fewer buffer touch is recorded there, not a conclusion).
+
+Two consequences of the gaps above show up as *measurement* constraints, which is worth recording here
+because they will constrain anyone else measuring this:
+
+- 13.2 makes an HTTP `PutObject` incomparable between the arms at all (stock v2 chunk-signs, the bridge
+  refuses), so streaming can only be benchmarked over HTTPS.
+- 13.3 and 6.1 make the checksum paths incomparable, so the benchmark runs with both checksum knobs at
+  `WHEN_REQUIRED`. The numbers therefore describe the streaming pipeline with checksums off, not a
+  default `S3Client`.
+
+## 14. Multipart (`MultipartS3AsyncClient`)
+
+Scope: v2's own multipart client — unmodified — driving a bridged `S3Client` through a sync-backed
+`S3AsyncClient` façade. Verified by `test/wire-diff/S3MultipartTest`: a 20 MiB upload at 5 MiB parts, a
+4-part download, one injected part failure, a blocking-stream download on a one-thread pool, and a
+non-multipart control, with a guard test asserting the client under test really is the bridged one (every
+other test here would pass against stock v2, since that is the point).
+
+**The headline is not about multipart.** Multipart splitting, part numbering, reassembly, cleanup and the
+`CompleteMultipartUpload` document all work on the bridged pipeline without a single change to v2's
+multipart code — the parts reassemble byte-identically to the source, and a failure still aborts the
+upload. What does not work is the *async surface* multipart is reached through. Everything below is a
+consequence of that one gap, and would be a consequence for `S3TransferManager` too, which is also built
+on `S3AsyncClient`.
+
+### 14.1 `MISSING` — the bridge generates no async client, so multipart is unreachable through its public API
+
+Only `SyncClientClass.java` is gated on `generateSmithyJavaSerde`. The generated `S3AsyncClient` is stock
+v2 and touches no smithy-java, so `S3AsyncClient.builder().multipartEnabled(true)` — the documented way
+to get multipart — silently produces a fully stock pipeline. There is no configuration that yields
+multipart *on the bridge*.
+
+`test/wire-diff/SyncBackedS3AsyncClient` exists to make the phase measurable at all: it implements the
+ten `S3AsyncClient` operations multipart actually calls (`createMultipartUpload`,
+`completeMultipartUpload`, `abortMultipartUpload`, `uploadPart`, `uploadPartCopy`, `putObject`,
+`getObject`, `headObject`, `copyObject`, `listParts` — which also serves `listPartsPaginator` via its
+interface default) by submitting each to a thread pool and calling the blocking client there. The test
+reaches `MultipartS3AsyncClient.create(...)` directly for the same reason.
+
+It is a measurement device, not a proposal. A real async bridge means either generating an async client
+over smithy-java's own async client (the right answer, and a phase of its own) or shipping a façade with
+14.2-14.5 attached.
+
+### 14.2 `DEGRADED` — one thread is held per in-flight part, so the pool is the real concurrency limit
+
+A pool thread is occupied for the whole of each call, including the entire transfer of a part's body; a
+real async client holds no thread while bytes are in flight. So `MultipartConfiguration`'s concurrency is
+not what determines parts in flight — the pool size is. Ask for 16 concurrent parts on a pool of 8 and 8
+run, with no error and no warning: the upload **silently serializes** to the pool width.
+`S3MultipartTest.oneThreadSerializesTheParts` pins this by uploading a 4-part object on a
+single-threaded pool and asserting the parts never overlap.
+
+The corollary is worse than the throughput cost. A body-producing publisher scheduled on the same
+executor deadlocks against the thread blocked reading it, and nothing detects that — it presents as a
+hang, not an error.
+
+This is a property of *any* sync-backed async façade, generated or hand-written. It is the reason a
+sync-backed async client cannot be the answer for multipart, independently of anything smithy-java does.
+
+### 14.3 `DEGRADED` — a retryable failure on one part fails the whole upload
+
+Confirmed, not inferred: `S3MultipartTest.aRetryableFailureOnOnePartIsNotRetried` injects a single 500 on
+part 2 of 4 and the upload fails with v2's own
+
+> `NonRetryableException: Multiple subscribers detected. This could happen due to a retry attempt. The
+> AsyncRequestBody implementation provided does not support splitting to retryable/resubscribable
+> AsyncRequestBody.`
+
+The façade turns each `AsyncRequestBody` into a `RequestBody` whose content provider subscribes to the
+publisher on every attempt, because that is what makes a retry resend the bytes. The bodies the multipart
+splitter produces permit exactly one subscriber, so attempt two is rejected by v2's splitter before the
+bridged pipeline is involved at all. Non-multipart bodies (byte arrays, files) resubscribe and retry
+normally, which is why 13.1's replayability claim still holds — this is specific to split bodies.
+
+The blast radius is the part that matters: a transient 500 or throttle on **one part** of a large upload
+fails the **entire** upload, where stock v2 retries that part. On a 100-part upload with a 1% per-part
+error rate that is a ~63% failure rate.
+
+Cleanup is intact — the upload is aborted, so this does not leak incomplete multipart uploads. (The test
+checks that while the client is still open: the abort is fire-and-forget after the caller's future has
+already failed, so closing first cancels it and makes a working abort look like a leak.)
+
+### 14.4 `DEGRADED` — a deferred-consumption transformer works, but pins a thread until the caller lets go
+
+This was written down as a deadlock and is not one; the test says otherwise, so the entry says otherwise.
+`AsyncResponseTransformer.toBlockingInputStream()` returns a usable stream and delivers the whole body
+(`S3MultipartTest.aBlockingInputStreamWorksButPinsAPoolThread`, on a *single*-threaded pool).
+
+It works for the same reason the façade is one thread per call: the publisher reads on whichever thread
+calls `request(n)`, and for this transformer that is the **caller's** thread pulling bytes out of the
+stream. The pool thread parks inside the blocking `ResponseTransformer` — it has to, since returning
+closes the body and would truncate anything not yet pulled — and is released when the stream ends or is
+closed early.
+
+So the real cost is a held thread rather than a hang: a caller that reads slowly or forgets to close
+occupies a pool slot for that whole time, and on a small pool that is the entire client. Same shape as
+14.2 and the same root cause. Early close does release the thread, which is the case that would otherwise
+strand one permanently — the test checks it by issuing a further call on the same one-thread pool after
+abandoning a half-read stream.
+
+`toBytes`, `toFile` and the split transformers multipart itself uses consume eagerly and release
+immediately; `S3MultipartTest.multipartDownloadReassemblesEveryPart` drives 4 split transformers and
+reassembles the object exactly.
+
+One implementation note that is a genuine trap rather than a caveat: reading inside `request(n)` means
+reactive-streams reentrancy is unavoidable, because transformers call `request(1)` from inside `onNext`.
+A naive publisher recurses once per chunk and overflows the stack on any real object. A work-in-progress
+counter is required, not an optimization.
+
+### 14.5 `MISSING` — no cancellation
+
+Cancelling a returned future does not abort the underlying HTTP request; the pool thread runs the call to
+completion. For multipart that means cancelling a large upload releases the caller but not the bytes.
+
+### 14.6 not measured
+
+No multipart benchmark. The comparison that would matter is against stock v2's async multipart, and it
+would be measuring 14.2 — the thread-per-part cost — rather than anything about smithy-java. Worth doing
+only after there is a real async client to compare, or explicitly as the price of the façade.
+
+Also unexercised: multipart *copy* (`uploadPartCopy` is implemented on the façade and unused by any
+test), multipart with checksums enabled (`create(..., checksumEnabled = true)`, which runs into 12.9 and
+13.3), and `UnknownContentLength` uploads, which take a different helper — the façade rejects an
+`AsyncRequestBody` of unknown length outright, since measuring one means buffering it.
+
 ## Open questions
 
 1. Does `SigV4Signer`'s canonical-header exclusion list match v2's `AwsV4HttpSigner` exactly? A
@@ -1209,10 +1507,10 @@ bridge-specific work.
 6. Do the `v2-sync-strip-*` arms resolve individually above the noise floor, or is the bridging tax
    only measurable in aggregate (`v2-sync-stripped`)? If only in aggregate, per-component attribution
    needs allocation profiling rather than timing.
-7. Can smithy-java's SigV4 signer be told to send `UNSIGNED-PAYLOAD` (12.8)? This is the gating
-   question for streaming: if it cannot, a bridged `PutObject` must read the body to hash it, and
-   large-object upload becomes heap-bounded rather than merely slower. Everything in P1 depends on the
-   answer, so it should be settled before any `DataStream` work.
+7. ~~Can smithy-java's SigV4 signer be told to send `UNSIGNED-PAYLOAD` (12.8)?~~ **Answered: yes, two
+   ways** — a `PAYLOAD_HASH_OVERRIDE` in the context or an `x-amz-content-sha256` header already on the
+   request; only the third fallback hashes the body. 13.1 has the resolution order and why the header
+   was chosen. Streaming is not heap-bounded.
 8. Where should "does this operation have a body?" come from (12.6)? v2 reads `hasPayloadMembers` off
    the operation's `ShapeMarshaller`; the bridge infers it from `SDK_FIELDS`, where a
    customization-injected member is indistinguishable from a modeled one. Carrying the flag into the
@@ -1220,3 +1518,9 @@ bridge-specific work.
 9. Does anything besides `@httpChecksum` (12.9) make a bridged S3 operation outright fail? The wire
    diff covers six operations; the checksum-required set alone is larger than that, and 200-with-error
    body, `modifyException`, and virtual-host addressing are all still unexercised.
+10. What does a bridged **async** client cost (14.1)? smithy-java's client is async underneath, so the
+    generated `CompletableFuture` methods may be a thinner bridge than the sync ones rather than a
+    thicker one — but v2's async surface brings `AsyncRequestBody`/`AsyncResponseTransformer`,
+    `SdkAsyncHttpClient`, and the split-body retry contract that 14.3 shows is not incidental. Until this
+    is answered, multipart and `S3TransferManager` are unavailable on the bridge in any real sense, and
+    every finding in section 14 is about the façade rather than about smithy-java.

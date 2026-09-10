@@ -81,6 +81,13 @@
             <artifactId>dynamodb</artifactId>
             <version>${aws.sdk.v2.version}</version>
         </dependency>
+        <!-- S3, for the streaming scenarios. Same version property as dynamodb, so a jar built for a
+             published SDK version measures a published S3 and a published DynamoDB, never a mix. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
         <!-- ==================== V2 HTTP transports ====================
              Apache5 for sync and CRT for async: the transports V2 is standardizing on, and therefore
              the only two worth measuring here. Both are declared explicitly because the benchmark

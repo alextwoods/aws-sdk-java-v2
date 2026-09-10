@@ -40,7 +40,7 @@ import software.amazon.awssdk.http.SdkHttpFullRequest;
  * <h2>Known differences</h2>
  *
  * <p>{@link #renderIgnoringKnownDifferences} additionally erases the pipeline-level differences already
- * recorded in {@code compatability_issues.md} §12.8-12.13. Those are uniform across every operation and
+ * recorded in {@code compatability_issues.md} §12.8-12.13 and §13.6. Those are uniform per operation and
  * not what this harness exists to watch, so leaving them in makes all six cases fail forever and the
  * gate stops catching new regressions. Each erasure names its ledger entry; nothing is normalized away
  * that is not written down there, and {@link #render} still produces the unabridged text for the
@@ -65,7 +65,8 @@ public final class WireFormat {
         "x-amz-checksum-crc32c",        // 12.9
         "x-amz-checksum-sha1",          // 12.9
         "x-amz-checksum-sha256",        // 12.9
-        "content-md5");                 // 12.9
+        "content-md5",                  // 12.9
+        "x-amz-te");                    // 13.6 GetObject's trailing MD5 is deliberately not requested
 
     private WireFormat() {
     }
@@ -130,8 +131,11 @@ public final class WireFormat {
             || name.equalsIgnoreCase("User-Agent")) {
             return List.of(PLACEHOLDER);
         }
-        // 12.8: v2's S3 signer sends UNSIGNED-PAYLOAD over HTTPS; smithy-java hashes the body. Both are
+        // 12.8: v2's S3 signer sends UNSIGNED-PAYLOAD over HTTPS; smithy-java hashes the body on
+        // non-streaming operations (streaming ones send UNSIGNED-PAYLOAD too -- 13.1). Both values are
         // accepted, and the cost -- not the value -- is the finding, so compare only that it was set.
+        // S3StreamingTest asserts the literal value where it matters, which is where a regression to
+        // hashing would mean buffering the object.
         if (ignoreKnown && name.equalsIgnoreCase("x-amz-content-sha256")) {
             return List.of("<payload-hash-or-unsigned>");
         }

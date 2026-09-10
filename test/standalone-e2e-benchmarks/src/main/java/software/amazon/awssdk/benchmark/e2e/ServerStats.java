@@ -97,7 +97,13 @@ final class ServerStats {
             synchronized (ServerStats.class) {
                 c = sharedClient;
                 if (c == null) {
-                    c = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+                    // The benchmark SSLContext, since the mock server speaks HTTPS for the S3
+                    // scenarios and its certificate is not in the JDK default trust store. Ignored
+                    // for the plain-HTTP endpoints.
+                    c = HttpClient.newBuilder()
+                                  .connectTimeout(Duration.ofSeconds(2))
+                                  .sslContext(BenchmarkTls.sslContext())
+                                  .build();
                     sharedClient = c;
                 }
             }

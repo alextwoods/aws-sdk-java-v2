@@ -22,6 +22,17 @@ components with smithy-java's own:
 | `v2-sync-strip-interceptors` | the V2 interceptor chain → nothing |
 | `v2-sync-strip-errors` | the per-attempt V2 error enricher → nothing |
 
+The **S3 streaming** scenarios have their own arm family, because they need a different client
+(`S3Client`, path-style, TLS) and only answer the `*-object-*` scenarios:
+
+| Client | SDK |
+|---|---|
+| `s3-v2-sync` | V2 `S3Client` on Apache5 over TLS |
+| `s3-v2-sync-stripped`, `s3-v2-sync-strip-{endpoints,retries,interceptors,errors}` | the same strip axes as above |
+
+`strip-interceptors` is more interesting here than for DynamoDB: S3 installs about a dozen execution
+interceptors, so the arm measures a chain that actually does work rather than an empty one.
+
 One arm goes the other way, restoring cost instead of removing it:
 
 | Client | Restores |
@@ -122,6 +133,9 @@ cd test/standalone-e2e-benchmarks
 
 # Robust run of one scenario
 ./scripts/benchmark.sh --client smithy --scenario small-get --iterations 200000
+
+# S3 streaming (TLS is switched on automatically for *-object-* scenarios)
+./scripts/benchmark.sh --client s3-v2-sync --scenario put-object-8m --iterations 1000 --warmup 250
 
 # All clients, collected into one CSV for a comparison table
 for c in v1 v2-sync v2-async smithy; do
@@ -324,13 +338,47 @@ Item content is deterministic (seeded), defined once in `BenchmarkItems` and con
 SDK's model types plus the wire-format JSON the server returns — so all SDKs marshal/unmarshal
 structurally identical data.
 
+### S3 streaming scenarios
+
+| Scenario | Operation | Body |
+|---|---|---|
+| `get-object-8k` / `put-object-8k` | GetObject / PutObject | 8 KiB |
+| `get-object-256k` / `put-object-256k` | GetObject / PutObject | 256 KiB |
+| `get-object-8m` / `put-object-8m` | GetObject / PutObject | 8 MiB |
+
+They need an `s3-*` client arm and they are **not part of `--scenario all`**, which still means the
+four DynamoDB scenarios — folding them in would change the meaning of every existing collection
+command. Three sizes rather than one: 8 KiB isolates per-call pipeline cost from byte-shuffling,
+8 MiB is where an extra copy, hash or buffer would dominate, and 256 KiB sits where per-chunk costs
+show up without the total being all payload. The size is part of the object key
+(`/benchmark-bucket/objects/<bytes>`), so the server stays stateless and needs no reconfiguration
+between scenarios.
+
+Two things about these runs differ from the DynamoDB ones, and both are deliberate:
+
+- **They run over HTTPS**, and `scripts/benchmark.sh` turns TLS on automatically for any
+  `*-object-*` scenario (`--tls` / `--no-tls` override it). Not a preference: over plain HTTP with a
+  request body, `ChecksumUtil.isPayloadSigning` forces payload signing on regardless of
+  `PAYLOAD_SIGNING_ENABLED`, so stock V2 aws-chunk-signs a `PutObject` while the bridge refuses it
+  outright (`compatability_issues.md` 13.2) — the two arms would not be doing the same work. Over
+  HTTPS both send `UNSIGNED-PAYLOAD` and the raw bytes, which is what a real `PutObject` does. The
+  server presents a committed self-signed key pair (`BenchmarkTls`) that the client trusts through a
+  real trust manager, not a trust-all one, so certificate validation stays inside the measurement.
+- **Checksums are off in both arms** (`requestChecksumCalculation`/`responseChecksumValidation` set
+  to `WHEN_REQUIRED`), which is the one departure from a default `S3Client`. With them on, the
+  comparison would be measuring a missing bridge feature (6.1, 12.9) at a cost that scales with
+  object size, rather than measuring the streaming pipeline. Read these numbers as "the streaming
+  pipeline, checksums off on both sides."
+
 ## CLI reference
 
 ### Runner options (passed through by `scripts/benchmark.sh`)
 
 ```
 --client X            SDK under test (see the client table above; required)
---scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
+--scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all);
+                      plus get-object-{8k,256k,8m} / put-object-{8k,256k,8m}, which need an
+                      s3-* client arm and are NOT included in all
 --iterations N        measured operations per scenario (default: 10000)
 --warmup N            unmeasured warmup operations per scenario (default: min(2000, iterations))
 --concurrency N       operations kept in flight (default: 2)
@@ -353,6 +401,8 @@ structurally identical data.
 ```
 --port N            port for the auto-launched mock server (default: 19080)
 --no-server         don't launch a server (requires --endpoint)
+--tls / --no-tls    serve HTTPS instead of HTTP (default: on for *-object-* scenarios, off
+                    otherwise — see "S3 streaming scenarios")
 --profile MODE      jfr | cpu | alloc | wall
 --profile-out DIR   profiler output directory (default: ./profiles)
 --jvm-args "..."    extra JVM args for the client JVM

@@ -24,6 +24,7 @@ import software.amazon.awssdk.bridge.smithyjava.error.V2UnmodeledError;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.smithy.java.client.core.Client;
+import software.amazon.smithy.java.client.core.RequestOverrideConfig;
 import software.amazon.smithy.java.client.core.error.TransportException;
 import software.amazon.smithy.java.core.error.CallException;
 import software.amazon.smithy.java.core.schema.ApiOperation;
@@ -75,8 +76,27 @@ public final class SmithyBridgeClient extends Client {
      * @return the deserialized output, which is also a v2 {@code SdkResponse}.
      */
     public <I extends SerializableStruct, O extends SerializableStruct> O invoke(I input, ApiOperation<I, O> operation) {
+        return invoke(input, operation, null);
+    }
+
+    /**
+     * Invokes an operation with per-call overrides, translating any failure as {@link #invoke} does.
+     *
+     * <p>Streaming operations use this: the body cannot travel inside the input shape, because v2's
+     * generated shapes have no member for it, so it travels in the override config's context instead. See
+     * {@link software.amazon.awssdk.bridge.smithyjava.streaming.V2StreamingBridge}.
+     *
+     * @param input     operation input; also a v2 {@code SdkRequest}.
+     * @param operation the generated operation.
+     * @param overrides per-call configuration, or null for none.
+     * @param <I>       input shape.
+     * @param <O>       output shape.
+     * @return the deserialized output, which is also a v2 {@code SdkResponse}.
+     */
+    public <I extends SerializableStruct, O extends SerializableStruct> O invoke(
+            I input, ApiOperation<I, O> operation, RequestOverrideConfig overrides) {
         try {
-            return call(input, operation, null);
+            return call(input, operation, overrides);
         } catch (V2ModeledError e) {
             // A modeled error: the real v2 exception was built by the generated builder and is carried
             // inside the shim. Unwrap and throw it, so `catch (ConditionalCheckFailedException e)` works.

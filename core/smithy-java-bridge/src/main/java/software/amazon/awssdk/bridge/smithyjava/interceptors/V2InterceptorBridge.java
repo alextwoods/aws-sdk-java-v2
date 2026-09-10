@@ -25,6 +25,7 @@ import software.amazon.awssdk.awscore.client.config.AwsClientOption;
 import software.amazon.awssdk.core.ClientEndpointProvider;
 import software.amazon.awssdk.core.SdkRequest;
 import software.amazon.awssdk.core.SdkResponse;
+import software.amazon.awssdk.core.ServiceConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.interceptor.Context;
@@ -132,6 +133,15 @@ public final class V2InterceptorBridge implements ClientInterceptor {
                                 v2Config.option(AwsClientOption.ENDPOINT_PREFIX));
         attributes.putAttribute(SdkExecutionAttribute.SERVICE_NAME, v2Config.option(SdkClientOption.SERVICE_NAME));
         attributes.putAttribute(SdkExecutionAttribute.CLIENT_TYPE, v2Config.option(SdkClientOption.CLIENT_TYPE));
+        // The service's own configuration object (S3Configuration, and its equivalents elsewhere). Worth
+        // the line because omitting it does not disable the interceptors that read it -- it silently sends
+        // them down their no-configuration path. S3's StreamingRequestInterceptor is the clearest case: it
+        // reads expectContinueThresholdInBytes, whose default is 1 MiB, and falls back to a threshold of
+        // 0 when there is no config, so every PutObject of any size gets Expect: 100-continue.
+        ServiceConfiguration serviceConfiguration = v2Config.option(SdkClientOption.SERVICE_CONFIGURATION);
+        if (serviceConfiguration != null) {
+            attributes.putAttribute(SdkExecutionAttribute.SERVICE_CONFIG, serviceConfiguration);
+        }
         return attributes;
     }
 

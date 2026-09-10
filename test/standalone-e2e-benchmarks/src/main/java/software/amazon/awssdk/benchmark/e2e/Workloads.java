@@ -1,5 +1,7 @@
 package software.amazon.awssdk.benchmark.e2e;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.URI;
 import java.util.ArrayList;
@@ -15,8 +17,11 @@ import com.amazonaws.client.builder.AwsClientBuilder;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.retry.RetryMode;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 
@@ -55,6 +60,24 @@ interface Workloads {
         void batchGet() throws Exception;
 
         void batchPut() throws Exception;
+
+        /**
+         * S3 {@code GetObject} of {@code bytes} bytes, streamed to the caller and discarded.
+         *
+         * <p>Defaulted rather than added to every arm: the DynamoDB arms are four clients against one
+         * mock service, and only the {@code s3-*} arms have an S3 client. The message names the arms
+         * so a mistyped {@code --client} says what to use instead of failing abstractly.
+         */
+        default void getObject(int bytes) throws Exception {
+            throw new UnsupportedOperationException(
+                "the S3 scenarios need an s3-* client arm (s3-v2-sync, s3-v2-sync-stripped, ...)");
+        }
+
+        /** S3 {@code PutObject} of {@code bytes} bytes, streamed from a preallocated body. */
+        default void putObject(int bytes) throws Exception {
+            throw new UnsupportedOperationException(
+                "the S3 scenarios need an s3-* client arm (s3-v2-sync, s3-v2-sync-stripped, ...)");
+        }
 
         /**
          * Human-readable transport identity for the run header and the {@code transport} results
@@ -131,6 +154,17 @@ interface Workloads {
                 // client even though none of them can act. v2-sync minus this arm is what the filter
                 // in V2ConfigTranslator.inert() recovers.
                 return strippedV2Sync("awssdk.bridge.keepInertInterceptors", endpoint, metrics, concurrency);
+            case "s3-v2-sync":
+            case "s3-v2-sync-stripped":
+            case "s3-v2-sync-strip-endpoints":
+            case "s3-v2-sync-strip-retries":
+            case "s3-v2-sync-strip-interceptors":
+            case "s3-v2-sync-strip-errors":
+                // The S3 arms exist for the streaming scenarios; they serve the DynamoDB scenarios not
+                // at all. strip-interceptors is the interesting one here rather than a formality: S3
+                // installs a dozen of its own interceptors, so it is the first service where bridging
+                // the v2 chain is a real cost rather than three inert defaults.
+                return s3Sync(client, endpoint, metrics, concurrency);
             case "v2-async":
                 return v2Async(endpoint, metrics, concurrency);
             case "smithy":
@@ -350,6 +384,137 @@ interface Workloads {
                 ddb.close();
             }
         };
+    }
+
+    // ==================== S3 sync streaming (Apache5 over TLS) ====================
+    //
+    // Same transport as the DynamoDB v2-sync arm, so the two are comparable, but over TLS: a streamed
+    // request body cannot be compared over plain HTTP, because v2 forces payload signing there and the
+    // bridge refuses. See BenchmarkTls.
+    //
+    // Both checksum knobs are turned down to WHEN_REQUIRED, and that is the one place this arm departs
+    // from a default client. With v2's default (WHEN_SUPPORTED) stock v2 computes a CRC32 over every
+    // PutObject and rewrites the body into aws-chunked framing with a trailing checksum, while the
+    // bridge computes nothing (compatability_issues.md 13.3) -- so the comparison would be measuring a
+    // missing feature, at a cost that scales with the object, rather than the pipeline around it. Read
+    // these numbers as "the streaming pipeline, with checksums off on both sides".
+
+    private static Workload s3Sync(String client, URI endpoint, boolean metrics, int concurrency) {
+        String property = s3StripProperty(client);
+        if (property != null) {
+            System.setProperty(property, "true");
+        }
+
+        MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
+        var s3 = software.amazon.awssdk.services.s3.S3Client.builder()
+            .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
+            // Path-style, because the mock server is an IP and a virtual-host bucket name would not
+            // resolve; it also keeps the request path identical on both arms.
+            .forcePathStyle(true)
+            .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
+            .httpClientBuilder(software.amazon.awssdk.http.apache5.Apache5HttpClient
+                                   .builder()
+                                   .maxConnections(concurrency)
+                                   .tlsTrustManagersProvider(BenchmarkTls.trustManagersProvider()))
+            .overrideConfiguration(v2Override(metrics, publisher))
+            .build();
+
+        // One request object and one body per size, built here rather than per operation: v2's
+        // RequestBody.fromBytes copies the array, and an 8 MiB copy inside the measured loop would be
+        // the largest single cost in the 8 MiB scenario.
+        Map<Integer, software.amazon.awssdk.services.s3.model.GetObjectRequest> gets = new LinkedHashMap<>();
+        Map<Integer, software.amazon.awssdk.services.s3.model.PutObjectRequest> puts = new LinkedHashMap<>();
+        Map<Integer, RequestBody> bodies = new LinkedHashMap<>();
+        for (int bytes : new int[] {S3Objects.SMALL_BYTES, S3Objects.MEDIUM_BYTES, S3Objects.LARGE_BYTES}) {
+            gets.put(bytes, software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
+                                                                                     .bucket(S3Objects.BUCKET)
+                                                                                     .key(S3Objects.key(bytes))
+                                                                                     .build());
+            puts.put(bytes, software.amazon.awssdk.services.s3.model.PutObjectRequest.builder()
+                                                                                     .bucket(S3Objects.BUCKET)
+                                                                                     .key(S3Objects.key(bytes))
+                                                                                     .build());
+            bodies.put(bytes, RequestBody.fromBytes(S3Objects.payload(bytes)));
+        }
+
+        return new Workload() {
+            public void smallGet() {
+                throw new UnsupportedOperationException("the s3-* arms serve only the *-object scenarios");
+            }
+
+            public void smallPut() {
+                throw new UnsupportedOperationException("the s3-* arms serve only the *-object scenarios");
+            }
+
+            public void batchGet() {
+                throw new UnsupportedOperationException("the s3-* arms serve only the *-object scenarios");
+            }
+
+            public void batchPut() {
+                throw new UnsupportedOperationException("the s3-* arms serve only the *-object scenarios");
+            }
+
+            public void getObject(int bytes) {
+                // Drained into a reused buffer and counted, not collected: ResponseTransformer.toBytes
+                // would allocate the whole object per operation, which at 8 MiB would dominate the
+                // measurement and make it a test of the allocator. The count is checked because a
+                // silent short read is exactly the kind of failure a latency number cannot show.
+                long received = s3.getObject(gets.get(bytes), (response, body) -> drain(body));
+                if (received != bytes) {
+                    throw new IllegalStateException("GetObject returned " + received + " of " + bytes + " bytes");
+                }
+            }
+
+            public void putObject(int bytes) {
+                s3.putObject(puts.get(bytes), bodies.get(bytes));
+            }
+
+            public String transport() {
+                return "apache5-tls";
+            }
+
+            public void resetMetrics() {
+                publisher.reset();
+            }
+
+            public void printMetrics(PrintStream out) {
+                publisher.print(out);
+            }
+
+            public void close() {
+                s3.close();
+            }
+        };
+    }
+
+    /** The bridge property an {@code s3-v2-sync-*} arm asks for, or null for the unmodified arm. */
+    private static String s3StripProperty(String client) {
+        switch (client) {
+            case "s3-v2-sync":                     return null;
+            case "s3-v2-sync-stripped":            return "awssdk.bridge.stripAll";
+            case "s3-v2-sync-strip-endpoints":     return "awssdk.bridge.stripEndpoints";
+            case "s3-v2-sync-strip-retries":       return "awssdk.bridge.stripRetries";
+            case "s3-v2-sync-strip-interceptors":  return "awssdk.bridge.stripInterceptors";
+            case "s3-v2-sync-strip-errors":        return "awssdk.bridge.stripErrorEnricher";
+            default: throw new IllegalArgumentException("unknown S3 client arm: " + client);
+        }
+    }
+
+    /**
+     * Reads a response body to EOF with one reused buffer, returning the byte count.
+     *
+     * <p>The buffer is per call rather than per client: the workload has to be usable from several
+     * driver threads at once, and 64 KiB per operation is an allocation both arms pay identically and
+     * which is invisible next to an 8 MiB transfer.
+     */
+    private static long drain(InputStream body) throws IOException {
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0;
+        for (int read = body.read(buffer); read >= 0; read = body.read(buffer)) {
+            total += read;
+        }
+        return total;
     }
 
     // ==================== V2 async (CRT) ====================

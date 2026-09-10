@@ -42,7 +42,14 @@ public final class BenchmarkRunner {
                                             attribute the bridging cost per component
                                   v2-async  V2 async, CRT
                                   smithy    smithy-java, HTTP/1.1
-          --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
+                                  s3-v2-sync
+                                            S3 sync, Apache5 over TLS, for the *-object
+                                            scenarios only. Also s3-v2-sync-stripped and the
+                                            s3-v2-sync-strip-* variants.
+          --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all).
+                                The S3 streaming scenarios are get-object-8k, get-object-256k,
+                                get-object-8m and the put-object equivalents; they need an s3-*
+                                client and an https endpoint, and are not part of `all`.
           --iterations N        measured operations per scenario (default: 10000)
           --warmup N            warmup operations per scenario, unmeasured (default: min(2000, iterations))
           --warmup-mode X       quiesce | fixed (default: quiesce). `quiesce` runs --warmup and then
@@ -117,7 +124,76 @@ public final class BenchmarkRunner {
             CompletableFuture<?> runAsync(Workloads.Workload w) {
                 return w.batchPutAsync();
             }
+        },
+        // S3 streaming. Three sizes because a streaming operation's per-call cost and its per-byte cost
+        // scale differently and one size cannot separate them; see S3Objects. Only the s3-* client arms
+        // implement these, and only synchronously -- there is no async S3 arm yet, so in-flight mode has
+        // nothing to drive.
+        GET_OBJECT_SMALL("get-object-8k") {
+            void run(Workloads.Workload w) throws Exception {
+                w.getObject(S3Objects.SMALL_BYTES);
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                throw new UnsupportedOperationException(NO_ASYNC_S3);
+            }
+        },
+        GET_OBJECT_MEDIUM("get-object-256k") {
+            void run(Workloads.Workload w) throws Exception {
+                w.getObject(S3Objects.MEDIUM_BYTES);
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                throw new UnsupportedOperationException(NO_ASYNC_S3);
+            }
+        },
+        GET_OBJECT_LARGE("get-object-8m") {
+            void run(Workloads.Workload w) throws Exception {
+                w.getObject(S3Objects.LARGE_BYTES);
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                throw new UnsupportedOperationException(NO_ASYNC_S3);
+            }
+        },
+        PUT_OBJECT_SMALL("put-object-8k") {
+            void run(Workloads.Workload w) throws Exception {
+                w.putObject(S3Objects.SMALL_BYTES);
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                throw new UnsupportedOperationException(NO_ASYNC_S3);
+            }
+        },
+        PUT_OBJECT_MEDIUM("put-object-256k") {
+            void run(Workloads.Workload w) throws Exception {
+                w.putObject(S3Objects.MEDIUM_BYTES);
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                throw new UnsupportedOperationException(NO_ASYNC_S3);
+            }
+        },
+        PUT_OBJECT_LARGE("put-object-8m") {
+            void run(Workloads.Workload w) throws Exception {
+                w.putObject(S3Objects.LARGE_BYTES);
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                throw new UnsupportedOperationException(NO_ASYNC_S3);
+            }
         };
+
+        private static final String NO_ASYNC_S3 =
+            "the S3 scenarios are sync-only; run them with --async-mode join";
+
+        /** What {@code --scenario all} means. */
+        static final List<Scenario> DYNAMODB = List.of(SMALL_GET, SMALL_PUT, BATCH_GET, BATCH_PUT);
+
+        /** Streams a body in one direction or the other, so it needs an https endpoint. See {@link BenchmarkTls}. */
+        boolean isStreaming() {
+            return cliName.contains("-object-");
+        }
 
         final String cliName;
 
@@ -169,7 +245,10 @@ public final class BenchmarkRunner {
 
     public static void main(String[] args) throws Exception {
         String client = null;
-        List<Scenario> scenarios = List.of(Scenario.values());
+        // `all` means the four DynamoDB scenarios, not every scenario: the S3 ones need a different
+        // client arm and a different endpoint scheme, so folding them in would make every existing
+        // collection command fail. They are opt-in by name.
+        List<Scenario> scenarios = Scenario.DYNAMODB;
         int iterations = 10_000;
         int warmup = -1;
         URI endpoint = URI.create("http://127.0.0.1:" + MockDdbServer.DEFAULT_PORT);
@@ -262,6 +341,16 @@ public final class BenchmarkRunner {
         }
         if (!"inflight".equals(asyncModeName) && !"join".equals(asyncModeName)) {
             System.err.println("--async-mode must be inflight or join");
+            System.exit(2);
+        }
+        // Refused rather than run: over plain HTTP stock v2 signs a PutObject body with aws-chunked
+        // framing while the bridge declines the request altogether (compatability_issues.md 13.2), so
+        // the two arms would not be doing the same work and the comparison would be meaningless rather
+        // than merely noisy. benchmark.sh turns TLS on automatically for these scenarios.
+        if (scenarios.stream().anyMatch(Scenario::isStreaming) && !"https".equals(endpoint.getScheme())) {
+            System.err.println("the S3 streaming scenarios need an https endpoint, not " + endpoint
+                               + "; run them through scripts/benchmark.sh, or start the mock server with"
+                               + " --tls and pass --endpoint https://127.0.0.1:<port>");
             System.exit(2);
         }
         if (!"quiesce".equals(warmupModeName) && !"fixed".equals(warmupModeName)) {
@@ -608,7 +697,13 @@ public final class BenchmarkRunner {
     /** Poll the readiness endpoint so a just-launched server has time to come up. */
     private static void waitForServer(URI endpoint) throws Exception {
         URI ping = endpoint.resolve("/ping");
-        try (HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build()) {
+        // BenchmarkTls.sslContext() rather than the default: the mock server serves HTTPS for the S3
+        // scenarios with a self-signed certificate, so a default-trust-store probe fails the handshake
+        // and reports the server as unreachable even though it is up.
+        try (HttpClient http = HttpClient.newBuilder()
+                                         .connectTimeout(Duration.ofSeconds(1))
+                                         .sslContext(BenchmarkTls.sslContext())
+                                         .build()) {
             HttpRequest req = HttpRequest.newBuilder(ping).timeout(Duration.ofSeconds(2)).GET().build();
             long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
             while (true) {

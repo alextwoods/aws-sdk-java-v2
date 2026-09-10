@@ -1,11 +1,16 @@
 package software.amazon.awssdk.wirediff;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.http.SdkHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
@@ -32,10 +37,14 @@ import software.amazon.awssdk.services.s3.model.Tagging;
  *       content MD5 computed over that body.</li>
  *   <li>{@code copy-object} — a wide spread of {@code x-amz-*} headers, and user metadata, which binds
  *       through {@code @httpPrefixHeaders} rather than a named header.</li>
+ *   <li>{@code put-object} — a streaming request body, which v2's generator strips from the shape
+ *       entirely, so the bridge has to carry it around the schema layer and re-attach it before
+ *       signing.</li>
+ *   <li>{@code get-object} — a streaming response body; the request itself is small, and what is under
+ *       test is that adding a {@code ResponseTransformer} does not change it.</li>
+ *   <li>{@code upload-part} — a streaming body <em>plus</em> bound query parameters, the combination
+ *       every multipart upload sends thousands of times.</li>
  * </ul>
- *
- * <p>Streaming operations (GetObject, PutObject, UploadPart) are deliberately absent: they are still on
- * the v2 pipeline, so diffing them today would assert that stock v2 equals stock v2.
  */
 public final class S3Cases {
 
@@ -46,19 +55,34 @@ public final class S3Cases {
     private S3Cases() {
     }
 
+    /** A body small enough to read in a diff, and not a round number of anything. */
+    static final String PAYLOAD = "wire-diff streaming payload: 38 bytes.";
+
     /**
      * A client wired to the capturing transport.
      *
      * <p>Path-style addressing is forced. Virtual-host addressing puts the bucket in the host, which
      * both arms get from the same v2 endpoint provider, so it would compare equal while hiding whether
      * the path was built correctly — the thing actually under test.
+     *
+     * <p>Request checksums are set to {@code WHEN_REQUIRED}, against v2's {@code WHEN_SUPPORTED}
+     * default, and that changes what this harness measures for streaming operations. On the default,
+     * stock v2 does not send the caller's bytes at all: it adds {@code x-amz-checksum-crc32},
+     * {@code content-encoding: aws-chunked} and {@code x-amz-decoded-content-length}, and rewrites the
+     * body into chunk framing with a trailing checksum. The bridge computes no checksums (§12.9), so a
+     * {@code put-object} diff on the default would compare aws-chunked framing against raw bytes and
+     * report a single enormous difference that says nothing about the HTTP binding. Turning checksums
+     * off makes both arms send the raw body, so the diff is about the binding again — at the cost of
+     * not exercising trailing checksums here at all. §13.3 records that; it needs its own comparison,
+     * not this one.
      */
-    public static S3Client client(CapturingHttpClient transport) {
+    public static S3Client client(SdkHttpClient transport) {
         return S3Client.builder()
                        .region(Region.US_EAST_1)
                        .credentialsProvider(CREDENTIALS)
                        .endpointOverride(URI.create("https://s3.us-east-1.amazonaws.com"))
                        .forcePathStyle(true)
+                       .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
                        .httpClient(transport)
                        .build();
     }
@@ -132,7 +156,30 @@ public final class S3Cases {
                                                .metadata(Map.of("owner", "wirediff", "purpose", "byte-diff"))),
                      "12.6 customization-injected members become body members, so an empty "
                      + "<CopyObjectRequest/> document is sent; 12.7 that document also adds a second "
-                     + "Content-Type alongside the modeled one")
+                     + "Content-Type alongside the modeled one"),
+
+            new Case("put-object",
+                     "",
+                     s3 -> s3.putObject(r -> r.bucket("wirediff-bucket")
+                                              .key("logs/a.txt")
+                                              .contentType("text/plain")
+                                              .metadata(Map.of("origin", "wirediff")),
+                                        RequestBody.fromString(PAYLOAD, StandardCharsets.UTF_8))),
+
+            new Case("get-object",
+                     PAYLOAD,
+                     s3 -> s3.getObject(r -> r.bucket("wirediff-bucket")
+                                              .key("logs/a.txt")
+                                              .range("bytes=0-37"),
+                                        ResponseTransformer.toBytes())),
+
+            new Case("upload-part",
+                     "",
+                     s3 -> s3.uploadPart(r -> r.bucket("wirediff-bucket")
+                                               .key("big.bin")
+                                               .uploadId("upload-id-1")
+                                               .partNumber(2),
+                                         RequestBody.fromString(PAYLOAD, StandardCharsets.UTF_8)))
         );
     }
 

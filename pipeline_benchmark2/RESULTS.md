@@ -159,6 +159,60 @@ This is also the one finding here that generalizes beyond the prototype: it is n
 all but a *bridging-visible* one. The three interceptors run on stock v2 too, doing nothing; the bridge
 merely made them expensive enough to notice.
 
+## Streaming: S3 `GetObject` / `PutObject`
+
+Raw data: `pipeline_benchmark2/paired-s3-{8k,256k,8m}/20260905-{2003,2014,2027}/`. An earlier collection
+(`…-{1918,1926,1935}`) ran the same six cases with a smaller warmup budget and agrees on every sign and
+within ~1.5 points on every magnitude; the later one is quoted because it warmed up longer.
+
+Arms are the same two jars as above (published v2 2.46.10 vs this branch), driven through `S3Client`
+with `s3-v2-sync`, path-style addressing, 5 paired reps, concurrency 1. Two conditions differ from the
+DynamoDB collection and both are forced:
+
+- **HTTPS, not HTTP.** Over plain HTTP with a request body, `ChecksumUtil.isPayloadSigning` turns
+  payload signing back on no matter what `PAYLOAD_SIGNING_ENABLED` says, so stock v2 aws-chunk-signs a
+  `PutObject` while the bridge refuses it (13.2). There is no v2 configuration under which an HTTP
+  `PutObject` is comparable between the arms, so the mock server serves TLS.
+- **Checksums off on both sides** (`WHEN_REQUIRED` for both request calculation and response
+  validation). With defaults, the diff would be measuring a bridge feature that is missing (6.1, 12.9)
+  at a cost that scales with the object, not measuring the streaming pipeline.
+
+app CPU µs/op, and the absolute saving, which is the interesting column:
+
+| scenario | stock v2 | bridged v2 | delta | saving | pair spread | wins |
+|---|---:|---:|---:|---:|---:|---:|
+| `get-object-8k` | 164.5 | 110.0 | −33.1% | 54.5 µs | ±1.0% | 5/5 |
+| `put-object-8k` | 174.0 | 118.8 | −31.7% | 55.2 µs | ±1.6% | 5/5 |
+| `get-object-256k` | 462.6 | 414.2 | −10.5% | 48.4 µs | ±0.5% | 5/5 |
+| `put-object-256k` | 567.9 | 499.0 | −12.1% | 68.9 µs | ±1.9% | 5/5 |
+| `get-object-8m` | 10,892.2 | 10,795.0 | −0.9% | 97 µs | ±2.8% | 3/5 |
+| `put-object-8m` | 12,989.9 | 12,614.1 | −2.9% | 376 µs | ±1.1% | 5/5 |
+
+mean latency µs tells the same story: −26.9%/−27.6% at 8 KiB, −8.1%/−11.3% at 256 KiB, −0.8%/−2.8% at
+8 MiB.
+
+**The headline is the saving column, not the percentage.** On `GetObject` the bridge is ~50 µs per call
+cheaper regardless of object size — the same fixed amount it saves on a DynamoDB `GetItem`
+(136.6 → 92.3 = 44 µs). The percentage collapses from 33% to under 1% purely because the denominator
+grows: at 8 MiB a call costs ~11 ms, of which ~50 µs of pipeline is a rounding error. `get-object-8m` at
+3/5 wins and ±2.8% is honestly **parity**, and that is the correct result — both arms are sitting on the
+same transport moving 8 MiB over TLS at ~700 MB/s, so there is nothing left for a pipeline to win.
+
+The one result that is *not* a fixed offset is `PutObject`, where the saving grows with the object:
+55 µs → 69 µs → 376 µs across a 1000× size range, with 5/5 wins and ±1.1% at 8 MiB, so it is not noise.
+Backing out the fixed part leaves roughly **0.04 µs per KiB uploaded** in the bridge's favor, worth ~3%
+at 8 MiB. The plausible cause is one fewer touch of the buffer on the upload path — smithy's
+`DataStream` handing the request body to the transport where v2 walks it through `RequestBody` and its
+content-stream wrapper — but that is a hypothesis; an allocation profile of `put-object-8m` on both arms
+would settle it and has not been run.
+
+What this does *not* say: nothing here measures multipart, async, or the checksum paths, and with
+checksums off the wire is deliberately simpler than a default `S3Client`'s. The streaming
+*correctness* results — no buffering in either direction under a heap 4× smaller than the payload,
+byte-identical `PutObject`/`UploadPart` requests, and the gaps that remain — are in
+`compatability_issues.md` 13; multipart correctness, which does work, and the async gap that keeps it
+from being benchmarkable, are in section 14.
+
 ## Cold start: the bridge's one loss
 
 Raw data: `pipeline_benchmark2/coldstart/20260904-2341/` (60 JVMs, zero failures, `summary.md` from
@@ -378,11 +432,17 @@ won 4/4 pairs in every scenario.
    server sends no `x-amz-crc32` and does not compress, so those two paths cost stock v2 nothing here
    and are not part of the measured gap. The gap is dominated by pipeline overhead, marshalling and
    signing, not by skipped features, but it is not entirely free of them.
-5. Single client thread, loopback, a mock server that returns a fixed body. No TLS, no real network
-   latency, no throttling, no retries actually taken (retry *bookkeeping* is paid by every arm). Failure
+5. Single client thread, loopback, a mock server that returns a fixed body. No real network
+   latency, no throttling, no retries actually taken (retry *bookkeeping* is paid by every arm), and no
+   TLS except in the S3 streaming collection, where it is unavoidable (see *Streaming*). Failure
    behavior is covered separately and behaviorally rather than as a timing — see *What the timings could
    not measure* — which is where the one severe divergence on this branch turned up.
-6. `sdk_commit` reads `published-2` in `results.csv` for the baseline arm — an 11-character
+6. **Every 8 MiB run was flagged non-steady-state**, at both warmup budgets tried (250 and 1000 ops):
+   an 8 MiB call is expensive enough that compilation keeps happening inside the window. The paired
+   deltas are nonetheless tight (`put-object-8m` ±1.1%, 5/5 wins) because whatever compiles, compiles in
+   both arms; but the *absolute* per-op CPU for that band should be read as approximate, and the
+   `get-object-8m` parity claim rests on the pairing rather than on either arm's own number.
+7. `sdk_commit` reads `published-2` in `results.csv` for the baseline arm — an 11-character
    abbreviation applied to a non-SHA. The jar provenance is correct (`published-2.46.10`) and
    `BuildProvenance.abbreviate` has since been fixed to only abbreviate real SHAs.
 
@@ -413,6 +473,19 @@ won 4/4 pairs in every scenario.
   `SdkRetryStrategy` delegating delay computation to the wrapped v2 strategy wholesale, so the arms cannot
   differ on delay by construction. What remains is attributing the per-attempt gap to the endpoint bridge
   (3.3), for which the `immediate` run is the before-measurement.
+- An allocation profile of `put-object-8m` on both arms, to test the per-KiB upload advantage described
+  in *Streaming* (~0.04 µs/KiB). It is the only measured effect on this branch that scales with payload
+  size, so if it is one fewer buffer touch, an alloc profile should show it outright.
+- Multipart and async streaming — **still unmeasured, and now deliberately so.** The thread-pool
+  `S3AsyncClient` shim works: v2's `MultipartS3AsyncClient` runs unmodified on the bridged pipeline and a
+  20 MiB, 4-part upload reassembles byte-exactly (`test/wire-diff/S3MultipartTest`, and section 14 of
+  `compatability_issues.md`). But timing it would measure the shim's thread-per-part cost, not
+  smithy-java, because the bridge generates no async client at all (§14.1). Two findings from that
+  exercise are worth more than a number would be: the pool size, not `MultipartConfiguration`, is the real
+  concurrency ceiling and an undersized pool silently serializes (§14.2), and a retryable 500 on **one
+  part** fails the **whole** upload because split bodies permit one subscriber (§14.3, confirmed with an
+  injected fault). The benchmark to run is a bridged *async* client against stock v2 async — after there
+  is one.
 - Higher attempt counts. Both runs cap at 3 attempts, which is enough to fit a fixed-plus-marginal model
   but not enough to see it break. If the per-attempt gap really is endpoint resolution, a 5- or
   10-attempt configuration should widen it linearly, and that is a sharper test than the memoization

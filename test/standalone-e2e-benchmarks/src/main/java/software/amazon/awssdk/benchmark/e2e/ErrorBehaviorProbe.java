@@ -124,7 +124,11 @@ public final class ErrorBehaviorProbe {
 
     private ErrorBehaviorProbe(URI endpoint) {
         this.endpoint = endpoint;
-        this.control = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        // See BenchmarkTls.sslContext(): needed if the endpoint is https, ignored if it is not.
+        this.control = HttpClient.newBuilder()
+                                 .connectTimeout(Duration.ofSeconds(5))
+                                 .sslContext(BenchmarkTls.sslContext())
+                                 .build();
     }
 
     public static void main(String[] args) throws Exception {
