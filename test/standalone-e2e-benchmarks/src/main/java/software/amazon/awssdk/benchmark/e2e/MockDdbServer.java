@@ -76,6 +76,7 @@ public final class MockDdbServer {
         responses.put(TARGET_PREFIX + "PutItem", utf8(BenchmarkItems.putItemResponseJson()));
         responses.put(TARGET_PREFIX + "BatchGetItem", utf8(BenchmarkItems.batchGetItemResponseJson()));
         responses.put(TARGET_PREFIX + "BatchWriteItem", utf8(BenchmarkItems.batchWriteItemResponseJson()));
+        responses.put(TARGET_PREFIX + "DescribeTable", utf8(BenchmarkItems.describeTableResponseJson()));
 
         QueuedThreadPool pool = new QueuedThreadPool(maxThreads, 8);
         pool.setName("mockddb");
@@ -89,13 +90,14 @@ public final class MockDdbServer {
         server.start();
 
         System.out.printf("READY port=%d pid=%d threads=%d selectors=%d"
-                          + " (GetItem=%dB PutItem=%dB BatchGetItem=%dB BatchWriteItem=%dB)%n",
+                          + " (GetItem=%dB PutItem=%dB BatchGetItem=%dB BatchWriteItem=%dB DescribeTable=%dB)%n",
                           port, ProcessHandle.current().pid(), maxThreads,
                           connector.getSelectorManager().getSelectorCount(),
                           responses.get(TARGET_PREFIX + "GetItem").length,
                           responses.get(TARGET_PREFIX + "PutItem").length,
                           responses.get(TARGET_PREFIX + "BatchGetItem").length,
-                          responses.get(TARGET_PREFIX + "BatchWriteItem").length);
+                          responses.get(TARGET_PREFIX + "BatchWriteItem").length,
+                          responses.get(TARGET_PREFIX + "DescribeTable").length);
         System.out.flush();
         server.join();
     }

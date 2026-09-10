@@ -57,6 +57,16 @@ interface Workloads {
         void batchPut() throws Exception;
 
         /**
+         * Structure-heavy read: a DescribeTable response is 46 nested structures and no unions, where the item-based
+         * scenarios are the reverse. Only the V1 and V2 arms implement it; the smithy-java arm's benchmark model
+         * carries only the item operations, so it reports this scenario as unsupported rather than measuring
+         * something else.
+         */
+        default void describeTable() throws Exception {
+            throw new UnsupportedOperationException("describe-table is not implemented for this client");
+        }
+
+        /**
          * Human-readable transport identity for the run header and the {@code transport} results
          * column. Reported because it has been a silent variable: with several {@code SdkHttpService}
          * implementations on the classpath, V2's default resolution picks by an internal priority
@@ -89,6 +99,10 @@ interface Workloads {
 
         default CompletableFuture<?> batchPutAsync() {
             throw new UnsupportedOperationException();
+        }
+
+        default CompletableFuture<?> describeTableAsync() {
+            throw new UnsupportedOperationException("describe-table is not implemented for this client");
         }
 
         default void resetMetrics() {
@@ -265,6 +279,12 @@ interface Workloads {
             .build();
     }
 
+    private static software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest v2DescribeReq() {
+        return software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest.builder()
+            .tableName(BenchmarkItems.TABLE_NAME)
+            .build();
+    }
+
     // ==================== V2 sync (Apache5) ====================
     //
     // Apache5 is the transport V2 sync is standardizing on, so it is the one worth measuring. It is
@@ -290,6 +310,7 @@ interface Workloads {
         var putReq = v2PutReq();
         var batchGetReq = v2BatchGetReq();
         var batchPutReq = v2BatchPutReq();
+        var describeReq = v2DescribeReq();
 
         return new Workload() {
             public void smallGet() {
@@ -306,6 +327,10 @@ interface Workloads {
 
             public void batchPut() {
                 ddb.batchWriteItem(batchPutReq);
+            }
+
+            public void describeTable() {
+                ddb.describeTable(describeReq);
             }
 
             public String transport() {
@@ -348,6 +373,7 @@ interface Workloads {
         var putReq = v2PutReq();
         var batchGetReq = v2BatchGetReq();
         var batchPutReq = v2BatchPutReq();
+        var describeReq = v2DescribeReq();
 
         return new Workload() {
             public void smallGet() {
@@ -364,6 +390,10 @@ interface Workloads {
 
             public void batchPut() {
                 ddb.batchWriteItem(batchPutReq).join();
+            }
+
+            public void describeTable() {
+                ddb.describeTable(describeReq).join();
             }
 
             public boolean supportsAsync() {
@@ -384,6 +414,10 @@ interface Workloads {
 
             public CompletableFuture<?> batchPutAsync() {
                 return ddb.batchWriteItem(batchPutReq);
+            }
+
+            public CompletableFuture<?> describeTableAsync() {
+                return ddb.describeTable(describeReq);
             }
 
             public String transport() {

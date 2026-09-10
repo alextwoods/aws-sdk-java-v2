@@ -347,6 +347,96 @@ public final class BenchmarkItems {
         return "{\"UnprocessedItems\":{}}";
     }
 
+    /**
+     * {@code {"Table": {...}}} — DescribeTable response.
+     *
+     * <p>Exists because the other four scenarios cannot see structure deserialization. A DynamoDB item is a map of
+     * {@code AttributeValue}, which is a <i>union</i>, so get/put/batch responses materialize hundreds of unions and
+     * essentially one structure (the response shape itself). This response is the opposite shape: <b>46 nested
+     * structures and no unions</b> — one {@code TableDescription}, 6 {@code AttributeDefinition}, 2 top-level
+     * {@code KeySchemaElement}, a {@code ProvisionedThroughputDescription}, 5 global secondary indexes and 2 local
+     * secondary indexes each carrying their own key schema, projection and throughput, plus stream and SSE
+     * descriptions. That makes it the scenario in which per-structure construction cost is visible at all.
+     *
+     * <p>Values are realistic but fixed; the response is a canned constant like every other, so no client is charged
+     * for server-side variability.
+     */
+    public static String describeTableResponseJson() {
+        StringBuilder sb = new StringBuilder(4096);
+        sb.append("{\"Table\":{");
+        sb.append("\"TableName\":\"").append(TABLE_NAME).append("\",");
+        sb.append("\"TableStatus\":\"ACTIVE\",");
+        sb.append("\"TableArn\":\"arn:aws:dynamodb:us-east-1:123456789012:table/").append(TABLE_NAME).append("\",");
+        sb.append("\"TableId\":\"12345678-1234-1234-1234-123456789012\",");
+        sb.append("\"CreationDateTime\":1.6e9,");
+        sb.append("\"ItemCount\":483920,");
+        sb.append("\"TableSizeBytes\":98431029,");
+        sb.append("\"TableClassSummary\":{\"TableClass\":\"STANDARD\"},");
+
+        sb.append("\"AttributeDefinitions\":[");
+        String[][] attrs = {{"pk", "S"}, {"sk", "S"}, {"gsi1pk", "S"}, {"gsi1sk", "N"}, {"lsi1sk", "N"}, {"status", "S"}};
+        for (int i = 0; i < attrs.length; i++) {
+            sb.append(i > 0 ? "," : "")
+              .append("{\"AttributeName\":\"").append(attrs[i][0]).append("\",\"AttributeType\":\"")
+              .append(attrs[i][1]).append("\"}");
+        }
+        sb.append("],");
+
+        sb.append("\"KeySchema\":[")
+          .append("{\"AttributeName\":\"pk\",\"KeyType\":\"HASH\"},")
+          .append("{\"AttributeName\":\"sk\",\"KeyType\":\"RANGE\"}],");
+
+        sb.append("\"ProvisionedThroughput\":{")
+          .append("\"ReadCapacityUnits\":250,\"WriteCapacityUnits\":125,")
+          .append("\"NumberOfDecreasesToday\":2,")
+          .append("\"LastIncreaseDateTime\":1.7e9,\"LastDecreaseDateTime\":1.68e9},");
+
+        sb.append("\"GlobalSecondaryIndexes\":[");
+        for (int i = 0; i < 5; i++) {
+            sb.append(i > 0 ? "," : "").append('{')
+              .append("\"IndexName\":\"gsi-").append(i).append("\",")
+              .append("\"IndexStatus\":\"ACTIVE\",")
+              .append("\"Backfilling\":false,")
+              .append("\"IndexArn\":\"arn:aws:dynamodb:us-east-1:123456789012:table/")
+              .append(TABLE_NAME).append("/index/gsi-").append(i).append("\",")
+              .append("\"ItemCount\":").append(120000 + i).append(',')
+              .append("\"IndexSizeBytes\":").append(4500000 + i).append(',')
+              .append("\"KeySchema\":[{\"AttributeName\":\"gsi1pk\",\"KeyType\":\"HASH\"},")
+              .append("{\"AttributeName\":\"gsi1sk\",\"KeyType\":\"RANGE\"}],")
+              .append("\"Projection\":{\"ProjectionType\":\"INCLUDE\",")
+              .append("\"NonKeyAttributes\":[\"status\",\"updatedAt\",\"owner\"]},")
+              .append("\"ProvisionedThroughput\":{\"ReadCapacityUnits\":100,\"WriteCapacityUnits\":50,")
+              .append("\"NumberOfDecreasesToday\":0}")
+              .append('}');
+        }
+        sb.append("],");
+
+        sb.append("\"LocalSecondaryIndexes\":[");
+        for (int i = 0; i < 2; i++) {
+            sb.append(i > 0 ? "," : "").append('{')
+              .append("\"IndexName\":\"lsi-").append(i).append("\",")
+              .append("\"IndexArn\":\"arn:aws:dynamodb:us-east-1:123456789012:table/")
+              .append(TABLE_NAME).append("/index/lsi-").append(i).append("\",")
+              .append("\"ItemCount\":").append(80000 + i).append(',')
+              .append("\"IndexSizeBytes\":").append(2200000 + i).append(',')
+              .append("\"KeySchema\":[{\"AttributeName\":\"pk\",\"KeyType\":\"HASH\"},")
+              .append("{\"AttributeName\":\"lsi1sk\",\"KeyType\":\"RANGE\"}],")
+              .append("\"Projection\":{\"ProjectionType\":\"ALL\"}")
+              .append('}');
+        }
+        sb.append("],");
+
+        sb.append("\"StreamSpecification\":{\"StreamEnabled\":true,\"StreamViewType\":\"NEW_AND_OLD_IMAGES\"},");
+        sb.append("\"LatestStreamLabel\":\"2026-01-01T00:00:00.000\",");
+        sb.append("\"LatestStreamArn\":\"arn:aws:dynamodb:us-east-1:123456789012:table/")
+          .append(TABLE_NAME).append("/stream/2026-01-01T00:00:00.000\",");
+        sb.append("\"SSEDescription\":{\"Status\":\"ENABLED\",\"SSEType\":\"KMS\",")
+          .append("\"KMSMasterKeyArn\":\"arn:aws:kms:us-east-1:123456789012:key/abcd1234\"},");
+        sb.append("\"DeletionProtectionEnabled\":true");
+        sb.append("}}");
+        return sb.toString();
+    }
+
     private static void appendMap(StringBuilder sb, Map<String, Attr> map) {
         sb.append('{');
         boolean first = true;

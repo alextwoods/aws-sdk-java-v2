@@ -34,7 +34,9 @@ public final class BenchmarkRunner {
                                   v2-sync-smithy   V2 sync, smithy-java transport
                                   v2-async-smithy  V2 async, smithy-java transport
                                   smithy    smithy-java, HTTP/1.1
-          --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all)
+          --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all).
+                                describe-table (structure-heavy read, V1/V2 only) is not in "all";
+                                request it by name.
           --iterations N        measured operations per scenario (default: 10000)
           --warmup N            warmup operations per scenario, unmeasured (default: min(2000, iterations))
           --warmup-mode X       quiesce | fixed (default: quiesce). `quiesce` runs --warmup and then
@@ -101,6 +103,20 @@ public final class BenchmarkRunner {
             CompletableFuture<?> runAsync(Workloads.Workload w) {
                 return w.batchPutAsync();
             }
+        },
+        /**
+         * Structure-heavy read. Deliberately outside {@link #DEFAULT_SCENARIOS}: the smithy-java arm's benchmark model
+         * carries only the item operations, so {@code --scenario all} must keep meaning the four item scenarios that
+         * every client implements. Ask for it by name.
+         */
+        DESCRIBE_TABLE("describe-table") {
+            void run(Workloads.Workload w) throws Exception {
+                w.describeTable();
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                return w.describeTableAsync();
+            }
         };
 
         final String cliName;
@@ -148,12 +164,19 @@ public final class BenchmarkRunner {
      */
     private static final int DEFAULT_CONCURRENCY = 1;
 
+    /**
+     * What {@code --scenario all} (and the default) means: the four item scenarios every client implements. Scenarios
+     * outside this list must be requested by name, so adding one cannot change what an existing collection measures.
+     */
+    private static final List<Scenario> DEFAULT_SCENARIOS =
+        List.of(Scenario.SMALL_GET, Scenario.SMALL_PUT, Scenario.BATCH_GET, Scenario.BATCH_PUT);
+
     private BenchmarkRunner() {
     }
 
     public static void main(String[] args) throws Exception {
         String client = null;
-        List<Scenario> scenarios = List.of(Scenario.values());
+        List<Scenario> scenarios = DEFAULT_SCENARIOS;
         int iterations = 10_000;
         int warmup = -1;
         URI endpoint = URI.create("http://127.0.0.1:" + MockDdbServer.DEFAULT_PORT);
