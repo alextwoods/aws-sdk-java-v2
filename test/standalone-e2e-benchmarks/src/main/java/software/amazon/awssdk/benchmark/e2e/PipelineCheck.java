@@ -66,9 +66,19 @@ final class PipelineCheck {
         "software.amazon.smithy.java."
     };
 
-    /** Frames that identify the stock V2 pipeline in a live call stack. */
+    /**
+     * Frames that identify the stock V2 pipeline in a live call stack.
+     *
+     * <p>More than the request-pipeline package, because where credentials get resolved differs by client: the
+     * sync path resolves them inside the pipeline stages, while the async path resolves them earlier, in the
+     * client handler and execution-context builder. Matching only {@code internal.http} left the async probe
+     * unable to identify a pipeline it was in fact looking straight at.
+     */
     private static final String[] STOCK_FRAMES = {
-        "software.amazon.awssdk.core.internal.http."
+        "software.amazon.awssdk.core.internal.http.",
+        "software.amazon.awssdk.core.internal.handler.",
+        "software.amazon.awssdk.awscore.client.handler.",
+        "software.amazon.awssdk.awscore.internal.AwsExecutionContextBuilder"
     };
 
     private PipelineCheck() {
@@ -170,13 +180,17 @@ final class PipelineCheck {
         if (probe.frames.isEmpty()) {
             throw new IllegalStateException("pipeline probe resolved no credentials; cannot identify the pipeline");
         }
-        boolean bridged = anyFrameMatches(probe.frames, BRIDGE_FRAMES);
-        boolean stock = anyFrameMatches(probe.frames, STOCK_FRAMES);
-        if (bridged == stock) {
-            throw new IllegalStateException("pipeline probe was inconclusive (bridged frames=" + bridged
-                                            + ", stock frames=" + stock + "); frames were: " + probe.frames);
+        // Bridge frames decide it: those packages execute only when the bridge is running the call, whereas the
+        // stock markers are general client machinery that a bridged path may also touch. Requiring the two to be
+        // mutually exclusive would make the answer depend on how much of V2 the bridge happens to reuse.
+        if (anyFrameMatches(probe.frames, BRIDGE_FRAMES)) {
+            return Pipeline.BRIDGED;
         }
-        return bridged ? Pipeline.BRIDGED : Pipeline.STOCK;
+        if (anyFrameMatches(probe.frames, STOCK_FRAMES)) {
+            return Pipeline.STOCK;
+        }
+        throw new IllegalStateException("pipeline probe was inconclusive: no bridge or stock frames on the stack. "
+                                        + "Frames were: " + probe.frames);
     }
 
     private static boolean anyFrameMatches(List<String> frames, String[] prefixes) {
