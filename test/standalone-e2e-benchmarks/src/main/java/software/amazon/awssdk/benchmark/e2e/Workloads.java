@@ -327,7 +327,7 @@ interface Workloads {
         // Before anything is measured: confirm the SDK on this classpath is the one this arm claims. The
         // bridged and stock builds are identical by class name, so this is the only thing standing between a
         // jar mix-up and a table of numbers attributed to the wrong pipeline.
-        PipelineCheck.require(expectedPipeline, endpoint);
+        PipelineCheck.require(expectedPipeline, endpoint, PipelineCheck.ClientKind.SYNC);
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
@@ -393,7 +393,7 @@ interface Workloads {
                                     String transportName) {
         // The bridge is sync-only, so an async arm must be running the stock pipeline; verified rather than
         // assumed, for the same reason as the sync side.
-        PipelineCheck.require(Pipeline.STOCK, endpoint);
+        PipelineCheck.require(Pipeline.STOCK, endpoint, PipelineCheck.ClientKind.ASYNC);
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())

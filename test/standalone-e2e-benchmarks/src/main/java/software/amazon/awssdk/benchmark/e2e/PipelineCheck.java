@@ -24,6 +24,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
@@ -73,37 +74,55 @@ final class PipelineCheck {
     private PipelineCheck() {
     }
 
+    /** Which generated client an arm uses; they are bridged independently, so they must be checked separately. */
+    enum ClientKind {
+        SYNC("software.amazon.awssdk.services.dynamodb.DefaultDynamoDbClient"),
+        ASYNC("software.amazon.awssdk.services.dynamodb.DefaultDynamoDbAsyncClient");
+
+        private final String implClass;
+
+        ClientKind(String implClass) {
+            this.implClass = implClass;
+        }
+    }
+
     /**
-     * Verify that {@code client} runs {@code expected}, and fail loudly if it does not.
+     * Verify that the {@code kind} client runs {@code expected}, and fail loudly if it does not.
+     *
+     * <p>The kind matters: the bridge prototype covers the synchronous client only, so on a bridged build the
+     * sync client is bridged while the async client is still stock. Checking the sync client on behalf of an
+     * async arm would report the wrong pipeline — and would have done, before this was parameterized.
      *
      * @param endpoint the mock server, used for the probe call
      */
-    static void require(Pipeline expected, URI endpoint) {
-        Pipeline wiring = detectWiring();
-        Pipeline execution = detectExecution(endpoint);
+    static void require(Pipeline expected, URI endpoint, ClientKind kind) {
+        Pipeline wiring = detectWiring(kind);
+        Pipeline execution = detectExecution(endpoint, kind);
 
         if (wiring != expected || execution != expected) {
             throw new IllegalStateException(String.format(
-                "pipeline mismatch: this arm expects the %s pipeline, but the SDK on the classpath is wired for %s "
-                + "and executed through %s.%n"
+                "pipeline mismatch on the " + kind + " client: this arm expects the %s pipeline, but the SDK on the "
+                + "classpath is wired for %s and executed through %s.%n"
                 + "  The bridged and stock builds share every class name and Maven coordinate, so this almost "
                 + "certainly means the wrong benchmark jar was used for this client arm.%n"
                 + "  Run the %s arm against a jar built from the matching SDK: the bridged arm needs the bridge "
                 + "build, v2-sync/v2-async need a stock build.",
                 expected, wiring, execution, expected));
         }
-        System.out.printf("=== pipeline verified: %s (wiring=%s execution=%s)%n", expected, wiring, execution);
+        System.out.printf("=== pipeline verified: %s %s (wiring=%s execution=%s)%n",
+                          kind, expected, wiring, execution);
     }
 
     /**
      * Which pipeline the loaded generated client is wired for, by looking for the bridge's client field.
      */
-    private static Pipeline detectWiring() {
+    private static Pipeline detectWiring(ClientKind kind) {
         Class<?> impl;
         try {
-            impl = Class.forName("software.amazon.awssdk.services.dynamodb.DefaultDynamoDbClient");
+            impl = Class.forName(kind.implClass);
         } catch (ClassNotFoundException e) {
-            throw new IllegalStateException("cannot find the generated DynamoDB client implementation", e);
+            throw new IllegalStateException("cannot find the generated DynamoDB client implementation "
+                                            + kind.implClass, e);
         }
         for (Field field : impl.getDeclaredFields()) {
             if (BRIDGE_CLIENT_CLASS.equals(field.getType().getName())) {
@@ -116,17 +135,30 @@ final class PipelineCheck {
     /**
      * Which pipeline a real call runs through, from a stack captured inside it.
      */
-    private static Pipeline detectExecution(URI endpoint) {
+    private static Pipeline detectExecution(URI endpoint, ClientKind kind) {
         StackCapturingCredentialsProvider probe = new StackCapturingCredentialsProvider();
-        try (DynamoDbClient client = DynamoDbClient.builder()
-                                                  .endpointOverride(endpoint)
-                                                  .region(Region.US_EAST_1)
-                                                  .credentialsProvider(probe)
-                                                  .build()) {
-            client.getItem(GetItemRequest.builder()
-                                         .tableName(BenchmarkItems.TABLE_NAME)
-                                         .key(Map.of("pk", AttributeValue.fromS(BenchmarkItems.SMALL_KEY)))
-                                         .build());
+        GetItemRequest request = GetItemRequest.builder()
+                                              .tableName(BenchmarkItems.TABLE_NAME)
+                                              .key(Map.of("pk", AttributeValue.fromS(BenchmarkItems.SMALL_KEY)))
+                                              .build();
+        try {
+            if (kind == ClientKind.ASYNC) {
+                try (DynamoDbAsyncClient client = DynamoDbAsyncClient.builder()
+                                                                     .endpointOverride(endpoint)
+                                                                     .region(Region.US_EAST_1)
+                                                                     .credentialsProvider(probe)
+                                                                     .build()) {
+                    client.getItem(request).join();
+                }
+            } else {
+                try (DynamoDbClient client = DynamoDbClient.builder()
+                                                           .endpointOverride(endpoint)
+                                                           .region(Region.US_EAST_1)
+                                                           .credentialsProvider(probe)
+                                                           .build()) {
+                    client.getItem(request);
+                }
+            }
         } catch (RuntimeException e) {
             // A failed probe call is not fatal on its own -- what matters is whether a pipeline stack was
             // captured before the failure. If none was, rethrow: an arm must not be measured unverified.
