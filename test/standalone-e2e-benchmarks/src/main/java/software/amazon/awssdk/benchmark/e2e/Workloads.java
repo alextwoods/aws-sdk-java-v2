@@ -130,26 +130,21 @@ interface Workloads {
                 return v2Sync(endpoint, metrics,
                               software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
                                                                                    .maxConnections(concurrency),
-                              "apache5" + tlsSuffix);
+                              "apache5" + tlsSuffix, Pipeline.STOCK);
             case "v2-async":
                 return v2Async(endpoint, metrics,
                                AwsCrtAsyncHttpClient.builder()
                                                     .maxConcurrency(concurrency)
                                                     .buildWithDefaults(crtTlsDefaults(endpoint)),
                                "crt" + tlsSuffix);
-            // The two arms below differ from the two above only in transport, so a paired run against
-            // their counterpart isolates the HTTP client and nothing else.
-            case "v2-sync-smithy":
+            // Same construction as v2-sync; the difference is which SDK build the jar embeds. Named
+            // separately so a results file says which pipeline it measured, and verified at
+            // construction so it cannot silently be the other one.
+            case "v2-bridged":
                 return v2Sync(endpoint, metrics,
-                              software.amazon.awssdk.http.smithy.SmithyHttpClient.builder()
-                                                                                 .maxConnections(concurrency),
-                              "smithy-http" + tlsSuffix);
-            case "v2-async-smithy":
-                return v2Async(endpoint, metrics,
-                               software.amazon.awssdk.http.smithy.SmithyAsyncHttpClient.builder()
-                                                                                       .maxConcurrency(concurrency)
-                                                                                       .build(),
-                               "smithy-http" + tlsSuffix);
+                              software.amazon.awssdk.http.apache5.Apache5HttpClient.builder()
+                                                                                   .maxConnections(concurrency),
+                              "apache5" + tlsSuffix, Pipeline.BRIDGED);
             case "smithy":
                 return smithy(endpoint, metrics, concurrency);
             default:
@@ -327,7 +322,12 @@ interface Workloads {
     private static Workload v2Sync(URI endpoint,
                                    boolean metrics,
                                    software.amazon.awssdk.http.SdkHttpClient.Builder<?> httpClientBuilder,
-                                   String transportName) {
+                                   String transportName,
+                                   Pipeline expectedPipeline) {
+        // Before anything is measured: confirm the SDK on this classpath is the one this arm claims. The
+        // bridged and stock builds are identical by class name, so this is the only thing standing between a
+        // jar mix-up and a table of numbers attributed to the wrong pipeline.
+        PipelineCheck.require(expectedPipeline, endpoint);
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
@@ -391,6 +391,9 @@ interface Workloads {
                                     boolean metrics,
                                     software.amazon.awssdk.http.async.SdkAsyncHttpClient httpClient,
                                     String transportName) {
+        // The bridge is sync-only, so an async arm must be running the stock pipeline; verified rather than
+        // assumed, for the same reason as the sync side.
+        PipelineCheck.require(Pipeline.STOCK, endpoint);
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())

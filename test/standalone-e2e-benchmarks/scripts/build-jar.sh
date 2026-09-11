@@ -75,9 +75,17 @@ if [[ "$UNTRACKED_SRC" != "0" ]]; then
 fi
 
 if [[ -n "$SDK_VERSION" ]]; then
-    # A published release has no commit in this repo; say so rather than implying one.
-    SDK_COMMIT="published-$SDK_VERSION"
-    echo "==> Using PUBLISHED SDK v2 $SDK_VERSION from Maven Central (no local SDK involved)"
+    if [[ -n "$SDK_COMMIT" ]]; then
+        # An explicitly supplied commit means the artifacts at this version are a LOCAL build that was
+        # installed under a distinguishing version (how the smithy-java bridge is measured: it keeps every
+        # class name stock V2 uses, so only the version tells the two builds apart in ~/.m2). Labelling that
+        # "published" would be a lie in the provenance the results are traced through.
+        echo "==> Using SDK v2 artifacts at version $SDK_VERSION from ~/.m2, recorded as commit $SDK_COMMIT"
+    else
+        # A published release has no commit in this repo; say so rather than implying one.
+        SDK_COMMIT="published-$SDK_VERSION"
+        echo "==> Using PUBLISHED SDK v2 $SDK_VERSION from Maven Central (no local SDK involved)"
+    fi
 fi
 
 if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
@@ -94,7 +102,7 @@ if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
     # Installing a *consistent* set matters: installing a single core module on its own has
     # previously desynchronized ~/.m2 and produced VerifyErrors at runtime.
     (cd "$REPO" && mvn clean install \
-        -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,:smithy-http-client,!:codegen-maven-plugin' \
+        -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
         --am -P quick -Dmaven.test.skip=true -q)
 fi
 

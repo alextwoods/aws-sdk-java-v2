@@ -103,11 +103,6 @@
              and `v2-async` except for the transport, so pairing an arm against its counterpart
              isolates the HTTP client. Registers no SdkHttpService, so adding it to the classpath
              cannot change which transport the other arms resolve. -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>smithy-http-client</artifactId>
-            <version>${aws.sdk.v2.version}</version>
-        </dependency>
 
         <!-- ==================== Smithy-Java ==================== -->
         <!-- Generated DynamoDB client; built and published to mavenLocal by
