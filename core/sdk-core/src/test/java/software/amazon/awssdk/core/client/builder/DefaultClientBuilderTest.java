@@ -72,13 +72,18 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 import software.amazon.awssdk.core.ClientEndpointProvider;
+import software.amazon.awssdk.core.SdkRequest;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
+import software.amazon.awssdk.core.interceptor.Context;
 import software.amazon.awssdk.core.interceptor.ExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptorChain;
+import software.amazon.awssdk.core.interceptor.InterceptorContext;
+import software.amazon.awssdk.core.internal.SdkInternalClientOption;
 import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.core.signer.NoOpSigner;
 import software.amazon.awssdk.core.signer.Signer;
@@ -310,6 +315,40 @@ public class DefaultClientBuilderTest {
         TestClient client = testClientBuilder().build();
         assertThat(client.clientConfiguration.option(SIGNER))
                 .isEqualTo(TEST_SIGNER);
+    }
+
+    @Test
+    public void build_interceptorChain_isDerivedOnceAndFollowsInterceptorListChanges() {
+        ExecutionAttribute<Boolean> seen = new ExecutionAttribute<>("seen");
+        ExecutionInterceptor interceptor = new ExecutionInterceptor() {
+            @Override
+            public void beforeExecution(Context.BeforeExecution context, ExecutionAttributes attrs) {
+                attrs.putAttribute(seen, true);
+            }
+        };
+        SdkClientConfiguration config = testClientBuilder().build().clientConfiguration;
+
+        ExecutionInterceptorChain chain = config.option(SdkInternalClientOption.EXECUTION_INTERCEPTOR_CHAIN);
+        assertThat(chain).isNotNull();
+        assertThat(config.option(SdkInternalClientOption.EXECUTION_INTERCEPTOR_CHAIN)).isSameAs(chain);
+        assertThat(SdkInternalClientOption.interceptorChain(config)).isSameAs(chain);
+
+        // A configuration change that adds an interceptor (as a request-level plugin would) yields a chain that runs it.
+        List<ExecutionInterceptor> interceptors = new ArrayList<>(config.option(EXECUTION_INTERCEPTORS));
+        interceptors.add(interceptor);
+        SdkClientConfiguration updated = config.toBuilder().option(EXECUTION_INTERCEPTORS, interceptors).build();
+        ExecutionInterceptorChain updatedChain = updated.option(SdkInternalClientOption.EXECUTION_INTERCEPTOR_CHAIN);
+        assertThat(updatedChain).isNotSameAs(chain);
+
+        ExecutionAttributes attrs = new ExecutionAttributes();
+        updatedChain.beforeExecution(InterceptorContext.builder().request(mock(SdkRequest.class)).build(), attrs);
+        assertThat(attrs.getAttribute(seen)).isTrue();
+
+        // A configuration built by hand, without the builder, still gets a working chain.
+        SdkClientConfiguration handBuilt = SdkClientConfiguration.builder()
+                                                                 .option(EXECUTION_INTERCEPTORS, interceptors)
+                                                                 .build();
+        assertThat(SdkInternalClientOption.interceptorChain(handBuilt)).isNotNull();
     }
 
     @Test

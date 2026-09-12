@@ -56,6 +56,7 @@ import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.internal.InternalCoreExecutionAttribute;
+import software.amazon.awssdk.core.internal.SdkInternalClientOption;
 import software.amazon.awssdk.core.internal.util.HttpChecksumResolver;
 import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
@@ -162,8 +163,7 @@ public final class AwsExecutionContextBuilder {
         executionAttributes.putAttribute(SdkInternalExecutionAttribute.IDENTITY_PROVIDER_RESOLVER,
                                          AwsRequestIdentityProviderResolver.create());
 
-        ExecutionInterceptorChain executionInterceptorChain =
-            new ExecutionInterceptorChain(clientConfig.option(SdkClientOption.EXECUTION_INTERCEPTORS));
+        ExecutionInterceptorChain executionInterceptorChain = SdkInternalClientOption.interceptorChain(clientConfig);
 
         executionAttributes.putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_SNAPSHOT_PRE_INTERCEPTORS,
                                          executionAttributes.getAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME));

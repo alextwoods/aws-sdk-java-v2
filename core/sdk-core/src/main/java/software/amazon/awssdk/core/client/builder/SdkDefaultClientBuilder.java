@@ -87,6 +87,8 @@ import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.interceptor.ClasspathInterceptorChainFactory;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptorChain;
+import software.amazon.awssdk.core.internal.SdkInternalClientOption;
 import software.amazon.awssdk.core.internal.http.loader.DefaultSdkAsyncHttpClientBuilder;
 import software.amazon.awssdk.core.internal.http.loader.DefaultSdkHttpClientBuilder;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.CompressRequestStage;
@@ -358,6 +360,8 @@ public abstract class SdkDefaultClientBuilder<B extends SdkClientBuilder<B, C>, 
                      .lazyOption(SCHEDULED_EXECUTOR_SERVICE, this::resolveScheduledExecutorService)
                      .lazyOptionIfAbsent(RETRY_STRATEGY, this::resolveRetryStrategy)
                      .option(EXECUTION_INTERCEPTORS, resolveExecutionInterceptors(config))
+                     .lazyOption(SdkInternalClientOption.EXECUTION_INTERCEPTOR_CHAIN,
+                                 c -> new ExecutionInterceptorChain(c.get(EXECUTION_INTERCEPTORS)))
                      .lazyOption(CLIENT_USER_AGENT, this::resolveClientUserAgent)
                      .lazyOption(COMPRESSION_CONFIGURATION, this::resolveCompressionConfiguration)
                      .lazyOptionIfAbsent(IDENTITY_PROVIDERS, c -> IdentityProviders.builder().build());

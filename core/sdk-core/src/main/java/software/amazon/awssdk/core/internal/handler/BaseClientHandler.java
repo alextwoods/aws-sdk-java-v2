@@ -39,6 +39,7 @@ import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.internal.InternalCoreExecutionAttribute;
+import software.amazon.awssdk.core.internal.SdkInternalClientOption;
 import software.amazon.awssdk.core.internal.util.MetricUtils;
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.signer.Signer;
@@ -266,8 +267,7 @@ public abstract class BaseClientHandler {
                           clientConfiguration.option(SdkClientOption.PROFILE_FILE_SUPPLIER))
             .putAttribute(SdkExecutionAttribute.PROFILE_NAME, clientConfiguration.option(SdkClientOption.PROFILE_NAME));
 
-        ExecutionInterceptorChain interceptorChain =
-            new ExecutionInterceptorChain(clientConfiguration.option(SdkClientOption.EXECUTION_INTERCEPTORS));
+        ExecutionInterceptorChain interceptorChain = SdkInternalClientOption.interceptorChain(clientConfiguration);
 
         InterceptorContext interceptorContext = InterceptorContext.builder()
                                                                   .request(originalRequest)
