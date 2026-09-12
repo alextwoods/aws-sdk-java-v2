@@ -214,6 +214,16 @@ public class SdkExecutionAttribute {
                                                             .build());
         }
 
+        // No algorithm to record and none recorded: writing an explicit null would change nothing a reader can see
+        // through signerProperty(), but it would add a null-valued key to the option -- and that key is exactly what
+        // made the later "did interceptors add anything?" comparison in AuthSchemeResolver conclude the option had to
+        // be rebuilt. Every request without a checksum used to pay for two option copies here for nothing. Writing a
+        // null over a NON-null value still copies, because that is a genuine clear.
+        if (checksumAlgorithm == null
+            && authScheme.authSchemeOption().signerProperty(AwsV4FamilyHttpSigner.CHECKSUM_ALGORITHM) == null) {
+            return authScheme;
+        }
+
         return new SelectedAuthScheme<>(authScheme.identity(),
                                         authScheme.signer(),
                                         authScheme.authSchemeOption()

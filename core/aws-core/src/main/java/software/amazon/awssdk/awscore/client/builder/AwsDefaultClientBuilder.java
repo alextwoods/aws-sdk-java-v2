@@ -31,6 +31,7 @@ import software.amazon.awssdk.annotations.SdkTestInternalApi;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.CredentialUtils;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.signer.AwsSignerExecutionAttribute;
 import software.amazon.awssdk.awscore.client.config.AwsAdvancedClientOption;
 import software.amazon.awssdk.awscore.client.config.AwsClientOption;
 import software.amazon.awssdk.awscore.defaultsmode.DefaultsMode;
@@ -39,6 +40,7 @@ import software.amazon.awssdk.awscore.endpoint.FipsEnabledProvider;
 import software.amazon.awssdk.awscore.eventstream.EventStreamInitialRequestInterceptor;
 import software.amazon.awssdk.awscore.interceptor.HelpfulUnknownHostExceptionInterceptor;
 import software.amazon.awssdk.awscore.interceptor.TraceIdExecutionInterceptor;
+import software.amazon.awssdk.awscore.internal.AwsInternalClientOption;
 import software.amazon.awssdk.awscore.internal.auth.Sigv4aSigningRegionSetProvider;
 import software.amazon.awssdk.awscore.internal.defaultsmode.AutoDefaultsModeDiscovery;
 import software.amazon.awssdk.awscore.internal.defaultsmode.DefaultsModeConfiguration;
@@ -46,11 +48,14 @@ import software.amazon.awssdk.awscore.internal.defaultsmode.DefaultsModeResolver
 import software.amazon.awssdk.awscore.retry.AwsRetryPolicy;
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.core.ClientEndpointProvider;
+import software.amazon.awssdk.core.SelectedAuthScheme;
 import software.amazon.awssdk.core.client.builder.SdkDefaultClientBuilder;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
+import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.internal.SdkInternalTestAdvancedClientOption;
 import software.amazon.awssdk.core.internal.retry.SdkDefaultRetryStrategy;
 import software.amazon.awssdk.core.retry.NewRetries2026Resolver;
@@ -190,6 +195,7 @@ public abstract class AwsDefaultClientBuilder<BuilderT extends AwsClientBuilder<
                             .lazyOptionIfAbsent(SdkClientOption.ENDPOINT, this::resolveEndpoint)
                             .lazyOptionIfAbsent(SdkClientOption.ENDPOINT_OVERRIDDEN, this::resolveEndpointOverridden)
                             .lazyOptionIfAbsent(AwsClientOption.SIGNING_REGION, this::resolveSigningRegion)
+                            .lazyOption(AwsInternalClientOption.PLACEHOLDER_AUTH_SCHEME, this::resolvePlaceholderAuthScheme)
                             .lazyOption(SdkClientOption.HTTP_CLIENT_CONFIG, this::resolveHttpClientConfig)
                             .applyMutation(this::configureRetryPolicy)
                             .applyMutation(this::configureRetryStrategy)
@@ -316,6 +322,21 @@ public abstract class AwsDefaultClientBuilder<BuilderT extends AwsClientBuilder<
      */
     private Region resolveSigningRegion(LazyValueSource config) {
         return config.get(AwsClientOption.AWS_REGION);
+    }
+
+    /**
+     * The auth-scheme placeholder that writing {@code SERVICE_SIGNING_NAME} then {@code SIGNING_REGION} produces for
+     * this client, built once here instead of on every call.
+     *
+     * <p>Produced by performing exactly those two writes on a scratch {@link ExecutionAttributes}, so the result is
+     * whatever the mapped-attribute code makes of them today — same scheme id, same properties, same sentinel identity
+     * and signer — rather than a hand-assembled imitation that could drift from it.
+     */
+    private SelectedAuthScheme<?> resolvePlaceholderAuthScheme(LazyValueSource config) {
+        ExecutionAttributes scratch = new ExecutionAttributes();
+        scratch.putAttribute(AwsSignerExecutionAttribute.SERVICE_SIGNING_NAME, config.get(AwsClientOption.SERVICE_SIGNING_NAME))
+               .putAttribute(AwsSignerExecutionAttribute.SIGNING_REGION, config.get(AwsClientOption.SIGNING_REGION));
+        return scratch.getAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME);
     }
 
     /**

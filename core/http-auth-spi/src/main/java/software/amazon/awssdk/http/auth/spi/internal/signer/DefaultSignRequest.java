@@ -42,7 +42,7 @@ public final class DefaultSignRequest<IdentityT extends Identity>
         return ToString.builder("SignRequest")
             .add("request", request)
             .add("identity", identity)
-            .add("properties", properties)
+            .add("properties", allProperties())
             .build();
     }
 
@@ -66,7 +66,7 @@ public final class DefaultSignRequest<IdentityT extends Identity>
         }
 
         private BuilderImpl(DefaultSignRequest<IdentityT> request) {
-            properties(request.properties);
+            properties(request.allProperties());
             identity(request.identity);
             payload(request.payload);
             request(request.request);

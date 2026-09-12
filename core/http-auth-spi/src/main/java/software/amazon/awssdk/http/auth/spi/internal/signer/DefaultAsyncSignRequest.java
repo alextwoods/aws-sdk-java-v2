@@ -43,7 +43,7 @@ public final class DefaultAsyncSignRequest<IdentityT extends Identity>
         return ToString.builder("AsyncSignRequest")
             .add("request", request)
             .add("identity", identity)
-            .add("properties", properties)
+            .add("properties", allProperties())
             .build();
     }
 
@@ -67,7 +67,7 @@ public final class DefaultAsyncSignRequest<IdentityT extends Identity>
         }
 
         private BuilderImpl(DefaultAsyncSignRequest<IdentityT> request) {
-            properties(request.properties);
+            properties(request.allProperties());
             identity(request.identity);
             payload(request.payload);
             request(request.request);

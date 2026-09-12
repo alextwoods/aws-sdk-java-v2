@@ -33,7 +33,9 @@ import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpRequest;
+import software.amazon.awssdk.http.auth.spi.internal.signer.DefaultBaseSignRequest;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption;
+import software.amazon.awssdk.http.auth.spi.signer.BaseSignRequest;
 import software.amazon.awssdk.http.auth.spi.signer.HttpSigner;
 import software.amazon.awssdk.http.auth.spi.signer.PayloadChecksumStore;
 import software.amazon.awssdk.http.auth.spi.signer.SdkInternalHttpSignerProperty;
@@ -115,7 +117,7 @@ public class SigningStage implements RequestToRequestPipeline {
             .request(request)
             .payload(request.contentStreamProvider().orElse(null));
         AuthSchemeOption authSchemeOption = selectedAuthScheme.authSchemeOption();
-        authSchemeOption.forEachSignerProperty(signRequestBuilder::putProperty);
+        readSignerPropertiesThrough(signRequestBuilder, authSchemeOption);
 
         HttpSigner<T> signer = selectedAuthScheme.signer();
         SignedRequest signedRequest = signer.sign(signRequestBuilder.build());
@@ -190,5 +192,22 @@ public class SigningStage implements RequestToRequestPipeline {
      */
     private void adjustForClockSkew(ExecutionAttributes attributes) {
         attributes.putAttribute(SdkExecutionAttribute.TIME_OFFSET, dependencies.timeOffset());
+    }
+
+    /**
+     * Hands the auth scheme's signer properties to the request by reference rather than copying them in.
+     *
+     * <p>The default request builders read properties through the option on lookup, so the per-call copy — an
+     * iteration through a consumer, a map put per property, a resize, and a second copy of the whole map at build —
+     * is gone. Precedence is unchanged: the copy used to run after the request-level puts, and the read-through
+     * consults the option first. A third-party {@code SignRequest.Builder} implementation, which cannot be given the
+     * option, gets the copy it always got.
+     */
+    private static void readSignerPropertiesThrough(BaseSignRequest.Builder<?, ?, ?> builder, AuthSchemeOption option) {
+        if (builder instanceof DefaultBaseSignRequest.BuilderImpl) {
+            ((DefaultBaseSignRequest.BuilderImpl<?, ?, ?>) builder).signerProperties(option);
+        } else {
+            option.forEachSignerProperty(builder::putProperty);
+        }
     }
 }

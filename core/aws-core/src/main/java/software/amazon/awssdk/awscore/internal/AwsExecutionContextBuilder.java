@@ -96,15 +96,14 @@ public final class AwsExecutionContextBuilder {
 
         executionAttributes.putAttributeIfAbsent(SdkExecutionAttribute.API_CALL_METRIC_COLLECTOR, metricCollector);
 
+        putSigningNameAndRegion(executionAttributes, clientConfig);
+
         executionAttributes
             .putAttribute(InternalCoreExecutionAttribute.EXECUTION_ATTEMPT, 1)
             .putAttribute(SdkExecutionAttribute.SERVICE_CONFIG,
                           clientConfig.option(SdkClientOption.SERVICE_CONFIGURATION))
-            .putAttribute(AwsSignerExecutionAttribute.SERVICE_SIGNING_NAME,
-                          clientConfig.option(AwsClientOption.SERVICE_SIGNING_NAME))
             .putAttribute(AwsExecutionAttribute.AWS_REGION, clientConfig.option(AwsClientOption.AWS_REGION))
             .putAttribute(AwsExecutionAttribute.ENDPOINT_PREFIX, clientConfig.option(AwsClientOption.ENDPOINT_PREFIX))
-            .putAttribute(AwsSignerExecutionAttribute.SIGNING_REGION, clientConfig.option(AwsClientOption.SIGNING_REGION))
             .putAttribute(SdkInternalExecutionAttribute.IS_FULL_DUPLEX, executionParams.isFullDuplex())
             .putAttribute(SdkInternalExecutionAttribute.IS_LONG_POLLING, executionParams.isLongPolling())
             .putAttribute(SdkInternalExecutionAttribute.NEW_RETRIES_2026_ENABLED, clientConfig.option(NEW_RETRIES_2026_ENABLED))
@@ -292,6 +291,31 @@ public final class AwsExecutionContextBuilder {
         return SignerOverrideUtils.isSignerOverridden(request, attributes) &&
                selectedAuthScheme != null &&
                !NoAuthAuthScheme.SCHEME_ID.equals(selectedAuthScheme.authSchemeOption().schemeId());
+    }
+
+    /**
+     * Records the client's signing name and region as the legacy {@code SERVICE_SIGNING_NAME} / {@code SIGNING_REGION}
+     * execution attributes.
+     *
+     * <p>Both are mapped attributes: writing them builds an {@code "unset"} placeholder {@link SelectedAuthScheme}
+     * carrying the values as signer properties (the first write creates it, the second copies it to add a property).
+     * That graph depends only on client constants, so when nothing has put an auth scheme in place yet — the common
+     * case — the one the client builder prepared is installed directly, and the two writes and their per-call
+     * allocations are skipped. If a request-level execution attribute already supplied an auth scheme, the writes are
+     * performed as before, so they layer onto it exactly as they always have.
+     */
+    private static void putSigningNameAndRegion(ExecutionAttributes executionAttributes,
+                                                SdkClientConfiguration clientConfig) {
+        SelectedAuthScheme<?> placeholder = clientConfig.option(AwsInternalClientOption.PLACEHOLDER_AUTH_SCHEME);
+        if (placeholder != null
+            && executionAttributes.getAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME) == null) {
+            executionAttributes.putAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME, placeholder);
+            return;
+        }
+        executionAttributes
+            .putAttribute(AwsSignerExecutionAttribute.SERVICE_SIGNING_NAME,
+                          clientConfig.option(AwsClientOption.SERVICE_SIGNING_NAME))
+            .putAttribute(AwsSignerExecutionAttribute.SIGNING_REGION, clientConfig.option(AwsClientOption.SIGNING_REGION));
     }
 
     private static void putAuthSchemeResolutionAttributes(ExecutionAttributes executionAttributes,

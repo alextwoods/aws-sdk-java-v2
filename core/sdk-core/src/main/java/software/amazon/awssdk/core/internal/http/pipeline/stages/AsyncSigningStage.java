@@ -40,9 +40,11 @@ import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpRequest;
 import software.amazon.awssdk.http.async.SdkHttpContentPublisher;
+import software.amazon.awssdk.http.auth.spi.internal.signer.DefaultBaseSignRequest;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption;
 import software.amazon.awssdk.http.auth.spi.signer.AsyncSignRequest;
 import software.amazon.awssdk.http.auth.spi.signer.AsyncSignedRequest;
+import software.amazon.awssdk.http.auth.spi.signer.BaseSignRequest;
 import software.amazon.awssdk.http.auth.spi.signer.BaseSignedRequest;
 import software.amazon.awssdk.http.auth.spi.signer.HttpSigner;
 import software.amazon.awssdk.http.auth.spi.signer.PayloadChecksumStore;
@@ -147,7 +149,7 @@ public class AsyncSigningStage implements RequestPipeline<SdkHttpFullRequest,
                 .putProperty(SdkInternalHttpSignerProperty.CHECKSUM_STORE, payloadChecksumStore)
                 .request(request)
                 .payload(request.contentStreamProvider().orElse(null));
-            authSchemeOption.forEachSignerProperty(signRequestBuilder::putProperty);
+            readSignerPropertiesThrough(signRequestBuilder, authSchemeOption);
 
             SignedRequest signedRequest = signer.sign(signRequestBuilder.build());
             return CompletableFuture.completedFuture(toSdkHttpFullRequest(signedRequest));
@@ -160,7 +162,7 @@ public class AsyncSigningStage implements RequestPipeline<SdkHttpFullRequest,
             .request(request)
             .payload(context.requestProvider());
 
-        authSchemeOption.forEachSignerProperty(signRequestBuilder::putProperty);
+        readSignerPropertiesThrough(signRequestBuilder, authSchemeOption);
 
         CompletableFuture<AsyncSignedRequest> signedRequestFuture = signer.signAsync(signRequestBuilder.build());
         return signedRequestFuture.thenCompose(signedRequest -> {
@@ -297,5 +299,22 @@ public class AsyncSigningStage implements RequestPipeline<SdkHttpFullRequest,
 
             return CompletableFuture.completedFuture(signedRequest);
         };
+    }
+
+    /**
+     * Hands the auth scheme's signer properties to the request by reference rather than copying them in.
+     *
+     * <p>The default request builders read properties through the option on lookup, so the per-call copy — an
+     * iteration through a consumer, a map put per property, a resize, and a second copy of the whole map at build —
+     * is gone. Precedence is unchanged: the copy used to run after the request-level puts, and the read-through
+     * consults the option first. A third-party {@code SignRequest.Builder} implementation, which cannot be given the
+     * option, gets the copy it always got.
+     */
+    private static void readSignerPropertiesThrough(BaseSignRequest.Builder<?, ?, ?> builder, AuthSchemeOption option) {
+        if (builder instanceof DefaultBaseSignRequest.BuilderImpl) {
+            ((DefaultBaseSignRequest.BuilderImpl<?, ?, ?>) builder).signerProperties(option);
+        } else {
+            option.forEachSignerProperty(builder::putProperty);
+        }
     }
 }
