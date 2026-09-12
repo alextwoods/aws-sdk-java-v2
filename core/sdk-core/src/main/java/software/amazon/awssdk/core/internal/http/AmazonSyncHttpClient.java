@@ -146,7 +146,7 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
             // contexts work.
             if (request != null && executionContext != null) {
                 executionContext.interceptorContext(
-                    executionContext.interceptorContext().copy(ib -> ib.httpRequest(request)));
+                    executionContext.interceptorContext().withHttpRequest(request));
             }
 
             try {

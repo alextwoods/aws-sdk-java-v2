@@ -176,7 +176,7 @@ public class SigningStage implements RequestToRequestPipeline {
      * TODO: Remove when we stop having two copies of the request.
      */
     private void updateHttpRequestInInterceptorContext(SdkHttpFullRequest request, ExecutionContext executionContext) {
-        executionContext.interceptorContext(executionContext.interceptorContext().copy(b -> b.httpRequest(request)));
+        executionContext.interceptorContext(executionContext.interceptorContext().withHttpRequest(request));
     }
 
     /**

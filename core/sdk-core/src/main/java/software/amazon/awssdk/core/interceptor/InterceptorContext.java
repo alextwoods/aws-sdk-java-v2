@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.util.Optional;
 import org.reactivestreams.Publisher;
 import software.amazon.awssdk.annotations.NotThreadSafe;
+import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.core.SdkRequest;
@@ -60,6 +61,17 @@ public final class InterceptorContext
         this.responsePublisher = builder.responsePublisher;
     }
 
+    private InterceptorContext(InterceptorContext source, SdkHttpRequest httpRequest) {
+        this.request = source.request;
+        this.httpRequest = httpRequest;
+        this.requestBody = source.requestBody;
+        this.httpResponse = source.httpResponse;
+        this.responseBody = source.responseBody;
+        this.response = source.response;
+        this.asyncRequestBody = source.asyncRequestBody;
+        this.responsePublisher = source.responsePublisher;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -67,6 +79,18 @@ public final class InterceptorContext
     @Override
     public Builder toBuilder() {
         return new Builder(this);
+    }
+
+    /**
+     * This context with {@code httpRequest} replaced and everything else unchanged.
+     *
+     * <p>Equivalent to {@code copy(b -> b.httpRequest(httpRequest))}, without the builder: the pipeline swaps the HTTP
+     * request into the context after marshalling and again after signing on every call, and each swap through the
+     * builder allocated the builder, walked eight fields into it, and walked them back out. Internal use.
+     */
+    @SdkInternalApi
+    public InterceptorContext withHttpRequest(SdkHttpRequest httpRequest) {
+        return new InterceptorContext(this, httpRequest);
     }
 
     @Override
