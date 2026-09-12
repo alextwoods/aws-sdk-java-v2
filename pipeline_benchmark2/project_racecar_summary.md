@@ -3154,3 +3154,326 @@ One conformance test was weakened as a consequence, documented on the override: 
 connect path keeps only the last address's failure, so on a host resolving to both `::1` and
 `127.0.0.1` the surviving cause can be a connection failure rather than the certificate failure. The
 request still fails closed; only the exception type is less specific.
+
+## Interlude — the bridged-pipeline comparison lives in `pipeline_benchmark3/`
+
+Between the TLS run and Phase H4 the optimized pipeline was put head-to-head with a prototype that
+routes V2 clients through smithy-java's pipeline instead ("v2-bridged"), alongside v1, stock 2.54.0
+and native smithy-java, all from one harness commit with process-isolated jars and runtime
+assertions that each arm really runs the pipeline it claims. That report is
+[`pipeline_benchmark3/results.md`](../pipeline_benchmark3/results.md); the one-line result is that
+the bridge is 0.70×/0.67× the optimized pipeline on small ops (it does not run V2's per-call
+contracts at all) and 1.44×/1.49× *more* expensive on batch (POJO-to-schema translation scales with
+payload), while optimized V2 sits at 1.03×/0.96× of native smithy-java on batch. It also found that
+the bridge returns DynamoDB `NULL` attributes with no member set. Two things from it drive the
+phases below: the bridge's framework+signing win pointed at *plumbing*, not algorithms, as V2's
+remaining small-op cost (H4, H5), and its stock-2.46-vs-2.54 baseline pair exposed a drift in the
+stock SDK worth explaining (the investigation after H4).
+
+## Phase H4 — auth-scheme and sign-request plumbing
+
+Asked for as "optimize the signer even further, borrowing from smithy-java". The profile-driven gap
+analysis said the *algorithm* was already at parity — `FastV4HeaderSigner` 7.76 µs/op against smithy's
+`SigV4Signer` 7.50 — and the 12.9-vs-4.5 µs "signing" gap bench3 measured was almost entirely the SPI
+plumbing around it: the auth-scheme option graph rebuilt per call (6.20 µs vs smithy's 1.39), the
+`SignRequest` object graph (1.26), and the interceptor-context rebuild after signing (1.28). So the
+signer was left alone and the plumbing was fixed.
+
+- Commits: `291843a37c6` (auth-scheme option graph), `7fe1f0973d4` (interceptor-context swap),
+  plus `8bab8409dd1`, a cherry-pick of upstream PR 7367 (see the investigation below for why)
+- Raw: `paired/host-20260912-1753` (small ops, 7 reps), `host-20260912-1857` (batch-put, 5 reps),
+  `raw/host-h4-profiles` (equal-op alloc + CPU profiles per arm), `paired/host-20260912-1926`
+  (7367 on top of H4, 7 reps)
+- Correctness: http-auth-spi 36, aws-core 321, http-auth-aws 440, sdk-core 2210, protocol-tests
+  726, japicmp clean, smoke 10/10 with metric-set identity; 2 new test classes (`PlaceholderAuth
+  SchemeTest`, `DefaultSignRequestPropertiesTest`) pin the identity of the cached graph with what
+  the legacy path built and the read-through precedence rules
+
+### What changed
+
+Three per-call rebuilds of client-constant state became per-client state or no-ops:
+
+1. **The placeholder auth scheme is built once per client.** The legacy `SERVICE_SIGNING_NAME` and
+   `SIGNING_REGION` execution-attribute writes are *mapped*: each write constructs an `"unset"`
+   `SelectedAuthScheme` carrying the values as signer properties, for interceptors and old-style
+   signers that read them back. Both values are client constants, so the object graph (an option
+   build, a copy of it to add the second property, a completed future, two sentinels) was identical
+   on every call. `AwsDefaultClientBuilder` now resolves it once as a lazy internal option
+   (`AwsInternalClientOption.PLACEHOLDER_AUTH_SCHEME`), built by replaying the same two writes on
+   scratch attributes so it is identical by construction; `AwsExecutionContextBuilder` installs it
+   with two plain puts when no request-level scheme is already present. A second mapped write,
+   `signerChecksumWriteMapping`, was rebuilding the scheme for a null-over-null no-op; it now
+   returns early.
+2. **`SignRequest` reads signer properties through the `AuthSchemeOption`** instead of copying them
+   into its own `HashMap` — `DefaultBaseSignRequest.BuilderImpl.signerProperties()` consults the
+   option first, preserving the old copy-after-puts precedence, and `SigningStage`/`AsyncSigningStage`
+   use the read-through builder. Third-party builders still get the copy.
+3. **`InterceptorContext.withHttpRequest`** replaces the builder round-trip at the four sites that
+   swap only the HTTP request into the context (both signing stages, `AmazonSyncHttpClient`,
+   `BaseClientHandler`).
+
+Rejected on the way: rewriting `FastV4HeaderSigner` further (already at parity — the bench3 profiles
+were the evidence), and a static `(name, region)`-keyed cache for the placeholder (unbounded and
+process-global; per-client is the right lifetime).
+
+### Measurement (paired, host, 200k/30k small × 7 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+| client | scenario | h4Base | h4 | Δ app CPU | pair spread | wins | Δ latency |
+|---|---|---:|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 110.4 | 99.8 | **−9.1%** | ±7.1% | 6/7 | −6.0% |
+| v2-sync | small-put | 104.6 | 96.3 | **−7.9%** | ±2.7% | 7/7 | −5.6% |
+| v2-async | small-get | 150.4 | 144.3 | **−4.0%** | ±1.8% | 7/7 | −4.0% |
+| v2-async | small-put | 149.4 | 141.3 | **−5.5%** | ±1.5% | 7/7 | −5.2% |
+| smithy (control) | small-get | 50.9 | 50.3 | −0.6% | ±10.3% | 4/7 | −0.8% |
+| smithy (control) | small-put | 46.9 | 48.1 | +2.6% | ±4.2% | 2/7 | +1.3% |
+| v2-sync | batch-put | 293.3 | 285.3 | −2.7% | ±1.4% | 5/5 | −1.6% |
+| v2-async | batch-put | 345.1 | 335.3 | −2.8% | ±0.7% | 5/5 | −2.6% |
+
+Prediction was −3 to −6 µs/op; measured is **−8 to −11 µs on sync small ops and −6 to −8 async**,
+with the untouched smithy arm flat, so the effect is the SDK's. Process CPU (which folds in GC)
+moved further, −9.2%/−7.7% sync, consistent with the allocation mechanism below. Batch-put's −2.7%
+is the same fixed saving diluted by payload work.
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+Total allocation on sync small-get fell **39,149 → 34,460 B/op (−4.7 KB, −12%)**, more than the
+−1.5 to −2.5 KB predicted, and the sites that were supposed to vanish did:
+
+| site (B/op) | base | H4 |
+|---|---:|---:|
+| `DefaultAuthSchemeOption.<init>` HashMap + nodes + table | 959 | **0** |
+| `DefaultAuthSchemeOption$BuilderImpl.<init>` HashMap + nodes | 540 | **0** |
+| `DefaultBaseSignRequest.<init>` HashMap nodes | 195 | **0** |
+| `DefaultAuthSchemeOption` object | 120 | **0** |
+| `InterceptorContext` + `$Builder` | 600 | 300 |
+| everything reached via auth-option / sign-request / interceptor-context frames | 6,621 | 3,595 |
+
+CPU agrees: inclusive share under `DefaultAuthSchemeOption` 3.45% → 0.40% (≈3.7 → 0.4 µs),
+`InterceptorContext$Builder` 1.20% → 0.49%, while `FastV4HeaderSigner`'s absolute time is unchanged
+(7.4 → 7.7 µs; its *share* rises because the total shrank — the algorithm was never the problem).
+
+### PR 7367 on JSON
+
+Upstream PR 7367 replaces a per-call `SdkHttpRequest.getUri()` snapshot (a `java.net.URI` build) with
+a lightweight `EndpointUrl`. It was merged for a query/EC2-protocol regression but the snapshot ran on
+every protocol; it applies cleanly and is in neither 2.54.0 nor the racecar base, so it was
+cherry-picked onto H4 and measured on its own: sync small-get **−1.8%** (5/7, spread ±6.5%), async
+−1.3% (5/7, ±1.8%), smithy control +0.3%. Directionally what a ~1 µs saving looks like at this rig's
+floor; kept, and it is part of the H5 base.
+
+## Investigation — where the stock SDK's 2.46 → 2.54 small-op drift comes from
+
+bench3's two stock baselines disagreed by more than noise: 2.46.10 at 148.6 µs/op sync small-get
+against 2.54.0 at 154.6 (+4.0%), async +4.3%, batch-put flat. Seven minor releases sit between them.
+Asked to find the change, with the hint that PR 7367 fixed one known regression (query/EC2).
+
+- Raw: `pipeline_benchmark3/data/bisect/results.csv` (nine published releases, 3 scenarios × 3 reps
+  each, one-off cells), `data/bisect/local-prof/` (per-release local CPU profiles; run logs committed, collapsed stacks kept locally),
+  `paired/host-20260912-1958` (2.46.10 vs 2.47.0 paired, 7 reps, v1 control),
+  `raw/host-bisect-profiles/` (host CPU profiles of 2.46.10, 2.47.0, 2.54.0)
+- Scripts: `pipeline_benchmark3/scripts/bisect_table.py`, `frame_track.py`, `frame_diff.py`
+
+### Method — coarse grid first, then differential frames, then one paired run
+
+Patch-level bisection would have been the wrong tool: the per-step change is below the ±2–3% a
+single cell can resolve, and 40-odd patch releases at 3 reps each is a day of host time to learn
+nothing. Instead: (1) a one-off sweep across every minor release (`.0` of each, plus the two
+endpoints) to see the *shape* of the drift; (2) track the inclusive share of candidate frames across
+the nine profiles, since a share that steps at one release is a mechanism even when the µs total is
+within noise; (3) confirm the one candidate step with a proper paired run, with v1 as the control
+arm.
+
+### Result
+
+**The drift is gradual, not a cliff.** Sync small-get by release (mean of 3, one-off cells, this
+host): 148.6 → 150.3 → 149.4 → 150.4 → 152.5 → 155.2 → 153.4 → 158.5 → 154.6. Every step is inside
+the cell spread; the trend is not. Async has the same shape (197.1 → 205.5); batch-put is flat
+(799.5 → 809.8, +1.3%, within spread) — so this is per-call fixed cost, not per-byte.
+
+**The one step that stands out is 2.47.0**, and the host profile pair says what it is. 2.47.0
+carried the endpoint/auth-resolution refactor (#7017) that moved endpoint and auth-scheme resolution
+from service interceptors into pipeline stages. Differential frames, 2.46.10 → 2.47.0, share of
+SDK-rooted client samples (≈1.45 µs per point at this arm's 145 µs/op):
+
+| moved out | | moved in | |
+|---|---:|---|---:|
+| `AwsExecutionContextBuilder.runInitialInterceptors` | 5.10 → 0.25 | `EndpointResolutionStage.execute` | new, 4.61 |
+| `DynamoDbResolveEndpointInterceptor.modifyRequest` (+ `ruleParams`) | 3.26 → gone | `DefaultDynamoDbClient.resolveEndpoint` lambda path | new, 3.89 |
+| `ExecutionInterceptorChain.modifyRequest` | 3.43 → 0.06 | `AuthSchemeResolutionStage.execute` | new, 2.21 |
+| | | `AwsEndpointProviderUtils.endpointBuiltIn` | new, 1.88 |
+| | | `DefaultAuthSchemeOption.forEachSignerProperty` (property replay/merge) | 0.17 → 1.32 |
+| | | `EndpointResolutionStage.reapplyInterceptorModifiedAuthProperties`, `AuthSchemeResolver.mergePreExistingAuthSchemeProperties` | new, 0.43 + 0.43 |
+
+The same work left the chain and came back as stages, plus about two points of *new* work the
+interceptor version did not do: the stage re-derives endpoint built-ins per call and replays/merges
+auth-scheme properties across the interceptor boundary (`forEachSignerProperty`, `reapply…`,
+`mergePreExisting…`). Net ≈ +2 points ≈ +3 µs — which is the paired number. Paired, 7 reps, 200k
+ops, v1 as control:
+
+| client | 2.46.10 | 2.47.0 | Δ app CPU | pair spread | wins |
+|---|---:|---:|---:|---:|---:|
+| v2-sync small-get | 143.9 | 146.8 | **+2.1%** (+3.0 µs) | ±1.4% | 0/7 |
+| v1 small-get (control) | 116.4 | 115.6 | −0.6% | ±1.5% | 4/7 |
+
+2.47.0 is slower in all seven pairs with the control flat: about **+3 µs/op, roughly half of the
++6 µs total**. The other half accumulates in sub-floor steps across 2.49–2.53 that no single
+measurement here can attribute individually; the 2.47.0 → 2.54.0 profile pair shows the endpoint
+rules evaluating more per call (`RulesFunctions.parseURL`/`RuleUrl.parse` new at 0.94 points,
+`DefaultDynamoDbEndpointProvider.resolveEndpoint` 0.52 → 1.40 — a ruleset that now parses the
+endpoint URL each call) and `ChecksumUtil.checksummer` +0.8 points, with the rest diffuse. Changelog
+candidates for those: #7150 (2.49.0), the `EndpointUrl` groundwork #7176 (2.50.0), #7226 (2.51.1),
+#7161 (2.53.0). The sweep is honest about its floor: 2.53.0 → 2.54.0 reads −2.5% one-off, which is
+noise, not a fix.
+
+A note on method: the *local* (macOS) differential profiles pointed at `java.net.URI.<init>`
+(0.36% → 1.1%) and header `deepCopyMap` copies (0.87% → 1.99%) as the 2.47 step. Neither
+reproduces on the host — both are flat there (1.8%/1.1% throughout) — so they were JIT/platform
+artefacts of the local run, and the mechanism table above uses the host profiles only. This is the
+second time in this project a local profile has told a different story from the host one; host
+profiles are the ones to believe.
+
+### What this means for racecar
+
+- **7367 is relevant to JSON**, not just query/EC2 — the `getUri()` snapshot it removes runs on
+  every protocol (the JSON `getUri` share is 0.6–1.0% in the stock host profiles) — which is why it
+  was cherry-picked and measured above (−1.8% sync, at the floor).
+- **Half of the 2.47 step is structure H4 has since replaced; the other half is a live target.** The
+  auth-scheme property replay/merge the stage refactor added is exactly the per-call option-graph
+  churn H4 removed (its share in the optimized arm: 2.19% → 0.43% across H4). The endpoint half is
+  *not* gone: in the H4 arm `EndpointResolutionStage` + `DefaultDynamoDbClient.resolveEndpoint` +
+  `endpointBuiltIn` + `ruleParams` still take ~6% of client samples, **≈5 µs/op to resolve an
+  endpoint that is a per-client constant for this workload**. That is the next fixed-cost item after
+  H5 (below), and the reason the stock-vs-stock comparisons in bench3 read "2.54 is ~4% worse than
+  2.46" has nothing to do with the bridge.
+- **It also motivates H5**: a refactor that moved work *out* of interceptors still left the chain
+  costing 4.3 µs/op on a client with no interceptors of its own, which is what the next phase is
+  about.
+
+## Phase H5 — an empty interceptor chain costs nothing
+
+Asked for as "move the SDK-owned interceptors out, so we avoid any cost of the interceptor interfaces
+when none are set". Sizing first: on the optimized small-get profile **4.27 µs/op (4.1%) went
+through `ExecutionInterceptorChain`** on a DynamoDB client with *zero* customer interceptors. The
+chain carried four SDK-owned interceptors — `HttpChecksumValidationInterceptor` (sdk-core, every
+client), `HelpfulUnknownHostExceptionInterceptor`, `EventStreamInitialRequestInterceptor` and
+`TraceIdExecutionInterceptor` (aws-core, every AWS client) — and for each of them called all ~16 hooks
+per request, each returning an `Optional` or the unchanged message to be compared. A quarter of the
+cost was one of them: `TraceIdExecutionInterceptor` read the `AWS_LAMBDA_FUNCTION_NAME` environment
+variable through `SystemSetting` in three hooks per call (0.75% of CPU, plus a `byte[]` per read) to
+conclude it was not in Lambda. The chain itself was also rebuilt per call (`new ArrayList<>(...)` plus
+a debug-log lambda, 0.24 µs) and used a capturing lambda per `forEach` hook.
+
+- Commits: `634044a78c2` (chain built once per client), `414f1d62225` (per-hook dispatch),
+  `943673acf8a` (checksum validation as a direct call), `dbc7588b125` (trace ID decided once)
+- Raw: `paired/host-20260912-2029` (small ops, 7 reps), `host-20260912-2132` (batch-put, 5 reps),
+  `raw/host-h5-profiles` (equal-op alloc + CPU profiles)
+- Correctness: sdk-core 1586 + 651, aws-core 321, protocol-tests 726, codegen-generated-classes
+  `HttpChecksumValidationTest` 40 (sync and async response validation end to end through the new
+  call sites) and `TraceIdTest` 7 (Lambda wiring), japicmp clean on sdk-core and aws-core, smoke
+  10/10 with metric-set identity. New: `ExecutionInterceptorChainTest` (9) pins forward/reverse
+  order for every hook, relative order across interceptors implementing different hooks, and the
+  conservative detection cases; `DefaultClientBuilderTest` pins the chain cache and its
+  re-derivation.
+
+### The design choice: dispatch by hook, then take the two hot ones off
+
+"Move them out" literally — direct calls at the same pipeline points — runs into module boundaries:
+three of the four live in aws-core while every call site is in sdk-core, and re-inventing a hook
+mechanism to bridge that would just be a second interceptor chain. What was done instead has two
+layers:
+
+1. **The chain dispatches per hook.** On construction (now once per client, as a lazy internal option
+   derived from `EXECUTION_INTERCEPTORS`, so a request-level plugin that changes the list still gets
+   a matching chain) it works out which interceptors *declare* which hook methods and keeps a target
+   array per hook, iterated with indexed loops in the documented forward/reverse order. An
+   interceptor that only implements `modifyException` costs nothing on the request path; a hook with
+   no overriders is a zero-iteration loop. This is generic — customers' interceptors typically
+   implement one or two hooks too — and it preserves relative order exactly, because it filters the
+   same list rather than reordering it. Detection is deliberately conservative: any declaration in
+   the class hierarchy other than `ExecutionInterceptor` itself counts (superclass, interface default,
+   proxy, mock), and if the hierarchy cannot be inspected the interceptor is visited everywhere, as
+   before. The failure mode is therefore only "visited needlessly", never "skipped".
+2. **The two interceptors that were hot on every call left the chain.** Response checksum validation
+   (sdk-core, so no boundary problem) became a direct call, `ResponseChecksumValidation.validating`,
+   at the two points where the chain invoked it — after the chain's `modifyHttpResponse` in the sync
+   after-transmission stage and after `modifyAsyncHttpResponse` in the async `onStream` handler —
+   which is *after* every configured interceptor, exactly where it ran before (it was at the head of
+   the list; response hooks run in reverse). `TraceIdExecutionInterceptor` evaluates the Lambda
+   variable once in its constructor and `AwsDefaultClientBuilder` registers it only when that says
+   Lambda; inside Lambda the behaviour is identical, outside it the chain no longer carries it.
+
+What remains on a plain DynamoDB client, verified by reflection against the built client:
+`EXECUTION_INTERCEPTORS = [HelpfulUnknownHostExceptionInterceptor, EventStreamInitialRequest
+Interceptor]`; every hook's target array is empty except `modifyException` (the unknown-host helper,
+failure path only) and `modifyHttpRequestAndHttpContent` (the event-stream interceptor's one
+attribute lookup — a codegen-level "register only for services with initial-request event streams"
+would remove it, noted below).
+
+Two things are observable and worth stating. `EXECUTION_INTERCEPTORS` no longer lists the checksum
+interceptor or, outside Lambda, the trace-ID one; the former was `@SdkInternalApi` and the module's
+japicmp excludes were fixed to honour the parent's `*.internal.*` rule (they replaced the parent's
+list instead of appending to it, which is why an internal-class removal tripped the gate). And a
+customer who *sets* `AWS_LAMBDA_FUNCTION_NAME` after building a client would no longer get trace
+propagation on that client; the Lambda runtime sets it before the process starts, and the SDK's own
+test for the wiring builds its client after setting the variable, as any real caller must.
+
+### Measurement (paired, host, 200k/30k small × 7 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+Base is H4 + 7367 (`8bab8409dd1`), so this is H5's effect alone.
+
+| client | scenario | h4b | h5 | Δ app CPU | pair spread | wins | Δ latency |
+|---|---|---:|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 97.1 | 93.8 | **−3.3%** | ±3.3% | 5/7 | −2.1% |
+| v2-sync | small-put | 96.6 | 86.0 | **−10.9%** † | ±5.4% | 7/7 | −7.4% |
+| v2-async | small-get | 142.4 | 137.9 | **−3.2%** | ±2.3% | 6/7 | −3.2% |
+| v2-async | small-put | 140.4 | 134.3 | **−4.2%** | ±3.5% | 7/7 | −3.2% |
+| smithy (control) | small-get | 52.1 | 50.8 | −2.3% | ±8.5% | 4/7 | −2.8% |
+| smithy (control) | small-put | 48.2 | 48.1 | −0.1% | ±3.4% | 4/7 | +0.0% |
+| v2-sync | batch-put | 284.5 | 278.0 | −2.3% | ±1.7% | 4/5 | −1.6% |
+| v2-async | batch-put | 335.1 | 331.2 | −1.2% | ±1.0% | 4/5 | −1.0% |
+
+The sizing said 4.3 µs/op; small-get delivers **−3.3 µs sync, −4.5 µs async**, and batch-put's
+−6.5/−3.9 µs is the same fixed saving under payload work. The control is flat on small-put and its
+small-get −2.3% is a 4/7 split with ±8.5% spread, i.e. nothing.
+
+† Sync small-put is the one cell that reads bigger than the mechanism. All seven pairs favour H5,
+but the per-pair deltas run −5.6% to −19.1% (median −8.5%): two H5 reps landed at 76.6 and 83.7
+µs/op against a base that never went below 92.8, which is the compiled-code-shape lottery this rig
+has shown before (Phase H3), not a 10 µs mechanism. The defensible claim for that cell is the
+median's ≈ −8 µs with the top end unexplained; the small-get cells and the profiles below are the
+ones to quote.
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+| | sync base | sync H5 | async base | async H5 |
+|---|---:|---:|---:|---:|
+| CPU share under `ExecutionInterceptorChain.*` | 3.69% | **0.10%** | 4.40% | **0.26%** |
+| CPU share under `TraceIdExecutionInterceptor` | 0.77% | 0 | 0.99% | 0 |
+| CPU share under env-var lookup | 0.24% | 0 | 0.53% | 0 |
+| CPU share under checksum validation (interceptor → direct call) | 0.30% | 0.16% | 0.42% | 0.20% |
+| allocation reached through any interceptor frame (B/op) | 704 | **0** | | |
+| env-var lookup `byte[]` + `ProcessEnvironment$Variable` (B/op) | 390 | **0** | | |
+| profile total (B/op) | 35,539 | **33,876** | | |
+
+Chain cost 3.7 → 0.1 µs/op sync, which is the whole 4.27 µs sizing minus the one remaining
+event-stream attribute check; −1.7 KB/op allocation (−4.7%). The residual 0.10%/0.26% is the
+`modifyHttpRequestAndHttpContent` visit to `EventStreamInitialRequestInterceptor` plus the
+`modifyException` array on the failure path.
+
+### Verdict
+
+Kept: a fixed −3 to −4.5 µs/op on every AWS client with no interceptors of its own, the chain's cost
+now proportional to what customers actually register rather than to the hook count, and the two
+formerly-hot SDK interceptors doing their work as direct calls at the same points. Racecar's optimized
+sync small-get is now **≈ 94 µs/op app CPU** against stock 2.54.0's ≈ 150 on this host.
+
+Follow-ups, in value order:
+
+1. **Endpoint resolution per call (~5 µs/op, see the investigation above)** — the biggest remaining
+   fixed cost on a client whose endpoint is a per-client constant for this workload.
+2. **`EventStreamInitialRequestInterceptor` registered by codegen only for services with an
+   initial-request event stream** (Transcribe streaming and the like) rather than by aws-core for
+   every service. Removes the last hot-path visit; ~0.1 µs, so it is tidiness more than speed.
+3. The response-side stages still `copy()` the interceptor context to add the HTTP response even
+   when no interceptor will read it; that copy feeds later stages so it is not free to drop, but the
+   `withHttpRequest`-style single-field swap from H4 would cut it to one small object.

@@ -1,0 +1,10 @@
+READY port=19080 pid=98323 threads=200 selectors=7 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /Users/alexwoo/java/java2-repo2/pipeline_benchmark3/data/bisect/local-prof/2.54.0-cpu.jfr
+Profiling started
+=== pipeline verified: SYNC STOCK (wiring=STOCK execution=STOCK)
+=== standalone-e2e-benchmark client=v2-sync transport=apache5 scenarios=small-get iterations=150,000 warmup=20,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=98340
+=== cpu-time source: oshi (macOS) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bisect-2_54_0 commit=7cf5006daad sdkCommit=published-2 branch=feature/poc/benchmark3 dirty=false built=2026-09-12T15:19:48Z sdkV2=2.54.0 sdkV1=1.12.797 smithy=1.5.1
+=== warmup small-get: ops=75,000 wall=8.8s jit=6595ms settled=true (compilation quiet for 3000ms)
+RESULT client=v2-sync transport=apache5 scenario=small-get iterations=150000 concurrency=1 async_mode=n/a wall_ms=13178 ops_per_wall_sec=11382.7 cpu_ms=6373 cpu_user_ms=3447 cpu_sys_ms=2926 ops_per_cpu_sec=23536.8 ops_per_user_cpu_sec=43516.1 cpu_us_per_op=42.5 app_cpu_ms=6187 app_cpu_us_per_op=41.2 unattributed_ms=186 avg_us_per_op=87.9 mean_lat_us=87.8 p50_us=85.0 p90_us=95.8 p99_us=137.9 p999_us=232.3 max_us=2980.7 jit_ms=35 gc_ms=19 gc_count=36 steady_state=true warmup_ops=75000 warmup_settled=true server_cpu_ms=6478 server_requests=150000
+DONE total_wall_s=22.2

@@ -39,6 +39,14 @@ separate commit (Conventional Commits style, `perf(module): ...`). Doc updates a
 v2 batch-put now allocates **less than smithy-java** (0.87×/0.92×). Small ops remain 4–5× smithy's
 allocation; batch-get has barely moved (response-side, needs codegen work — not your problem).
 
+**Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H5,
+the TLS run and the bridged-pipeline comparison in `pipeline_benchmark3/`).** Work now lives on
+`feature/poc/benchmark3` (branched from `racecar`; HEAD after H5 is `dbc7588b125`). Optimized
+v2-sync small-get is ≈ 94 µs/op app CPU on the host against stock 2.54.0's ≈ 150; batch ops are at
+parity with native smithy-java. The remaining known fixed costs on small ops, in value order: endpoint
+resolution per call (~5 µs, a per-client constant for the benchmark's workload), then the
+response-side interceptor-context copies. Upstream PR 7367 is cherry-picked (`8bab8409dd1`).
+
 ---
 
 ## 2. Repo and project layout
@@ -128,7 +136,7 @@ cd test/standalone-e2e-benchmarks
 ### 4.2 The bare-metal host (where real numbers come from)
 
 ```bash
-ssh -i /Users/alexwoo/alexwoo-ec2-us-east-1.pem ec2-user@ec2-34-226-246-228.compute-1.amazonaws.com
+ssh -i /Users/alexwoo/alexwoo-ec2-us-east-1.pem ec2-user@ec2-44-202-228-62.compute-1.amazonaws.com
 ```
 
 (The original host was terminated; the address above is the reprovisioned replacement,
@@ -145,7 +153,7 @@ Driving it from the laptop (never hand-roll ssh/scp from the interactive shell �
 targets; the bash scripts work):
 
 ```bash
-export RACECAR_REMOTE_TARGET=ec2-user@ec2-34-226-246-228.compute-1.amazonaws.com
+export RACECAR_REMOTE_TARGET=ec2-user@ec2-44-202-228-62.compute-1.amazonaws.com
 export RACECAR_REMOTE_KEY=/Users/alexwoo/alexwoo-ec2-us-east-1.pem
 ./scripts/deploy-remote.sh --target "$RACECAR_REMOTE_TARGET" --key "$RACECAR_REMOTE_KEY" \
     --jar ../../pipeline_benchmark2/jars/racecar-phaseE2-<sha>.jar     # scripts always refreshed
@@ -155,7 +163,17 @@ export RACECAR_REMOTE_KEY=/Users/alexwoo/alexwoo-ec2-us-east-1.pem
 
 `wait` tops out at your shell timeout (~29 min per call); loop it. `fetch paired` pulls the newest
 run's results.csv/manifest.md/summary.md into `pipeline_benchmark2/paired/host-<runid>/`. For older
-runs, write a small bash script that scps file-by-file.
+runs, write a small bash script that scps file-by-file. `start` refuses while a benchmark is running;
+to *queue* a second session behind one, put `while pgrep -f "prev_ru[n].sh" >/dev/null; do sleep 60;
+done` at the top of the new script and launch it with a plain `nohup bash ... &` over ssh (see
+`/tmp/h5_launch.sh` in the H5 notes for the shape).
+
+Mechanism-check helpers (H4/H5): `pipeline_benchmark3/scripts/alloc_diff.py BASE.collapsed
+CAND.collapsed [--top K --filter RX]` (B/op per site, ops read from the sibling `.log`);
+`frame_track.py DIR label... -- pattern...` (inclusive CPU share of frames across `<label>-cpu.collapsed`
+files); `frame_diff.py OLD old_label NEW new_label [min_pp]` (frames whose share moved most). Believe
+host profiles over local ones — the 2.46→2.54 investigation shows a local profile pointing at the
+wrong mechanism.
 
 ### 4.3 The canonical paired-run script (copy and adapt)
 
