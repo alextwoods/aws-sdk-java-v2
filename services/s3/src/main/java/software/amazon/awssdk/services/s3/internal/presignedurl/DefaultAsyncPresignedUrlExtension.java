@@ -66,7 +66,7 @@ public final class DefaultAsyncPresignedUrlExtension implements AsyncPresignedUr
 
     /**
      * Checksum configuration matching the codegen-produced GetObject operation.
-     * Enables the HttpChecksumValidationInterceptor to validate response checksums.
+     * Enables the pipeline's built-in response checksum validation.
      */
     private static final HttpChecksum RESPONSE_CHECKSUM_CONFIG =
         HttpChecksum.builder()

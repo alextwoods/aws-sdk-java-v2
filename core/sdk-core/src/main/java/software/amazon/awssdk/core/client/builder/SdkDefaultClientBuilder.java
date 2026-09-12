@@ -59,7 +59,6 @@ import static software.amazon.awssdk.utils.Validate.paramNotNull;
 
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -92,7 +91,6 @@ import software.amazon.awssdk.core.internal.SdkInternalClientOption;
 import software.amazon.awssdk.core.internal.http.loader.DefaultSdkAsyncHttpClientBuilder;
 import software.amazon.awssdk.core.internal.http.loader.DefaultSdkHttpClientBuilder;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.CompressRequestStage;
-import software.amazon.awssdk.core.internal.interceptor.HttpChecksumValidationInterceptor;
 import software.amazon.awssdk.core.internal.retry.SdkDefaultRetryStrategy;
 import software.amazon.awssdk.core.internal.useragent.AppIdResolver;
 import software.amazon.awssdk.core.internal.useragent.SdkClientUserAgentProperties;
@@ -563,20 +561,8 @@ public abstract class SdkDefaultClientBuilder<B extends SdkClientBuilder<B, C>, 
      * Finalize which execution interceptors will be used for the created client.
      */
     private List<ExecutionInterceptor> resolveExecutionInterceptors(SdkClientConfiguration config) {
-        List<ExecutionInterceptor> globalInterceptors = new ArrayList<>();
-        globalInterceptors.addAll(sdkInterceptors());
-        globalInterceptors.addAll(new ClasspathInterceptorChainFactory().getGlobalInterceptors());
+        List<ExecutionInterceptor> globalInterceptors = new ClasspathInterceptorChainFactory().getGlobalInterceptors();
         return mergeLists(globalInterceptors, config.option(EXECUTION_INTERCEPTORS));
-    }
-
-
-    /**
-     * The set of interceptors that should be included with all services.
-     */
-    private List<ExecutionInterceptor> sdkInterceptors() {
-        return Collections.unmodifiableList(Arrays.asList(
-            new HttpChecksumValidationInterceptor()
-        ));
     }
 
     @Override

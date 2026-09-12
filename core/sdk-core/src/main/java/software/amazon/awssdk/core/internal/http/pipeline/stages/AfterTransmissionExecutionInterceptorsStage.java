@@ -15,11 +15,13 @@
 
 package software.amazon.awssdk.core.internal.http.pipeline.stages;
 
+import java.io.InputStream;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.internal.http.InterruptMonitor;
 import software.amazon.awssdk.core.internal.http.RequestExecutionContext;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
+import software.amazon.awssdk.core.internal.util.ResponseChecksumValidation;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
@@ -44,6 +46,15 @@ public class AfterTransmissionExecutionInterceptorsStage
 
         // interceptors.modifyHttpResponse
         interceptorContext = context.interceptorChain().modifyHttpResponse(interceptorContext, context.executionAttributes());
+
+        // Built-in response checksum validation. Runs after every configured interceptor, where it sat when it was itself an
+        // interceptor at the head of the chain.
+        InputStream responseBody = interceptorContext.responseBody().orElse(null);
+        InputStream validatingBody = ResponseChecksumValidation.validating(interceptorContext.httpResponse(), responseBody,
+                                                                           context.executionAttributes());
+        if (validatingBody != responseBody) {
+            interceptorContext = interceptorContext.copy(b -> b.responseBody(validatingBody));
+        }
 
         // Store updated context
         context.executionContext().interceptorContext(interceptorContext);

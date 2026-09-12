@@ -16,13 +16,13 @@
 package software.amazon.awssdk.core.internal.http.async;
 
 import java.nio.ByteBuffer;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.reactivestreams.Publisher;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.http.ExecutionContext;
 import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.internal.http.TransformingAsyncResponseHandler;
+import software.amazon.awssdk.core.internal.util.ResponseChecksumValidation;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.http.SdkHttpResponse;
 
@@ -74,19 +74,18 @@ public final class AsyncAfterTransmissionInterceptorCallingResponseHandler<T> im
 
     @Override
     public void onStream(Publisher<ByteBuffer> publisher) {
-        Optional<Publisher<ByteBuffer>> newPublisher = context.interceptorChain()
-                                                              .modifyAsyncHttpResponse(context.interceptorContext()
-                                                                                              .toBuilder()
-                                                                                              .responsePublisher(publisher)
-                                                                                              .build(),
-                                                                                       context.executionAttributes())
-                                                              .responsePublisher();
+        InterceptorContext interceptorContext = context.interceptorChain()
+                                                       .modifyAsyncHttpResponse(context.interceptorContext()
+                                                                                       .toBuilder()
+                                                                                       .responsePublisher(publisher)
+                                                                                       .build(),
+                                                                                context.executionAttributes());
+        Publisher<ByteBuffer> newPublisher = interceptorContext.responsePublisher().orElse(publisher);
 
-        if (newPublisher.isPresent()) {
-            delegate.onStream(newPublisher.get());
-        } else {
-            delegate.onStream(publisher);
-        }
+        // Built-in response checksum validation. Runs after every configured interceptor, where it sat when it was itself an
+        // interceptor at the head of the chain.
+        delegate.onStream(ResponseChecksumValidation.validating(interceptorContext.httpResponse(), newPublisher,
+                                                                context.executionAttributes()));
     }
 
     @Override

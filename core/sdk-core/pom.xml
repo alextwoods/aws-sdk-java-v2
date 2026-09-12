@@ -267,7 +267,8 @@
                 <artifactId>japicmp-maven-plugin</artifactId>
                 <configuration>
                     <parameter>
-                        <excludes>
+                        <!-- Append to (not replace) the parent's excludes, which cover *.internal.* -->
+                        <excludes combine.children="append">
                             <exclude>software.amazon.awssdk.core.spi.identity.AuthSchemeOptionsResolver#resolve(software.amazon.awssdk.core.SdkRequest)</exclude>
                         </excludes>
                     </parameter>
