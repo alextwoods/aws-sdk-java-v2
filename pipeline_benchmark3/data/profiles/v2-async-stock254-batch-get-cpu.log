@@ -1,0 +1,15 @@
+READY port=19080 pid=52170 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v2-async-stock254-batch-get-cpu.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/ec2-user/racecar/repo/pipeline_benchmark2/jars/racecar-bench3-stock254-published-2.54.0.jar)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+=== pipeline verified: ASYNC STOCK (wiring=STOCK execution=STOCK)
+=== standalone-e2e-benchmark client=v2-async transport=crt scenarios=batch-get iterations=60,000 warmup=15,000/quiesce concurrency=1 driver=in-flight async-mode=inflight endpoint=http://127.0.0.1:19080 metrics=off pid=52236
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-stock254 commit=ac977512cbe sdkCommit=published-2 branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:42Z sdkV2=2.54.0 sdkV1=1.12.797 smithy=1.5.1
+=== warmup batch-get: ops=30,000 wall=27.8s jit=14137ms settled=true (compilation quiet for 3000ms)
+RESULT client=v2-async transport=crt scenario=batch-get iterations=60000 concurrency=1 async_mode=inflight wall_ms=46230 ops_per_wall_sec=1297.8 cpu_ms=45340 cpu_user_ms=40760 cpu_sys_ms=4580 ops_per_cpu_sec=1323.3 ops_per_user_cpu_sec=1472.0 cpu_us_per_op=755.7 app_cpu_ms=44778 app_cpu_us_per_op=746.3 unattributed_ms=562 avg_us_per_op=770.5 mean_lat_us=761.8 p50_us=757.5 p90_us=780.3 p99_us=826.4 p999_us=961.9 max_us=4028.3 jit_ms=448 gc_ms=32 gc_count=35 steady_state=true warmup_ops=30000 warmup_settled=true server_cpu_ms=6130 server_requests=60000
+DONE total_wall_s=76.8

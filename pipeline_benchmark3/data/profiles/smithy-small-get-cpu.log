@@ -1,0 +1,14 @@
+READY port=19080 pid=43944 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/smithy-small-get-cpu.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/ec2-user/racecar/repo/pipeline_benchmark2/jars/racecar-bench3-racecar-ac977512cbe.jar)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+=== standalone-e2e-benchmark client=smithy transport=smithy-http1 scenarios=small-get iterations=300,000 warmup=30,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=44009
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-racecar commit=ac977512cbe sdkCommit=ac977512cbe branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:16Z sdkV2=2.54.4-SNAPSHOT sdkV1=1.12.797 smithy=1.5.1
+=== warmup small-get: ops=150,000 wall=14.5s jit=6861ms settled=true (compilation quiet for 3000ms)
+RESULT client=smithy transport=smithy-http1 scenario=small-get iterations=300000 concurrency=1 async_mode=n/a wall_ms=26270 ops_per_wall_sec=11419.7 cpu_ms=16590 cpu_user_ms=11360 cpu_sys_ms=5230 ops_per_cpu_sec=18083.2 ops_per_user_cpu_sec=26408.5 cpu_us_per_op=55.3 app_cpu_ms=16492 app_cpu_us_per_op=55.0 unattributed_ms=98 avg_us_per_op=87.6 mean_lat_us=87.4 p50_us=87.3 p90_us=92.8 p99_us=102.5 p999_us=132.1 max_us=6826.4 jit_ms=35 gc_ms=19 gc_count=3 steady_state=true warmup_ops=150000 warmup_settled=true server_cpu_ms=17440 server_requests=300000
+DONE total_wall_s=41.4

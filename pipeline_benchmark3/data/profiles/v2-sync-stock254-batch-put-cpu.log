@@ -1,0 +1,11 @@
+READY port=19080 pid=50806 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v2-sync-stock254-batch-put-cpu.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+=== pipeline verified: SYNC STOCK (wiring=STOCK execution=STOCK)
+=== standalone-e2e-benchmark client=v2-sync transport=apache5 scenarios=batch-put iterations=60,000 warmup=15,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=50871
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-stock254 commit=ac977512cbe sdkCommit=published-2 branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:42Z sdkV2=2.54.0 sdkV1=1.12.797 smithy=1.5.1
+=== warmup batch-put: ops=26,250 wall=28.9s jit=14275ms settled=true (compilation quiet for 3000ms)
+RESULT client=v2-sync transport=apache5 scenario=batch-put iterations=60000 concurrency=1 async_mode=n/a wall_ms=53045 ops_per_wall_sec=1131.1 cpu_ms=50470 cpu_user_ms=47000 cpu_sys_ms=3470 ops_per_cpu_sec=1188.8 ops_per_user_cpu_sec=1276.6 cpu_us_per_op=841.2 app_cpu_ms=50138 app_cpu_us_per_op=835.6 unattributed_ms=332 avg_us_per_op=884.1 mean_lat_us=883.4 p50_us=876.9 p90_us=905.5 p99_us=946.9 p999_us=1023.6 max_us=8735.7 jit_ms=47 gc_ms=76 gc_count=10 steady_state=true warmup_ops=26250 warmup_settled=true server_cpu_ms=7310 server_requests=60000
+DONE total_wall_s=82.6

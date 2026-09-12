@@ -1,0 +1,132 @@
+
+
+########## small-get
+
+--- CPU by category (% of client-code samples), and us/op scaled by the run's app CPU
+category                             v1     v2-sync-stock254    v2-async-stock254          v2-sync-opt         v2-async-opt           v2-bridged               smithy
+socket-syscall         21.2% /   24.7us     20.0% /   31.4us     16.1% /   33.4us     21.3% /   22.2us     17.7% /   26.4us     23.6% /   17.5us     26.5% /   14.6us
+http-client            31.7% /   37.0us     22.4% /   35.1us     11.8% /   24.6us     22.8% /   23.8us     13.4% /   20.0us     32.1% /   23.8us     14.6% /    8.0us
+pipeline-framework      0.2% /    0.3us     20.1% /   31.6us     18.4% /   38.1us     21.8% /   22.8us     16.2% /   24.1us     10.9% /    8.1us      9.6% /    5.3us
+signing                12.9% /   15.1us     13.3% /   20.8us     13.0% /   27.0us     12.3% /   12.9us     10.2% /   15.2us      6.0% /    4.5us      9.8% /    5.4us
+crypto                  1.6% /    1.8us      1.6% /    2.5us      1.1% /    2.3us      1.8% /    1.9us      1.3% /    1.9us      1.4% /    1.1us      3.3% /    1.8us
+marshall                2.6% /    3.0us      2.9% /    4.6us      4.4% /    9.0us      2.6% /    2.8us      2.6% /    3.8us      1.4% /    1.0us      0.9% /    0.5us
+unmarshall             16.5% /   19.3us      8.4% /   13.2us      8.3% /   17.2us      9.6% /   10.1us      9.8% /   14.6us      4.9% /    3.6us      4.6% /    2.5us
+json                    6.0% /    7.0us      4.7% /    7.3us      3.0% /    6.3us      0.5% /    0.5us      0.3% /    0.5us     12.4% /    9.2us     13.7% /    7.5us
+retry                   6.8% /    7.9us      1.6% /    2.6us      2.1% /    4.4us      1.8% /    1.9us      3.2% /    4.8us      1.7% /    1.3us      2.3% /    1.3us
+endpoint-rules          0.0% /    0.0us      4.2% /    6.6us      4.0% /    8.3us      4.5% /    4.7us      3.7% /    5.4us      4.6% /    3.4us      5.7% /    3.2us
+thread-sync             0.1% /    0.1us      0.0% /    0.1us      6.6% /   13.7us      0.2% /    0.2us      8.1% /   12.1us      0.1% /    0.1us      8.0% /    4.4us
+other                   0.5% /    0.6us      0.6% /    1.0us     11.2% /   23.2us      0.7% /    0.7us     13.5% /   20.1us      0.8% /    0.6us      0.9% /    0.5us
+TOTAL app cpu                   116.7us              156.8us              207.5us              104.5us              149.0us               74.1us               55.0us
+
+--- allocation bytes/op by category
+category                        v1v2-sync-stock254v2-async-stock254     v2-sync-opt    v2-async-opt      v2-bridged          smithy
+http-client                  15480           13513            9188            8087            6042           15309            1665
+pipeline-framework             210           12360           18455            9162            9555            4024            1612
+signing                      15021           21221           23344            4797            5885            1232            1416
+crypto                         249             315             380              92             144              79              79
+marshall                       747            1350            2005            1153            1769             105              13
+unmarshall                    3814            8087           10407            5164            7576           20985            1940
+json                          3762            3447            3329            1311            1481            4823            3080
+retry                         2674            1560            1927             918            1271             341             118
+endpoint-rules                   0            1363            1468            1848            1586            2635             616
+other                          151             137             714             177             583             136             151
+TOTAL B/op                   42107           63353           71217           32709           35894           49669           10689
+
+
+########## small-put
+
+--- CPU by category (% of client-code samples), and us/op scaled by the run's app CPU
+category                             v1     v2-sync-stock254    v2-async-stock254          v2-sync-opt         v2-async-opt           v2-bridged               smithy
+socket-syscall         20.9% /   21.2us     17.5% /   25.8us     13.4% /   26.8us     20.8% /   21.7us     19.0% /   27.3us     27.6% /   17.8us     30.2% /   14.4us
+http-client            35.4% /   35.9us     22.8% /   33.7us     12.5% /   24.9us     24.8% /   25.9us     15.4% /   22.1us     33.6% /   21.7us     14.8% /    7.1us
+pipeline-framework      0.3% /    0.3us     21.7% /   32.0us     20.5% /   41.0us     20.3% /   21.2us     17.2% /   24.7us     11.1% /    7.2us      8.7% /    4.1us
+signing                15.1% /   15.3us     15.9% /   23.5us     15.2% /   30.3us     13.3% /   13.9us      8.6% /   12.4us      6.6% /    4.3us      9.2% /    4.4us
+crypto                  1.9% /    1.9us      1.9% /    2.8us      1.4% /    2.9us      1.8% /    1.9us      2.0% /    2.9us      2.3% /    1.5us      4.2% /    2.0us
+marshall               11.3% /   11.5us      7.9% /   11.7us      7.5% /   15.0us      3.2% /    3.4us      2.7% /    3.9us      2.6% /    1.7us      4.7% /    2.2us
+unmarshall              1.6% /    1.6us      2.6% /    3.8us      4.3% /    8.7us      4.8% /    5.0us      5.5% /    7.9us      2.0% /    1.3us      1.2% /    0.6us
+json                    4.4% /    4.5us      3.0% /    4.5us      3.2% /    6.3us      2.4% /    2.5us      1.3% /    1.9us      6.7% /    4.4us     10.1% /    4.8us
+retry                   8.3% /    8.4us      1.8% /    2.7us      2.5% /    5.0us      1.9% /    2.0us      3.1% /    4.4us      1.4% /    0.9us      2.7% /    1.3us
+endpoint-rules          0.0% /    0.0us      4.3% /    6.3us      3.6% /    7.3us      5.9% /    6.2us      3.3% /    4.7us      5.2% /    3.4us      5.2% /    2.5us
+thread-sync             0.1% /    0.1us      0.1% /    0.2us      5.6% /   11.1us      0.1% /    0.1us      7.5% /   10.7us      0.2% /    0.1us      8.3% /    4.0us
+other                   0.6% /    0.6us      0.5% /    0.7us     10.3% /   20.6us      0.7% /    0.7us     14.5% /   20.8us      0.7% /    0.4us      0.7% /    0.3us
+TOTAL app cpu                   101.5us              147.6us              199.9us              104.5us              143.9us               64.6us               47.6us
+
+--- allocation bytes/op by category
+category                        v1v2-sync-stock254v2-async-stock254     v2-sync-opt    v2-async-opt      v2-bridged          smithy
+http-client                  15965           15650            8402            7668            6187           14405            1468
+pipeline-framework              79           10984           17878            8847            9267            4601            1481
+signing                      16083           21601           23095            4784            5400            1101            1416
+crypto                         144             301             380             157              79              66              92
+marshall                       629            1966            2569            1219            1730             328              39
+unmarshall                     537            1389            3513            1350            3670           16200             144
+json                          3526            2490            2268            1114            1088            2818            2123
+retry                         2595            1586            2254             891            1180             354             288
+endpoint-rules                   0            1507            1468            1638            1599            2739             341
+other                          164              98             662             164             635             123             111
+TOTAL B/op                   39721           57573           62488           27833           30834           42735            7504
+
+
+########## batch-get
+
+--- CPU by category (% of client-code samples), and us/op scaled by the run's app CPU
+category                             v1     v2-sync-stock254    v2-async-stock254          v2-sync-opt         v2-async-opt           v2-bridged               smithy
+socket-syscall          2.5% /   38.3us      9.1% /   61.2us      9.3% /   69.7us     10.7% /   34.5us     12.3% /   48.2us     10.8% /   52.9us      8.2% /   28.1us
+http-client             4.4% /   65.8us      8.4% /   56.1us      5.3% /   39.2us     12.4% /   39.6us      7.4% /   29.2us     10.5% /   51.2us      3.7% /   12.7us
+pipeline-framework      0.0% /    0.6us     10.9% /   72.9us      9.7% /   72.1us      9.8% /   31.6us      8.4% /   32.9us      2.5% /   12.1us      1.8% /    6.0us
+signing                 1.5% /   23.3us      4.1% /   27.3us      3.4% /   25.6us      5.4% /   17.3us      4.5% /   17.6us      1.2% /    5.9us      2.1% /    7.1us
+crypto                  0.1% /    2.1us      0.5% /    3.5us      0.4% /    2.9us      1.0% /    3.2us      0.7% /    2.8us      0.4% /    2.0us      0.7% /    2.3us
+marshall                1.3% /   20.0us      3.4% /   22.8us      2.8% /   21.2us      1.8% /    5.8us      1.1% /    4.4us      0.8% /    3.8us      0.5% /    1.6us
+unmarshall             74.6% / 1122.1us     34.1% /  228.2us     36.2% /  270.2us     53.3% /  170.7us     50.9% /  199.9us     17.4% /   85.0us     12.2% /   41.5us
+json                   14.3% /  215.0us     26.0% /  174.0us     23.1% /  172.5us      0.9% /    2.8us      0.5% /    2.0us     54.1% /  264.3us     65.9% /  224.7us
+retry                   0.9% /   13.7us      0.8% /    5.6us      0.6% /    4.2us      0.8% /    2.7us      1.1% /    4.4us      0.7% /    3.5us      1.3% /    4.5us
+endpoint-rules          0.0% /    0.0us      2.2% /   14.7us      1.5% /   11.2us      3.1% /   10.0us      2.0% /    8.0us      1.1% /    5.3us      1.7% /    5.6us
+thread-sync             0.0% /    0.4us      0.2% /    1.0us      1.8% /   13.3us      0.1% /    0.4us      3.1% /   12.1us      0.2% /    0.9us      1.7% /    5.8us
+other                   0.2% /    2.3us      0.4% /    2.5us      5.9% /   44.1us      0.6% /    2.0us      7.9% /   31.0us      0.4% /    2.0us      0.3% /    0.9us
+TOTAL app cpu                  1503.6us              669.8us              746.3us              320.5us              392.5us              489.0us              340.9us
+
+--- allocation bytes/op by category
+category                        v1v2-sync-stock254v2-async-stock254     v2-sync-opt    v2-async-opt      v2-bridged          smithy
+http-client                  15938           14715           10311            8913            6571           16602           38553
+pipeline-framework             245           55819           63648           10171           10661            4893            1573
+signing                      16183           23593           24047            5837            5662            1258            1887
+crypto                         105             245             210             105             105              35              70
+marshall                      2621            2202            5103            1363            2307             979              35
+unmarshall                  162599          371999          573151          262773          297865          352321          108492
+json                         73086           72911           67353            1258            1398          136699           72212
+retry                         2726            1643            1852             944            1433             769             384
+endpoint-rules                   0            2726            2656            3425            2447            2761             699
+other                          366             366            1170             366            1031             434             436
+TOTAL B/op                  273869          546219          749502          295156          329479          516752          224342
+
+
+########## batch-put
+
+--- CPU by category (% of client-code samples), and us/op scaled by the run's app CPU
+category                             v1     v2-sync-stock254    v2-async-stock254          v2-sync-opt         v2-async-opt           v2-bridged               smithy
+socket-syscall          8.1% /   58.9us      6.8% /   57.2us      4.1% /   34.7us     11.0% /   31.4us      9.2% /   31.8us     10.5% /   45.2us     11.2% /   33.7us
+http-client             9.4% /   69.0us      7.0% /   58.3us      4.7% /   40.1us     14.1% /   40.2us      8.1% /   27.7us     11.2% /   48.5us      4.8% /   14.4us
+pipeline-framework      0.1% /    0.6us      5.3% /   43.9us      7.7% /   65.7us     10.6% /   30.2us     12.4% /   42.8us      2.4% /   10.4us      2.6% /    7.8us
+signing                 3.8% /   27.6us      3.3% /   27.5us      4.2% /   36.0us      5.9% /   16.8us      5.7% /   19.7us      1.6% /    6.8us      2.8% /    8.6us
+crypto                  3.5% /   25.8us      2.9% /   23.9us      3.2% /   27.3us      8.4% /   23.9us      8.7% /   30.0us      5.9% /   25.4us      9.2% /   27.9us
+marshall               53.4% /  390.3us     54.5% /  455.4us     50.4% /  426.9us     11.9% /   34.0us     11.4% /   39.2us      8.5% /   36.7us      7.7% /   23.1us
+unmarshall              0.3% /    2.2us      0.9% /    7.4us      1.4% /   12.0us      2.3% /    6.5us      4.0% /   13.7us      0.5% /    2.3us      0.3% /    1.0us
+json                   19.6% /  143.5us     17.0% /  142.1us     17.1% /  145.3us     30.5% /   87.1us     24.5% /   84.4us     57.1% /  246.0us     57.1% /  172.4us
+retry                   1.5% /   11.3us      0.6% /    4.6us      0.7% /    6.0us      0.8% /    2.4us      1.8% /    6.1us      0.6% /    2.5us      0.5% /    1.4us
+endpoint-rules          0.0% /    0.0us      1.5% /   12.4us      1.7% /   14.2us      3.7% /   10.5us      3.9% /   13.5us      1.3% /    5.7us      1.5% /    4.6us
+thread-sync             0.1% /    0.5us      0.0% /    0.1us      1.8% /   15.0us      0.1% /    0.2us      3.5% /   12.0us      0.1% /    0.2us      1.8% /    5.4us
+other                   0.2% /    1.5us      0.3% /    2.8us      2.9% /   24.5us      0.8% /    2.4us      6.8% /   23.6us      0.3% /    1.1us      0.5% /    1.6us
+TOTAL app cpu                   731.1us              835.6us              847.6us              285.6us              344.4us              430.9us              301.9us
+
+--- allocation bytes/op by category
+category                        v1v2-sync-stock254v2-async-stock254     v2-sync-opt    v2-async-opt      v2-bridged          smithy
+http-client                  14995           14470            9857            8738            6361           16358            2167
+pipeline-framework             315           13002          174483            9682           11220            4369            1433
+signing                      15099           23663           23838            5068            5872            1468            1468
+crypto                         245             350             280              35              70             140             105
+marshall                      2901           38168           38483            2621            3390            2482             280
+unmarshall                     664            2062            4928            1643            3985           16218             140
+json                        157810          117615          118803           39391           37364          114015          117231
+retry                         2342            1503            2517            1084            1398             594             350
+endpoint-rules                   0            2272            2272            2517            2552            2866             909
+other                          331             366            1135             401             891             469             401
+TOTAL B/op                  194702          213471          376594           71180           73103          158978          124483

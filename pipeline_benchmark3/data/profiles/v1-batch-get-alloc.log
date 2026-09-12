@@ -1,0 +1,23 @@
+READY port=19080 pid=43440 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v1-batch-get-alloc.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+Sep 12, 2026 1:22:49 AM com.amazonaws.util.VersionInfoUtils printDeprecationAnnouncement
+WARNING: The AWS SDK for Java 1.x reached end of support on December 31, 2025. For more information, see https://aws.amazon.com/blogs/developer/the-aws-sdk-for-java-1-x-is-in-maintenance-mode-effective-july-31-2024/
+You can print where on the file system the AWS SDK for Java 1.x core runtime is located by setting the AWS_JAVA_V1_PRINT_LOCATION environment variable or aws.java.v1.printLocation system property to 'true'.
+This message can be disabled by setting the AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT environment variable or aws.java.v1.disableDeprecationAnnouncement system property to 'true'.
+The AWS SDK for Java 1.x is being used here:
+at java.base/java.lang.Thread.getStackTrace(Thread.java:2193)
+at com.amazonaws.util.VersionInfoUtils.printDeprecationAnnouncement(VersionInfoUtils.java:81)
+at com.amazonaws.util.VersionInfoUtils.<clinit>(VersionInfoUtils.java:59)
+at com.amazonaws.ClientConfiguration.<clinit>(ClientConfiguration.java:95)
+at software.amazon.awssdk.benchmark.e2e.Workloads.v1(Workloads.java:183)
+at software.amazon.awssdk.benchmark.e2e.Workloads.create(Workloads.java:128)
+at software.amazon.awssdk.benchmark.e2e.BenchmarkRunner.main(BenchmarkRunner.java:291)
+=== standalone-e2e-benchmark client=v1 transport=apache4-v1 scenarios=batch-get iterations=12,000 warmup=3,000/fixed concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=43505
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-racecar commit=ac977512cbe sdkCommit=ac977512cbe branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:16Z sdkV2=2.54.4-SNAPSHOT sdkV1=1.12.797 smithy=1.5.1
+=== warmup batch-get: ops=3,000 wall=6.4s jit=3451ms settled=false (fixed warmup)
+=== WARNING batch-get: 5167 ms of JIT compilation inside the measured window (25.6% of wall); code was still changing, so per-operation numbers are not steady-state
+RESULT client=v1 transport=apache4-v1 scenario=batch-get iterations=12000 concurrency=1 async_mode=n/a wall_ms=20158 ops_per_wall_sec=595.3 cpu_ms=24960 cpu_user_ms=24180 cpu_sys_ms=780 ops_per_cpu_sec=480.8 ops_per_user_cpu_sec=496.3 cpu_us_per_op=2080.0 app_cpu_ms=19501 app_cpu_us_per_op=1625.1 unattributed_ms=5459 avg_us_per_op=1679.9 mean_lat_us=1678.3 p50_us=1663.1 p90_us=1758.8 p99_us=1844.9 p999_us=2088.2 max_us=10121.2 jit_ms=5167 gc_ms=16 gc_count=2 steady_state=false warmup_ops=3000 warmup_settled=false server_cpu_ms=2290 server_requests=12000
+DONE total_wall_s=27.2

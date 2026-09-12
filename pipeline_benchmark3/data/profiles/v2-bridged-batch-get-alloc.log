@@ -1,0 +1,12 @@
+READY port=19080 pid=49314 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v2-bridged-batch-get-alloc.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+=== pipeline verified: SYNC BRIDGED (wiring=BRIDGED execution=BRIDGED)
+=== standalone-e2e-benchmark client=v2-bridged transport=apache5 scenarios=batch-get iterations=12,000 warmup=3,000/fixed concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=49379
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-bridged commit=ac977512cbe sdkCommit=c1d88972e18 branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:25Z sdkV2=2.46.11-SMITHY-BRIDGED sdkV1=1.12.797 smithy=1.5.1
+=== warmup batch-get: ops=3,000 wall=3.6s jit=2922ms settled=false (fixed warmup)
+=== WARNING batch-get: 6348 ms of JIT compilation inside the measured window (76.1% of wall); code was still changing, so per-operation numbers are not steady-state
+RESULT client=v2-bridged transport=apache5 scenario=batch-get iterations=12000 concurrency=1 async_mode=n/a wall_ms=8345 ops_per_wall_sec=1438.0 cpu_ms=14340 cpu_user_ms=13580 cpu_sys_ms=760 ops_per_cpu_sec=836.8 ops_per_user_cpu_sec=883.7 cpu_us_per_op=1195.0 app_cpu_ms=7788 app_cpu_us_per_op=649.0 unattributed_ms=6552 avg_us_per_op=695.4 mean_lat_us=693.8 p50_us=682.4 p90_us=759.6 p99_us=860.3 p999_us=1067.8 max_us=10080.5 jit_ms=6348 gc_ms=46 gc_count=5 steady_state=false warmup_ops=3000 warmup_settled=false server_cpu_ms=1950 server_requests=12000
+DONE total_wall_s=12.6

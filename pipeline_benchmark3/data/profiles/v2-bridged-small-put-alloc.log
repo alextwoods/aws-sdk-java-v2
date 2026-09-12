@@ -1,0 +1,12 @@
+READY port=19080 pid=48975 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v2-bridged-small-put-alloc.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+=== pipeline verified: SYNC BRIDGED (wiring=BRIDGED execution=BRIDGED)
+=== standalone-e2e-benchmark client=v2-bridged transport=apache5 scenarios=small-put iterations=35,000 warmup=5,000/fixed concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=49103
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-bridged commit=ac977512cbe sdkCommit=c1d88972e18 branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:25Z sdkV2=2.46.11-SMITHY-BRIDGED sdkV1=1.12.797 smithy=1.5.1
+=== warmup small-put: ops=5,000 wall=2.9s jit=2973ms settled=false (fixed warmup)
+=== WARNING small-put: 5535 ms of JIT compilation inside the measured window (113.7% of wall); code was still changing, so per-operation numbers are not steady-state; the window is only 4.9s — raise --iterations
+RESULT client=v2-bridged transport=apache5 scenario=small-put iterations=35000 concurrency=1 async_mode=n/a wall_ms=4870 ops_per_wall_sec=7187.4 cpu_ms=9370 cpu_user_ms=8520 cpu_sys_ms=850 ops_per_cpu_sec=3735.3 ops_per_user_cpu_sec=4108.0 cpu_us_per_op=267.7 app_cpu_ms=3771 app_cpu_us_per_op=107.7 unattributed_ms=5599 avg_us_per_op=139.1 mean_lat_us=138.4 p50_us=101.9 p90_us=238.8 p99_us=323.1 p999_us=418.6 max_us=9357.4 jit_ms=5535 gc_ms=18 gc_count=2 steady_state=false warmup_ops=5000 warmup_settled=false server_cpu_ms=3030 server_requests=35000
+DONE total_wall_s=8.5

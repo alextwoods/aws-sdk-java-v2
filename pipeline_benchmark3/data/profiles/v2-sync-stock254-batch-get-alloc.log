@@ -1,0 +1,12 @@
+READY port=19080 pid=50659 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v2-sync-stock254-batch-get-alloc.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+=== pipeline verified: SYNC STOCK (wiring=STOCK execution=STOCK)
+=== standalone-e2e-benchmark client=v2-sync transport=apache5 scenarios=batch-get iterations=12,000 warmup=3,000/fixed concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=50724
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-stock254 commit=ac977512cbe sdkCommit=published-2 branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:42Z sdkV2=2.54.0 sdkV1=1.12.797 smithy=1.5.1
+=== warmup batch-get: ops=3,000 wall=5.1s jit=4035ms settled=false (fixed warmup)
+=== WARNING batch-get: 4849 ms of JIT compilation inside the measured window (41.8% of wall); code was still changing, so per-operation numbers are not steady-state
+RESULT client=v2-sync transport=apache5 scenario=batch-get iterations=12000 concurrency=1 async_mode=n/a wall_ms=11609 ops_per_wall_sec=1033.7 cpu_ms=15910 cpu_user_ms=15200 cpu_sys_ms=710 ops_per_cpu_sec=754.2 ops_per_user_cpu_sec=789.5 cpu_us_per_op=1325.8 app_cpu_ms=10915 app_cpu_us_per_op=909.6 unattributed_ms=4995 avg_us_per_op=967.4 mean_lat_us=966.0 p50_us=948.5 p90_us=1069.4 p99_us=1232.9 p999_us=1655.6 max_us=8962.9 jit_ms=4849 gc_ms=38 gc_count=5 steady_state=false warmup_ops=3000 warmup_settled=false server_cpu_ms=2150 server_requests=12000
+DONE total_wall_s=17.3

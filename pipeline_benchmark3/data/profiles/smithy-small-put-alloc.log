@@ -1,0 +1,15 @@
+READY port=19080 pid=44440 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/smithy-small-put-alloc.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/ec2-user/racecar/repo/pipeline_benchmark2/jars/racecar-bench3-racecar-ac977512cbe.jar)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+=== standalone-e2e-benchmark client=smithy transport=smithy-http1 scenarios=small-put iterations=35,000 warmup=5,000/fixed concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=44505
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-racecar commit=ac977512cbe sdkCommit=ac977512cbe branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:16Z sdkV2=2.54.4-SNAPSHOT sdkV1=1.12.797 smithy=1.5.1
+=== warmup small-put: ops=5,000 wall=1.7s jit=1568ms settled=false (fixed warmup)
+=== WARNING small-put: 4439 ms of JIT compilation inside the measured window (117.7% of wall); code was still changing, so per-operation numbers are not steady-state; the window is only 3.8s — raise --iterations
+RESULT client=smithy transport=smithy-http1 scenario=small-put iterations=35000 concurrency=1 async_mode=n/a wall_ms=3770 ops_per_wall_sec=9283.4 cpu_ms=12870 cpu_user_ms=12010 cpu_sys_ms=860 ops_per_cpu_sec=2719.5 ops_per_user_cpu_sec=2914.2 cpu_us_per_op=367.7 app_cpu_ms=2754 app_cpu_us_per_op=78.7 unattributed_ms=10116 avg_us_per_op=107.7 mean_lat_us=106.8 p50_us=96.8 p90_us=151.0 p99_us=198.6 p999_us=265.2 max_us=6430.5 jit_ms=4439 gc_ms=6 gc_count=1 steady_state=false warmup_ops=5000 warmup_settled=false server_cpu_ms=3320 server_requests=35000
+DONE total_wall_s=6.0

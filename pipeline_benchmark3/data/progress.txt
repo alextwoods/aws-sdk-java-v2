@@ -1,0 +1,187 @@
+########## PHASE 1: timing 23:03:28
+=== v1-small-get-rep1 23:03:28
+=== v1-small-put-rep1 23:04:15
+=== smithy-small-get-rep1 23:05:02
+=== smithy-small-put-rep1 23:05:37
+=== v2-sync-opt-small-get-rep1 23:06:09
+=== v2-sync-opt-small-put-rep1 23:06:57
+=== v2-async-opt-small-get-rep1 23:07:44
+=== v2-async-opt-small-put-rep1 23:08:40
+=== v2-bridged-small-get-rep1 23:09:37
+=== v2-bridged-small-put-rep1 23:10:16
+=== v2-async-stock246-small-get-rep1 23:10:54
+=== v2-async-stock246-small-put-rep1 23:12:01
+=== v1-onbridged-small-get-rep1 23:13:07
+=== v1-onbridged-small-put-rep1 23:13:55
+=== v2-sync-stock254-small-get-rep1 23:14:41
+=== v2-sync-stock254-small-put-rep1 23:15:55
+=== v2-async-stock254-small-get-rep1 23:16:57
+=== v2-async-stock254-small-put-rep1 23:18:06
+=== v2-async-stock254-small-get-rep2 23:19:15
+=== v2-async-stock254-small-put-rep2 23:20:25
+=== v2-sync-stock254-small-get-rep2 23:21:34
+=== v2-sync-stock254-small-put-rep2 23:22:34
+=== v1-onbridged-small-get-rep2 23:23:47
+=== v1-onbridged-small-put-rep2 23:24:35
+=== v2-async-stock246-small-get-rep2 23:25:18
+=== v2-async-stock246-small-put-rep2 23:26:24
+=== v2-bridged-small-get-rep2 23:27:29
+=== v2-bridged-small-put-rep2 23:28:08
+=== v2-async-opt-small-get-rep2 23:28:50
+=== v2-async-opt-small-put-rep2 23:29:48
+=== v2-sync-opt-small-get-rep2 23:30:45
+=== v2-sync-opt-small-put-rep2 23:31:32
+=== smithy-small-get-rep2 23:32:19
+=== smithy-small-put-rep2 23:32:53
+=== v1-small-get-rep2 23:33:27
+=== v1-small-put-rep2 23:34:20
+=== v1-small-get-rep3 23:35:08
+=== v1-small-put-rep3 23:36:00
+=== smithy-small-get-rep3 23:36:43
+=== smithy-small-put-rep3 23:37:17
+=== v2-sync-opt-small-get-rep3 23:37:50
+=== v2-sync-opt-small-put-rep3 23:38:37
+=== v2-async-opt-small-get-rep3 23:39:23
+=== v2-async-opt-small-put-rep3 23:40:19
+=== v2-bridged-small-get-rep3 23:41:16
+=== v2-bridged-small-put-rep3 23:41:56
+=== v2-async-stock246-small-get-rep3 23:42:33
+=== v2-async-stock246-small-put-rep3 23:43:40
+=== v1-onbridged-small-get-rep3 23:44:45
+=== v1-onbridged-small-put-rep3 23:45:34
+=== v2-sync-stock254-small-get-rep3 23:46:17
+=== v2-sync-stock254-small-put-rep3 23:47:21
+=== v2-async-stock254-small-get-rep3 23:48:26
+=== v2-async-stock254-small-put-rep3 23:49:36
+=== v2-async-stock254-small-get-rep4 23:50:44
+=== v2-async-stock254-small-put-rep4 23:51:54
+=== v2-sync-stock254-small-get-rep4 23:53:04
+=== v2-sync-stock254-small-put-rep4 23:54:16
+=== v1-onbridged-small-get-rep4 23:55:20
+=== v1-onbridged-small-put-rep4 23:56:08
+=== v2-async-stock246-small-get-rep4 23:56:51
+=== v2-async-stock246-small-put-rep4 23:57:56
+=== v2-bridged-small-get-rep4 23:59:02
+=== v2-bridged-small-put-rep4 23:59:41
+=== v2-async-opt-small-get-rep4 00:00:25
+=== v2-async-opt-small-put-rep4 00:01:23
+=== v2-sync-opt-small-get-rep4 00:02:20
+=== v2-sync-opt-small-put-rep4 00:03:09
+=== smithy-small-get-rep4 00:03:55
+=== smithy-small-put-rep4 00:04:29
+=== v1-small-get-rep4 00:05:03
+=== v1-small-put-rep4 00:05:50
+=== v1-small-get-rep5 00:06:34
+=== v1-small-put-rep5 00:07:20
+=== smithy-small-get-rep5 00:08:04
+=== smithy-small-put-rep5 00:08:38
+=== v2-sync-opt-small-get-rep5 00:09:11
+=== v2-sync-opt-small-put-rep5 00:09:58
+=== v2-async-opt-small-get-rep5 00:10:45
+=== v2-async-opt-small-put-rep5 00:11:42
+=== v2-bridged-small-get-rep5 00:12:38
+=== v2-bridged-small-put-rep5 00:13:17
+=== v2-async-stock246-small-get-rep5 00:13:54
+=== v2-async-stock246-small-put-rep5 00:15:00
+=== v1-onbridged-small-get-rep5 00:16:04
+=== v1-onbridged-small-put-rep5 00:16:52
+=== v2-sync-stock254-small-get-rep5 00:17:34
+=== v2-sync-stock254-small-put-rep5 00:18:35
+=== v2-async-stock254-small-get-rep5 00:19:39
+=== v2-async-stock254-small-put-rep5 00:20:48
+=== v1-batch-get-rep1 00:21:57
+=== v1-batch-put-rep1 00:23:40
+=== smithy-batch-get-rep1 00:24:36
+=== smithy-batch-put-rep1 00:25:15
+=== v2-sync-opt-batch-get-rep1 00:25:44
+=== v2-sync-opt-batch-put-rep1 00:26:19
+=== v2-async-opt-batch-get-rep1 00:26:53
+=== v2-async-opt-batch-put-rep1 00:27:34
+=== v2-bridged-batch-get-rep1 00:28:12
+=== v2-bridged-batch-put-rep1 00:28:52
+=== v2-async-stock246-batch-get-rep1 00:29:31
+=== v2-async-stock246-batch-put-rep1 00:30:30
+=== v1-onbridged-batch-get-rep1 00:31:41
+=== v1-onbridged-batch-put-rep1 00:33:29
+=== v2-sync-stock254-batch-get-rep1 00:34:25
+=== v2-sync-stock254-batch-put-rep1 00:35:24
+=== v2-async-stock254-batch-get-rep1 00:36:31
+=== v2-async-stock254-batch-put-rep1 00:37:34
+=== v2-async-stock254-batch-get-rep2 00:38:45
+=== v2-async-stock254-batch-put-rep2 00:39:48
+=== v2-sync-stock254-batch-get-rep2 00:41:01
+=== v2-sync-stock254-batch-put-rep2 00:41:58
+=== v1-onbridged-batch-get-rep2 00:43:08
+=== v1-onbridged-batch-put-rep2 00:44:52
+=== v2-async-stock246-batch-get-rep2 00:45:47
+=== v2-async-stock246-batch-put-rep2 00:46:47
+=== v2-bridged-batch-get-rep2 00:47:57
+=== v2-bridged-batch-put-rep2 00:48:40
+=== v2-async-opt-batch-get-rep2 00:49:18
+=== v2-async-opt-batch-put-rep2 00:49:59
+=== v2-sync-opt-batch-get-rep2 00:50:37
+=== v2-sync-opt-batch-put-rep2 00:51:13
+=== smithy-batch-get-rep2 00:51:48
+=== smithy-batch-put-rep2 00:52:27
+=== v1-batch-get-rep2 00:52:56
+=== v1-batch-put-rep2 00:54:47
+=== v1-batch-get-rep3 00:55:42
+=== v1-batch-put-rep3 00:57:29
+=== smithy-batch-get-rep3 00:58:26
+=== smithy-batch-put-rep3 00:58:59
+=== v2-sync-opt-batch-get-rep3 00:59:29
+=== v2-sync-opt-batch-put-rep3 01:00:07
+=== v2-async-opt-batch-get-rep3 01:00:40
+=== v2-async-opt-batch-put-rep3 01:01:22
+=== v2-bridged-batch-get-rep3 01:02:01
+=== v2-bridged-batch-put-rep3 01:02:43
+=== v2-async-stock246-batch-get-rep3 01:03:22
+=== v2-async-stock246-batch-put-rep3 01:04:22
+=== v1-onbridged-batch-get-rep3 01:05:32
+=== v1-onbridged-batch-put-rep3 01:07:11
+=== v2-sync-stock254-batch-get-rep3 01:08:16
+=== v2-sync-stock254-batch-put-rep3 01:09:15
+=== v2-async-stock254-batch-get-rep3 01:10:20
+=== v2-async-stock254-batch-put-rep3 01:11:25
+=== v2-sync-opt-describe-table-rep1 01:12:36
+=== v2-bridged-describe-table-rep1 01:13:12
+=== v2-sync-stock254-describe-table-rep1 01:13:39
+=== v2-sync-opt-describe-table-rep2 01:14:22
+=== v2-bridged-describe-table-rep2 01:14:59
+=== v2-sync-stock254-describe-table-rep2 01:15:27
+=== v2-sync-opt-describe-table-rep3 01:16:11
+=== v2-bridged-describe-table-rep3 01:16:46
+=== v2-sync-stock254-describe-table-rep3 01:17:15
+PHASE 1 DONE 01:17:59
+########## PHASE 2: profiles 01:17:59
+=== profile v1-small-get-cpu 01:17:59
+=== profile v1-small-get-alloc 01:19:03
+=== profile v1-small-put-cpu 01:19:16
+=== profile v1-small-put-alloc 01:20:14
+=== profile v1-batch-get-cpu 01:20:27
+=== profile v1-batch-get-alloc 01:22:47
+=== profile v1-batch-put-cpu 01:23:17
+=== profile v1-batch-put-alloc 01:24:34
+=== profile smithy-small-get-cpu 01:24:52
+=== profile smithy-small-get-alloc 01:25:36
+=== profile smithy-small-put-cpu 01:25:44
+=== profile smithy-small-put-alloc 01:26:25
+=== profile smithy-batch-get-cpu 01:26:34
+=== profile smithy-batch-get-alloc 01:27:20
+=== profile smithy-batch-put-cpu 01:27:32
+=== profile smithy-batch-put-alloc 01:28:14
+=== profile v2-sync-opt-small-get-cpu 01:28:25
+=== profile v2-sync-opt-small-get-alloc 01:29:27
+=== profile v2-sync-opt-small-put-cpu 01:29:42
+=== profile v2-sync-opt-small-put-alloc 01:30:44
+=== profile v2-sync-opt-batch-get-cpu 01:30:59
+=== profile v2-sync-opt-batch-get-alloc 01:31:41
+=== profile v2-sync-opt-batch-put-cpu 01:31:55
+=== profile v2-sync-opt-batch-put-alloc 01:32:38
+=== profile v2-async-opt-small-get-cpu 01:32:51
+=== profile v2-async-opt-small-get-alloc 01:34:05
+=== profile v2-async-opt-small-put-cpu 01:34:23
+=== profile v2-async-opt-small-put-alloc 01:35:37
+=== profile v2-async-opt-batch-get-cpu 01:35:55
+=== profile v2-async-opt-batch-get-alloc 01:36:46
+=== profile v2-async-opt-batch-put-cpu 01:37:03

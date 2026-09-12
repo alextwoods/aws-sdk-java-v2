@@ -1,0 +1,11 @@
+READY port=19080 pid=48473 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v2-bridged-small-get-cpu.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+=== pipeline verified: SYNC BRIDGED (wiring=BRIDGED execution=BRIDGED)
+=== standalone-e2e-benchmark client=v2-bridged transport=apache5 scenarios=small-get iterations=300,000 warmup=30,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=48538
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-bridged commit=ac977512cbe sdkCommit=c1d88972e18 branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:25Z sdkV2=2.46.11-SMITHY-BRIDGED sdkV1=1.12.797 smithy=1.5.1
+=== warmup small-get: ops=97,500 wall=14.4s jit=10508ms settled=true (compilation quiet for 3000ms)
+RESULT client=v2-bridged transport=apache5 scenario=small-get iterations=300000 concurrency=1 async_mode=n/a wall_ms=32239 ops_per_wall_sec=9305.4 cpu_ms=22660 cpu_user_ms=17180 cpu_sys_ms=5480 ops_per_cpu_sec=13239.2 ops_per_user_cpu_sec=17462.2 cpu_us_per_op=75.5 app_cpu_ms=22234 app_cpu_us_per_op=74.1 unattributed_ms=426 avg_us_per_op=107.5 mean_lat_us=107.4 p50_us=106.1 p90_us=110.8 p99_us=129.8 p999_us=160.6 max_us=10202.7 jit_ms=86 gc_ms=91 gc_count=11 steady_state=true warmup_ops=97500 warmup_settled=true server_cpu_ms=18150 server_requests=300000
+DONE total_wall_s=47.4

@@ -1,0 +1,22 @@
+READY port=19080 pid=42883 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v1-small-put-cpu.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+Sep 12, 2026 1:19:18 AM com.amazonaws.util.VersionInfoUtils printDeprecationAnnouncement
+WARNING: The AWS SDK for Java 1.x reached end of support on December 31, 2025. For more information, see https://aws.amazon.com/blogs/developer/the-aws-sdk-for-java-1-x-is-in-maintenance-mode-effective-july-31-2024/
+You can print where on the file system the AWS SDK for Java 1.x core runtime is located by setting the AWS_JAVA_V1_PRINT_LOCATION environment variable or aws.java.v1.printLocation system property to 'true'.
+This message can be disabled by setting the AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT environment variable or aws.java.v1.disableDeprecationAnnouncement system property to 'true'.
+The AWS SDK for Java 1.x is being used here:
+at java.base/java.lang.Thread.getStackTrace(Thread.java:2193)
+at com.amazonaws.util.VersionInfoUtils.printDeprecationAnnouncement(VersionInfoUtils.java:81)
+at com.amazonaws.util.VersionInfoUtils.<clinit>(VersionInfoUtils.java:59)
+at com.amazonaws.ClientConfiguration.<clinit>(ClientConfiguration.java:95)
+at software.amazon.awssdk.benchmark.e2e.Workloads.v1(Workloads.java:183)
+at software.amazon.awssdk.benchmark.e2e.Workloads.create(Workloads.java:128)
+at software.amazon.awssdk.benchmark.e2e.BenchmarkRunner.main(BenchmarkRunner.java:291)
+=== standalone-e2e-benchmark client=v1 transport=apache4-v1 scenarios=small-put iterations=300,000 warmup=30,000/quiesce concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=42948
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-racecar commit=ac977512cbe sdkCommit=ac977512cbe branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:16Z sdkV2=2.54.4-SNAPSHOT sdkV1=1.12.797 smithy=1.5.1
+=== warmup small-put: ops=60,000 wall=12.2s jit=10618ms settled=true (compilation quiet for 3000ms)
+RESULT client=v1 transport=apache4-v1 scenario=small-put iterations=300000 concurrency=1 async_mode=n/a wall_ms=42146 ops_per_wall_sec=7118.2 cpu_ms=30800 cpu_user_ms=24290 cpu_sys_ms=6510 ops_per_cpu_sec=9740.3 ops_per_user_cpu_sec=12350.8 cpu_us_per_op=102.7 app_cpu_ms=30439 app_cpu_us_per_op=101.5 unattributed_ms=361 avg_us_per_op=140.5 mean_lat_us=140.4 p50_us=139.0 p90_us=144.8 p99_us=168.1 p999_us=202.6 max_us=8717.0 jit_ms=89 gc_ms=71 gc_count=9 steady_state=true warmup_ops=60000 warmup_settled=true server_cpu_ms=19920 server_requests=300000
+DONE total_wall_s=55.0

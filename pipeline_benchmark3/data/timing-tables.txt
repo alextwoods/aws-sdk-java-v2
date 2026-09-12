@@ -1,0 +1,177 @@
+
+--- small-get: application CPU us/op
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                    116.2      5.0    5/5     5
+v2-sync stock 2.54.0             151.5      6.5    5/5     5
+v2-async stock 2.54.0            206.5      3.7    3/5     5
+v2-sync OPTIMIZED                105.7      2.7    5/5     5   1.00x vs optimized-sync
+v2-async OPTIMIZED               148.6      5.5    0/5     5   1.41x vs optimized-sync
+v2-bridged (smithy-java)          74.3      1.5    5/5     5   0.70x vs optimized-sync
+smithy-java 1.5.1                 50.9      4.5    5/5     5   0.48x vs optimized-sync
+[ref] v2-async stock 2.46.11     187.0      2.7    3/5     5
+[null] v1 on bridged jar         116.6      3.0    5/5     5
+
+--- small-put: application CPU us/op
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                     97.5      1.5    5/5     5
+v2-sync stock 2.54.0             146.0      4.7    5/5     5
+v2-async stock 2.54.0            200.8      1.8    1/5     5
+v2-sync OPTIMIZED                102.0      1.9    5/5     5   1.00x vs optimized-sync
+v2-async OPTIMIZED               147.0      2.0    0/5     5   1.44x vs optimized-sync
+v2-bridged (smithy-java)          68.3      6.3    5/5     5   0.67x vs optimized-sync
+smithy-java 1.5.1                 47.6      6.3    5/5     5   0.47x vs optimized-sync
+[ref] v2-async stock 2.46.11     187.0      4.2    3/5     5
+[null] v1 on bridged jar          95.6      3.3    5/5     5
+
+--- batch-get: application CPU us/op
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                   1495.5      0.4    3/3     3
+v2-sync stock 2.54.0             670.3      1.9    3/3     3
+v2-async stock 2.54.0            737.9      1.1    3/3     3
+v2-sync OPTIMIZED                335.0      2.1    3/3     3   1.00x vs optimized-sync
+v2-async OPTIMIZED               393.8      0.8    0/3     3   1.18x vs optimized-sync
+v2-bridged (smithy-java)         481.0      1.1    3/3     3   1.44x vs optimized-sync
+smithy-java 1.5.1                345.5      0.4    3/3     3   1.03x vs optimized-sync
+[ref] v2-async stock 2.46.11     693.8      3.4    1/3     3
+[null] v1 on bridged jar        1506.8      1.6    3/3     3
+
+--- batch-put: application CPU us/op
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                    751.8      3.1    3/3     3
+v2-sync stock 2.54.0             817.6      4.1    3/3     3
+v2-async stock 2.54.0            857.0      3.9    3/3     3
+v2-sync OPTIMIZED                290.2      0.9    3/3     3   1.00x vs optimized-sync
+v2-async OPTIMIZED               344.2      1.9    0/3     3   1.19x vs optimized-sync
+v2-bridged (smithy-java)         431.5      0.8    3/3     3   1.49x vs optimized-sync
+smithy-java 1.5.1                303.6      1.8    1/3     3   1.05x vs optimized-sync
+[ref] v2-async stock 2.46.11     837.7      1.7    3/3     3
+[null] v1 on bridged jar         737.3      2.5    3/3     3
+
+--- describe-table: application CPU us/op
+arm                               mean  spread%   steady   n
+v2-sync stock 2.54.0             191.5      3.4    3/3     3
+v2-sync OPTIMIZED                133.0      5.2    3/3     3   1.00x vs optimized-sync
+v2-bridged (smithy-java)         102.8      3.4    3/3     3   0.77x vs optimized-sync
+
+--- small-get: p50 latency us
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                    154.6      5.5    5/5     5
+v2-sync stock 2.54.0             191.0      5.7    5/5     5
+v2-async stock 2.54.0            223.5      3.8    3/5     5
+v2-sync OPTIMIZED                146.8      1.8    5/5     5   1.00x vs optimized-sync
+v2-async OPTIMIZED               166.8      4.1    0/5     5   1.14x vs optimized-sync
+v2-bridged (smithy-java)         106.0      0.6    5/5     5   0.72x vs optimized-sync
+smithy-java 1.5.1                 82.6      3.1    5/5     5   0.56x vs optimized-sync
+[ref] v2-async stock 2.46.11     205.8      2.4    3/5     5
+[null] v1 on bridged jar         156.3      2.0    5/5     5
+
+--- small-put: p50 latency us
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                    137.8      1.2    5/5     5
+v2-sync stock 2.54.0             185.7      5.3    5/5     5
+v2-async stock 2.54.0            217.0      1.2    1/5     5
+v2-sync OPTIMIZED                143.1      1.7    5/5     5   1.00x vs optimized-sync
+v2-async OPTIMIZED               165.4      2.1    0/5     5   1.16x vs optimized-sync
+v2-bridged (smithy-java)         100.0      3.7    5/5     5   0.70x vs optimized-sync
+smithy-java 1.5.1                 79.3      7.6    5/5     5   0.55x vs optimized-sync
+[ref] v2-async stock 2.46.11     205.5      5.6    3/5     5
+[null] v1 on bridged jar         135.0      4.1    5/5     5
+
+--- batch-get: p50 latency us
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                   1541.4      0.4    3/3     3
+v2-sync stock 2.54.0             716.9      1.7    3/3     3
+v2-async stock 2.54.0            751.7      1.3    3/3     3
+v2-sync OPTIMIZED                381.7      1.7    3/3     3   1.00x vs optimized-sync
+v2-async OPTIMIZED               414.6      1.3    0/3     3   1.09x vs optimized-sync
+v2-bridged (smithy-java)         519.3      1.4    3/3     3   1.36x vs optimized-sync
+smithy-java 1.5.1                381.4      0.6    3/3     3   1.00x vs optimized-sync
+[ref] v2-async stock 2.46.11     710.0      3.6    1/3     3
+[null] v1 on bridged jar        1553.2      1.5    3/3     3
+
+--- batch-put: p50 latency us
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                    801.8      2.9    3/3     3
+v2-sync stock 2.54.0             861.2      3.9    3/3     3
+v2-async stock 2.54.0            890.8      3.8    3/3     3
+v2-sync OPTIMIZED                346.4      2.8    3/3     3   1.00x vs optimized-sync
+v2-async OPTIMIZED               381.4      3.5    0/3     3   1.10x vs optimized-sync
+v2-bridged (smithy-java)         473.9      0.5    3/3     3   1.37x vs optimized-sync
+smithy-java 1.5.1                350.9      1.2    1/3     3   1.01x vs optimized-sync
+[ref] v2-async stock 2.46.11     872.8      1.7    3/3     3
+[null] v1 on bridged jar         787.5      2.0    3/3     3
+
+--- describe-table: p50 latency us
+arm                               mean  spread%   steady   n
+v2-sync stock 2.54.0             232.6      3.0    3/3     3
+v2-sync OPTIMIZED                174.1      2.9    3/3     3   1.00x vs optimized-sync
+v2-bridged (smithy-java)         134.7      5.0    3/3     3   0.77x vs optimized-sync
+
+--- small-get: throughput ops/wall-sec
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                     6404      5.4    5/5     5
+v2-sync stock 2.54.0              5189      5.7    5/5     5
+v2-async stock 2.54.0             4306      3.1    3/5     5
+v2-sync OPTIMIZED                 6745      1.8    5/5     5   1.00x vs optimized-sync
+v2-async OPTIMIZED                5669      4.1    0/5     5   0.84x vs optimized-sync
+v2-bridged (smithy-java)          9306      0.7    5/5     5   1.38x vs optimized-sync
+smithy-java 1.5.1                11943      2.8    5/5     5   1.77x vs optimized-sync
+[ref] v2-async stock 2.46.11      4641      2.1    3/5     5
+[null] v1 on bridged jar          6335      2.1    5/5     5
+
+--- small-put: throughput ops/wall-sec
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                     7189      1.1    5/5     5
+v2-sync stock 2.54.0              5348      5.1    5/5     5
+v2-async stock 2.54.0             4409      1.3    1/5     5
+v2-sync OPTIMIZED                 6923      1.6    5/5     5   1.00x vs optimized-sync
+v2-async OPTIMIZED                5714      1.8    0/5     5   0.83x vs optimized-sync
+v2-bridged (smithy-java)          9872      3.4    5/5     5   1.43x vs optimized-sync
+smithy-java 1.5.1                12475      6.3    5/5     5   1.80x vs optimized-sync
+[ref] v2-async stock 2.46.11      4655      5.1    3/5     5
+[null] v1 on bridged jar          7329      4.1    5/5     5
+
+--- batch-get: throughput ops/wall-sec
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                      647      0.4    3/3     3
+v2-sync stock 2.54.0              1388      1.7    3/3     3
+v2-async stock 2.54.0             1310      1.2    3/3     3
+v2-sync OPTIMIZED                 2590      1.7    3/3     3   1.00x vs optimized-sync
+v2-async OPTIMIZED                2351      1.2    0/3     3   0.91x vs optimized-sync
+v2-bridged (smithy-java)          1910      1.2    3/3     3   0.74x vs optimized-sync
+smithy-java 1.5.1                 2598      0.6    3/3     3   1.00x vs optimized-sync
+[ref] v2-async stock 2.46.11      1387      3.4    1/3     3
+[null] v1 on bridged jar           642      1.6    3/3     3
+
+--- batch-put: throughput ops/wall-sec
+arm                               mean  spread%   steady   n
+v1 (1.12.797)                     1240      2.9    3/3     3
+v2-sync stock 2.54.0              1155      3.9    3/3     3
+v2-async stock 2.54.0             1106      3.6    3/3     3
+v2-sync OPTIMIZED                 2860      2.7    3/3     3   1.00x vs optimized-sync
+v2-async OPTIMIZED                2552      3.0    0/3     3   0.89x vs optimized-sync
+v2-bridged (smithy-java)          2091      0.4    3/3     3   0.73x vs optimized-sync
+smithy-java 1.5.1                 2824      1.3    1/3     3   0.99x vs optimized-sync
+[ref] v2-async stock 2.46.11      1129      1.6    3/3     3
+[null] v1 on bridged jar          1263      2.1    3/3     3
+
+--- describe-table: throughput ops/wall-sec
+arm                               mean  spread%   steady   n
+v2-sync stock 2.54.0              4260      2.7    3/3     3
+v2-sync OPTIMIZED                 5681      3.0    3/3     3   1.00x vs optimized-sync
+v2-bridged (smithy-java)          7319      4.8    3/3     3   1.29x vs optimized-sync
+
+
+===== headline comparisons (application CPU per operation)
+scenario            bridged   opt-sync   stock254  bridged/opt  opt/stock  bridged/stock
+small-get              74.3      105.7      151.5        0.70x      0.70x          0.49x
+small-put              68.3      102.0      146.0        0.67x      0.70x          0.47x
+batch-get             481.0      335.0      670.3        1.44x      0.50x          0.72x
+batch-put             431.5      290.2      817.6        1.49x      0.35x          0.53x
+describe-table        102.8      133.0      191.5        0.77x      0.69x          0.54x
+
+===== cross-jar null control: v1 is identical code and version in every jar
+  small-get        racecar jar    116.2   bridged jar    116.6   delta   +0.3%
+  small-put        racecar jar     97.5   bridged jar     95.6   delta   -1.9%
+  batch-get        racecar jar   1495.5   bridged jar   1506.8   delta   +0.8%
+  batch-put        racecar jar    751.8   bridged jar    737.3   delta   -1.9%

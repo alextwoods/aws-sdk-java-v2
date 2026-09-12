@@ -1,0 +1,12 @@
+READY port=19080 pid=50011 threads=200 selectors=8 scheme=http (GetItem=470B PutItem=2B BatchGetItem=37808B BatchWriteItem=23B DescribeTable=4347B)
+profiler output: /home/ec2-user/racecar/runs/bench3-20260911-230328/profiles/v2-sync-stock254-small-get-alloc.jfr
+pinning: client=[32-47] server=[0-15]
+Profiling started
+=== pipeline verified: SYNC STOCK (wiring=STOCK execution=STOCK)
+=== standalone-e2e-benchmark client=v2-sync transport=apache5 scenarios=small-get iterations=35,000 warmup=5,000/fixed concurrency=1 driver=threads async-mode=n/a endpoint=http://127.0.0.1:19080 metrics=off pid=50076
+=== cpu-time source: oshi (Amazon Linux) user/system split: yes; application cpu (per-thread): yes
+=== build: phase=bench3-stock254 commit=ac977512cbe sdkCommit=published-2 branch=feature/poc/benchmark3 dirty=false built=2026-09-11T22:33:42Z sdkV2=2.54.0 sdkV1=1.12.797 smithy=1.5.1
+=== warmup small-get: ops=5,000 wall=4.3s jit=3704ms settled=false (fixed warmup)
+=== WARNING small-get: 10950 ms of JIT compilation inside the measured window (114.1% of wall); code was still changing, so per-operation numbers are not steady-state
+RESULT client=v2-sync transport=apache5 scenario=small-get iterations=35000 concurrency=1 async_mode=n/a wall_ms=9593 ops_per_wall_sec=3648.4 cpu_ms=19040 cpu_user_ms=17870 cpu_sys_ms=1170 ops_per_cpu_sec=1838.2 ops_per_user_cpu_sec=1958.6 cpu_us_per_op=544.0 app_cpu_ms=8081 app_cpu_us_per_op=230.9 unattributed_ms=10959 avg_us_per_op=274.1 mean_lat_us=272.8 p50_us=256.0 p90_us=384.8 p99_us=500.4 p999_us=711.1 max_us=8384.5 jit_ms=10950 gc_ms=16 gc_count=2 steady_state=false warmup_ops=5000 warmup_settled=false server_cpu_ms=3440 server_requests=35000
+DONE total_wall_s=14.5
