@@ -28,7 +28,13 @@ import software.amazon.awssdk.utilslite.SdkInternalThreadLocal;
 
 /**
  * The {@code TraceIdExecutionInterceptor} copies the trace details to the {@link #TRACE_ID_HEADER} header, assuming we seem to
- * be running in a lambda environment.`
+ * be running in a lambda environment.
+ *
+ * <p>Whether we are in a Lambda environment is decided once, when the interceptor is created: the function-name environment
+ * variable is set by the Lambda runtime before the process starts and never changes afterwards, and reading it through
+ * {@link SystemSetting} on every hook of every call was a measurable cost for the (far more common) clients running
+ * elsewhere. Outside Lambda every hook is a no-op, so {@link #isApplicable()} lets a client leave the interceptor out
+ * entirely.
  */
 @SdkProtectedApi
 public class TraceIdExecutionInterceptor implements ExecutionInterceptor {
@@ -37,9 +43,22 @@ public class TraceIdExecutionInterceptor implements ExecutionInterceptor {
     private static final String CONCURRENT_TRACE_ID_KEY = "AWS_LAMBDA_X_TRACE_ID";
     private static final ExecutionAttribute<String> TRACE_ID = new ExecutionAttribute<>("TraceId");
 
+    private final boolean inLambda;
+
+    public TraceIdExecutionInterceptor() {
+        this.inLambda = isApplicable();
+    }
+
+    /**
+     * Whether this interceptor would do anything in the current process, i.e. whether we appear to be running in Lambda.
+     */
+    public static boolean isApplicable() {
+        return lambdaFunctionNameEnvironmentVariable().isPresent();
+    }
+
     @Override
     public void beforeExecution(Context.BeforeExecution context, ExecutionAttributes executionAttributes) {
-        if (lambdaFunctionNameEnvironmentVariable().isPresent()) {
+        if (inLambda) {
             String traceId = SdkInternalThreadLocal.get(CONCURRENT_TRACE_ID_KEY);
             if (traceId != null) {
                 executionAttributes.putAttribute(TRACE_ID, traceId);
@@ -49,12 +68,9 @@ public class TraceIdExecutionInterceptor implements ExecutionInterceptor {
 
     @Override
     public SdkHttpRequest modifyHttpRequest(Context.ModifyHttpRequest context, ExecutionAttributes executionAttributes) {
-        Optional<String> traceIdHeader = traceIdHeader(context);
-        if (!traceIdHeader.isPresent()) {
-            Optional<String> lambdafunctionName = lambdaFunctionNameEnvironmentVariable();
+        if (inLambda && !traceIdHeader(context).isPresent()) {
             Optional<String> traceId = traceId(executionAttributes);
-
-            if (lambdafunctionName.isPresent() && traceId.isPresent()) {
+            if (traceId.isPresent()) {
                 return context.httpRequest().copy(r -> r.putHeader(TRACE_ID_HEADER, traceId.get()));
             }
         }
@@ -63,14 +79,14 @@ public class TraceIdExecutionInterceptor implements ExecutionInterceptor {
 
     @Override
     public void afterExecution(Context.AfterExecution context, ExecutionAttributes executionAttributes) {
-        if (lambdaFunctionNameEnvironmentVariable().isPresent()) {
+        if (inLambda) {
             saveTraceId(executionAttributes);
         }
     }
 
     @Override
     public void onExecutionFailure(Context.FailedExecution context, ExecutionAttributes executionAttributes) {
-        if (lambdaFunctionNameEnvironmentVariable().isPresent()) {
+        if (inLambda) {
             saveTraceId(executionAttributes);
         }
     }
@@ -98,7 +114,7 @@ public class TraceIdExecutionInterceptor implements ExecutionInterceptor {
         return TracingSystemSetting._X_AMZN_TRACE_ID.getStringValue();
     }
 
-    private Optional<String> lambdaFunctionNameEnvironmentVariable() {
+    private static Optional<String> lambdaFunctionNameEnvironmentVariable() {
         // CHECKSTYLE:OFF - This is not configured by the customer, so it should not be configurable by system property
         return SystemSetting.getStringValueFromEnvironmentVariable(LAMBDA_FUNCTION_NAME_ENVIRONMENT_VARIABLE);
         // CHECKSTYLE:ON

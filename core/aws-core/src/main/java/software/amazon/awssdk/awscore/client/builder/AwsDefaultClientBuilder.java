@@ -21,7 +21,7 @@ import static software.amazon.awssdk.core.client.config.SdkClientOption.CONFIGUR
 import static software.amazon.awssdk.core.client.config.SdkClientOption.RETRY_STRATEGY;
 
 import java.net.URI;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -546,9 +546,14 @@ public abstract class AwsDefaultClientBuilder<BuilderT extends AwsClientBuilder<
     }
 
     private List<ExecutionInterceptor> awsInterceptors() {
-        return Arrays.asList(new HelpfulUnknownHostExceptionInterceptor(),
-                             new EventStreamInitialRequestInterceptor(),
-                             new TraceIdExecutionInterceptor());
+        List<ExecutionInterceptor> interceptors = new ArrayList<>(3);
+        interceptors.add(new HelpfulUnknownHostExceptionInterceptor());
+        interceptors.add(new EventStreamInitialRequestInterceptor());
+        // Every hook of the trace-ID interceptor is a no-op outside Lambda; leave it off the chain there.
+        if (TraceIdExecutionInterceptor.isApplicable()) {
+            interceptors.add(new TraceIdExecutionInterceptor());
+        }
+        return interceptors;
     }
 
     @Override
