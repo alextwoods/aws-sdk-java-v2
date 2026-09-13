@@ -102,21 +102,35 @@ public final class AuthSchemeResolver {
             Map<String, AuthScheme<?>> authSchemes,
             IdentityProviders identityProviders,
             MetricCollector metricCollector) {
+        return resolve(authOptions, authSchemes, identityProviders).select(metricCollector);
+    }
 
+    /**
+     * The call-independent half of {@link #selectAuthScheme}: which option is selected, the scheme and signer behind it,
+     * the identity provider that will supply the identity, and the {@link ResolveIdentityRequest} built from the option's
+     * identity properties. None of that depends on anything but the three inputs, so a caller that sees the same three
+     * input instances again can keep the result and only {@link Resolution#select(MetricCollector) resolve the identity}
+     * per call. Selecting is what produces a fresh {@link SelectedAuthScheme} with a fresh identity future.
+     *
+     * @throws SdkException if no auth scheme could be selected
+     */
+    public static Resolution<? extends Identity> resolve(List<AuthSchemeOption> authOptions,
+                                                         Map<String, AuthScheme<?>> authSchemes,
+                                                         IdentityProviders identityProviders) {
         List<Supplier<String>> discardedReasons = new ArrayList<>();
 
         for (AuthSchemeOption authOption : authOptions) {
             AuthScheme<?> authScheme = authSchemes.get(authOption.schemeId());
-            SelectedAuthScheme<? extends Identity> selectedAuthScheme = trySelectAuthScheme(
-                authOption, authScheme, identityProviders, discardedReasons, metricCollector);
+            Resolution<? extends Identity> resolution =
+                tryResolve(authOption, authScheme, identityProviders, discardedReasons);
 
-            if (selectedAuthScheme != null) {
+            if (resolution != null) {
                 if (!discardedReasons.isEmpty()) {
                     LOG.debug(() -> String.format("%s auth will be used, discarded: '%s'",
                         authOption.schemeId(),
                         discardedReasons.stream().map(Supplier::get).collect(Collectors.joining(", "))));
                 }
-                return selectedAuthScheme;
+                return resolution;
             }
         }
 
@@ -124,6 +138,56 @@ public final class AuthSchemeResolver {
             .message("Failed to determine how to authenticate the user: " +
                      discardedReasons.stream().map(Supplier::get).collect(Collectors.joining(", ")))
             .build();
+    }
+
+    /**
+     * A selected auth scheme before its identity has been resolved. See {@link #resolve}.
+     */
+    public static final class Resolution<T extends Identity> {
+        private final AuthSchemeOption authSchemeOption;
+        private final HttpSigner<T> signer;
+        private final IdentityProvider<T> identityProvider;
+        private final ResolveIdentityRequest identityRequest;
+        private final SdkMetric<Duration> identityMetric;
+
+        private Resolution(AuthSchemeOption authSchemeOption, HttpSigner<T> signer, IdentityProvider<T> identityProvider,
+                           ResolveIdentityRequest identityRequest, SdkMetric<Duration> identityMetric) {
+            this.authSchemeOption = authSchemeOption;
+            this.signer = signer;
+            this.identityProvider = identityProvider;
+            this.identityRequest = identityRequest;
+            this.identityMetric = identityMetric;
+        }
+
+        public AuthSchemeOption authSchemeOption() {
+            return authSchemeOption;
+        }
+
+        /**
+         * The same resolution carrying a different option, for example one with a pre-existing scheme's properties merged
+         * in. The identity request is deliberately not rebuilt from the new option: it is derived from the option that
+         * was <em>resolved</em>, which is what {@link #selectAuthScheme} has always done (selection ran before the merge),
+         * so the identity fetched is unaffected by the merge either way.
+         */
+        public Resolution<T> withAuthSchemeOption(AuthSchemeOption option) {
+            return option == authSchemeOption
+                   ? this
+                   : new Resolution<>(option, signer, identityProvider, identityRequest, identityMetric);
+        }
+
+        /**
+         * Resolve the identity and produce the {@link SelectedAuthScheme} for this call.
+         */
+        public SelectedAuthScheme<T> select(MetricCollector metricCollector) {
+            CompletableFuture<? extends T> identity;
+            if (identityMetric == null || metricCollector == null) {
+                identity = identityProvider.resolveIdentity(identityRequest);
+            } else {
+                identity = MetricUtils.reportDuration(() -> identityProvider.resolveIdentity(identityRequest),
+                                                      metricCollector, identityMetric);
+            }
+            return new SelectedAuthScheme<>(identity, signer, authSchemeOption);
+        }
     }
 
     /**
@@ -139,14 +203,29 @@ public final class AuthSchemeResolver {
         // The "existing" auth scheme is what's currently on SELECTED_AUTH_SCHEME - potentially modified by interceptors.
         SelectedAuthScheme<?> existingAuthScheme =
             executionAttributes.getAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME);
-
-        if (existingAuthScheme == null) {
-            return selectedAuthScheme;
-        }
-
         // Snapshot taken before interceptors ran — used to detect what interceptors changed.
         SelectedAuthScheme<?> authSchemeBeforeInterceptors =
             executionAttributes.getAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_SNAPSHOT_PRE_INTERCEPTORS);
+
+        AuthSchemeOption merged = mergePreExistingProperties(selectedAuthScheme.authSchemeOption(),
+                                                             existingAuthScheme, authSchemeBeforeInterceptors);
+        if (merged == selectedAuthScheme.authSchemeOption()) {
+            return selectedAuthScheme;
+        }
+        return new SelectedAuthScheme<>(selectedAuthScheme.identity(), selectedAuthScheme.signer(), merged);
+    }
+
+    /**
+     * The option half of {@link #mergePreExistingAuthSchemeProperties}: {@code selectedOption} with the pre-existing
+     * scheme's properties merged in, or {@code selectedOption} itself when the merge would change nothing. A pure
+     * function of its three arguments.
+     */
+    public static AuthSchemeOption mergePreExistingProperties(AuthSchemeOption selectedOption,
+                                                              SelectedAuthScheme<?> existingAuthScheme,
+                                                              SelectedAuthScheme<?> authSchemeBeforeInterceptors) {
+        if (existingAuthScheme == null) {
+            return selectedOption;
+        }
 
         // If no interceptor modified the auth scheme option, skip the diff logic. Still merge existing properties with
         // putIfAbsent so that properties from the initial placeholder (e.g., REGION_NAME) carry over to the
@@ -156,21 +235,17 @@ public final class AuthSchemeResolver {
             // Fast path: the placeholder scheme created by legacy signer attribute writes (signing name/region)
             // usually contributes nothing, because the resolved option already carries every property. Skip the
             // option rebuild entirely in that case — this runs on every request.
-            if (!hasPropertyAbsentFrom(existingAuthScheme.authSchemeOption(), selectedAuthScheme.authSchemeOption())) {
-                return selectedAuthScheme;
+            if (!hasPropertyAbsentFrom(existingAuthScheme.authSchemeOption(), selectedOption)) {
+                return selectedOption;
             }
-            AuthSchemeOption.Builder mergedOption = selectedAuthScheme.authSchemeOption().toBuilder();
+            AuthSchemeOption.Builder mergedOption = selectedOption.toBuilder();
             existingAuthScheme.authSchemeOption().forEachSignerProperty(mergedOption::putSignerPropertyIfAbsent);
             existingAuthScheme.authSchemeOption().forEachIdentityProperty(mergedOption::putIdentityPropertyIfAbsent);
-            return new SelectedAuthScheme<>(
-                selectedAuthScheme.identity(),
-                selectedAuthScheme.signer(),
-                mergedOption.build()
-            );
+            return mergedOption.build();
         }
 
         // Start with the freshly resolved auth scheme as the base.
-        AuthSchemeOption.Builder mergedOption = selectedAuthScheme.authSchemeOption().toBuilder();
+        AuthSchemeOption.Builder mergedOption = selectedOption.toBuilder();
 
         // For each signer property on the interceptor-modified scheme:
         // If the interceptor changed it (differs from pre-interceptor snapshot), apply interceptor override
@@ -188,11 +263,7 @@ public final class AuthSchemeResolver {
 
         existingAuthScheme.authSchemeOption().forEachIdentityProperty(mergedOption::putIdentityPropertyIfAbsent);
 
-        return new SelectedAuthScheme<>(
-            selectedAuthScheme.identity(),
-            selectedAuthScheme.signer(),
-            mergedOption.build()
-        );
+        return mergedOption.build();
     }
 
     /**
@@ -334,12 +405,11 @@ public final class AuthSchemeResolver {
         }
     }
 
-    private static <T extends Identity> SelectedAuthScheme<T> trySelectAuthScheme(
+    private static <T extends Identity> Resolution<T> tryResolve(
             AuthSchemeOption authOption,
             AuthScheme<T> authScheme,
             IdentityProviders identityProviders,
-            List<Supplier<String>> discardedReasons,
-            MetricCollector metricCollector) {
+            List<Supplier<String>> discardedReasons) {
 
         if (authScheme == null) {
             discardedReasons.add(() -> String.format("'%s' is not enabled for this request.", authOption.schemeId()));
@@ -362,27 +432,10 @@ public final class AuthSchemeResolver {
             return null;
         }
 
-        // Most auth options carry no identity properties; share the empty request instead of
-        // building one per call.
         IdentityRequestBuilderConsumer identityRequestBuilder = new IdentityRequestBuilderConsumer();
         authOption.forEachIdentityProperty(identityRequestBuilder);
-
-        CompletableFuture<? extends T> identity = resolveIdentity(
-            identityProvider, identityRequestBuilder.buildOrEmpty(), metricCollector);
-
-        return new SelectedAuthScheme<>(identity, signer, authOption);
-    }
-
-    private static <T extends Identity> CompletableFuture<? extends T> resolveIdentity(
-            IdentityProvider<T> identityProvider,
-            ResolveIdentityRequest request,
-            MetricCollector metricCollector) {
-
-        SdkMetric<Duration> metric = getIdentityMetric(identityProvider);
-        if (metric == null || metricCollector == null) {
-            return identityProvider.resolveIdentity(request);
-        }
-        return MetricUtils.reportDuration(() -> identityProvider.resolveIdentity(request), metricCollector, metric);
+        return new Resolution<>(authOption, signer, identityProvider, identityRequestBuilder.buildOrEmpty(),
+                                getIdentityMetric(identityProvider));
     }
 
     private static SdkMetric<Duration> getIdentityMetric(IdentityProvider<?> identityProvider) {

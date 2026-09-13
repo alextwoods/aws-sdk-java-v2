@@ -20,6 +20,7 @@ import static software.amazon.awssdk.utils.Validate.paramNotNull;
 import java.util.function.Consumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
+import software.amazon.awssdk.core.internal.http.auth.AuthSchemeResolutionCache;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipelineBuilder;
 import software.amazon.awssdk.core.internal.retry.ClockSkewAdjuster;
@@ -37,11 +38,20 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
     private final SdkClientTime sdkClientTime;
     private final ClockSkewAdjuster clockSkewAdjuster;
     private final SdkClientConfiguration clientConfiguration;
+    /**
+     * Per-client state the auth scheme resolution stage keeps between calls. Stages are constructed per call, so the
+     * cache has to live here; it is carried across {@link #toBuilder()} so a per-request copy of the dependencies still
+     * shares the client's cache.
+     */
+    private final AuthSchemeResolutionCache authSchemeResolutionCache;
 
     private HttpClientDependencies(Builder builder) {
         this.sdkClientTime = builder.sdkClientTime != null ? builder.sdkClientTime : new SdkClientTime();
         this.clockSkewAdjuster = builder.clockSkewAdjuster != null ? builder.clockSkewAdjuster : new ClockSkewAdjuster();
         this.clientConfiguration = paramNotNull(builder.clientConfiguration, "ClientConfiguration");
+        this.authSchemeResolutionCache = builder.authSchemeResolutionCache != null
+                                         ? builder.authSchemeResolutionCache
+                                         : new AuthSchemeResolutionCache();
     }
 
     public static Builder builder() {
@@ -50,6 +60,10 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
 
     public SdkClientConfiguration clientConfiguration() {
         return clientConfiguration;
+    }
+
+    public AuthSchemeResolutionCache authSchemeResolutionCache() {
+        return authSchemeResolutionCache;
     }
 
     /**
@@ -89,6 +103,7 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
         private SdkClientTime sdkClientTime;
         private ClockSkewAdjuster clockSkewAdjuster;
         private SdkClientConfiguration clientConfiguration;
+        private AuthSchemeResolutionCache authSchemeResolutionCache;
 
         private Builder() {
         }
@@ -97,6 +112,7 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
             this.sdkClientTime = from.sdkClientTime;
             this.clientConfiguration = from.clientConfiguration;
             this.clockSkewAdjuster = from.clockSkewAdjuster;
+            this.authSchemeResolutionCache = from.authSchemeResolutionCache;
         }
 
         public Builder clockSkewAdjuster(ClockSkewAdjuster clockSkewAdjuster) {

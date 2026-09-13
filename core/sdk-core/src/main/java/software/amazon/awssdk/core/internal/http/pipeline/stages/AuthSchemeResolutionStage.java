@@ -29,6 +29,7 @@ import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.internal.http.HttpClientDependencies;
 import software.amazon.awssdk.core.internal.http.RequestExecutionContext;
+import software.amazon.awssdk.core.internal.http.auth.AuthSchemeResolutionCache;
 import software.amazon.awssdk.core.internal.http.pipeline.MutableRequestToRequestPipeline;
 import software.amazon.awssdk.core.spi.identity.AuthSchemeOptionsResolver;
 import software.amazon.awssdk.core.spi.identity.RequestIdentityProviderResolver;
@@ -53,7 +54,15 @@ public final class AuthSchemeResolutionStage implements MutableRequestToRequestP
     private static final String SIGV4A_SCHEME_ID = "aws.auth#sigv4a";
     private static final String BEARER_SCHEME_ID = "smithy.api#httpBearerAuth";
 
+    /**
+     * Per-client cache of the call-independent half of resolution; see {@link AuthSchemeResolutionCache}. Stages are
+     * constructed per call, so the cache is the client's, held by its dependencies.
+     */
+    private final AuthSchemeResolutionCache resolutionCache;
+
     public AuthSchemeResolutionStage(HttpClientDependencies dependencies) {
+        this.resolutionCache = dependencies != null ? dependencies.authSchemeResolutionCache()
+                                                    : new AuthSchemeResolutionCache();
     }
 
     @Override
@@ -87,13 +96,9 @@ public final class AuthSchemeResolutionStage implements MutableRequestToRequestP
             executionAttributes.getAttribute(SdkExecutionAttribute.API_CALL_METRIC_COLLECTOR);
 
         SelectedAuthScheme<? extends Identity> selectedAuthScheme =
-            AuthSchemeResolver.selectAuthScheme(authOptions, authSchemes, identityProviders, metricCollector);
+            resolve(authOptions, authSchemes, identityProviders, existing, executionAttributes, metricCollector);
 
-        executionAttributes.putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_SNAPSHOT_POST_INTERCEPTORS,
-                                         executionAttributes.getAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME));
-
-        selectedAuthScheme = AuthSchemeResolver.mergePreExistingAuthSchemeProperties(selectedAuthScheme, executionAttributes);
-
+        executionAttributes.putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_SNAPSHOT_POST_INTERCEPTORS, existing);
         executionAttributes.putAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME, selectedAuthScheme);
 
         Consumer<ExecutionAttributes> signingMethodUpdater =
@@ -105,6 +110,45 @@ public final class AuthSchemeResolutionStage implements MutableRequestToRequestP
         recordBusinessMetrics(selectedAuthScheme, sdkRequest, executionAttributes);
 
         return request;
+    }
+
+    /**
+     * {@link AuthSchemeResolver#selectAuthScheme} followed by {@link AuthSchemeResolver#mergePreExistingAuthSchemeProperties},
+     * with the call-independent part of both served from the per-client cache when the inputs are the same instances as
+     * last time. The merge is only cacheable when no interceptor edited the pre-existing scheme (the pre-interceptor
+     * snapshot still holds the same option instance); otherwise the diff against the snapshot has to be redone.
+     */
+    private SelectedAuthScheme<? extends Identity> resolve(List<AuthSchemeOption> authOptions,
+                                                           Map<String, AuthScheme<?>> authSchemes,
+                                                           IdentityProviders identityProviders,
+                                                           SelectedAuthScheme<?> existing,
+                                                           ExecutionAttributes executionAttributes,
+                                                           MetricCollector metricCollector) {
+        SelectedAuthScheme<?> beforeInterceptors =
+            executionAttributes.getAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_SNAPSHOT_PRE_INTERCEPTORS);
+        AuthSchemeOption existingOption = existing == null ? null : existing.authSchemeOption();
+        boolean mergeIsCacheable = existing == null
+                                   || (beforeInterceptors != null && beforeInterceptors.authSchemeOption() == existingOption);
+
+        if (mergeIsCacheable) {
+            AuthSchemeResolutionCache.Entry<? extends Identity> cached =
+                resolutionCache.lookup(authOptions, authSchemes, identityProviders, existingOption);
+            if (cached != null) {
+                return cached.resolution().select(metricCollector);
+            }
+        }
+
+        AuthSchemeResolver.Resolution<? extends Identity> resolution =
+            AuthSchemeResolver.resolve(authOptions, authSchemes, identityProviders);
+        // As before this cache existed, the identity request is built from the resolved option, not the merged one:
+        // selection always ran before the merge, so the merge never influenced which identity was fetched.
+        AuthSchemeOption merged =
+            AuthSchemeResolver.mergePreExistingProperties(resolution.authSchemeOption(), existing, beforeInterceptors);
+        resolution = resolution.withAuthSchemeOption(merged);
+        if (mergeIsCacheable) {
+            resolutionCache.store(authOptions, authSchemes, identityProviders, existingOption, resolution);
+        }
+        return resolution.select(metricCollector);
     }
 
     private List<AuthSchemeOption> resolveAuthSchemeOptions(ExecutionAttributes executionAttributes, SdkRequest request) {
