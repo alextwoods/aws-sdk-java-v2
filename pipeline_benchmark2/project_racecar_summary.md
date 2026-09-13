@@ -3477,3 +3477,206 @@ Follow-ups, in value order:
 3. The response-side stages still `copy()` the interceptor context to add the HTTP response even
    when no interceptor will read it; that copy feeds later stages so it is not free to drop, but the
    `withHttpRequest`-style single-field swap from H4 would cut it to one small object.
+
+## Investigation, part 2 — the 2.46 → 2.54 drift attributed step by step
+
+The first pass (above) found one clean step at 2.47.0 and called the rest "gradual, below the
+one-off floor". Asked to attribute it properly: every adjacent pair of the nine published releases was
+measured *paired* (7 reps, 200k ops, v2-sync small-get, arms interleaved), and each release got a host
+CPU profile so the steps could be tied to frames and the frames to commits.
+
+- Raw: `paired/host-20260913-0033` … `host-20260913-0218` (eight adjacent pairs),
+  `raw/host-bisect-profiles/` (host CPU profiles of all nine releases)
+- Scripts: `pipeline_benchmark3/scripts/ladder_table.py` (the table below),
+  `ladder_commits.sh` (request-path commits per step), `frame_diff.py`, `frame_track.py`
+
+### The ladder
+
+| step | base | cand | Δ app CPU | median | pair spread | wins (cand faster) |
+|---|---:|---:|---:|---:|---:|---:|
+| 2.46.10 → 2.47.0 | 146.5 | 149.8 | **+2.3%** | +2.0% | ±2.0% | **0/7** |
+| 2.47.0 → 2.48.0 | 144.4 | 145.2 | +0.6% | +1.6% | ±2.6% | 3/7 |
+| 2.48.0 → 2.49.0 | 148.4 | 146.6 | −1.1% | −1.0% | ±3.8% | 5/7 |
+| 2.49.0 → 2.50.0 | 147.1 | 148.7 | +1.1% | +2.3% | ±4.2% | 2/7 |
+| 2.50.0 → 2.51.0 | 147.4 | 151.9 | **+3.1%** | +3.2% | ±2.5% | **0/7** |
+| 2.51.0 → 2.52.0 | 150.1 | 149.6 | −0.3% | −0.1% | ±2.7% | 4/7 |
+| 2.52.0 → 2.53.0 | 153.2 | 156.1 | +2.0% | +2.9% | ±4.4% | 2/7 |
+| 2.53.0 → 2.54.0 | 153.2 | 152.7 | −0.3% | −0.9% | ±3.3% | 5/7 |
+
+End to end the ladder's arm means go 146.5 → 152.7 (**+4.2%**, matching the earlier sweep's +4.0%).
+Two steps are unambiguous — every one of seven pairs went the same way, with the pair spread well
+inside the effect — and together (+2.3% and +3.1% ≈ +8 µs) they account for the whole end-to-end
+drift; the other six are within their own noise, and 2.53.0 is the only one worth a second look.
+
+### Step 1, 2.47.0: the endpoint/auth stage refactor (#7017) — a core change
+
+Same finding as part 1, now reproduced in a second independent session (+2.1% and +2.3%, 0/7 both
+times). Endpoint and auth-scheme resolution moved from service interceptors into pipeline stages, and
+the stage version does more per call than the interceptor did: it re-derives the endpoint built-ins
+(`AwsEndpointProviderUtils.endpointBuiltIn`, new at 1.9 points) and replays/merges auth-scheme
+properties across the interceptor boundary (`DefaultAuthSchemeOption.forEachSignerProperty` 0.17 →
+1.32, `reapplyInterceptorModifiedAuthProperties` and `mergePreExistingAuthSchemeProperties` new).
+
+Fixed where? The property replay is exactly what H4 removed in racecar (its share fell 2.19% → 0.43%
+across H4). Upstream's #7282 "Cache auth scheme resolution" (2.54.0) targets the same area, but
+2.53.0 → 2.54.0 measures −0.3% (5/7), so whatever it recovered is under this rig's floor. The
+per-call endpoint evaluation is what the BDD provider with its result cache (#7345, #7364, #7371)
+removes — measured as H6 below.
+
+### Step 2, 2.51.0: DynamoDB's endpoint ruleset grew — a *model* change, not a code change
+
+This one was invisible to the one-off sweep and to a commit search. `ladder_commits.sh` finds **no
+request-path code change at all** between 2.50.0 and 2.51.0 — one revert (#7223, an `available()`
+change), one annotation (#7203). What did change is DynamoDB's own model: the vector-search launch
+(`bfe3301efdb`, "Merge customizations for DynamoDB") rewrote `endpoint-rule-set.json` (+466 lines):
+a new `IsSearchOperation` parameter, a `search-ddb` endpoint tier, and account-ID/ARN-based routing
+tiers threaded through every branch. In this era the ruleset is walked on every call, so a bigger
+ruleset is a slower call. The profile pair 2.50.0 → 2.51.0 says exactly that and nothing else:
+
+| frame (share of client samples) | 2.50.0 | 2.51.0 |
+|---|---:|---:|
+| `EndpointResolutionStage.execute` | 3.46% | **5.47%** |
+| `DefaultDynamoDbEndpointProvider.resolveEndpoint` | 0.61% | **1.75%** |
+| `DefaultDynamoDbEndpointProvider.endpointRule0` / `endpointRule1` | 0.59 / 0.57 | 1.57 / 1.56 |
+| `RulesFunctions.parseURL` → `RuleUrl.parse` | — | **new, 0.93%** |
+| `DynamoDbEndpointResolverUtils.ruleParams` | 2.24% | 2.59% |
+
+The `RuleUrl.parse` frame is the tell: the new ruleset parses the endpoint override URL on every call
+(the benchmark has one, like any VPC-endpoint, local-DynamoDB or test setup), and that alone is
+~1.3 µs. +2 points ≈ +3 µs — the paired number. **Every DynamoDB caller on 2.51+ pays this whether or
+not they use vector search.** It is also why the bench3 "stock 2.46 vs stock 2.54" baselines
+disagreed: half of that gap is DynamoDB's ruleset, not the SDK core.
+
+Fixed where? This is precisely the case for BDD + result cache: after the first call the params
+compare equal and the walk (URL parse included) is skipped. #7371 turns that on for DynamoDB. H6 below
+measures it.
+
+### Step 3, 2.53.0: suggestive, not established
+
++2.0% mean but only 2/7 pairs against and ±4.4% spread, so it fails the bar the other two clear. The
+profile pair shows `ExecutionAttributes.putAttribute` 1.53% → 2.72% inside
+`AwsExecutionContextBuilder`, `AttributeMap.get` +0.5 and `ExecutionAttribute$DerivationValueStorage.
+set` +0.5 — consistent with #7161 ("Remove ServiceMetadata from client creation and request paths")
+turning `SIGNING_REGION` into a lazily-derived client option read per call, which then feeds the
+mapped-attribute derivation H4 later made cheap. Plausible mechanism, sub-floor effect; recorded as a
+candidate, not a finding. The remaining +1 point in that pair is unmarshalling frames, which is
+single-profile JIT-shape noise.
+
+### What is fixable, and by whom
+
+| step | cause | fix in racecar | fix for the stock SDK |
+|---|---|---|---|
+| 2.47.0 +2.3% | stage refactor re-derives built-ins and replays auth properties per call | H4 (auth properties), BDD cache via merge (endpoint) | #7282 did not measurably recover it; the H4 placeholder-auth-scheme approach and BDD (#7371) are the candidates to upstream |
+| 2.51.0 +3.1% | DynamoDB ruleset growth walked per call, incl. endpoint-URL parse | BDD provider + result cache (#7371, via the master merge) | ship #7371; the same applies to any service whose ruleset grows |
+| 2.53.0 +2.0%? | possibly per-call lazy `SIGNING_REGION` derivation | H4 already caches the derived scheme | needs a clean reproduction first |
+
+The uncomfortable conclusion for the stock SDK is that neither regression was a "bug" anyone would
+have caught in review: one is a reasonable refactor whose per-call cost was not measured, the other is
+a service team adding endpoint rules. Both are the kind of thing only a paired benchmark on a fixed
+rig sees, and both are addressed by the same structural answer — resolve once, cache, and stop paying
+per call for things that are per-client constants.
+
+## Phase H6 — onto master, with BDD endpoint resolution and its result cache
+
+Asked for directly: bring the branch to the latest master and apply PR #7371 ("[Endpoints BDD] —
+Release phase 2"), then confirm DynamoDB really resolves endpoints through the BDD provider and really
+uses the cache. #7371 itself is eight `endpoint-bdd-1.json` model files (DynamoDB among them); the
+machinery it switches on is already in master — the BDD codegen (#7345: node-per-method evaluator,
+peephole-optimised conditions, and a single-entry `params → endpoint` result cache generated into each
+`Default{Service}EndpointProvider`), its phase-1 rollout (#7364) and code-generated rules for every
+service (#7265, #7294).
+
+- Commits: `2f26679488e` (merge of `origin/master` at `ca8030a7275`, 2.54.18-SNAPSHOT),
+  `88f25102bd7` (cherry-pick of #7371), `880747878ba` (harness follows the version bump)
+- Raw: `paired/host-20260913-0242` (small ops, 7 reps), `host-20260913-0344` (batch-put, 5 reps),
+  `raw/host-h6-profiles` (equal-op alloc + CPU profiles)
+- Correctness: sdk-core 1620 + 651, aws-core 334, dynamodb 61 (its generated endpoint conformance
+  suite now runs against the BDD provider), codegen-generated-classes 781 (endpoint, checksum,
+  trace-ID, metric tests), protocol-tests 726, japicmp clean on sdk-core and aws-core, smoke 10/10
+  with metric-set identity
+
+### Merge, not rebase
+
+The branch carries 136 measured commits whose SHAs are cited throughout this document and stamped
+into every jar; a rebase would have rewritten all of them and replayed each through master's codegen
+rewrite. A merge gives the same tree with the record intact. Six conflicts, all resolved in favour of
+the racecar structure with master's intent ported in: the two HTTP clients keep the straight-line
+`SyncApiCallPipeline`/`AsyncApiCallPipeline` (G1/G2) and master's removal of the
+`ApiCallMetricCollectionStage` wrappers (#7338 moved `API_CALL_DURATION` into the handlers) is applied
+inside them; `SimpleHttpContentPublisher` is ours because ours *is* master's #7323 plus the Phase A
+buffered-content fast path; `CrtRequestAdapter` keeps the E12/H1 array builder and gains master's
+`onBodyError` consumer (#7307); both sides had made the identical sdk-core japicmp fix. Safety refs:
+tag `racecar/pre-master-merge-h5`, branch `backup/benchmark3-pre-merge`.
+
+Two things bit during the build and are now fixed in the harness: the version bump to 2.54.18
+meant `build-jar.sh --skip-sdk-build` silently packaged the *pre-merge* artifacts still in `~/.m2`
+(the harness pom pinned 2.54.4-SNAPSHOT — the jar's own provenance stamp is how it was caught), and
+the consistent-install recipe must now build `codegen-maven-plugin` in-reactor, because with it
+excluded Maven's reactor reader reports the plugin missing instead of resolving it from `~/.m2`.
+
+### Verified, not assumed
+
+A probe against the built client (`/tmp/EndpointProbe.java`, reflection on the client's
+`ENDPOINT_PROVIDER` option) rather than a reading of the generated source:
+
+- the client's provider is `DefaultDynamoDbEndpointProvider` with a `volatile CacheEntry cache`
+  field — the BDD variant, not the rules2 one;
+- the cache is `null` before the first call, populated after it, and the **same `CacheEntry`
+  instance** is observed after calls 1, 2 and 3 (an interceptor aborted each call just before
+  transmission, after endpoint resolution) — no re-resolution;
+- directly, equal params return the identical `Endpoint` instance and a different region misses.
+
+The cache key is `Objects.equals` over every declared parameter (`useDualStack`, `useFips`,
+`isSearchOperation`, `region`, `endpoint`, `accountId`, `accountIdEndpointMode`, `resourceArn`, first
+element of `resourceArnList`), so a request that legitimately changes the endpoint — a different
+account-ID mode, an ARN-routed operation — misses and re-walks; it is a last-value cache, not a memo.
+
+### Measurement (paired, host, 200k/30k small × 7 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+Base is H5 (`dbc7588b125`) rebuilt on the same harness commit; the candidate is the merged tree with
+#7371, so this measures master's changes *plus* BDD together — everything between H5 and here.
+
+| client | scenario | h5 | h6 | Δ app CPU | pair spread | wins | Δ latency |
+|---|---|---:|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 90.5 | 82.2 | **−9.0%** | ±5.4% | 6/7 | −6.5% |
+| v2-sync | small-put | 87.7 | 77.0 | **−12.0%** | ±6.0% | 6/7 | −7.9% |
+| v2-async | small-get | 138.1 | 131.5 | **−4.8%** | ±1.8% | 7/7 | −3.8% |
+| v2-async | small-put | 132.7 | 129.7 | −2.2% | ±2.7% | 6/7 | −1.6% |
+| smithy (control) | small-get | 50.6 | 52.0 | +2.9% | ±6.2% | 1/7 | +2.0% |
+| smithy (control) | small-put | 46.7 | 48.9 | +5.3% | ±8.5% | 1/7 | +4.1% |
+| v2-sync | batch-put | 280.0 | 268.2 | **−4.2%** | ±0.6% | 5/5 | −3.3% |
+| v2-async | batch-put | 329.1 | 322.0 | −2.2% | ±1.1% | 5/5 | −2.0% |
+
+The H5 write-up sized per-call endpoint resolution at ~5 µs/op on the optimized sync path; H6 delivers
+**−8.3 µs on small-get and −10.7 on small-put**, i.e. that plus the rest of master's changes. The
+smithy control drifted *up* 3–5% in this session (1/7), which if anything means the V2 deltas are
+understated, not inflated. Batch-put's −11.8 µs (5/5, ±0.6%) is the same fixed saving under payload
+work.
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+| | sync H5 | sync H6 | async H5 | async H6 |
+|---|---:|---:|---:|---:|
+| CPU share under `EndpointResolutionStage.execute` | 5.25% | **1.10%** | 5.63% | **1.05%** |
+| … under `DefaultDynamoDbEndpointProvider.resolveEndpoint` | 1.93% | 0.13% | 2.36% | 0.17% |
+| … under the BDD evaluator (`nodeP*`) / old `endpointRule*` | 1.93% | 0.10% | 2.29% | 0.08% |
+| … under `RuleUrl.parse` (the 2.51 per-call URL parse) | 1.20% | 0.03% | 1.62% | 0.08% |
+| … under `endpointBuiltIn` | 1.96% | 0.07% | 2.21% | 0 |
+| … under `ruleParams` (params object, still built for the key) | 2.66% | 0.73% | 3.03% | 0.80% |
+| allocation reached through endpoint frames (B/op) | 1,603 | **195** | | |
+
+The endpoint stage went from 5.3% to 1.1% of client CPU; what remains is building the params object
+that the cache key compares (0.7%) and the compare itself (0.03%). Total allocation is flat (32,977 →
+33,502 B/op, +1.6%, all in unrelated JIT-shape sites — `FastJsonGenerator` and header arrays — not in
+anything this change touched). The 2.51.0 regression's signature frame, `RuleUrl.parse`, is gone,
+which closes the loop on the ladder: **the drift attributed to DynamoDB's ruleset growth is fixed by
+#7371**, and the 2.47.0 step's endpoint half with it.
+
+### Where this leaves the optimized pipeline
+
+Sync small-get **≈ 82 µs/op** application CPU on this host against stock 2.54.0's ≈ 150 (0.55×), and
+against the bridged prototype's 74 (bench3) the gap is now 8 µs rather than 31. The largest remaining
+fixed costs on the sync small-op path, from the H6 profile: `AuthSchemeResolutionStage` still ~1.8%
+(master's #7282 cache did not measurably move it here — a candidate for the same treatment the
+endpoint just got), the `ruleParams` object built per call only to be compared (0.7%), and the
+response-side interceptor-context copies from the H5 follow-ups.

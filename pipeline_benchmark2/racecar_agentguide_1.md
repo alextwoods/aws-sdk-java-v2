@@ -39,13 +39,17 @@ separate commit (Conventional Commits style, `perf(module): ...`). Doc updates a
 v2 batch-put now allocates **less than smithy-java** (0.87×/0.92×). Small ops remain 4–5× smithy's
 allocation; batch-get has barely moved (response-side, needs codegen work — not your problem).
 
-**Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H5,
-the TLS run and the bridged-pipeline comparison in `pipeline_benchmark3/`).** Work now lives on
-`feature/poc/benchmark3` (branched from `racecar`; HEAD after H5 is `dbc7588b125`). Optimized
-v2-sync small-get is ≈ 94 µs/op app CPU on the host against stock 2.54.0's ≈ 150; batch ops are at
-parity with native smithy-java. The remaining known fixed costs on small ops, in value order: endpoint
-resolution per call (~5 µs, a per-client constant for the benchmark's workload), then the
-response-side interceptor-context copies. Upstream PR 7367 is cherry-picked (`8bab8409dd1`).
+**Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H6,
+the TLS run, the bridged-pipeline comparison in `pipeline_benchmark3/`, and the 2.46→2.54 ladder).**
+Work lives on `feature/poc/benchmark3` (branched from `racecar`), which was *merged* with
+`origin/master` at 2.54.18-SNAPSHOT in H6 (commit `2f26679488e`; safety refs
+`racecar/pre-master-merge-h5` / `backup/benchmark3-pre-merge`) and carries PR #7371 (BDD endpoint
+providers with a result cache, DynamoDB included). Optimized v2-sync small-get is ≈ 82 µs/op app CPU
+on the host against stock 2.54.0's ≈ 150; batch ops are at parity with native smithy-java. Remaining
+known fixed costs on small ops: `AuthSchemeResolutionStage` (~1.8%), the per-call endpoint params
+object built only for the cache key (~0.7%), response-side interceptor-context copies. The stock SDK's
+2.46→2.54 drift is attributed (two clean steps: #7017 in 2.47.0 and DynamoDB's own ruleset growth in
+2.51.0 — both addressed by BDD + cache and H4).
 
 ---
 
