@@ -24,7 +24,6 @@ import software.amazon.awssdk.core.internal.http.pipeline.stages.AfterExecutionI
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AfterTransmissionExecutionInterceptorsStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallAttemptMetricCollectionStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallAttemptTimeoutTrackingStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallMetricCollectionStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.ApiCallTimeoutTrackingStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.BeforeTransmissionExecutionInterceptorsStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.BeforeUnmarshallingExecutionInterceptorsStage;
@@ -95,11 +94,11 @@ final class SyncApiCallPipeline {
                         new ApiCallAttemptTimeoutTrackingStage<>(dependencies,
                             new AttemptStages<>(dependencies, responseHandler)))));
 
+        // Note: API_CALL_DURATION is measured by BaseSyncClientHandler
         RequestPipeline<SdkHttpFullRequest, Response<OutputT>> call =
-            new ApiCallMetricCollectionStage<>(
-                new ApiCallTimeoutTrackingStage<>(dependencies,
-                    new StreamManagingStage<>(
-                        new MutationAndCallStages<>(dependencies, attempt))));
+            new ApiCallTimeoutTrackingStage<>(dependencies,
+                new StreamManagingStage<>(
+                    new MutationAndCallStages<>(dependencies, attempt)));
 
         return new ExecutionFailureExceptionReportingStage<>(new FinishStages<>(call));
     }

@@ -24,7 +24,6 @@ import software.amazon.awssdk.core.Response;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AfterExecutionInterceptorsStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AsyncApiCallAttemptMetricCollectionStage;
-import software.amazon.awssdk.core.internal.http.pipeline.stages.AsyncApiCallMetricCollectionStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AsyncApiCallTimeoutTrackingStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AsyncBeforeTransmissionExecutionInterceptorsStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AsyncExecutionFailureExceptionReportingStage;
@@ -73,11 +72,11 @@ final class AsyncApiCallPipeline {
                 new AsyncApiCallAttemptMetricCollectionStage<>(
                     new AttemptStages<>(dependencies, responseHandler)));
 
+        // Note: API_CALL_DURATION is measured by BaseAsyncClientHandler
         RequestPipeline<SdkHttpFullRequest, CompletableFuture<OutputT>> call =
-            new AsyncApiCallMetricCollectionStage<>(
-                new AsyncApiCallTimeoutTrackingStage<>(dependencies,
-                    new AsyncExecutionFailureExceptionReportingStage<>(
-                        new FinishStages<>(retrying))));
+            new AsyncApiCallTimeoutTrackingStage<>(dependencies,
+                new AsyncExecutionFailureExceptionReportingStage<>(
+                    new FinishStages<>(retrying)));
 
         return new MutationThenCall<>(dependencies, call);
     }

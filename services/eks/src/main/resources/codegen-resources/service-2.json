@@ -4612,7 +4612,10 @@
       "members":{
         "resources":{
           "shape":"StringList",
-          "documentation":"<p>Specifies the resources to be encrypted. The only supported value is <code>secrets</code>.</p>"
+          "documentation":"<important> <p>Amazon EKS encrypts all Kubernetes API data with envelope encryption by default for clusters running Kubernetes version 1.28 or higher, so this field no longer affects which resources are encrypted.</p> </important> <p>Specifies the resources to be encrypted. The only supported value is <code>secrets</code>.</p>",
+          "deprecated":true,
+          "deprecatedMessage":"Deprecated. Amazon EKS encrypts all Kubernetes API data by default, so this value no longer determines which resources are encrypted.",
+          "deprecatedSince":"2025-03-05"
         },
         "provider":{
           "shape":"Provider",
@@ -5078,6 +5081,34 @@
       ]
     },
     "Integer":{"type":"integer"},
+    "IntegerConstraints":{
+      "type":"structure",
+      "members":{
+        "min":{
+          "shape":"BoxedInteger",
+          "documentation":"<p>The minimum allowed value.</p>"
+        },
+        "max":{
+          "shape":"BoxedInteger",
+          "documentation":"<p>The maximum allowed value.</p>"
+        }
+      },
+      "documentation":"<p>Constraints for an integer parameter specifying allowed range.</p>"
+    },
+    "IntegerParameterConfig":{
+      "type":"structure",
+      "members":{
+        "defaultValue":{
+          "shape":"BoxedInteger",
+          "documentation":"<p>The default value for the integer parameter.</p>"
+        },
+        "constraints":{
+          "shape":"IntegerConstraints",
+          "documentation":"<p>The constraints for the integer parameter.</p>"
+        }
+      },
+      "documentation":"<p>An integer parameter configuration with default value and constraints.</p>"
+    },
     "IntegerRangeConstraint":{
       "type":"structure",
       "members":{
@@ -5239,6 +5270,10 @@
     "KubeControllerManagerConfigRequest":{
       "type":"structure",
       "members":{
+        "podGcControllerConfig":{
+          "shape":"PodGcControllerConfigRequest",
+          "documentation":"<p>The pod garbage collection controller configuration.</p>"
+        },
         "horizontalPodAutoscalerControllerConfig":{
           "shape":"HorizontalPodAutoscalerControllerConfigRequest",
           "documentation":"<p>The horizontal pod autoscaler controller configuration.</p>"
@@ -5249,6 +5284,10 @@
     "KubeControllerManagerConfigResponse":{
       "type":"structure",
       "members":{
+        "podGcControllerConfig":{
+          "shape":"PodGcControllerConfigResponse",
+          "documentation":"<p>The pod garbage collection controller configuration.</p>"
+        },
         "horizontalPodAutoscalerControllerConfig":{
           "shape":"HorizontalPodAutoscalerControllerConfigResponse",
           "documentation":"<p>The horizontal pod autoscaler controller configuration.</p>"
@@ -5259,6 +5298,10 @@
     "KubeControllerManagerVersionConfig":{
       "type":"structure",
       "members":{
+        "podGcControllerConfig":{
+          "shape":"PodGcControllerVersionConfig",
+          "documentation":"<p>The pod garbage collection controller configuration with default value and constraints.</p>"
+        },
         "horizontalPodAutoscalerControllerConfig":{
           "shape":"HorizontalPodAutoscalerControllerVersionConfig",
           "documentation":"<p>The horizontal pod autoscaler controller configuration with default value and constraints.</p>"
@@ -6575,6 +6618,36 @@
       "max":100,
       "min":1
     },
+    "PodGcControllerConfigRequest":{
+      "type":"structure",
+      "members":{
+        "terminatedPodGcThreshold":{
+          "shape":"TerminatedPodGcThresholdValue",
+          "documentation":"<p>The number of terminated pods that can exist before the garbage collector starts deleting them.</p>"
+        }
+      },
+      "documentation":"<p>The pod garbage collection controller configuration for the Kubernetes controller manager.</p>"
+    },
+    "PodGcControllerConfigResponse":{
+      "type":"structure",
+      "members":{
+        "terminatedPodGcThreshold":{
+          "shape":"TerminatedPodGcThresholdValue",
+          "documentation":"<p>The number of terminated pods that can exist before the garbage collector starts deleting them.</p>"
+        }
+      },
+      "documentation":"<p>The pod garbage collection controller configuration for the Kubernetes controller manager.</p>"
+    },
+    "PodGcControllerVersionConfig":{
+      "type":"structure",
+      "members":{
+        "terminatedPodGcThreshold":{
+          "shape":"IntegerParameterConfig",
+          "documentation":"<p>The terminated pod garbage collection threshold configuration with default value and constraints.</p>"
+        }
+      },
+      "documentation":"<p>The pod garbage collection controller version configuration.</p>"
+    },
     "PodIdentityAssociation":{
       "type":"structure",
       "members":{
@@ -7265,6 +7338,13 @@
         "NO_EXECUTE",
         "PREFER_NO_SCHEDULE"
       ]
+    },
+    "TerminatedPodGcThresholdValue":{
+      "type":"integer",
+      "documentation":"<p>The threshold for the number of terminated pods before garbage collection starts.</p>",
+      "box":true,
+      "max":1000000,
+      "min":1
     },
     "ThrottlingException":{
       "type":"structure",

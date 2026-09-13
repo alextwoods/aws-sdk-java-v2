@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.crt.http.HttpHeader;
 import software.amazon.awssdk.crt.http.HttpRequest;
@@ -38,18 +39,18 @@ public final class CrtRequestAdapter {
     private CrtRequestAdapter() {
     }
 
-    public static HttpRequestBase toAsyncCrtRequest(CrtAsyncRequestContext request) {
+    public static HttpRequestBase toAsyncCrtRequest(CrtAsyncRequestContext request, Consumer<Throwable> onBodyError) {
         AsyncExecuteRequest executeRequest = request.sdkRequest();
         SdkHttpRequest sdkRequest = executeRequest.request();
         String encodedPath = normalizedPath(sdkRequest);
         String query = sdkRequest.encodedQueryParameters().map(value -> "?" + value).orElse("");
         CrtRequestBodyAdapter body = new CrtRequestBodyAdapter(executeRequest.requestContentPublisher(),
-                                                               request.readBufferSize());
+                                                               request.readBufferSize(), onBodyError);
         return new HttpRequest(sdkRequest.method().name(), encodedPath + query,
                                createAsyncHttpHeaders(executeRequest, request.protocol()), body);
     }
 
-    public static HttpRequest toCrtRequest(CrtRequestContext request) {
+    public static HttpRequest toCrtRequest(CrtRequestContext request, Consumer<Throwable> onBodyError) {
         HttpExecuteRequest executeRequest = request.sdkRequest();
         SdkHttpRequest sdkRequest = executeRequest.httpRequest();
         String path = normalizedPath(sdkRequest)
@@ -57,7 +58,7 @@ public final class CrtRequestAdapter {
         HttpHeader[] headers = createHttpHeaders(executeRequest);
         return executeRequest.contentStreamProvider()
                              .map(provider -> new HttpRequest(sdkRequest.method().name(), path, headers,
-                                                              new CrtRequestInputStreamAdapter(provider)))
+                                                              new CrtRequestInputStreamAdapter(provider, onBodyError)))
                              .orElse(new HttpRequest(sdkRequest.method().name(), path, headers, null));
     }
 
