@@ -60,6 +60,41 @@ public class CompletableFutureUtilsTest {
         }
     }
 
+    @Test
+    public void forwardExceptionTo_srcAlreadyFailed_forwardsImmediately() {
+        CompletableFuture<Object> src = new CompletableFuture<>();
+        CompletableFuture<Object> dst = new CompletableFuture<>();
+        Exception e = new RuntimeException("BOOM");
+        src.completeExceptionally(e);
+
+        CompletableFutureUtils.forwardExceptionTo(src, dst);
+
+        assertThat(dst.isCompletedExceptionally()).isTrue();
+        assertThatThrownBy(dst::join).hasCause(e);
+    }
+
+    @Test
+    public void forwardExceptionTo_srcAlreadySucceeded_leavesDstUntouched() {
+        CompletableFuture<Object> src = CompletableFuture.completedFuture("ok");
+        CompletableFuture<Object> dst = new CompletableFuture<>();
+
+        CompletableFuture<Object> returned = CompletableFutureUtils.forwardExceptionTo(src, dst);
+
+        assertThat(returned).isSameAs(src);
+        assertThat(dst.isDone()).isFalse();
+        // and nothing was registered on src: completing dst later has no effect on src either way
+        dst.complete("later");
+        assertThat(src.join()).isEqualTo("ok");
+    }
+
+    @Test
+    public void forwardExceptionTo_srcIsDst_returnsSrcWithoutFailing() {
+        CompletableFuture<Object> f = new CompletableFuture<>();
+        assertThat(CompletableFutureUtils.forwardExceptionTo(f, f)).isSameAs(f);
+        f.complete("ok");
+        assertThat(f.join()).isEqualTo("ok");
+    }
+
     @Test(timeout = 1000)
     public void forwardResultTo_srcCompletesSuccessfully_shouldCompleteDstFuture() {
         CompletableFuture<String> src = new CompletableFuture<>();

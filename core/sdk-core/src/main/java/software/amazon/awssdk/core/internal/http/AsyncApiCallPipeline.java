@@ -129,9 +129,9 @@ final class AsyncApiCallPipeline {
     }
 
     /**
-     * Unwrap the response container and run after-execution interceptors, preserving the
-     * {@code async(...)} adapter's semantics: one {@code thenApply} per stage, each with the
-     * backward exception link that lets cancellation of the downstream future reach upstream.
+     * Unwrap the response container and run after-execution interceptors as one dependent stage on the
+     * response future, with the backward exception link that lets cancellation of the downstream future
+     * reach upstream.
      */
     private static final class FinishStages<OutputT>
             implements RequestPipeline<SdkHttpFullRequest, CompletableFuture<OutputT>> {
@@ -149,14 +149,12 @@ final class AsyncApiCallPipeline {
                 throws Exception {
             CompletableFuture<Response<OutputT>> responseFuture = call.execute(request, context);
 
-            CompletableFuture<OutputT> unwrapped =
-                responseFuture.thenApply(safeFunction(r -> unwrap.execute(r, context)));
-            unwrapped = CompletableFutureUtils.forwardExceptionTo(unwrapped, responseFuture);
-
-            CompletableFuture<OutputT> input = unwrapped;
+            // Both transforms are synchronous and run back to back, so one dependent stage carries them, with one
+            // backward exception link to the response future (which is what cancellation needs to reach). The
+            // stage-per-transform futures and the intermediate link did nothing a caller could observe.
             CompletableFuture<OutputT> finished =
-                input.thenApply(safeFunction(o -> afterExecution.execute(o, context)));
-            return CompletableFutureUtils.forwardExceptionTo(finished, input);
+                responseFuture.thenApply(safeFunction(r -> afterExecution.execute(unwrap.execute(r, context), context)));
+            return CompletableFutureUtils.forwardExceptionTo(finished, responseFuture);
         }
     }
 }

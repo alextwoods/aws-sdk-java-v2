@@ -77,6 +77,13 @@ public final class CompletableFutureUtils {
             // Forwarding a future's failure to itself is a no-op; skip the dependent stage.
             return src;
         }
+        if (src.isDone() && !src.isCompletedExceptionally()) {
+            // Already completed normally: there is no failure to forward, now or ever, so the dependent stage (a
+            // UniWhenComplete node plus the lambda) would be allocated only to run once as a no-op. This is the common
+            // shape on the request side of the async pipeline, where the futures being linked are usually complete
+            // by the time they are linked.
+            return src;
+        }
         src.whenComplete((r, e) -> {
             if (e != null) {
                 dst.completeExceptionally(e);
