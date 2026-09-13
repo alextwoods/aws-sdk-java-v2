@@ -22,6 +22,7 @@
 #   --scenarios LIST  comma-separated (default: small-get,small-put,batch-get,batch-put)
 #   --concurrency N   operations kept in flight (default: 1), identical in both arms
 #   --async-mode X    inflight | join (default: inflight) for async clients
+#   --metrics         run every cell with an SDK metric publisher attached (the metrics-enabled path)
 #   --pin-client CPUS taskset CPU list for the client JVM (Linux), identical in both arms
 #   --pin-server CPUS taskset CPU list for the mock server JVM (Linux)
 #   --jvm-args "..."  extra JVM args for the client
@@ -42,6 +43,7 @@ CLIENTS="v2-sync,v2-async"
 SCENARIOS="small-get,small-put,batch-get,batch-put"
 CONCURRENCY=1
 ASYNC_MODE="inflight"
+METRICS=0
 PIN_CLIENT=""
 PIN_SERVER=""
 CLIENT_JVM_ARGS=""
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --scenarios)   SCENARIOS="$2"; shift 2 ;;
         --concurrency) CONCURRENCY="$2"; shift 2 ;;
         --async-mode)  ASYNC_MODE="$2"; shift 2 ;;
+        --metrics)     METRICS=1; shift ;;
         --pin-client)  PIN_CLIENT="$2"; shift 2 ;;
         --pin-server)  PIN_SERVER="$2"; shift 2 ;;
         --jvm-args)        CLIENT_JVM_ARGS="$2"; shift 2 ;;
@@ -102,6 +105,8 @@ TUNING_ARGS=()
 [[ -n "$PIN_SERVER" ]]      && TUNING_ARGS+=(--pin-server "$PIN_SERVER")
 [[ -n "$CLIENT_JVM_ARGS" ]] && TUNING_ARGS+=(--jvm-args "$CLIENT_JVM_ARGS")
 [[ -n "$SERVER_JVM_ARGS" ]] && TUNING_ARGS+=(--server-jvm-args "$SERVER_JVM_ARGS")
+METRICS_ARGS=()
+[[ $METRICS -eq 1 ]] && METRICS_ARGS+=(--metrics)
 
 IFS=',' read -r -a CLIENT_ARR <<< "$CLIENTS"
 IFS=',' read -r -a SCENARIO_ARR <<< "$SCENARIOS"
@@ -155,6 +160,7 @@ fi
     echo "- clients: $CLIENTS"
     echo "- scenarios: $SCENARIOS"
     echo "- concurrency: $CONCURRENCY, async mode: $ASYNC_MODE"
+    echo "- SDK metric publisher attached: $([[ $METRICS -eq 1 ]] && echo yes || echo no)"
     echo "- pinning: client=[${PIN_CLIENT:-unpinned}] server=[${PIN_SERVER:-unpinned}]"
     echo "- client jvm args: ${CLIENT_JVM_ARGS:-(none)}"
     echo "- server jvm args: ${SERVER_JVM_ARGS:-(none)}"
@@ -195,6 +201,7 @@ for rep in $(seq 1 "$REPS"); do
                         --concurrency "$CONCURRENCY" --async-mode "$ASYNC_MODE" \
                         --progress-seconds 0 --cpu-source auto --port "$PORT" \
                         ${TUNING_ARGS[@]+"${TUNING_ARGS[@]}"} \
+                        ${METRICS_ARGS[@]+"${METRICS_ARGS[@]}"} \
                         --append-to-results-file "$RESULTS") > "$RUNDIR/$log" 2>&1; then
                     status="ok"
                 else
