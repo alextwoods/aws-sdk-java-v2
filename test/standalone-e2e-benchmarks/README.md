@@ -68,9 +68,9 @@ canned ones, so don't compare those numbers against mock-server runs).
 
   ```bash
   # From the repo root; builds the DDB client, the HTTP clients, and their transitive deps.
-  # codegen-maven-plugin is excluded from the reactor (its descriptor goal fails on recent JDKs)
-  # and resolved from ~/.m2 instead.
-  mvn clean install -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
+  # codegen-maven-plugin is built in the reactor: excluded, Maven's reactor reader reports it
+  # missing instead of resolving it from ~/.m2.
+  mvn clean install -pl ':codegen-maven-plugin,:dynamodb,:apache-client,:apache5-client,:aws-crt-client' \
       --am -P quick -Dmaven.test.skip=true
   ```
 
@@ -448,7 +448,7 @@ any earlier measurement can be re-run later without rebuilding the SDK.
 The SDK modules are rebuilt by default because the benchmark resolves the SDK from `~/.m2` at
 *build* time — baking a stale SDK into a phase-labelled jar is the easiest way to record a wrong
 measurement. `build-jar.sh` builds a consistent module set
-(`:dynamodb,:apache-client,:apache5-client,:aws-crt-client`, excluding `:codegen-maven-plugin`);
+(`:codegen-maven-plugin,:dynamodb,:apache-client,:apache5-client,:aws-crt-client`);
 installing a single core module on its own has previously desynchronized `~/.m2` and produced
 runtime `VerifyError`s.
 
@@ -472,7 +472,7 @@ built by installing an older SDK and then shading it with today's harness:
 
 ```bash
 git checkout <baseline-sha>
-mvn clean install -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
+mvn clean install -pl ':codegen-maven-plugin,:dynamodb,:apache-client,:apache5-client,:aws-crt-client' \
     --am -P quick -Dmaven.test.skip=true
 git checkout <working-branch>
 ./scripts/build-jar.sh phase0 --skip-sdk-build --sdk-commit <baseline-sha>

@@ -225,12 +225,13 @@ don't make CPU claims from the laptop. `scripts/benchmark.sh` works identically 
 
 - **Consistent SDK build (the ONLY safe install command):**
   ```bash
-  mvn clean install -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
+  mvn clean install -pl ':codegen-maven-plugin,:dynamodb,:apache-client,:apache5-client,:aws-crt-client' \
       --am -P quick -Dmaven.test.skip=true
   ```
   Installing a single module desyncs `~/.m2` → `VerifyError: AwsAdvancedClientOption is not
-  assignable to AttributeMap$Key` at runtime. `codegen-maven-plugin` is excluded (its descriptor
-  goal fails under JDK 25, "class file major version 61").
+  assignable to AttributeMap$Key` at runtime. `codegen-maven-plugin` must be *in* the reactor: when
+  it is excluded, Maven's reactor reader still claims it and reports it missing rather than falling
+  back to `~/.m2` (bit us after the 2.54.18 version bump). Its descriptor goal builds fine now.
 - **`~/.m2` state is invisible until it bites.** After building a baseline jar, `~/.m2` holds the
   BASELINE SDK; building `:sdk-core` alone then fails against stale `http-client-spi`. Re-run the
   consistent build after any checkout dance.

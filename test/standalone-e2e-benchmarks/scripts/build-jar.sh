@@ -96,13 +96,14 @@ if [[ $SKIP_SDK_BUILD -eq 0 ]]; then
     fi
     # The SDK is about to be built from the working tree, so HEAD is a verified answer.
     SDK_COMMIT="$COMMIT"
-    echo "==> Building and installing SDK modules (consistent set, excluding codegen-maven-plugin)"
-    # codegen-maven-plugin is excluded from the reactor and resolved from ~/.m2 instead: its
-    # descriptor goal fails under recent JDKs, and its sources are not what we are changing.
+    echo "==> Building and installing SDK modules (consistent set, including codegen-maven-plugin)"
+    # codegen-maven-plugin is built in the reactor. It used to be excluded (its descriptor goal
+    # misbehaved under recent JDKs), but after the 2.54.18 version bump Maven's reactor reader still
+    # claims the excluded module and reports the plugin missing instead of falling back to ~/.m2.
     # Installing a *consistent* set matters: installing a single core module on its own has
     # previously desynchronized ~/.m2 and produced VerifyErrors at runtime.
     (cd "$REPO" && mvn clean install \
-        -pl ':dynamodb,:apache-client,:apache5-client,:aws-crt-client,!:codegen-maven-plugin' \
+        -pl ':codegen-maven-plugin,:dynamodb,:apache-client,:apache5-client,:aws-crt-client' \
         --am -P quick -Dmaven.test.skip=true -q)
 fi
 
