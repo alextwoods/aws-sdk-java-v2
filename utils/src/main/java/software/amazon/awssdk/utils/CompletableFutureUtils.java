@@ -73,6 +73,10 @@ public final class CompletableFutureUtils {
      * @return {@code src}.
      */
     public static <T> CompletableFuture<T> forwardExceptionTo(CompletableFuture<T> src, CompletableFuture<?> dst) {
+        if (src == dst) {
+            // Forwarding a future's failure to itself is a no-op; skip the dependent stage.
+            return src;
+        }
         src.whenComplete((r, e) -> {
             if (e != null) {
                 dst.completeExceptionally(e);

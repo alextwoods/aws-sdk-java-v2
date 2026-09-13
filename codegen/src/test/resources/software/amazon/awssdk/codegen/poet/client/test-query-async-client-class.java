@@ -1236,10 +1236,15 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
     }
 
     /**
-     * Publishes the collected API call metrics once {@code future} completes, normally or exceptionally.
+     * Publishes the collected API call metrics once {@code future} completes, normally or exceptionally. With no
+     * publisher there is nothing to run at completion, so the future is returned as is rather than chaining a stage
+     * onto it.
      */
     private static <T> CompletableFuture<T> publishMetricsWhenComplete(CompletableFuture<T> future,
             List<MetricPublisher> metricPublishers, MetricCollector apiCallMetricCollector) {
+        if (metricPublishers.isEmpty()) {
+            return future;
+        }
         return future.whenComplete((r, e) -> publishMetrics(metricPublishers, apiCallMetricCollector));
     }
 

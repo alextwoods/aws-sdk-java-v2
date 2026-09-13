@@ -735,13 +735,17 @@ public final class ClientClassUtils {
 
         return MethodSpec.methodBuilder("publishMetricsWhenComplete")
                          .addJavadoc("Publishes the collected API call metrics once {@code future} completes, normally or "
-                                     + "exceptionally.\n")
+                                     + "exceptionally. With no publisher there is nothing to run at completion, so the "
+                                     + "future is returned as is rather than chaining a stage onto it.\n")
                          .addModifiers(PRIVATE, STATIC)
                          .addTypeVariable(typeVariable)
                          .returns(futureType)
                          .addParameter(futureType, "future")
                          .addParameter(ParameterizedTypeName.get(List.class, MetricPublisher.class), "metricPublishers")
                          .addParameter(MetricCollector.class, "apiCallMetricCollector")
+                         .beginControlFlow("if (metricPublishers.isEmpty())")
+                         .addStatement("return future")
+                         .endControlFlow()
                          .addStatement("return future.whenComplete((r, e) -> publishMetrics(metricPublishers, "
                                        + "apiCallMetricCollector))")
                          .build();
