@@ -24,6 +24,7 @@ import software.amazon.awssdk.core.internal.http.auth.AuthSchemeResolutionCache;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipelineBuilder;
 import software.amazon.awssdk.core.internal.retry.ClockSkewAdjuster;
+import software.amazon.awssdk.core.internal.useragent.UserAgentHeaderCache;
 import software.amazon.awssdk.utils.SdkAutoCloseable;
 
 /**
@@ -44,6 +45,11 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
      * shares the client's cache.
      */
     private final AuthSchemeResolutionCache authSchemeResolutionCache;
+    /**
+     * Per-client user-agent state (constant parts plus a cache of the last header value); see
+     * {@link UserAgentHeaderCache}. Same lifetime reasoning as the auth cache above.
+     */
+    private final UserAgentHeaderCache userAgentHeaderCache;
 
     private HttpClientDependencies(Builder builder) {
         this.sdkClientTime = builder.sdkClientTime != null ? builder.sdkClientTime : new SdkClientTime();
@@ -52,6 +58,9 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
         this.authSchemeResolutionCache = builder.authSchemeResolutionCache != null
                                          ? builder.authSchemeResolutionCache
                                          : new AuthSchemeResolutionCache();
+        this.userAgentHeaderCache = builder.userAgentHeaderCache != null
+                                    ? builder.userAgentHeaderCache
+                                    : new UserAgentHeaderCache();
     }
 
     public static Builder builder() {
@@ -64,6 +73,10 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
 
     public AuthSchemeResolutionCache authSchemeResolutionCache() {
         return authSchemeResolutionCache;
+    }
+
+    public UserAgentHeaderCache userAgentHeaderCache() {
+        return userAgentHeaderCache;
     }
 
     /**
@@ -104,6 +117,7 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
         private ClockSkewAdjuster clockSkewAdjuster;
         private SdkClientConfiguration clientConfiguration;
         private AuthSchemeResolutionCache authSchemeResolutionCache;
+        private UserAgentHeaderCache userAgentHeaderCache;
 
         private Builder() {
         }
@@ -113,6 +127,7 @@ public final class HttpClientDependencies implements SdkAutoCloseable {
             this.clientConfiguration = from.clientConfiguration;
             this.clockSkewAdjuster = from.clockSkewAdjuster;
             this.authSchemeResolutionCache = from.authSchemeResolutionCache;
+            this.userAgentHeaderCache = from.userAgentHeaderCache;
         }
 
         public Builder clockSkewAdjuster(ClockSkewAdjuster clockSkewAdjuster) {

@@ -19,102 +19,63 @@ import static software.amazon.awssdk.core.internal.useragent.UserAgentConstant.B
 import static software.amazon.awssdk.core.internal.useragent.UserAgentConstant.SLASH;
 import static software.amazon.awssdk.core.internal.useragent.UserAgentConstant.SPACE;
 import static software.amazon.awssdk.core.internal.useragent.UserAgentConstant.appendSpaceAndField;
-import static software.amazon.awssdk.utils.StringUtils.trim;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.ApiName;
-import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
-import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
-import software.amazon.awssdk.core.client.config.SdkClientOption;
+import software.amazon.awssdk.core.SelectedAuthScheme;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.internal.http.HttpClientDependencies;
 import software.amazon.awssdk.core.internal.http.RequestExecutionContext;
 import software.amazon.awssdk.core.internal.http.pipeline.MutableRequestToRequestPipeline;
+import software.amazon.awssdk.core.internal.useragent.UserAgentHeaderCache;
 import software.amazon.awssdk.core.useragent.AdditionalMetadata;
 import software.amazon.awssdk.core.useragent.BusinessMetricCollection;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.identity.spi.Identity;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
-import software.amazon.awssdk.utils.Logger;
 import software.amazon.awssdk.utils.Pair;
 import software.amazon.awssdk.utils.StringUtils;
 
 /**
- * A stage for adding the user agent header to the request, after retrieving the current string
- * from execution attributes and adding any additional information.
+ * Apply any custom user agent supplied, otherwise instrument the user agent with info about the SDK and environment.
+ *
+ * <p>The header is built from a per-client constant prefix, per-call metadata (body and transformer types), the business
+ * metrics collected along the pipeline, any request-level {@link ApiName}s and a constant suffix. Everything but the
+ * request-level api names is the same from one call to the next for a given client configuration and operation shape, so
+ * the assembled value is served from the client's {@link UserAgentHeaderCache} when the metrics and metadata match the
+ * previous call.
  */
 @SdkInternalApi
 public class ApplyUserAgentStage implements MutableRequestToRequestPipeline {
-
-    public static final String HEADER_USER_AGENT = "User-Agent";
+    public static final String HEADER_USER_AGENT = UserAgentHeaderCache.HEADER_USER_AGENT;
     public static final String SDK_METRICS = "sdk-metrics";
-
-    private static final Logger log = Logger.loggerFor(ApplyUserAgentStage.class);
 
     private static final Pair<List<ApiName>, Collection<String>> NO_API_NAMES =
         Pair.of(Collections.emptyList(), Collections.emptyList());
 
-    private final SdkClientConfiguration clientConfig;
-
-    /**
-     * The leading, per-client-constant portion of the user agent ({@code userAgentPrefix + clientUserAgent}). Computed
-     * once here rather than re-trimmed and re-appended on every request.
-     */
-    private final String constantUserAgentPrefix;
+    private final UserAgentHeaderCache.Snapshot userAgent;
 
     public ApplyUserAgentStage(HttpClientDependencies dependencies) {
-        this.clientConfig = dependencies.clientConfiguration();
-        this.constantUserAgentPrefix = buildConstantUserAgentPrefix(clientConfig);
-    }
-
-    private static String buildConstantUserAgentPrefix(SdkClientConfiguration clientConfig) {
-        String clientUserAgent = clientConfig.option(SdkClientOption.CLIENT_USER_AGENT);
-        if (clientUserAgent == null) {
-            log.warn(() -> "Client user agent configuration is missing, so request user agent will be incomplete.");
-            clientUserAgent = "";
-        }
-
-        String userPrefix = trim(clientConfig.option(SdkAdvancedClientOption.USER_AGENT_PREFIX));
-        if (StringUtils.isEmpty(userPrefix)) {
-            return clientUserAgent;
-        }
-        return userPrefix + SPACE + clientUserAgent;
+        // Constructed per call: the dependencies carry this call's client configuration, from which the constants come.
+        this.userAgent = dependencies.userAgentHeaderCache().forConfiguration(dependencies.clientConfiguration());
     }
 
     @Override
     public SdkHttpFullRequest.Builder execute(SdkHttpFullRequest.Builder request,
                                               RequestExecutionContext context) throws Exception {
-
-        if (hasUserAgentInAdditionalHeaders() || hasUserAgentInRequestConfig(context)) {
+        if (userAgent.userAgentInAdditionalHeaders() || hasUserAgentInRequestConfig(context)) {
             return request;
         }
         String headerValue = finalizeUserAgent(context);
         return request.putHeader(HEADER_USER_AGENT, headerValue);
     }
 
-    /**
-     * Checks if User-Agent header is present in ADDITIONAL_HTTP_HEADERS configuration.
-     * We skip adding user-agent in the ApplyUserAgentStage if user has set "User-Agent" header in additional header of client
-     */
-    private boolean hasUserAgentInAdditionalHeaders() {
-        Map<String, List<String>> additionalHeaders = clientConfig.option(SdkClientOption.ADDITIONAL_HTTP_HEADERS);
-        if (additionalHeaders == null) {
-            return false;
-        }
-        return additionalHeaders.containsKey(HEADER_USER_AGENT);
-    }
-
-    /**
-     * Checks if User-Agent header is present in request override configs.
-     * We skip adding user-agent in the ApplyUserAgentStage if user has set "User-Agent" header at request level
-     */
     private boolean hasUserAgentInRequestConfig(RequestExecutionContext context) {
         Map<String, List<String>> requestHeaders = context.requestConfig().headers();
         if (requestHeaders == null) {
@@ -123,51 +84,53 @@ public class ApplyUserAgentStage implements MutableRequestToRequestPipeline {
         return requestHeaders.containsKey(HEADER_USER_AGENT);
     }
 
-    /**
-     * The final value sent in the user agent header consists of
-     * <ol>
-     *     <li>an optional user provided prefix</li>
-     *     <li>SDK user agent values (governed by a common specification)</li>
-     *     <li>an optional set of API names, expressed as name/version pairs</li>
-     *     <li>an optional user provided suffix</li>
-     * </ol>
-     * <p>
-     * In general, usage of the optional values is discouraged since they do not follow a specification and can make
-     * the user agent too long.
-     * <p>
-     * The SDK user agent values are constructed from static system values, client level values and request level
-     * values. This method adds request level values directly after the retrieved SDK client user agent string.
-     */
     private String finalizeUserAgent(RequestExecutionContext context) {
+        ExecutionAttributes executionAttributes = context.executionAttributes();
+
         //separate apiNames into opaque customer added values and known values added internally as metrics
         Pair<List<ApiName>, Collection<String>> groupedApiNames = groupApiNames(context.requestConfig().apiNames());
+        List<ApiName> customApiNames = groupedApiNames.left();
 
-        //create builder for the user agent string, sized to fit the constant prefix plus the usual per-request
-        //additions so it does not have to grow while appending
-        StringBuilder javaUserAgent = new StringBuilder(constantUserAgentPrefix.length() + 64);
-        javaUserAgent.append(constantUserAgentPrefix);
+        List<AdditionalMetadata> userAgentMetadata =
+            executionAttributes.getAttribute(SdkInternalExecutionAttribute.USER_AGENT_METADATA);
+        BusinessMetricCollection businessMetrics = businessMetrics(executionAttributes, groupedApiNames.right());
+
+        if (customApiNames.isEmpty()) {
+            // Request-level api names are per request by definition; everything else is cacheable.
+            return userAgent.headerValue(businessMetrics.recordedMetrics(), userAgentMetadata,
+                                         () -> buildUserAgent(userAgentMetadata, businessMetrics, customApiNames));
+        }
+        return buildUserAgent(userAgentMetadata, businessMetrics, customApiNames);
+    }
+
+    private String buildUserAgent(List<AdditionalMetadata> userAgentMetadata,
+                                  BusinessMetricCollection businessMetrics,
+                                  List<ApiName> customApiNames) {
+        String prefix = userAgent.constantPrefix();
+        //sized to fit the constant prefix plus the usual per-request additions so it does not have to grow
+        StringBuilder javaUserAgent = new StringBuilder(prefix.length() + 64);
+        javaUserAgent.append(prefix);
 
         //add useragent metadata from execution context
-        List<AdditionalMetadata> userAgentMetadata =
-            context.executionAttributes().getAttribute(SdkInternalExecutionAttribute.USER_AGENT_METADATA);
         if (userAgentMetadata != null) {
-            userAgentMetadata.forEach(s -> javaUserAgent.append(SPACE).append(s));
+            for (AdditionalMetadata metadata : userAgentMetadata) {
+                javaUserAgent.append(SPACE).append(metadata);
+            }
         }
 
-        Optional<String> businessMetrics = getBusinessMetricsString(context.executionAttributes(), groupedApiNames.right());
-        businessMetrics.ifPresent(
-            metrics -> appendSpaceAndField(javaUserAgent, BUSINESS_METADATA, metrics)
-        );
+        if (!businessMetrics.recordedMetrics().isEmpty()) {
+            appendSpaceAndField(javaUserAgent, BUSINESS_METADATA, businessMetrics.asBoundedString());
+        }
 
         //Any ApiName value that isn't known is added to the end of the user agent
-        Optional<String> apiNames = requestApiNames(groupedApiNames.left());
-        apiNames.ifPresent(javaUserAgent::append);
-
-        String userSuffix = trim(clientConfig.option(SdkAdvancedClientOption.USER_AGENT_SUFFIX));
-        if (!StringUtils.isEmpty(userSuffix)) {
-            javaUserAgent.append(SPACE).append(userSuffix);
+        for (ApiName apiName : customApiNames) {
+            javaUserAgent.append(SPACE).append(apiName.name()).append(SLASH).append(apiName.version());
         }
 
+        String userSuffix = userAgent.constantSuffix();
+        if (userSuffix != null) {
+            javaUserAgent.append(SPACE).append(userSuffix);
+        }
         return javaUserAgent.toString();
     }
 
@@ -188,8 +151,12 @@ public class ApplyUserAgentStage implements MutableRequestToRequestPipeline {
         return Pair.of(customApiNames, metricsFromApiNames);
     }
 
-    private static Optional<String> getBusinessMetricsString(ExecutionAttributes executionAttributes,
-                                                             Collection<String> metricsFromApiNames) {
+    /**
+     * The business metrics for this call: those collected along the pipeline, plus any supplied as {@code sdk-metrics}
+     * api names, plus the credentials provider's name.
+     */
+    private static BusinessMetricCollection businessMetrics(ExecutionAttributes executionAttributes,
+                                                            Collection<String> metricsFromApiNames) {
         BusinessMetricCollection businessMetrics =
             executionAttributes.getAttribute(SdkInternalExecutionAttribute.BUSINESS_METRICS);
         if (businessMetrics == null) {
@@ -197,48 +164,15 @@ public class ApplyUserAgentStage implements MutableRequestToRequestPipeline {
         }
         businessMetrics.merge(metricsFromApiNames);
 
-        credentialProviderBusinessMetrics(executionAttributes).ifPresent(businessMetrics::merge);
-
-        if (businessMetrics.recordedMetrics().isEmpty()) {
-            return Optional.empty();
+        SelectedAuthScheme<?> selectedAuthScheme =
+            executionAttributes.getAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME);
+        if (selectedAuthScheme != null) {
+            Identity identity = CompletableFutureUtils.joinLikeSync(selectedAuthScheme.identity());
+            String providerName = identity == null ? null : identity.providerName().orElse(null);
+            if (!StringUtils.isBlank(providerName)) {
+                businessMetrics.addMetric(providerName);
+            }
         }
-
-        return Optional.of(businessMetrics.asBoundedString());
-    }
-
-    private static Optional<Collection<String>> credentialProviderBusinessMetrics(
-        ExecutionAttributes executionAttributes) {
-        return Optional.ofNullable(
-                           executionAttributes.getAttribute(SdkInternalExecutionAttribute.SELECTED_AUTH_SCHEME))
-                       .map(selectedAuthScheme ->
-                                CompletableFutureUtils.joinLikeSync(selectedAuthScheme.identity()))
-                       .flatMap(Identity::providerName)
-                       .map(providerName -> {
-                           if (StringUtils.isBlank(providerName)) {
-                               return Collections.emptyList();
-                           }
-                           return Collections.singletonList(providerName);
-                       });
-    }
-
-    /**
-     * This structure is used for external users as well as for internal tracking of features.
-     * It's not governed by a specification.
-     * Internal usage should be migrated to business metrics or another designated metadata field,
-     * leaving these values to be completely user-set, in which case the result would in most cases be empty.
-     * <p>
-     * Currently tracking these SDK values (remove from list as they're migrated):
-     * PAGINATED/sdk-version, hll/s3Multipart, hll/ddb-enh, hll/cw-mp, hll/waiter, hll/cross-region, ft/s3-transfer
-     */
-    private Optional<String> requestApiNames(List<ApiName> requestApiNames) {
-        if (requestApiNames.isEmpty()) {
-            return Optional.empty();
-        }
-        StringBuilder concatenatedNames = new StringBuilder();
-        requestApiNames.forEach(apiName -> concatenatedNames.append(SPACE)
-                                                            .append(apiName.name())
-                                                            .append(SLASH)
-                                                            .append(apiName.version()));
-        return Optional.of(concatenatedNames.toString());
+        return businessMetrics;
     }
 }
