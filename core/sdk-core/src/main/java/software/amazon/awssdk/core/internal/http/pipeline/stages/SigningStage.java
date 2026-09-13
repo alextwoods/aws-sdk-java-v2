@@ -45,7 +45,6 @@ import software.amazon.awssdk.identity.spi.Identity;
 import software.amazon.awssdk.metrics.MetricCollector;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.Logger;
-import software.amazon.awssdk.utils.Pair;
 
 /**
  * Sign the marshalled request (if applicable).
@@ -97,11 +96,9 @@ public class SigningStage implements RequestToRequestPipeline {
         PayloadChecksumStore payloadChecksumStore =
             context.executionAttributes().getAttribute(SdkInternalExecutionAttribute.CHECKSUM_STORE);
 
-        Pair<SdkHttpFullRequest, Duration> measuredSign = MetricUtils.measureDuration(
-            () -> doSraSign(request, selectedAuthScheme, identity, payloadChecksumStore));
-        context.attemptMetricCollector().reportMetric(CoreMetric.SIGNING_DURATION, measuredSign.right());
-
-        SdkHttpFullRequest signedRequest = measuredSign.left();
+        SdkHttpFullRequest signedRequest = MetricUtils.measureAndReport(
+            () -> doSraSign(request, selectedAuthScheme, identity, payloadChecksumStore),
+            context.attemptMetricCollector(), CoreMetric.SIGNING_DURATION);
         updateHttpRequestInInterceptorContext(signedRequest, context.executionContext());
         return signedRequest;
     }
@@ -160,12 +157,8 @@ public class SigningStage implements RequestToRequestPipeline {
 
         adjustForClockSkew(context.executionAttributes());
 
-        Pair<SdkHttpFullRequest, Duration> measuredSign = MetricUtils.measureDuration(
-            () -> signer.sign(request, context.executionAttributes()));
-
-        metricCollector.reportMetric(CoreMetric.SIGNING_DURATION, measuredSign.right());
-
-        SdkHttpFullRequest signedRequest = measuredSign.left();
+        SdkHttpFullRequest signedRequest = MetricUtils.measureAndReport(
+            () -> signer.sign(request, context.executionAttributes()), metricCollector, CoreMetric.SIGNING_DURATION);
 
         updateHttpRequestInInterceptorContext(signedRequest, context.executionContext());
         return signedRequest;

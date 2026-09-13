@@ -76,18 +76,22 @@ public class MakeHttpRequestStage
         MetricCollector attemptMetricCollector = context.attemptMetricCollector();
 
         MetricCollector httpMetricCollector = MetricUtils.createHttpMetricsCollector(context);
-
-        request = wrapRequestContentStream(request, context);
+        boolean collectsMetrics = MetricUtils.collectsMetrics(attemptMetricCollector);
 
         ExecutableHttpRequest requestCallable = sdkHttpClient
             .prepareRequest(HttpExecuteRequest.builder()
                                               .request(request)
                                               .metricCollector(httpMetricCollector)
-                                              .contentStreamProvider(request.contentStreamProvider().orElse(null))
+                                              .contentStreamProvider(wrapContentStreamProvider(request, context,
+                                                                                               collectsMetrics))
                                               .build());
 
         context.apiCallTimeoutTracker().abortable(requestCallable);
         context.apiCallAttemptTimeoutTracker().abortable(requestCallable);
+
+        if (!collectsMetrics) {
+            return requestCallable.call();
+        }
 
         long start = updateMetricCollectionAttributes(context);
         Pair<HttpExecuteResponse, Duration> measuredExecute = MetricUtils.measureDurationUnsafe(requestCallable, start);
@@ -102,21 +106,29 @@ public class MakeHttpRequestStage
         return measuredExecute.left();
     }
 
-    private SdkHttpFullRequest wrapRequestContentStream(SdkHttpFullRequest request, RequestExecutionContext context) {
-        Optional<ContentStreamProvider> contentStreamProvider = request.contentStreamProvider();
-        if (!contentStreamProvider.isPresent()) {
-            return request;
+    /**
+     * The content stream provider the HTTP client is handed: the request's own, decorated so that every stream it opens
+     * enforces the Content-Length header and, only when a metric collector is in effect, counts the bytes written. The
+     * decorated provider goes on the {@link HttpExecuteRequest}, which is where the HTTP clients read it from, so the
+     * {@link SdkHttpFullRequest} is no longer rebuilt around it on every call.
+     */
+    private static ContentStreamProvider wrapContentStreamProvider(SdkHttpFullRequest request,
+                                                                   RequestExecutionContext context,
+                                                                   boolean collectsMetrics) {
+        ContentStreamProvider contentStreamProvider = request.contentStreamProvider().orElse(null);
+        if (contentStreamProvider == null) {
+            return null;
         }
-
-        RequestBodyMetrics metrics = context.executionAttributes()
-                                            .getAttribute(InternalCoreExecutionAttribute.REQUEST_BODY_METRICS);
-
-        ContentStreamProvider wrapped = new TrackingContentStreamProvider(contentStreamProvider.get(), metrics, request);
-        return request.toBuilder().contentStreamProvider(wrapped).build();
+        RequestBodyMetrics metrics =
+            collectsMetrics
+            ? context.executionAttributes().getAttribute(InternalCoreExecutionAttribute.REQUEST_BODY_METRICS)
+            : null;
+        return new TrackingContentStreamProvider(contentStreamProvider, metrics, request);
     }
 
     /**
-     * Wraps the request's {@link ContentStreamProvider} with write-metrics tracking, while still propagating
+     * Wraps the request's {@link ContentStreamProvider} with Content-Length enforcement and, when {@code metrics} is
+     * non-null, write-metrics tracking, while still propagating
      * {@link ContentStreamProvider#contentAsByteBufferOrNull()} so that a buffer-backed body keeps its fast path in
      * the HTTP client (e.g. Apache's single-write {@code ByteArrayEntity}).
      *
@@ -141,7 +153,8 @@ public class MakeHttpRequestStage
 
         @Override
         public InputStream newStream() {
-            InputStream stream = new BytesWrittenTrackingInputStream(delegate.newStream(), metrics);
+            InputStream stream = metrics == null ? delegate.newStream()
+                                                 : new BytesWrittenTrackingInputStream(delegate.newStream(), metrics);
 
             Optional<Long> contentLength = contentLength(request);
             if (!contentLength.isPresent()) {
@@ -156,8 +169,8 @@ public class MakeHttpRequestStage
         @Override
         public ByteBuffer contentAsByteBufferOrNull() {
             ByteBuffer buffered = delegate.contentAsByteBufferOrNull();
-            if (buffered == null) {
-                return null;
+            if (buffered == null || metrics == null) {
+                return buffered;
             }
 
             long now = System.nanoTime();

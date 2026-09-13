@@ -47,6 +47,12 @@ public class HandleResponseStage<OutputT> implements RequestPipeline<SdkHttpFull
 
     @Override
     public Response<OutputT> execute(SdkHttpFullResponse httpResponse, RequestExecutionContext context) throws Exception {
+        if (!MetricUtils.collectsMetrics(context.attemptMetricCollector())) {
+            // No byte counting (which rebuilds the response around a counting stream) and no throughput arithmetic when
+            // nothing will publish them. The counters this reads were not created either, by the same check upstream.
+            return responseHandler.handle(httpResponse, context.executionAttributes());
+        }
+
         SdkHttpFullResponse bytesReadTracking = trackBytesRead(httpResponse, context);
 
         Response<OutputT> response = responseHandler.handle(bytesReadTracking, context.executionAttributes());

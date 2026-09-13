@@ -16,6 +16,7 @@
 package software.amazon.awssdk.core.internal.http.pipeline.stages;
 
 import static software.amazon.awssdk.core.internal.util.MetricUtils.collectHttpMetrics;
+import static software.amazon.awssdk.core.internal.util.MetricUtils.collectsMetrics;
 import static software.amazon.awssdk.core.internal.util.MetricUtils.createAttemptMetricsCollector;
 
 import java.time.Duration;
@@ -50,6 +51,12 @@ public final class ApiCallAttemptMetricCollectionStage<OutputT> implements Reque
     public Response<OutputT> execute(SdkHttpFullRequest input, RequestExecutionContext context) throws Exception {
         MetricCollector apiCallAttemptMetrics = createAttemptMetricsCollector(context);
         context.attemptMetricCollector(apiCallAttemptMetrics);
+        if (!collectsMetrics(apiCallAttemptMetrics)) {
+            // Nothing reported this attempt can be observed, so skip the per-attempt byte counters (and, downstream, the
+            // stream decorators and clock reads that feed them). The stages that read these attributes are the ones that
+            // report metrics, and they make the same check.
+            return wrapped.execute(input, context);
+        }
         reportBackoffDelay(context);
 
         resetBytesRead(context);

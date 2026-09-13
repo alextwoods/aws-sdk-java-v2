@@ -27,6 +27,7 @@ import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.http.HttpMetric;
 import software.amazon.awssdk.http.apache5.Apache5HttpClient;
 import software.amazon.awssdk.metrics.MetricCollector;
+import software.amazon.awssdk.metrics.NoOpMetricCollector;
 
 @SdkInternalApi
 public final class ClientConnectionRequestFactory {
@@ -64,12 +65,16 @@ public final class ClientConnectionRequestFactory {
 
         @Override
         public ConnectionEndpoint get(Timeout timeout) throws InterruptedException, ExecutionException, TimeoutException {
+            MetricCollector metricCollector = THREAD_LOCAL_REQUEST_METRIC_COLLECTOR.get();
+            if (metricCollector == null || metricCollector instanceof NoOpMetricCollector) {
+                // Two wall-clock reads and a Duration per connection lease, into a collector nobody reads.
+                return super.get(timeout);
+            }
             Instant startTime = Instant.now();
             try {
                 return super.get(timeout);
             } finally {
                 Duration elapsed = Duration.between(startTime, Instant.now());
-                MetricCollector metricCollector = THREAD_LOCAL_REQUEST_METRIC_COLLECTOR.get();
                 metricCollector.reportMetric(HttpMetric.CONCURRENCY_ACQUIRE_DURATION, elapsed);
             }
         }

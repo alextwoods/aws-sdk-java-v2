@@ -57,6 +57,11 @@ public final class AsyncApiCallAttemptMetricCollectionStage<OutputT> implements 
 
         MetricCollector apiCallAttemptMetrics = createAttemptMetricsCollector(context);
         context.attemptMetricCollector(apiCallAttemptMetrics);
+        if (!MetricUtils.collectsMetrics(apiCallAttemptMetrics)) {
+            // Nothing reported this attempt can be observed: no byte counters, and no whenComplete stage (plus its
+            // exception-forwarding twin) chained onto the attempt future just to report into a no-op collector.
+            return wrapped.execute(input, context);
+        }
         reportBackoffDelay(context);
 
         resetBytesRead(context);

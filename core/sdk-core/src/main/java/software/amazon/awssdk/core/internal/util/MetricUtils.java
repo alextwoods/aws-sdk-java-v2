@@ -52,6 +52,31 @@ public final class MetricUtils {
     }
 
     /**
+     * Whether anything reported to this collector can ever be seen. The generated clients hand the pipeline a
+     * {@link NoOpMetricCollector} when the client and request have no metric publisher, and every child of a no-op
+     * collector is the same no-op instance, so a single check on whichever collector a stage holds answers for the whole
+     * call. The measurement work that feeds a collector — clock reads, {@code Duration} and wrapper allocations, the
+     * byte-counting stream and publisher decorators, the request and response rebuilt to install them — is what the
+     * callers skip when this is false; the no-op collector itself was always free.
+     */
+    public static boolean collectsMetrics(MetricCollector metricCollector) {
+        return metricCollector != null && !(metricCollector instanceof NoOpMetricCollector);
+    }
+
+    /**
+     * Run the supplier and report how long it took, or just run it when the collector discards metrics.
+     */
+    public static <T> T measureAndReport(Supplier<T> c, MetricCollector metricCollector, SdkMetric<Duration> metric) {
+        if (!collectsMetrics(metricCollector)) {
+            return c.get();
+        }
+        long start = System.nanoTime();
+        T result = c.get();
+        metricCollector.reportMetric(metric, Duration.ofNanos(System.nanoTime() - start));
+        return result;
+    }
+
+    /**
      * Measure the duration of the given callable.
      *
      * @param c The callable to measure.
@@ -75,6 +100,9 @@ public final class MetricUtils {
     public static <T> CompletableFuture<T> reportDuration(Supplier<CompletableFuture<T>> c,
                                                           MetricCollector metricCollector,
                                                           SdkMetric<Duration> metric) {
+        if (!collectsMetrics(metricCollector)) {
+            return c.get();
+        }
         long start = System.nanoTime();
         CompletableFuture<T> result = c.get();
         result.whenComplete((r, t) -> {

@@ -150,7 +150,9 @@ public final class MakeAsyncHttpRequestStage<OutputT>
         SdkHttpContentPublisher basePublisher = context.requestProvider() == null
                                                   ? new SimpleHttpContentPublisher(request)
                                                   : new SdkHttpContentPublisherAdapter(context.requestProvider());
-        SdkHttpContentPublisher requestProvider = wrapWithMetricsTracking(basePublisher, context);
+        SdkHttpContentPublisher requestProvider = MetricUtils.collectsMetrics(context.attemptMetricCollector())
+                                                  ? wrapWithMetricsTracking(basePublisher, context)
+                                                  : basePublisher;
         // Set content length if it hasn't been set already.
         SdkHttpFullRequest requestWithContentLength = getRequestWithContentLength(request, requestProvider);
 
@@ -213,9 +215,14 @@ public final class MakeAsyncHttpRequestStage<OutputT>
                                                          AsyncExecuteRequest.Builder executeRequestBuilder,
                                                          TransformingAsyncResponseHandler<Response<OutputT>> responseHandler) {
         MetricCollector metricCollector = context.attemptMetricCollector();
+        if (!MetricUtils.collectsMetrics(metricCollector)) {
+            // No timing decorator around the response handler, no byte-counting publisher around the stream, and no
+            // whenComplete stage on the HTTP client future: none of what they produce can be observed.
+            return sdkAsyncHttpClient.execute(executeRequestBuilder.responseHandler(responseHandler).build());
+        }
+
         ReadMetricsTrackingResponseHandler<Response<OutputT>> wrappedResponseHandler =
             new ReadMetricsTrackingResponseHandler<>(responseHandler, context);
-
         AsyncExecuteRequest executeRequest = executeRequestBuilder.responseHandler(wrappedResponseHandler)
                                                                   .build();
 

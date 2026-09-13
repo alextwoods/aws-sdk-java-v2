@@ -16,7 +16,6 @@
 package software.amazon.awssdk.core.http;
 
 import java.time.Duration;
-import java.util.Optional;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
@@ -49,19 +48,18 @@ public final class MetricCollectingHttpResponseHandler<T> implements HttpRespons
 
     @Override
     public T handle(SdkHttpFullResponse response, ExecutionAttributes executionAttributes) throws Exception {
+        MetricCollector collector = collector(executionAttributes);
+        if (!MetricUtils.collectsMetrics(collector)) {
+            return delegateToTime.handle(response, executionAttributes);
+        }
+
         Pair<T, Duration> result = MetricUtils.measureDurationUnsafe(() -> delegateToTime.handle(response, executionAttributes));
-
-        collector(executionAttributes).ifPresent(c -> c.reportMetric(metric, result.right()));
-
+        collector.reportMetric(metric, result.right());
         return result.left();
     }
 
-    private Optional<MetricCollector> collector(ExecutionAttributes attributes) {
-        if (attributes == null) {
-            return Optional.empty();
-        }
-
-        return Optional.ofNullable(attributes.getAttribute(SdkExecutionAttribute.API_CALL_ATTEMPT_METRIC_COLLECTOR));
+    private static MetricCollector collector(ExecutionAttributes attributes) {
+        return attributes == null ? null : attributes.getAttribute(SdkExecutionAttribute.API_CALL_ATTEMPT_METRIC_COLLECTOR);
     }
 
     @Override
