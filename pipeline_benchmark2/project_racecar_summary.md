@@ -3826,3 +3826,137 @@ Follow-ups, in value order:
    `API_CALL_METRIC_COLLECTOR` attribute.
 3. The generated options lookup's identity-first fast path, if (1) is done and the fixtures are being
    touched anyway.
+
+## Phase H8 — measuring into a no-op collector
+
+Asked for directly after H7 flagged it. The premise as flagged turned out to be half wrong, and the
+half that was right was larger than expected.
+
+- Commits: `bd676b62ae2` (core: skip the measurement when nothing collects), `91a74f46b99` (codegen:
+  no publish stage chained onto async calls without a publisher), `dffd6c3bd51` (harness:
+  `paired-ab.sh --metrics`)
+- Raw: `paired/host-20260913-1857` (metrics off, small ops 7 reps), `host-20260913-1957` (batch-put, 5 reps),
+  `host-20260913-2014` (metrics **on**, small ops 5 reps — the regression check), `raw/host-h8-profiles`
+- Correctness: utils 555/556 (the one failure, `joinLikeSync_canceled_throwsCancellationException`,
+  fails identically with these changes stashed — a JDK 25 cause-chaining difference, unrelated),
+  sdk-core 1638 + 651, aws-core 334, apache5-client 270, codegen 708 (14 async fixtures), protocol-tests
+  726, codegen-generated-classes 870 **including every metrics suite** (`CoreMetricsTest`, the async
+  core-metrics tests, business-metric and endpoint-metric tests, all run with a publisher attached and
+  assert each metric arrives), japicmp clean, smoke 10/10 with the 11-family metric set intact under
+  `--metrics`. New `MetricsDisabledStagesTest` (10) pins both sides of the switch.
+
+### What was actually there
+
+The collector was never the problem. Since 2020 (`89784a929f9`) the generated clients hand the
+pipeline `NoOpMetricCollector` whenever neither the client nor the request has a metric publisher, and
+every `createChild` of a no-op is the same no-op instance, so `reportMetric` was already free on every
+call. The `MetricCollector.create("ApiCall")` fallback in `AwsExecutionContextBuilder` that H7's note
+pointed at only fires for callers that pass no collector at all, which generated clients never do.
+
+What was *not* free was everything that produces the values. Self time in metric machinery on the H7
+profile — the machinery's own frames plus the JDK they call, excluding the wrapped work — was
+**1.2 µs/op sync and 4.6 µs/op async**, of which ~0.5/~1.1 is the user-agent business-metrics string
+(a real header, not discardable) and the rest is measurement into the no-op:
+
+| per call, into a collector nobody reads | sync | async |
+|---|---|---|
+| `nanoTime` pair + `Duration` + `Pair` + lambda around marshalling, signing, the HTTP call, unmarshalling, identity fetch | ✓ | ✓ (plus a `whenComplete` per future) |
+| `new AtomicLong` + `new RequestBodyMetrics` (three `AtomicLong`s) per attempt, two `putAttribute`s | ✓ | ✓ |
+| **the request rebuilt** (`toBuilder().contentStreamProvider(...).build()`) to install a byte-counting provider | ✓ | — |
+| **the response rebuilt** around a `BytesReadTrackingInputStream`, and every body read through it | ✓ | `BytesReadTrackingPublisher` wrapper |
+| `whenComplete` on the attempt future + its `forwardExceptionTo` twin; same again on the HTTP-client future | — | ✓ ✓ |
+| `ReadMetricsTrackingResponseHandler` decorator (`nanoTime` + boxed `putAttribute` on headers) | — | ✓ |
+| two `Instant.now()` + `Duration.between` per Apache connection lease | ✓ | — |
+| generated client: `whenComplete(publishMetrics)` + `forwardExceptionTo` onto the call future, to publish to an empty list | — | ✓ ✓ |
+
+### What changed
+
+One check, `MetricUtils.collectsMetrics(collector)` — the `instanceof NoOpMetricCollector` test that
+the handlers, `collectServiceEndpointMetrics`, Apache5's pool metric and the CRT client were already
+using, given a name — consulted at each measurement site before any of the above. `measureAndReport`
+and `reportDuration` short-circuit centrally (which also covers the H7 identity fetch and the async
+signing stage without touching them); the two attempt stages return the wrapped result directly; the
+HTTP-request and response stages skip the counters and decorators; the async HTTP stage passes the raw
+publisher and handler through; Apache5 reads the thread-local collector before touching the clock.
+Every internal timing attribute the stages exchange is read only by the stages that report it, and they
+make the same check, so nothing downstream is left reading an attribute that was never written.
+
+Two things were kept on purpose:
+
+- **Content-Length enforcement was riding inside the metrics decorator.** `TrackingContentStreamProvider`
+  did two jobs — count bytes and wrap each stream in `LengthAwareInputStream` (a correctness check
+  from `5f2af7768e7`). Skipping the decorator wholesale would have dropped the check, and the
+  pre-existing `execute_testLengthChecking` caught exactly that. It now applies with or without a
+  collector; only the counting stream is conditional. And since every HTTP client reads the provider
+  from `HttpExecuteRequest`, not from the `SdkHttpFullRequest`, the decorated provider goes there and
+  **the request is no longer rebuilt on any call, metrics on or off** — a saving that predates the
+  metrics question.
+- **With a publisher, nothing changes.** Same measurements, same values, same chain of futures. The
+  paired run includes a metrics-*on* pass for exactly this reason.
+
+### Measurement (paired, host, 200k/30k small × 7 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+Base is H7 rebuilt on the same harness commit (installed as `2.54.18-H7`). The default configuration —
+no publisher — is the treatment:
+
+| client | scenario | h7 | h8 | Δ app CPU | pair spread | wins | Δ latency |
+|---|---|---:|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 81.7 | 78.7 | **−3.7%** | ±2.3% | **7/7** | −2.2% |
+| v2-sync | small-put | 77.6 | 73.5 | **−5.1%** | ±5.1% | 6/7 | −3.1% |
+| v2-async | small-get | 129.6 | 126.2 | **−2.6%** | ±2.2% | 5/7 | −1.4% |
+| v2-async | small-put | 127.2 | 121.6 | **−4.3%** | ±4.3% | 6/7 | −2.6% |
+| smithy (control) | small-get / small-put | 51.1 / 45.6 | 50.0 / 45.7 | −1.7% / +0.4% | ±9.5% / ±7.5% | 5/7, 4/7 | |
+| v2-sync / v2-async | batch-put | 267.6 / 320.8 | 262.9 / 313.1 | **−1.7% / −2.4%** | ±0.8% / ±1.0% | **5/5, 5/5** | −1.1% / −1.4% |
+
+Small-put moving more than small-get (−4.1 vs −3.0 µs sync) is the mechanism showing through: it is
+the scenario with a request body, where the byte-counting provider used to be installed. Batch-put's
+5/5 at ±1% is the same fixed saving under payload work. The control is flat.
+
+And the pass that had to be flat — a publisher **attached**, 5 reps, small-get:
+
+| client | h7 | h8 | Δ app CPU | pair spread | wins |
+|---|---:|---:|---:|---:|---:|
+| v2-sync | 97.2 | 98.0 | +0.9% | ±4.1% | 3/5 |
+| v2-async | 147.9 | 148.1 | +0.1% | ±1.4% | 2/5 |
+
+No regression where metrics are on. That pass also puts a number on something worth knowing in its own
+right: with a publisher attached, the sync small-get costs **97 µs against 79 without — metrics are ~18
+µs/op, a fifth of the call** — which is what the pipeline was spending to produce numbers nobody
+collected, and is the ceiling on what this class of change could ever recover.
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+| | sync H7 | sync H8 | async H7 | async H8 |
+|---|---:|---:|---:|---:|
+| self time in metric machinery (µs/op) | 1.36 | **0.91** | 4.69 | **1.83** |
+| … of which the user-agent business-metrics string (kept: it is a header) | ~0.5 | ~0.5 | ~1.1 | ~1.1 |
+| allocation at metric-machinery sites (B/op) | 839 | **210** | 2,307 | **1,168** |
+| `RequestBodyMetrics` + its `AtomicLong`s | 180 | 0 | 105 | 0 |
+| `Duration` / `Pair` / boxed `Long` from measure-and-report | 165 | 30 | 150 | 0 |
+| `Instant` per Apache connection lease | 75 | 0 | — | — |
+| `whenComplete` stages: attempt, HTTP future, publish, and their `forwardExceptionTo` twins | — | — | ~900 | ~390 |
+| `BytesReadTrackingPublisher` / `ReadMetricsTrackingResponseHandler` | — | — | 60 + | 0 |
+| profile total (B/op) | 31,180 | **29,562** | 36,033 | 35,464 |
+
+What remains in the async column under `forwardExceptionTo` is the pipeline's other, non-metric uses of
+it. The remaining metric-machinery time is almost entirely the business-metrics string, which is
+correct to keep.
+
+### Verdict
+
+Kept: **−3 to −4 µs/op on every call of every client that has not configured a metric publisher**,
+which is the default and the overwhelmingly common configuration, with the enabled path measured and
+unchanged. Sync small-get is now **≈ 79 µs/op** on this host against stock 2.54.0's ≈ 150, and the
+gap to the bridged prototype's 74 is down to ~5 µs.
+
+The general lesson is the same one as H4/H5/H6/H7, from a different angle: the SDK had made the
+*sink* cheap and left the *sources* running. A no-op collector is only a win if the code that feeds it
+also asks whether anyone is listening.
+
+Follow-ups:
+
+1. The user-agent business-metrics string (~0.5 µs sync, ~1.1 async) is rebuilt per call from the
+   `BusinessMetricCollection`; for a given client and operation most of it is constant. Not a metrics
+   question — it is a header — but the same resolve-once shape applies.
+2. `forwardExceptionTo`'s remaining async uses each cost a dependent stage; where the source future is
+   already complete (the de-futured paths from Phase C), a direct completion would avoid it.
