@@ -26,7 +26,6 @@ import static software.amazon.awssdk.core.internal.useragent.BusinessMetricsUtil
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.signer.AwsSignerExecutionAttribute;
@@ -427,9 +426,15 @@ public final class AwsExecutionContextBuilder {
         resolveUserAgentBusinessMetrics(SdkClientConfiguration clientConfig,
                                         ClientExecutionParams<InputT, OutputT> executionParams) {
         BusinessMetricCollection businessMetrics = new BusinessMetricCollection();
-        Optional<String> retryModeMetric = resolveRetryMode(clientConfig.option(RETRY_POLICY),
-                                                            clientConfig.option(RETRY_STRATEGY));
-        retryModeMetric.ifPresent(businessMetrics::addMetric);
+        // Resolved once per client by the builder; configurations assembled without it (tests) fall back to deriving it.
+        String retryModeMetric = clientConfig.option(AwsInternalClientOption.RETRY_MODE_BUSINESS_METRIC);
+        if (retryModeMetric == null) {
+            retryModeMetric = resolveRetryMode(clientConfig.option(RETRY_POLICY), clientConfig.option(RETRY_STRATEGY))
+                .orElse("");
+        }
+        if (!retryModeMetric.isEmpty()) {
+            businessMetrics.addMetric(retryModeMetric);
+        }
 
         if (isRpcV2CborProtocol(executionParams.getProtocolMetadata())) {
             businessMetrics.addMetric(BusinessMetricFeatureId.PROTOCOL_RPC_V2_CBOR.value());

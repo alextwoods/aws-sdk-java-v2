@@ -361,8 +361,7 @@ public class HttpChecksumStage implements MutableRequestToRequestPipeline {
 
         ChecksumSpecs checksumSpecs = executionAttributes.getAttribute(RESOLVED_CHECKSUM_SPECS);
         ChecksumAlgorithm algorithm = resolveChecksumAlgorithm(checksumSpecs);
-        BusinessMetricsUtils.resolveChecksumAlgorithmFeatureIds(algorithm, request)
-                            .forEach(businessMetrics::addMetric);
+        BusinessMetricsUtils.addChecksumAlgorithmFeatureIds(algorithm, request, businessMetrics::addMetric);
     }
 
     private static ChecksumAlgorithm resolveChecksumAlgorithm(ChecksumSpecs checksumSpecs) {

@@ -58,6 +58,7 @@ import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.internal.SdkInternalTestAdvancedClientOption;
 import software.amazon.awssdk.core.internal.retry.SdkDefaultRetryStrategy;
+import software.amazon.awssdk.core.internal.useragent.BusinessMetricsUtils;
 import software.amazon.awssdk.core.retry.NewRetries2026Resolver;
 import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.core.retry.RetryPolicy;
@@ -196,6 +197,10 @@ public abstract class AwsDefaultClientBuilder<BuilderT extends AwsClientBuilder<
                             .lazyOptionIfAbsent(SdkClientOption.ENDPOINT_OVERRIDDEN, this::resolveEndpointOverridden)
                             .lazyOptionIfAbsent(AwsClientOption.SIGNING_REGION, this::resolveSigningRegion)
                             .lazyOption(AwsInternalClientOption.PLACEHOLDER_AUTH_SCHEME, this::resolvePlaceholderAuthScheme)
+                            .lazyOption(AwsInternalClientOption.RETRY_MODE_BUSINESS_METRIC,
+                                        c -> BusinessMetricsUtils.resolveRetryMode(c.get(SdkClientOption.RETRY_POLICY),
+                                                                                   c.get(SdkClientOption.RETRY_STRATEGY))
+                                                                 .orElse(""))
                             .lazyOption(SdkClientOption.HTTP_CLIENT_CONFIG, this::resolveHttpClientConfig)
                             .applyMutation(this::configureRetryPolicy)
                             .applyMutation(this::configureRetryStrategy)

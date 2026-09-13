@@ -40,6 +40,15 @@ public final class AwsInternalClientOption<T> extends ClientOption<T> {
     public static final AwsInternalClientOption<SelectedAuthScheme<?>> PLACEHOLDER_AUTH_SCHEME =
         new AwsInternalClientOption<>(new UnsafeValueType(SelectedAuthScheme.class));
 
+    /**
+     * The business-metric feature id for the client's retry mode (see
+     * {@code BusinessMetricsUtils.resolveRetryMode}), or the empty string if the retry configuration maps to none. It is
+     * a function of two client options and was being re-derived — option reads, {@code instanceof} chain, an
+     * {@code Optional} — at the start of every call.
+     */
+    public static final AwsInternalClientOption<String> RETRY_MODE_BUSINESS_METRIC =
+        new AwsInternalClientOption<>(new UnsafeValueType(String.class));
+
     private AwsInternalClientOption(UnsafeValueType unsafeValueType) {
         super(unsafeValueType);
     }

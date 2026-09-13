@@ -17,7 +17,9 @@ package software.amazon.awssdk.core.internal.useragent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -72,9 +74,10 @@ class BusinessMetricsUtilsTest {
         ChecksumAlgorithm algorithm = DefaultChecksumAlgorithm.XXHASH128;
         testRequest.putHeader("x-amz-checksum-crc32", "my-checksum");
 
+        // Header-derived ids first, in header order, then the configured algorithm's.
         assertThat(BusinessMetricsUtils.resolveChecksumAlgorithmFeatureIds(algorithm, testRequest))
-            .containsExactly(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH128.value(),
-                             BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC32.value());
+            .containsExactly(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC32.value(),
+                             BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH128.value());
     }
 
     @Test
@@ -91,6 +94,19 @@ class BusinessMetricsUtilsTest {
         testRequest.putHeader("x-amz-checksum-foo", "my-checksum");
 
         assertThat(BusinessMetricsUtils.resolveChecksumAlgorithmFeatureIds(null, testRequest)).isEmpty();
+    }
+
+    @Test
+    void when_checksumFeatureIds_areResolvedFromHeaders_everyKnownHeaderIsReported() {
+        List<String> expected = new ArrayList<>();
+        checksumFeatureIdInput().forEach(args -> {
+            testRequest.putHeader((String) args.get()[1], "my-checksum");
+            expected.add(((BusinessMetricFeatureId) args.get()[0]).value());
+        });
+
+        // The scan tracks "seen" ids in a fixed-size array; it has to have room for the whole known set.
+        assertThat(BusinessMetricsUtils.resolveChecksumAlgorithmFeatureIds(null, testRequest))
+            .containsExactlyInAnyOrderElementsOf(expected);
     }
 
     private static Stream<Arguments> retryModeMetricInput() {

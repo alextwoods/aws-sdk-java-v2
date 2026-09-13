@@ -15,9 +15,12 @@
 
 package software.amazon.awssdk.core.internal.useragent;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
 import software.amazon.awssdk.checksums.spi.ChecksumAlgorithm;
@@ -95,62 +98,105 @@ public final class BusinessMetricsUtils {
 
     public static Set<String> resolveChecksumAlgorithmFeatureIds(ChecksumAlgorithm algorithm,
                                                                  SdkHttpFullRequest.Builder request) {
-        Set<String> ids = new HashSet<>(8);
-        request.forEachHeader((header, values) -> {
-            String id = headerToChecksumFeatureId(header);
-            if (id != null) {
-                ids.add(id);
-            }
-        });
-
-        resolveChecksumAlgorithmMetric(algorithm).ifPresent(ids::add);
-
+        Set<String> ids = new LinkedHashSet<>(8);
+        addChecksumAlgorithmFeatureIds(algorithm, request, ids::add);
         return ids;
     }
 
-    private static Optional<String> resolveChecksumAlgorithmMetric(ChecksumAlgorithm algorithm) {
+    /**
+     * Feed the checksum feature ids for this request — one per {@code x-amz-checksum-*} header the request carries, in
+     * header order, then the one for the configured algorithm if it is not already among them — to {@code sink}.
+     * Allocation-free apart from the scan's consumer; the ids themselves are shared constants.
+     */
+    public static void addChecksumAlgorithmFeatureIds(ChecksumAlgorithm algorithm,
+                                                      SdkHttpFullRequest.Builder request,
+                                                      Consumer<String> sink) {
+        ChecksumHeaderScan scan = new ChecksumHeaderScan(sink);
+        request.forEachHeader(scan);
+        String algorithmId = resolveChecksumAlgorithmMetricOrNull(algorithm);
+        if (algorithmId != null && !scan.seen(algorithmId)) {
+            sink.accept(algorithmId);
+        }
+    }
+
+    /**
+     * Header scan that hands each recognised checksum header's feature id to the sink once. The recognised ids are the
+     * closed set {@link #headerToChecksumFeatureId} maps to, so "seen" is a small array with room for all of them rather
+     * than a set.
+     */
+    private static final class ChecksumHeaderScan implements BiConsumer<String, List<String>> {
+        private static final int DISTINCT_CHECKSUM_FEATURE_IDS = 10;
+
+        private final Consumer<String> sink;
+        private final String[] seen = new String[DISTINCT_CHECKSUM_FEATURE_IDS];
+        private int count;
+
+        private ChecksumHeaderScan(Consumer<String> sink) {
+            this.sink = sink;
+        }
+
+        @Override
+        public void accept(String header, List<String> values) {
+            String id = headerToChecksumFeatureId(header);
+            if (id != null && !seen(id)) {
+                seen[count++] = id;
+                sink.accept(id);
+            }
+        }
+
+        boolean seen(String id) {
+            for (int i = 0; i < count; i++) {
+                if (seen[i].equals(id)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static String resolveChecksumAlgorithmMetricOrNull(ChecksumAlgorithm algorithm) {
         if (algorithm == null) {
-            return Optional.empty();
+            return null;
         }
 
         String algorithmId = algorithm.algorithmId();
         if (algorithmId.equals(DefaultChecksumAlgorithm.CRC32.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC32.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC32.value();
         }
         if (algorithmId.equals(DefaultChecksumAlgorithm.CRC32C.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC32C.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC32C.value();
         }
         if (algorithmId.equals(DefaultChecksumAlgorithm.CRC64NVME.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC64.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_CRC64.value();
         }
         if (algorithmId.equals(DefaultChecksumAlgorithm.SHA1.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_SHA1.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_SHA1.value();
         }
         if (algorithmId.equals(DefaultChecksumAlgorithm.SHA256.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_SHA256.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_SHA256.value();
         }
 
         if (algorithmId.equals(DefaultChecksumAlgorithm.SHA512.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_SHA512.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_SHA512.value();
         }
 
         if (algorithmId.equals(DefaultChecksumAlgorithm.XXHASH3.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH3.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH3.value();
         }
 
         if (algorithmId.equals(DefaultChecksumAlgorithm.XXHASH64.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH64.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH64.value();
         }
 
         if (algorithmId.equals(DefaultChecksumAlgorithm.XXHASH128.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH128.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_XXHASH128.value();
         }
 
         if (algorithmId.equals(DefaultChecksumAlgorithm.MD5.algorithmId())) {
-            return Optional.of(BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_MD5.value());
+            return BusinessMetricFeatureId.FLEXIBLE_CHECKSUMS_REQ_MD5.value();
         }
 
-        return Optional.empty();
+        return null;
     }
 
     // pkg private for testing
