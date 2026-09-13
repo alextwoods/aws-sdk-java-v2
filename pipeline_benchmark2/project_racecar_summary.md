@@ -3680,3 +3680,149 @@ fixed costs on the sync small-op path, from the H6 profile: `AuthSchemeResolutio
 (master's #7282 cache did not measurably move it here — a candidate for the same treatment the
 endpoint just got), the `ruleParams` object built per call only to be compared (0.7%), and the
 response-side interceptor-context copies from the H5 follow-ups.
+
+## Phase H7 — auth scheme resolution: resolve once, fetch identity per call
+
+Asked for as the natural follow-on to H6: the auth-resolution stage was the largest fixed cost left on
+the sync small-op path (1.47 µs/op, 1.8%), and the request was to look at three layers — caching the
+resolution itself, the generated `resolveAuthSchemeOptions`, and above all `AuthSchemeResolver.
+selectAuthScheme` — with the caution that auth differs from endpoints because request-level overrides
+have to keep working, and that scoping to non-endpoint-based providers is acceptable if a general
+answer is not available.
+
+- Commits: `d1268ef2e7b` (sdk-core: the cache), `0dd827e80c5` (codegen: resolver callbacks as fields)
+- Raw: `paired/host-20260913-1546` (small ops, 7 reps), `host-20260913-1647` (batch-put, 5 reps),
+  `raw/host-h7-profiles` (equal-op alloc + CPU profiles)
+- Correctness: sdk-core 1628 + 651, aws-core 334, dynamodb 61, codegen 708 (25 client fixtures
+  updated), codegen-generated-classes 789 (auth, signer, endpoint, credential suites),
+  protocol-tests 726, japicmp clean, smoke 10/10 with metric-set identity (the identity-fetch metric
+  is still reported per call). New `AuthSchemeResolutionStageCacheTest` (8) pins what a second call
+  reuses and every way a call must miss.
+
+### What the stage was doing per call, and which of it is per-client
+
+From the H6 profile, inside `AuthSchemeResolutionStage` (µs/op, sync): the generated
+`resolveAuthSchemeOptions` 0.48 (three attribute lookups, the request-override `Optional` chain, and
+#7282's `ConcurrentHashMap` lookup of the cached options list); `selectAuthScheme` 0.40 — a
+`discardedReasons` list, `authSchemes.get(schemeId)`, `scheme.identityProvider(providers)`,
+`scheme.signer()`, a `ResolveIdentityRequest` built from the option's identity properties, then
+`resolveIdentity`; `mergePreExistingAuthSchemeProperties` 0.27 — probing whether the H4 placeholder
+carries a property the resolved option lacks (it never does, and the probe costs two `HashMap.get`s via
+a lambda-based `forEach` to find that out); and 0.16 of identity-fetch metrics.
+
+Everything in the middle two is a pure function of four inputs: the options list, the client's
+`AuthScheme` map, the `IdentityProviders` in effect, and the option of the scheme already on the
+attributes before resolution (the placeholder). Only the identity future is genuinely per call —
+credentials providers are per-call by contract, and the cache must not touch that.
+
+### The design: identity-keyed, so overrides miss by construction
+
+Rather than deciding *which* services are safe to cache (the non-endpoint-based scoping offered), the
+cache keys on the **identity** of those four inputs. That turns the correctness question into a
+property of the inputs, not of the service: #7282 returns the same unmodifiable options-list
+*instance* for the same parameters when the default provider is in use, and the other three are the
+same instances on every call of a client, so the common call hits. Every way the answer can
+legitimately change arrives as a different instance:
+
+| change | how it shows up | result |
+|---|---|---|
+| request-level `authSchemeProvider` override | generated code bypasses its list cache → fresh list | miss, ordinary path |
+| request-level `credentialsProvider` override | `AwsRequestIdentityProviderResolver` returns a new `IdentityProviders` | miss; override's provider used |
+| request-level plugin changes auth schemes | new `AUTH_SCHEMES` map instance | miss |
+| interceptor edited `SELECTED_AUTH_SCHEME` | pre-interceptor snapshot no longer `==` the existing option | merge not cacheable; full diff path |
+| operation with per-operation auth | #7282 keys its list on operation → different list instance | miss (then its own hit) |
+
+A miss is never wrong, only slower. Endpoint-based providers (S3) build a fresh options list per call
+and would miss every time; if the cache stored on every miss, every call would write a shared field —
+the cache-line contention the BDD work measured and rejected. So after 8 consecutive misses the cache
+stops storing for that client and its per-call cost is one volatile read plus one reference compare;
+a hit resets the streak, so a client whose early calls used an override still settles into hits. That
+is the "general solution" the request left room for: S3 does not benefit yet, but it is not made
+worse, and it *would* benefit the day its generated resolver hands back a stable list per `Endpoint`
+instance (which BDD caching now makes possible — a codegen follow-up).
+
+Implementation: `AuthSchemeResolver.selectAuthScheme` is split into `resolve(...)`, which returns a
+`Resolution` (option, signer, identity provider, identity request, identity metric), and
+`Resolution.select(metricCollector)`, which fetches the identity and builds the `SelectedAuthScheme`;
+the merge is factored into an option-level `mergePreExistingProperties`. Both public methods keep
+their exact behaviour as wrappers, which is what lets the cached and uncached paths share one
+definition instead of drifting. The identity request is deliberately built from the *resolved*
+option, not the merged one — that is what selection always did (it ran before the merge), so the
+identity fetched is unchanged. The cache lives on `HttpClientDependencies` because our stages are
+constructed per call, and is carried across its `toBuilder()`.
+
+The codegen change is small and separate: every generated operation passed
+`this::resolveAuthSchemeOptions` and `this::resolveEndpoint` into its execution params, and a bound
+method reference is a new object each evaluation — two allocations per call for two callbacks that
+never change. They are two `final` fields now. `PoetMatchers` gained an opt-in fixture writer
+(`-Dcodegen.updateFixtures=true`), used to *locate* the changes and then discarded: the formatter
+re-wraps every fixture, and replacing them wholesale would have buried the six-line change per file
+in a 4,000-line whitespace diff, so the 25 fixtures were patched minimally instead.
+
+### Verified on a real client before measuring
+
+A probe on a built `DynamoDbClient` with static credentials: calls 1–3 carry the same
+`AuthSchemeOption` and `HttpSigner` instances and a *different* identity future each; the merged
+placeholder properties (`REGION_NAME`, `SERVICE_SIGNING_NAME`) are present; a call with a
+request-level `credentialsProvider` override resolves its own identity (`AKIAREQUEST`) and the next
+default call is served from the cache again (`AKIACLIENT`, same option instance); the cache holds one
+entry.
+
+### Measurement (paired, host, 200k/30k small × 7 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+Base is H6 rebuilt on the same harness commit (installed under version `2.54.18-H6`).
+
+| client | scenario | h6 | h7 | Δ app CPU | pair spread | wins |
+|---|---|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 82.7 | 83.5 | +1.1% | ±6.1% | 3/7 |
+| v2-sync | small-put | 78.3 | 76.5 | −2.1% | ±4.8% | 5/7 |
+| v2-async | small-get | 131.6 | 131.4 | −0.1% | ±3.4% | 3/7 |
+| v2-async | small-put | 127.6 | 126.5 | −0.8% | ±4.3% | 5/7 |
+| smithy (control) | small-get / small-put | 49.9 / 46.8 | 48.8 / 48.7 | −1.9% / +4.6% | ±8.6% / ±9.7% | 4/7, 2/7 |
+| v2-sync / v2-async | batch-put | 265.8 / 319.9 | 265.5 / 319.3 | −0.1% / −0.2% | ±1.0% / ±0.4% | 2/5, 2/5 |
+
+**Timing is flat**, and it should be: the mechanism is worth ~0.5 µs/op on an ~80 µs call, a fifth of
+this rig's floor. Claiming a timing win here would be reading noise. The mechanism check is where this
+phase is judged.
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+| | sync H6 | sync H7 | async H6 | async H7 |
+|---|---:|---:|---:|---:|
+| CPU share under `AuthSchemeResolutionStage.execute` | 1.65% | **1.22%** | 1.63% | **0.97%** |
+| … under `AuthSchemeResolver.resolve` / `tryResolve` / `selectAuthScheme` | 0.64% | **0** | 0.71% | **0** |
+| … under `mergePreExisting*` / `hasPropertyAbsentFrom` | 0.51% | **0** | 0.16% | **0** |
+| … under the generated `resolveAuthSchemeOptions` (#7282 list lookup) | 0.35% | 0.39% | — | — |
+| … under identity fetch (`Resolution.select` / `resolveIdentity`) | 0.44% | 0.57% | 0.52% | 0.53% |
+| … under `AuthSchemeResolutionCache` (the lookup itself) | — | 0.04% | — | 0.00% |
+| allocation reached through auth-resolution frames (B/op) | 614 | **300** | | |
+| profile total (B/op) | 33,097 | **32,258** | | |
+
+The two frames the cache exists to remove are gone in both clients; what is left in the stage is the
+identity fetch with its metric (per call by contract), the generated options lookup (~0.3 µs, #7282's
+String key + `ConcurrentHashMap`; an identity-first fast path in codegen would trim it, judged not
+worth a second fixture churn for ~0.15 µs), and the business-metric/signer-override checks. The
+selected-scheme allocation that remains (300 B/op) is the `SelectedAuthScheme`, the identity future
+and the `Duration` metric — again the per-call part.
+
+### Verdict
+
+Kept, on the H2 standard: an exact mechanism win — the call-independent half of auth resolution no
+longer runs per call, ~0.45 µs/op and ~300 B/op on the sync path, more on async — with no timing
+effect claimable at this rig's floor and no regression anywhere. The stage is now ~1.0 µs/op, of which
+the identity fetch and its metric are most of what is left.
+
+Follow-ups, in value order:
+
+1. **A stable options list per `Endpoint` for endpoint-based providers.** With the BDD cache
+   returning the same `Endpoint` instance per call, the generated `resolveAuthSchemeOptions` for S3
+   could keep a single-entry `(Endpoint identity → options list)` cache; the stage cache above would
+   then hit for S3 too with no further core change. Codegen-only.
+2. **`MetricCollector.create("ApiCall")` when nothing will publish.** `AwsExecutionContextBuilder`
+   substitutes a real collector whenever the params carry none, so every `reportDuration` (identity
+   fetch, attempt, call) does its `nanoTime` pair and `Duration` allocation into a collector that is
+   discarded. Substituting the no-op collector when the client has no metric publishers would make
+   all of those free; needs a check that nothing reads the collector through the interceptor-visible
+   `API_CALL_METRIC_COLLECTOR` attribute.
+3. The generated options lookup's identity-first fast path, if (1) is done and the fixtures are being
+   touched anyway.
