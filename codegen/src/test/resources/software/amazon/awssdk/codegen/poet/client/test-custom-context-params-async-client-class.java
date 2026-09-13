@@ -33,6 +33,7 @@ import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.client.handler.AsyncClientHandler;
 import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
+import software.amazon.awssdk.core.endpoint.EndpointResolver;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
@@ -40,6 +41,7 @@ import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.retry.RetryMode;
+import software.amazon.awssdk.core.spi.identity.AuthSchemeOptionsResolver;
 import software.amazon.awssdk.endpoints.Endpoint;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption;
 import software.amazon.awssdk.metrics.MetricCollector;
@@ -97,6 +99,10 @@ final class DefaultFooBarAsyncClient implements FooBarAsyncClient {
         }
     };
 
+    private final AuthSchemeOptionsResolver authSchemeOptionsResolver = this::resolveAuthSchemeOptions;
+
+    private final EndpointResolver endpointResolver = this::resolveEndpoint;
+
     private final ConcurrentHashMap<String, List<AuthSchemeOption>> authSchemeCache = new ConcurrentHashMap<>();
 
     protected DefaultFooBarAsyncClient(SdkClientConfiguration clientConfiguration) {
@@ -153,8 +159,8 @@ final class DefaultFooBarAsyncClient implements FooBarAsyncClient {
                             .withMarshaller(new GetDatabaseVersionRequestMarshaller(protocolFactory))
                             .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                             .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                            .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                            .withEndpointResolver(this::resolveEndpoint).withInput(getDatabaseVersionRequest));
+                            .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                            .withEndpointResolver(endpointResolver).withInput(getDatabaseVersionRequest));
             CompletableFuture<GetDatabaseVersionResponse> whenCompleted = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
             executeFuture = CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
             return executeFuture;

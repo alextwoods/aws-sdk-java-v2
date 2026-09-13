@@ -38,6 +38,7 @@ import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.client.handler.AsyncClientHandler;
 import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
+import software.amazon.awssdk.core.endpoint.EndpointResolver;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
@@ -49,6 +50,7 @@ import software.amazon.awssdk.core.internal.interceptor.trait.RequestCompression
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.core.runtime.transform.AsyncStreamingRequestMarshaller;
+import software.amazon.awssdk.core.spi.identity.AuthSchemeOptionsResolver;
 import software.amazon.awssdk.endpoints.Endpoint;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption;
 import software.amazon.awssdk.metrics.MetricCollector;
@@ -139,6 +141,10 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
 
     private final SdkClientConfiguration clientConfiguration;
 
+    private final AuthSchemeOptionsResolver authSchemeOptionsResolver = this::resolveAuthSchemeOptions;
+
+    private final EndpointResolver endpointResolver = this::resolveEndpoint;
+
     private final ScheduledExecutorService executorService;
 
     private final ConcurrentHashMap<String, List<AuthSchemeOption>> authSchemeCache = new ConcurrentHashMap<>();
@@ -199,8 +205,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withMarshaller(new APostOperationRequestMarshaller(protocolFactory))
                              .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .hostPrefixExpression(resolvedHostExpression).withInput(aPostOperationRequest));
             CompletableFuture<APostOperationResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -259,8 +265,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withMarshaller(new APostOperationWithOutputRequestMarshaller(protocolFactory))
                              .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(aPostOperationWithOutputRequest));
             CompletableFuture<APostOperationWithOutputResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -316,8 +322,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                              .credentialType(CredentialType.TOKEN).withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint).withInput(bearerAuthOperationRequest));
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver).withInput(bearerAuthOperationRequest));
             CompletableFuture<BearerAuthOperationResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
             return CompletableFutureUtils.forwardExceptionTo(whenCompleteFuture, executeFuture);
@@ -374,8 +380,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .putExecutionAttribute(
                                  SdkInternalExecutionAttribute.HTTP_CHECKSUM,
                                  HttpChecksum.builder().requestChecksumRequired(true).isRequestStreaming(false)
@@ -439,8 +445,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .putExecutionAttribute(SdkInternalExecutionAttribute.HTTP_CHECKSUM_REQUIRED,
                                                     HttpChecksumRequired.create()).withInput(operationWithChecksumRequiredRequest));
             CompletableFuture<OperationWithChecksumRequiredResponse> whenCompleteFuture = null;
@@ -496,8 +502,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withMarshaller(new OperationWithContextParamRequestMarshaller(protocolFactory))
                              .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(operationWithContextParamRequest));
             CompletableFuture<OperationWithContextParamResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -553,8 +559,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withMarshaller(new OperationWithCustomMemberRequestMarshaller(protocolFactory))
                              .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(operationWithCustomMemberRequest));
             CompletableFuture<OperationWithCustomMemberResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -614,8 +620,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(operationWithCustomizedOperationContextParamRequest));
             CompletableFuture<OperationWithCustomizedOperationContextParamResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -675,8 +681,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(operationWithMapOperationContextParamRequest));
             CompletableFuture<OperationWithMapOperationContextParamResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -731,8 +737,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withMarshaller(new OperationWithNoneAuthTypeRequestMarshaller(protocolFactory))
                              .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(operationWithNoneAuthTypeRequest));
             CompletableFuture<OperationWithNoneAuthTypeResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -792,8 +798,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(operationWithOperationContextParamRequest));
             CompletableFuture<OperationWithOperationContextParamResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -852,8 +858,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .putExecutionAttribute(SdkInternalExecutionAttribute.REQUEST_COMPRESSION,
                                                     RequestCompression.builder().encodings("gzip").isStreaming(false).build())
                              .withInput(operationWithRequestCompressionRequest));
@@ -914,8 +920,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                              .withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver)
                              .withInput(operationWithStaticContextParamsRequest));
             CompletableFuture<OperationWithStaticContextParamsResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -999,8 +1005,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                     .withErrorResponseHandler(errorResponseHandler)
                     .withRequestConfiguration(clientConfiguration)
                     .withMetricCollector(apiCallMetricCollector)
-                    .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                    .withEndpointResolver(this::resolveEndpoint)
+                    .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                    .withEndpointResolver(endpointResolver)
                     .putExecutionAttribute(
                         SdkInternalExecutionAttribute.HTTP_CHECKSUM,
                         HttpChecksum
@@ -1090,8 +1096,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                                                                 .asyncRequestBody(requestBody).build()).withResponseHandler(responseHandler)
                              .withErrorResponseHandler(errorResponseHandler).withRequestConfiguration(clientConfiguration)
                              .withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint).withAsyncRequestBody(requestBody)
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver).withAsyncRequestBody(requestBody)
                              .withInput(streamingInputOperationRequest));
             CompletableFuture<StreamingInputOperationResponse> whenCompleteFuture = null;
             whenCompleteFuture = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
@@ -1156,8 +1162,8 @@ final class DefaultQueryAsyncClient implements QueryAsyncClient {
                     .withMarshaller(new StreamingOutputOperationRequestMarshaller(protocolFactory))
                     .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                     .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                    .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                    .withEndpointResolver(this::resolveEndpoint)
+                    .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                    .withEndpointResolver(endpointResolver)
                     .withAsyncResponseTransformer(asyncResponseTransformer).withInput(streamingOutputOperationRequest),
                 asyncResponseTransformer);
             CompletableFuture<ReturnT> whenCompleteFuture = null;

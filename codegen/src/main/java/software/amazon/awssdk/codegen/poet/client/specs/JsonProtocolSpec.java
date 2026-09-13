@@ -233,8 +233,8 @@ public class JsonProtocolSpec implements ProtocolSpec {
                      .add(".withRequestConfiguration(clientConfiguration)")
                      .add(".withInput($L)\n", opModel.getInput().getVariableName())
                      .add(".withMetricCollector(apiCallMetricCollector)\n")
-                     .add(".withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)\n")
-                     .add(".withEndpointResolver(this::resolveEndpoint)\n")
+                     .add(".withAuthSchemeOptionsResolver(authSchemeOptionsResolver)\n")
+                     .add(".withEndpointResolver(endpointResolver)\n")
                      .add(HttpChecksumRequiredTrait.putHttpChecksumAttribute(opModel))
                      .add(HttpChecksumTrait.create(opModel));
 
@@ -309,8 +309,8 @@ public class JsonProtocolSpec implements ProtocolSpec {
                .add(".withErrorResponseHandler(errorResponseHandler)\n")
                .add(".withRequestConfiguration(clientConfiguration)")
                .add(".withMetricCollector(apiCallMetricCollector)\n")
-               .add(".withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)\n")
-               .add(".withEndpointResolver(this::resolveEndpoint)\n")
+               .add(".withAuthSchemeOptionsResolver(authSchemeOptionsResolver)\n")
+               .add(".withEndpointResolver(endpointResolver)\n")
                .add(hostPrefixExpression(opModel))
                .add(discoveredEndpoint(opModel))
                .add(credentialType(opModel, model))

@@ -35,6 +35,7 @@ import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.client.handler.AsyncClientHandler;
 import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
+import software.amazon.awssdk.core.endpoint.EndpointResolver;
 import software.amazon.awssdk.core.endpointdiscovery.EndpointDiscoveryRefreshCache;
 import software.amazon.awssdk.core.endpointdiscovery.EndpointDiscoveryRequest;
 import software.amazon.awssdk.core.exception.SdkClientException;
@@ -44,6 +45,7 @@ import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.retry.RetryMode;
+import software.amazon.awssdk.core.spi.identity.AuthSchemeOptionsResolver;
 import software.amazon.awssdk.endpoints.Endpoint;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption;
 import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
@@ -109,6 +111,10 @@ final class DefaultEndpointDiscoveryTestAsyncClient implements EndpointDiscovery
         }
     };
 
+    private final AuthSchemeOptionsResolver authSchemeOptionsResolver = this::resolveAuthSchemeOptions;
+
+    private final EndpointResolver endpointResolver = this::resolveEndpoint;
+
     private EndpointDiscoveryRefreshCache endpointDiscoveryCache;
 
     private final ConcurrentHashMap<String, List<AuthSchemeOption>> authSchemeCache = new ConcurrentHashMap<>();
@@ -167,8 +173,8 @@ final class DefaultEndpointDiscoveryTestAsyncClient implements EndpointDiscovery
                              .withMarshaller(new DescribeEndpointsRequestMarshaller(protocolFactory))
                              .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                              .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                             .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                             .withEndpointResolver(this::resolveEndpoint).withInput(describeEndpointsRequest));
+                             .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                             .withEndpointResolver(endpointResolver).withInput(describeEndpointsRequest));
             CompletableFuture<DescribeEndpointsResponse> whenCompleted = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
             executeFuture = CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
             return executeFuture;
@@ -252,8 +258,8 @@ final class DefaultEndpointDiscoveryTestAsyncClient implements EndpointDiscovery
                                  .withMarshaller(new TestDiscoveryIdentifiersRequiredRequestMarshaller(protocolFactory))
                                  .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                                  .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                                 .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                                 .withEndpointResolver(this::resolveEndpoint).discoveredEndpoint(cachedEndpoint)
+                                 .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                                 .withEndpointResolver(endpointResolver).discoveredEndpoint(cachedEndpoint)
                                  .withInput(testDiscoveryIdentifiersRequiredRequest)));
             CompletableFuture<TestDiscoveryIdentifiersRequiredResponse> whenCompleted = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
             executeFuture = CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
@@ -328,8 +334,8 @@ final class DefaultEndpointDiscoveryTestAsyncClient implements EndpointDiscovery
                                  .withMarshaller(new TestDiscoveryOptionalRequestMarshaller(protocolFactory))
                                  .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                                  .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                                 .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                                 .withEndpointResolver(this::resolveEndpoint).discoveredEndpoint(cachedEndpoint)
+                                 .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                                 .withEndpointResolver(endpointResolver).discoveredEndpoint(cachedEndpoint)
                                  .withInput(testDiscoveryOptionalRequest)));
             CompletableFuture<TestDiscoveryOptionalResponse> whenCompleted = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
             executeFuture = CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
@@ -412,8 +418,8 @@ final class DefaultEndpointDiscoveryTestAsyncClient implements EndpointDiscovery
                                  .withMarshaller(new TestDiscoveryRequiredRequestMarshaller(protocolFactory))
                                  .withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler)
                                  .withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector)
-                                 .withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions)
-                                 .withEndpointResolver(this::resolveEndpoint).discoveredEndpoint(cachedEndpoint)
+                                 .withAuthSchemeOptionsResolver(authSchemeOptionsResolver)
+                                 .withEndpointResolver(endpointResolver).discoveredEndpoint(cachedEndpoint)
                                  .withInput(testDiscoveryRequiredRequest)));
             CompletableFuture<TestDiscoveryRequiredResponse> whenCompleted = publishMetricsWhenComplete(executeFuture, metricPublishers, apiCallMetricCollector);
             executeFuture = CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);

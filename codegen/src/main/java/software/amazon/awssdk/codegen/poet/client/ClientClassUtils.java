@@ -29,6 +29,7 @@ import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeVariableName;
 import com.squareup.javapoet.WildcardTypeName;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -428,6 +429,25 @@ public final class ClientClassUtils {
         }
 
         return builder.build();
+    }
+
+    /**
+     * The two per-operation resolver callbacks as client fields. Every operation used to pass
+     * {@code this::resolveAuthSchemeOptions} and {@code this::resolveEndpoint} into its execution params, and a bound
+     * method reference is a new object each time it is evaluated, so that was two allocations per call for callbacks that
+     * never change. Field initializers referring to {@code this::} are legal and run once, in the constructor.
+     */
+    static List<FieldSpec> resolverFields() {
+        ClassName authOptionsResolver = ClassName.get("software.amazon.awssdk.core.spi.identity",
+                                                      "AuthSchemeOptionsResolver");
+        ClassName endpointResolver = ClassName.get("software.amazon.awssdk.core.endpoint", "EndpointResolver");
+        return Arrays.asList(
+            FieldSpec.builder(authOptionsResolver, "authSchemeOptionsResolver", PRIVATE, Modifier.FINAL)
+                     .initializer("this::resolveAuthSchemeOptions")
+                     .build(),
+            FieldSpec.builder(endpointResolver, "endpointResolver", PRIVATE, Modifier.FINAL)
+                     .initializer("this::resolveEndpoint")
+                     .build());
     }
 
     /**

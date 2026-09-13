@@ -40,8 +40,11 @@ public final class PoetMatchers {
         return new TypeSafeMatcher<ClassSpec>() {
             @Override
             protected boolean matchesSafely(ClassSpec spec) {
-                String expectedClass = getExpectedClass(spec, expectedTestFile, disableFormatting);
                 String actualClass = generateClass(spec);
+                if (updateFixture(spec, expectedTestFile, actualClass)) {
+                    return true;
+                }
+                String expectedClass = getExpectedClass(spec, expectedTestFile, disableFormatting);
                 try {
                     assertThat(actualClass, equalToIgnoringWhiteSpace(expectedClass));
                 } catch (AssertionError e) {
@@ -63,8 +66,11 @@ public final class PoetMatchers {
         return new TypeSafeMatcher<ClassSpec>() {
             @Override
             protected boolean matchesSafely(ClassSpec spec) {
-                String expectedClass = getExpectedClass(spec, expectedTestFile, false);
                 String actualClass = generateClass(spec);
+                if (updateFixture(spec, expectedTestFile, actualClass)) {
+                    return true;
+                }
+                String expectedClass = getExpectedClass(spec, expectedTestFile, false);
                 try {
                     assertThat(actualClass, equalToIgnoringWhiteSpace(expectedClass));
                 } catch (AssertionError e) {
@@ -80,6 +86,28 @@ public final class PoetMatchers {
                 //Since we bubble an exception this will never actually get called
             }
         };
+    }
+
+    /**
+     * When {@code -Dcodegen.updateFixtures=true} is set, {@link #generatesTo} rewrites the fixture with the generated
+     * output (the processed form, which is how fixtures are stored) instead of comparing. For regenerating fixtures after
+     * an intentional codegen change; review the resulting diff.
+     */
+    private static final boolean UPDATE_FIXTURES = Boolean.getBoolean("codegen.updateFixtures");
+
+    private static boolean updateFixture(ClassSpec spec, String testFile, String actualClass) {
+        if (!UPDATE_FIXTURES) {
+            return false;
+        }
+        String resourcePath = spec.getClass().getPackage().getName().replace('.', '/') + "/" + testFile;
+        java.nio.file.Path target = java.nio.file.Paths.get("src/test/resources", resourcePath);
+        Validate.isTrue(java.nio.file.Files.exists(target), "Fixture not found at " + target.toAbsolutePath());
+        try {
+            java.nio.file.Files.write(target, actualClass.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return true;
     }
 
     private static String getExpectedClass(ClassSpec spec, String testFile, boolean disableFormatting) {
