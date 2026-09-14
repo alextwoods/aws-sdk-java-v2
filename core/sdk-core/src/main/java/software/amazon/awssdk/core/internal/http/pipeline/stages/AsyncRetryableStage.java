@@ -48,15 +48,16 @@ public final class AsyncRetryableStage<OutputT> implements RequestPipeline<SdkHt
     private static final String X_AMZ_RETRY_AFTER_HEADER = "x-amz-retry-after";
     private static final Logger LOG = Logger.loggerFor(AsyncRetryableStage.class);
 
-    private final TransformingAsyncResponseHandler<Response<OutputT>> responseHandler;
     private final RequestPipeline<SdkHttpFullRequest, CompletableFuture<Response<OutputT>>> requestPipeline;
     private final ScheduledExecutorService scheduledExecutor;
     private final HttpClientDependencies dependencies;
 
-    public AsyncRetryableStage(TransformingAsyncResponseHandler<Response<OutputT>> responseHandler,
-                               HttpClientDependencies dependencies,
+    /**
+     * The response handler is this call's, read from the {@link RequestExecutionContext}, so one instance of this stage
+     * serves every call of a client.
+     */
+    public AsyncRetryableStage(HttpClientDependencies dependencies,
                                RequestPipeline<SdkHttpFullRequest, CompletableFuture<Response<OutputT>>> requestPipeline) {
-        this.responseHandler = responseHandler;
         this.dependencies = dependencies;
         this.scheduledExecutor = dependencies.clientConfiguration().option(SdkClientOption.SCHEDULED_EXECUTOR_SERVICE);
         this.requestPipeline = requestPipeline;
@@ -174,6 +175,7 @@ public final class AsyncRetryableStage<OutputT> implements RequestPipeline<SdkHt
                         return;
                     }
                     // We failed the last attempt, but will retry. The response handler wants to know when that happens.
+                    TransformingAsyncResponseHandler<Response<OutputT>> responseHandler = context.responseHandler();
                     responseHandler.onError(retryableStageHelper.getLastException());
 
                     // Reset the request provider to the original one before retries, in case it was modified downstream.

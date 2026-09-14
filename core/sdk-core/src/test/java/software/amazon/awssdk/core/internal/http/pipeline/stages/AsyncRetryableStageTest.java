@@ -530,8 +530,7 @@ public class AsyncRetryableStageTest extends BaseRetryableStageTest {
                                                             .clientConfiguration(clientConfig)
                                                             .build();
 
-        return new AsyncRetryableStage<>(mock(TransformingAsyncResponseHandler.class),
-                                         deps, mockDelegatePipeline);
+        return new AsyncRetryableStage<>(deps, mockDelegatePipeline);
     }
 
     private RequestExecutionContext createRequestExecutionContext(Boolean newRetries2026Enabled) {
@@ -546,8 +545,9 @@ public class AsyncRetryableStageTest extends BaseRetryableStageTest {
                                                    .build();
 
         return RequestExecutionContext.builder()
-                                                             .originalRequest(mock(SdkRequest.class))
-                                                             .executionContext(execCtx)
-                                                             .build();
+                                      .originalRequest(mock(SdkRequest.class))
+                                      .executionContext(execCtx)
+                                      .responseHandler(mock(TransformingAsyncResponseHandler.class))
+                                      .build();
     }
 }

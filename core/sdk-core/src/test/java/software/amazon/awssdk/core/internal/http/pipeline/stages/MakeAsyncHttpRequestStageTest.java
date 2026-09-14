@@ -46,6 +46,7 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
+import software.amazon.awssdk.core.Response;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
@@ -91,10 +92,7 @@ public class MakeAsyncHttpRequestStageTest {
 
     @Test
     public void apiCallAttemptTimeoutEnabled_shouldInvokeExecutor() throws Exception {
-        stage = new MakeAsyncHttpRequestStage<>(
-            combinedAsyncResponseHandler(AsyncResponseHandlerTestUtils.noOpResponseHandler(),
-                                         AsyncResponseHandlerTestUtils.noOpResponseHandler()),
-            clientDependencies(Duration.ofMillis(1000)));
+        stage = new MakeAsyncHttpRequestStage<>(clientDependencies(Duration.ofMillis(1000)));
 
         CompletableFuture<SdkHttpFullRequest> requestFuture = CompletableFuture.completedFuture(
                 ValidSdkObjects.sdkHttpFullRequest().build());
@@ -105,10 +103,7 @@ public class MakeAsyncHttpRequestStageTest {
 
     @Test
     public void apiCallAttemptTimeoutNotEnabled_shouldNotInvokeExecutor() throws Exception {
-        stage = new MakeAsyncHttpRequestStage<>(
-            combinedAsyncResponseHandler(AsyncResponseHandlerTestUtils.noOpResponseHandler(),
-                                         AsyncResponseHandlerTestUtils.noOpResponseHandler()),
-            clientDependencies(null));
+        stage = new MakeAsyncHttpRequestStage<>(clientDependencies(null));
 
         CompletableFuture<SdkHttpFullRequest> requestFuture = CompletableFuture.completedFuture(
                 ValidSdkObjects.sdkHttpFullRequest().build());
@@ -120,10 +115,7 @@ public class MakeAsyncHttpRequestStageTest {
 
     @Test
     public void testExecute_contextContainsMetricCollector_addsChildToExecuteRequest() {
-        stage = new MakeAsyncHttpRequestStage<>(
-                combinedAsyncResponseHandler(AsyncResponseHandlerTestUtils.noOpResponseHandler(),
-                        AsyncResponseHandlerTestUtils.noOpResponseHandler()),
-                clientDependencies(null));
+        stage = new MakeAsyncHttpRequestStage<>(clientDependencies(null));
 
         SdkHttpFullRequest sdkHttpRequest = SdkHttpFullRequest.builder()
                 .method(SdkHttpMethod.GET)
@@ -143,6 +135,7 @@ public class MakeAsyncHttpRequestStageTest {
         RequestExecutionContext context = RequestExecutionContext.builder()
                 .originalRequest(ValidSdkObjects.sdkRequest())
                 .executionContext(executionContext)
+                .responseHandler(noOpHandler())
                 .build();
 
         context.attemptMetricCollector(mockCollector);
@@ -179,12 +172,12 @@ public class MakeAsyncHttpRequestStageTest {
         CompletableFuture prepareFuture = new CompletableFuture();
         when(mockHandler.prepare()).thenReturn(prepareFuture);
 
-        stage = new MakeAsyncHttpRequestStage<>(mockHandler, dependencies);
+        stage = new MakeAsyncHttpRequestStage<>(dependencies);
 
         CompletableFuture<SdkHttpFullRequest> requestFuture = CompletableFuture.completedFuture(
             ValidSdkObjects.sdkHttpFullRequest().build());
 
-        CompletableFuture executeFuture = stage.execute(requestFuture, requestContext());
+        CompletableFuture executeFuture = stage.execute(requestFuture, requestContext(mockHandler));
 
         long testThreadId = Thread.currentThread().getId();
         CompletableFuture afterWhenComplete =
@@ -214,12 +207,12 @@ public class MakeAsyncHttpRequestStageTest {
         CompletableFuture prepareFuture = spy(new CompletableFuture());
         when(mockHandler.prepare()).thenReturn(prepareFuture);
 
-        stage = new MakeAsyncHttpRequestStage<>(mockHandler, dependencies);
+        stage = new MakeAsyncHttpRequestStage<>(dependencies);
 
         CompletableFuture<SdkHttpFullRequest> requestFuture = CompletableFuture.completedFuture(
             ValidSdkObjects.sdkHttpFullRequest().build());
 
-        CompletableFuture executeFuture = stage.execute(requestFuture, requestContext());
+        CompletableFuture executeFuture = stage.execute(requestFuture, requestContext(mockHandler));
 
         try {
             CompletableFuture afterHandle =
@@ -241,10 +234,7 @@ public class MakeAsyncHttpRequestStageTest {
 
     @Test
     public void execute_requestHasTransferEncodingHeader_doesNotAddContentLength() {
-        stage = new MakeAsyncHttpRequestStage<>(
-            combinedAsyncResponseHandler(AsyncResponseHandlerTestUtils.noOpResponseHandler(),
-                                         AsyncResponseHandlerTestUtils.noOpResponseHandler()),
-            clientDependencies(null));
+        stage = new MakeAsyncHttpRequestStage<>(clientDependencies(null));
 
         SdkHttpFullRequest sdkHttpRequest = SdkHttpFullRequest.builder()
                 .method(SdkHttpMethod.POST)
@@ -263,6 +253,7 @@ public class MakeAsyncHttpRequestStageTest {
                 .originalRequest(ValidSdkObjects.sdkRequest())
                 .executionContext(executionContext)
                 .requestProvider(requestBody)
+                .responseHandler(noOpHandler())
                 .build();
 
         CompletableFuture<SdkHttpFullRequest> requestFuture = CompletableFuture.completedFuture(sdkHttpRequest);
@@ -296,10 +287,23 @@ public class MakeAsyncHttpRequestStageTest {
     }
 
     private RequestExecutionContext requestContext() {
+        return requestContext(noOpHandler());
+    }
+
+    /**
+     * The stage reads the response handler from the per-call context, not from its constructor.
+     */
+    private RequestExecutionContext requestContext(TransformingAsyncResponseHandler<?> responseHandler) {
         ExecutionContext executionContext = ClientExecutionAndRequestTimerTestUtils.executionContext(ValidSdkObjects.sdkHttpFullRequest().build());
         return RequestExecutionContext.builder()
                                       .executionContext(executionContext)
                                       .originalRequest(NoopTestRequest.builder().build())
+                                      .responseHandler(responseHandler)
                                       .build();
+    }
+
+    private static TransformingAsyncResponseHandler<Response<Object>> noOpHandler() {
+        return combinedAsyncResponseHandler(AsyncResponseHandlerTestUtils.noOpResponseHandler(),
+                                            AsyncResponseHandlerTestUtils.noOpResponseHandler());
     }
 }

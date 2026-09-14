@@ -18,7 +18,6 @@ package software.amazon.awssdk.core.internal.http;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.ClientType;
 import software.amazon.awssdk.core.Response;
-import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AfterExecutionInterceptorsStage;
 import software.amazon.awssdk.core.internal.http.pipeline.stages.AfterTransmissionExecutionInterceptorsStage;
@@ -58,12 +57,15 @@ import software.amazon.awssdk.utils.Pair;
  *       class only replaces how they are wired together. A change to a stage cannot silently diverge
  *       between the builder-composed and straight-line forms, because there is only one form of each
  *       stage.</li>
- *   <li><b>Construction stays per-request.</b> Stages capture {@link HttpClientDependencies}, and
- *       {@code BaseSyncClientHandler} hands this class a per-request dependencies object whose
- *       configuration may have been modified by plugins for this call. Hoisting stage construction to
- *       per-client would freeze the first request's configuration into every later request. The
- *       per-request cost this class removes is the composition, which was pure overhead; the stage
- *       objects themselves are small and their construction is trivial.</li>
+ *   <li><b>Construction is per client configuration, not per call.</b> Stages capture
+ *       {@link HttpClientDependencies} and nothing else: every stage is stateless after construction,
+ *       and the one per-call input the graph used to be built around — the response handler — now
+ *       travels on the {@link RequestExecutionContext}. {@link AmazonSyncHttpClient} therefore builds
+ *       the graph once for a given configuration instance and reuses it across calls and threads,
+ *       rebuilding only when a call arrives with a different configuration (a request with plugins).
+ *       Hoisting construction without keying it on the configuration would have frozen the first
+ *       request's configuration into every later request; keying on it is what makes the reuse
+ *       sound.</li>
  * </ul>
  *
  * <p>The nesting, outermost first, preserved exactly from the builder form:
@@ -79,12 +81,12 @@ final class SyncApiCallPipeline {
     }
 
     /**
-     * Build the full pipeline for one request. Input is the marshalled {@link SdkHttpFullRequest};
-     * output is the unmarshalled response, produced through {@code responseHandler}.
+     * Build the full pipeline for one client configuration. Input is the marshalled {@link SdkHttpFullRequest};
+     * output is the unmarshalled response, produced through the response handler on each call's
+     * {@link RequestExecutionContext}. {@code OutputT} is whatever that handler produces; the graph itself is
+     * the same for every output type.
      */
-    static <OutputT> RequestPipeline<SdkHttpFullRequest, OutputT> create(
-            HttpClientDependencies dependencies,
-            HttpResponseHandler<Response<OutputT>> responseHandler) {
+    static <OutputT> RequestPipeline<SdkHttpFullRequest, OutputT> create(HttpClientDependencies dependencies) {
 
         // Everything inside RetryableStage re-runs on every retry attempt.
         RequestPipeline<SdkHttpFullRequest, Response<OutputT>> attempt =
@@ -92,7 +94,7 @@ final class SyncApiCallPipeline {
                 new ApiCallAttemptMetricCollectionStage<>(
                     new TimeoutExceptionHandlingStage<>(dependencies,
                         new ApiCallAttemptTimeoutTrackingStage<>(dependencies,
-                            new AttemptStages<>(dependencies, responseHandler)))));
+                            new AttemptStages<>(dependencies)))));
 
         // Note: API_CALL_DURATION is measured by BaseSyncClientHandler
         RequestPipeline<SdkHttpFullRequest, Response<OutputT>> call =
@@ -143,11 +145,10 @@ final class SyncApiCallPipeline {
             new BeforeUnmarshallingExecutionInterceptorsStage();
         private final HandleResponseStage<OutputT> handleResponse;
 
-        AttemptStages(HttpClientDependencies dependencies,
-                      HttpResponseHandler<Response<OutputT>> responseHandler) {
+        AttemptStages(HttpClientDependencies dependencies) {
             this.signing = new SigningStage(dependencies);
             this.makeHttpRequest = new MakeHttpRequestStage(dependencies);
-            this.handleResponse = new HandleResponseStage<>(responseHandler);
+            this.handleResponse = new HandleResponseStage<>();
         }
 
         @Override

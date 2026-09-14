@@ -41,6 +41,7 @@ public final class RequestExecutionContext {
     private AsyncRequestBody requestProvider;
     private final SdkRequest originalRequest;
     private final ExecutionContext executionContext;
+    private final Object responseHandler;
     private TimeoutTracker apiCallTimeoutTracker;
     private TimeoutTracker apiCallAttemptTimeoutTracker;
     private MetricCollector attemptMetricCollector;
@@ -49,6 +50,7 @@ public final class RequestExecutionContext {
         this.requestProvider = builder.requestProvider;
         this.originalRequest = Validate.paramNotNull(builder.originalRequest, "originalRequest");
         this.executionContext = Validate.paramNotNull(builder.executionContext, "executionContext");
+        this.responseHandler = builder.responseHandler;
     }
 
     /**
@@ -79,6 +81,19 @@ public final class RequestExecutionContext {
 
     public SdkRequest originalRequest() {
         return originalRequest;
+    }
+
+    /**
+     * The handler that turns this call's HTTP response into its result: an
+     * {@link software.amazon.awssdk.core.http.HttpResponseHandler HttpResponseHandler&lt;Response&lt;OutputT&gt;&gt;} for the
+     * sync pipeline, a {@link software.amazon.awssdk.core.internal.http.async.TransformingAsyncResponseHandler
+     * TransformingAsyncResponseHandler&lt;Response&lt;OutputT&gt;&gt;} for the async one. It travels on the per-call context
+     * rather than being baked into the stages, so the stage graph can be built once per client and shared; the stage
+     * that consumes it knows which of the two it is and what {@code OutputT} is.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T responseHandler() {
+        return (T) responseHandler;
     }
 
     public RequestOverrideConfiguration requestConfig() {
@@ -144,6 +159,7 @@ public final class RequestExecutionContext {
         private AsyncRequestBody requestProvider;
         private SdkRequest originalRequest;
         private ExecutionContext executionContext;
+        private Object responseHandler;
 
         public Builder requestProvider(AsyncRequestBody requestProvider) {
             this.requestProvider = requestProvider;
@@ -157,6 +173,14 @@ public final class RequestExecutionContext {
 
         public Builder executionContext(ExecutionContext executionContext) {
             this.executionContext = executionContext;
+            return this;
+        }
+
+        /**
+         * The per-call response handler; see {@link RequestExecutionContext#responseHandler()}.
+         */
+        public Builder responseHandler(Object responseHandler) {
+            this.responseHandler = responseHandler;
             return this;
         }
 

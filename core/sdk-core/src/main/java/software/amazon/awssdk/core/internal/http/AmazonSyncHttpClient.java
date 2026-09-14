@@ -24,6 +24,7 @@ import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.http.ExecutionContext;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
+import software.amazon.awssdk.core.internal.http.pipeline.RequestPipeline;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.utils.SdkAutoCloseable;
 
@@ -32,11 +33,16 @@ import software.amazon.awssdk.utils.SdkAutoCloseable;
 // TODO come up with better name
 public final class AmazonSyncHttpClient implements SdkAutoCloseable {
     private final HttpClientDependencies httpClientDependencies;
+    /**
+     * The stage graph per client configuration; see {@link PipelineCache}.
+     */
+    private final PipelineCache<RequestPipeline<SdkHttpFullRequest, ?>> pipelines;
 
     public AmazonSyncHttpClient(SdkClientConfiguration clientConfiguration) {
         this.httpClientDependencies = HttpClientDependencies.builder()
                                                             .clientConfiguration(clientConfiguration)
                                                             .build();
+        this.pipelines = new PipelineCache<>(httpClientDependencies, SyncApiCallPipeline::create);
     }
 
     /**
@@ -54,8 +60,7 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
      * @return A builder used to configure and execute a HTTP request.
      */
     public RequestExecutionBuilder requestExecutionBuilder() {
-        return new RequestExecutionBuilderImpl()
-            .httpClientDependencies(httpClientDependencies);
+        return new RequestExecutionBuilderImpl(this);
     }
 
     /**
@@ -81,6 +86,13 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
          */
         RequestExecutionBuilder executionContext(ExecutionContext executionContext);
 
+        /**
+         * The client configuration for this call: the client's own, or the one a request's plugins produced. The
+         * stage graph for it is reused across calls (see {@link PipelineCache}); prefer this over supplying
+         * dependencies, which builds a graph for this call only.
+         */
+        RequestExecutionBuilder clientConfiguration(SdkClientConfiguration clientConfiguration);
+
         RequestExecutionBuilder httpClientDependencies(HttpClientDependencies httpClientDependencies);
 
         HttpClientDependencies httpClientDependencies();
@@ -104,10 +116,23 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
 
     private static class RequestExecutionBuilderImpl implements RequestExecutionBuilder {
 
+        private final AmazonSyncHttpClient client;
         private HttpClientDependencies httpClientDependencies;
+        private SdkClientConfiguration clientConfiguration;
         private SdkHttpFullRequest request;
         private SdkRequest originalRequest;
         private ExecutionContext executionContext;
+
+        RequestExecutionBuilderImpl(AmazonSyncHttpClient client) {
+            this.client = client;
+            this.httpClientDependencies = client.httpClientDependencies;
+        }
+
+        @Override
+        public RequestExecutionBuilder clientConfiguration(SdkClientConfiguration clientConfiguration) {
+            this.clientConfiguration = clientConfiguration;
+            return this;
+        }
 
         @Override
         // This is duplicating information in the interceptor context. Can they be consolidated?
@@ -131,6 +156,7 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
         @Override
         public RequestExecutionBuilder httpClientDependencies(HttpClientDependencies httpClientDependencies) {
             this.httpClientDependencies = httpClientDependencies;
+            this.clientConfiguration = null;
             return this;
         }
 
@@ -150,11 +176,12 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
             }
 
             try {
-                // The stage chain lives in SyncApiCallPipeline as straight-line code: same stages,
-                // same order, without the per-request RequestPipelineBuilder composition machinery
-                // (~50 builder/composer objects per call) it used to be assembled from here.
-                return SyncApiCallPipeline.create(httpClientDependencies, responseHandler)
-                                          .execute(request, createRequestExecutionDependencies());
+                // The stage chain lives in SyncApiCallPipeline as straight-line code, built once per client
+                // configuration and reused; this call contributes only its context.
+                @SuppressWarnings("unchecked")
+                RequestPipeline<SdkHttpFullRequest, OutputT> pipeline =
+                    (RequestPipeline<SdkHttpFullRequest, OutputT>) prepared().pipeline();
+                return pipeline.execute(request, createRequestExecutionDependencies(responseHandler));
             } catch (RuntimeException e) {
                 throw e;
             } catch (Exception e) {
@@ -162,10 +189,18 @@ public final class AmazonSyncHttpClient implements SdkAutoCloseable {
             }
         }
 
-        private RequestExecutionContext createRequestExecutionDependencies() {
+        private PipelineCache.Prepared<RequestPipeline<SdkHttpFullRequest, ?>> prepared() {
+            if (clientConfiguration != null) {
+                return client.pipelines.forConfiguration(clientConfiguration);
+            }
+            return client.pipelines.forDependencies(httpClientDependencies);
+        }
+
+        private RequestExecutionContext createRequestExecutionDependencies(Object responseHandler) {
             return RequestExecutionContext.builder()
                                           .originalRequest(originalRequest)
                                           .executionContext(executionContext)
+                                          .responseHandler(responseHandler)
                                           .build();
         }
     }

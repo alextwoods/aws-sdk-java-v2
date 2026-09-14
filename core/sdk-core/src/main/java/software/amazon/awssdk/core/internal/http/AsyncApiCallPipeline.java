@@ -37,16 +37,17 @@ import software.amazon.awssdk.utils.CompletableFutureUtils;
 /**
  * The async API call pipeline, written in a straight line — the async counterpart of
  * {@link SyncApiCallPipeline}, with the same two deliberate properties: stage logic is reused, not
- * copied, and construction stays per-request. See that class for the rationale.
+ * copied, and construction is per client configuration rather than per call, with the response
+ * handler travelling on the {@link RequestExecutionContext}. See that class for the rationale.
  *
  * <p>One async-specific subtlety is preserved with care. The builder form adapted the two trailing
  * synchronous stages (unwrap, after-execution interceptors) through
  * {@code RequestPipelineBuilder.async(...)}, whose wrapper chains them with {@code thenApply} and
  * then calls {@link CompletableFutureUtils#forwardExceptionTo} so that a caller cancelling the
  * <i>returned</i> future propagates the cancellation backwards to the in-flight HTTP future.
- * {@link FinishStages} reproduces exactly that structure — a {@code thenApply} per stage, each
- * followed by the backward exception link — rather than approximating it, because dropping the
- * backward link would leave a cancelled call's HTTP exchange running.
+ * {@link FinishStages} keeps that backward link — one dependent stage for the two synchronous
+ * transforms, linked back to the response future — rather than dropping it, because without it a
+ * cancelled call's HTTP exchange would be left running.
  *
  * <p>The nesting, outermost first, preserved exactly from the builder form:
  * [ 11 mutation stages → api-call metrics → api-call timeout → failure-reporting →
@@ -60,17 +61,17 @@ final class AsyncApiCallPipeline {
 
     /**
      * Build the full pipeline for one request. Input is the marshalled {@link SdkHttpFullRequest};
-     * output is a future of the unmarshalled response, produced through {@code responseHandler}.
+     * output is a future of the unmarshalled response, produced through the response handler on each
+     * call's {@link RequestExecutionContext}.
      */
     static <OutputT> RequestPipeline<SdkHttpFullRequest, CompletableFuture<OutputT>> create(
-            HttpClientDependencies dependencies,
-            TransformingAsyncResponseHandler<Response<OutputT>> responseHandler) {
+            HttpClientDependencies dependencies) {
 
         // Everything inside AsyncRetryableStage re-runs on every retry attempt.
         RequestPipeline<SdkHttpFullRequest, CompletableFuture<Response<OutputT>>> retrying =
-            new AsyncRetryableStage<>(responseHandler, dependencies,
+            new AsyncRetryableStage<>(dependencies,
                 new AsyncApiCallAttemptMetricCollectionStage<>(
-                    new AttemptStages<>(dependencies, responseHandler)));
+                    new AttemptStages<>(dependencies)));
 
         // Note: API_CALL_DURATION is measured by BaseAsyncClientHandler
         RequestPipeline<SdkHttpFullRequest, CompletableFuture<OutputT>> call =
@@ -114,10 +115,9 @@ final class AsyncApiCallPipeline {
             new AsyncBeforeTransmissionExecutionInterceptorsStage();
         private final MakeAsyncHttpRequestStage<OutputT> makeHttpRequest;
 
-        AttemptStages(HttpClientDependencies dependencies,
-                      TransformingAsyncResponseHandler<Response<OutputT>> responseHandler) {
+        AttemptStages(HttpClientDependencies dependencies) {
             this.signing = new AsyncSigningStage(dependencies);
-            this.makeHttpRequest = new MakeAsyncHttpRequestStage<>(responseHandler, dependencies);
+            this.makeHttpRequest = new MakeAsyncHttpRequestStage<>(dependencies);
         }
 
         @Override

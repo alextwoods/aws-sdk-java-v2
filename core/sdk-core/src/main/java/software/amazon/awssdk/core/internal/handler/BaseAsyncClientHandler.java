@@ -289,7 +289,7 @@ public abstract class BaseAsyncClientHandler extends BaseClientHandler implement
                      .request(request)
                      .originalRequest(originalRequest)
                      .executionContext(executionContext)
-                     .httpClientDependencies(c -> c.clientConfiguration(clientConfiguration))
+                     .clientConfiguration(clientConfiguration)
                      .execute(responseHandler);
     }
 

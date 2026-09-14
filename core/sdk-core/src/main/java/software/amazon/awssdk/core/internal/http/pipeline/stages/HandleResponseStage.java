@@ -39,14 +39,16 @@ import software.amazon.awssdk.metrics.MetricCollector;
  */
 @SdkInternalApi
 public class HandleResponseStage<OutputT> implements RequestPipeline<SdkHttpFullResponse, Response<OutputT>> {
-    private final HttpResponseHandler<Response<OutputT>> responseHandler;
-
-    public HandleResponseStage(HttpResponseHandler<Response<OutputT>> responseHandler) {
-        this.responseHandler = responseHandler;
+    /**
+     * Handles each call's response with the handler carried on that call's {@link RequestExecutionContext}, so one
+     * instance serves every call of a client.
+     */
+    public HandleResponseStage() {
     }
 
     @Override
     public Response<OutputT> execute(SdkHttpFullResponse httpResponse, RequestExecutionContext context) throws Exception {
+        HttpResponseHandler<Response<OutputT>> responseHandler = context.responseHandler();
         if (!MetricUtils.collectsMetrics(context.attemptMetricCollector())) {
             // No byte counting (which rebuilds the response around a counting stream) and no throughput arithmetic when
             // nothing will publish them. The counters this reads were not created either, by the same check upstream.

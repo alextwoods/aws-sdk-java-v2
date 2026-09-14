@@ -190,7 +190,13 @@ class MetricsDisabledStagesTest {
         RequestExecutionContext context = context(NoOpMetricCollector.create());
         context.attemptMetricCollector(NoOpMetricCollector.create());
 
-        Response<String> result = new HandleResponseStage<>(handler).execute(httpResponse, context);
+        RequestExecutionContext withHandler = RequestExecutionContext.builder()
+                                                                     .originalRequest(context.originalRequest())
+                                                                     .executionContext(context.executionContext())
+                                                                     .responseHandler(handler)
+                                                                     .build();
+        withHandler.attemptMetricCollector(NoOpMetricCollector.create());
+        Response<String> result = new HandleResponseStage<String>().execute(httpResponse, withHandler);
 
         assertThat(result.response()).isEqualTo("ok");
     }

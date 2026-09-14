@@ -73,14 +73,15 @@ public final class MakeAsyncHttpRequestStage<OutputT>
     private static final Logger log = Logger.loggerFor(MakeAsyncHttpRequestStage.class);
 
     private final SdkAsyncHttpClient sdkAsyncHttpClient;
-    private final TransformingAsyncResponseHandler<Response<OutputT>> responseHandler;
     private final Executor futureCompletionExecutor;
     private final ScheduledExecutorService timeoutExecutor;
     private final Duration apiCallAttemptTimeout;
 
-    public MakeAsyncHttpRequestStage(TransformingAsyncResponseHandler<Response<OutputT>> responseHandler,
-                                     HttpClientDependencies dependencies) {
-        this.responseHandler = responseHandler;
+    /**
+     * The response handler is this call's, read from the {@link RequestExecutionContext}, so one instance of this stage
+     * serves every call of a client.
+     */
+    public MakeAsyncHttpRequestStage(HttpClientDependencies dependencies) {
         this.futureCompletionExecutor =
                 dependencies.clientConfiguration().option(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR);
         this.sdkAsyncHttpClient = dependencies.clientConfiguration().option(SdkClientOption.ASYNC_HTTP_CLIENT);
@@ -145,6 +146,7 @@ public final class MakeAsyncHttpRequestStage<OutputT>
 
         CompletableFuture<Response<OutputT>> responseFuture = new CompletableFuture<>();
 
+        TransformingAsyncResponseHandler<Response<OutputT>> responseHandler = context.responseHandler();
         CompletableFuture<Response<OutputT>> responseHandlerFuture = responseHandler.prepare();
 
         SdkHttpContentPublisher basePublisher = context.requestProvider() == null

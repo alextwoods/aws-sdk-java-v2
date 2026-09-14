@@ -208,6 +208,38 @@ public class AmazonHttpClientTest {
         verify(executor).shutdown();
     }
 
+    @Test
+    public void callsSharingOneClientConfiguration_eachUseTheirOwnResponseHandler() throws Exception {
+        // The stage graph is built once per client configuration and reused; the response handler is per call and
+        // travels on the call's context. Two calls with different handlers must each see their own.
+        SdkClientConfiguration config = HttpTestUtils.testClientConfiguration().toBuilder()
+                                                     .option(SdkClientOption.SYNC_HTTP_CLIENT, sdkHttpClient)
+                                                     .build();
+        AmazonSyncHttpClient client = new AmazonSyncHttpClient(config);
+        // What the generated client passes: its own configuration instance, the same one on every call.
+        SdkClientConfiguration perCall = config.toBuilder().option(SdkClientOption.SERVICE_NAME, "svc").build();
+
+        HttpResponseHandler<String> first = (response, attrs) -> "first";
+        HttpResponseHandler<String> second = (response, attrs) -> "second";
+
+        String r1 = client.requestExecutionBuilder()
+                          .request(ValidSdkObjects.sdkHttpFullRequest().build())
+                          .originalRequest(NoopTestRequest.builder().build())
+                          .executionContext(executionContext())
+                          .clientConfiguration(perCall)
+                          .execute(combinedSyncResponseHandler(first, null));
+        String r2 = client.requestExecutionBuilder()
+                          .request(ValidSdkObjects.sdkHttpFullRequest().build())
+                          .originalRequest(NoopTestRequest.builder().build())
+                          .executionContext(executionContext())
+                          .clientConfiguration(perCall)
+                          .execute(combinedSyncResponseHandler(second, null));
+
+        Assert.assertEquals("first", r1);
+        Assert.assertEquals("second", r2);
+        verify(sdkHttpClient, times(2)).prepareRequest(any());
+    }
+
     private ExecutionContext executionContext() {
         return ClientExecutionAndRequestTimerTestUtils.executionContext(null);
     }
