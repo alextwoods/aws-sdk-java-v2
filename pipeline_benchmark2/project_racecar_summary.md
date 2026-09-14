@@ -4242,3 +4242,109 @@ only on the client configuration):
    the context to attach the marshalled request; the response side does the same twice more.
 3. `TimerUtils.resolveTimeoutInMillis` — 0.55 µs self for an `Optional` chain over two suppliers, per
    call, when no timeout is configured.
+
+## Phase H11 — the stage graph built once per client configuration
+
+The first item on H10's list. `SyncApiCallPipeline.create` was 1.1–1.6 µs per call on the H9/H10
+profiles (2.3 async) — every call constructing its own `HttpClientDependencies` (a copy of the client's
+with that call's configuration substituted) and, over it, its own stage graph of ~15 objects, several of
+whose constructors read client options — plus ~1 KB/op of those objects.
+
+- Commit: `0267bf5ea8c` (sdk-core: build the stage graph once per client configuration)
+- Raw: `paired/host-20260914-1748` (small ops, 9 reps), `host-20260914-1902` (batch-put, 5 reps),
+  `raw/host-h11-profiles`
+- Correctness: sdk-core 1663, aws-core 651 + 342, apache5-client 270, codegen-generated-classes 1075,
+  protocol-tests 726, japicmp and spotbugs clean, smoke 10/10 with the 11-family metric set intact. New
+  `SingleEntryIdentityCacheTest` (4), `PipelineCacheTest` (4), and an `AmazonHttpClientTest` case that
+  runs two calls through one shared graph with different response handlers and checks each gets its own.
+
+### Why it had been per call, and what made it safe to change
+
+The class doc on `SyncApiCallPipeline` (written in Phase C) had argued for per-call construction:
+stages capture `HttpClientDependencies`, the handler substitutes a per-call configuration into it, and
+hoisting construction to per-client would "freeze the first request's configuration into every later
+request." That was true as far as it went. What a survey of all 34 stage classes established is that
+(a) every stage's fields are `final` and written only in its constructor — no `execute` writes instance
+state; all per-call and per-attempt state lives in locals or on `RequestExecutionContext` — and (b) the
+only per-call input baked into the graph was the response handler, held by `HandleResponseStage` (sync)
+and by `MakeAsyncHttpRequestStage` and `AsyncRetryableStage` (async), all three of which consume it from
+inside methods that already have the call's context in hand. And (c), the per-call configuration is the
+generated client's own configuration instance on every call unless the request carries plugins.
+
+So: the response handler moves onto `RequestExecutionContext` (the three stages read it from the call
+they are executing), which leaves the graph a pure function of the dependencies; and each HTTP client
+keeps a `PipelineCache` — the dependencies and stage graph for the last configuration seen, keyed on the
+configuration's identity, with the same eight-consecutive-miss guard as the auth and user-agent caches.
+The handlers pass the configuration (`RequestExecutionBuilder.clientConfiguration`) instead of rebuilding
+dependencies through the `Consumer` overload, which stays for callers that supply their own dependencies
+and gets an unretained graph as before. A plugin request produces a fresh configuration and so a fresh
+graph, exactly as before; the freeze the old doc warned about cannot happen because the graph is keyed on
+the very thing that would have been frozen. That identity-keyed single-entry cache is now on its third
+use, so it became a class, `SingleEntryIdentityCache` (the auth and user-agent caches keep their own
+copies for now).
+
+### Measurement (paired, host, 200k/30k small × 9 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+Base is H10 rebuilt on the same harness commit (installed as `2.54.18-H10`):
+
+| client | scenario | h10 | h11 | Δ app CPU | pair spread | wins | Δ latency |
+|---|---|---:|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 72.3 | 67.3 | **−6.8%** | ±4.5% | **9/9** | **−4.7% (8/9)** |
+| v2-sync | small-put | 67.7 | 63.8 | **−5.6%** | ±4.4% | **8/9** | −3.4% (7/9) |
+| v2-async | small-get | 122.6 | 119.4 | **−2.5%** | ±2.0% | **8/9** | **−1.7% (9/9)** |
+| v2-async | small-put | 117.7 | 115.4 | **−2.0%** | ±2.0% | **8/9** | −1.0% (7/9) |
+| smithy (control) | small-get / small-put | 50.9 / 46.6 | 49.7 / 48.4 | −2.0% / +4.0% | ±11.2% / ±7.4% | 6/9, 2/9 | |
+| v2-sync / v2-async | batch-put | 258.3 / 307.4 | 254.2 / 303.3 | −1.6% / −1.3% | ±1.7% / ±2.4% | 4/5, 3/5 | −1.0% / −0.9% |
+
+Every v2 small-op cell at 8/9 or better, with the control moving in both directions at coin-flip win
+counts. The sync result is the largest single-phase movement since H8 — and larger than the construction
+cost predicted, which is the interesting part.
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+| | sync H10 | sync H11 | async H10 | async H11 |
+|---|---:|---:|---:|---:|
+| pipeline + dependencies construction, inclusive (µs/op) | 1.57 | **0.08** | 2.26 | **0.11** |
+| … option reads inside it | 0.77 | 0 | 1.42 | 0 |
+| all `AttributeMap.get` in the call (µs/op) | 1.47 | **0.51** | 3.06 | **2.26** |
+| allocation under construction frames (B/op) | 1,019 | **30** | 1,138 | **15** |
+| profile total (B/op) | 28,633 | 28,034 | 35,464 | 32,873 |
+| GC per 200k-op run (count / ms) | 3 / 21 | 3 / 21 | 4 / 27 | 4 / 27 |
+
+The construction is gone, as designed, and it is 1.5–2.2 µs of the saving. But the paired sync means moved
+by 5.0 µs (small-get) and 3.9 µs (small-put), and the inclusive frame table between the two 300k-op
+profiles shows the remainder as a broad shaving rather than a second mechanism: marshalling −0.5 µs,
+response handling −0.85, the HTTP exchange −0.7, context creation −0.6, `addHttpRequest` −0.6, the
+timeout resolution −0.3 — each within a frame's sampling noise on its own, all in the same direction.
+GC counts and JIT compilation time are identical between arms, so it is not the collector. The plausible
+account is second-order: ~1 KB/op less allocation is 3.5% less TLAB traffic and cache churn, and a stage
+graph that is one long-lived set of objects rather than fifteen fresh ones per call gives the JIT stable
+receivers and warm fields at every `execute` call site. **The honest attribution is 1.6 µs by
+construction removed and ~3 µs by a code-quality effect the profile cannot pin to a frame**; what is
+established is that the effect is real (9/9, ±4.5%) and that it belongs to this change.
+
+### Verdict
+
+Kept. **Sync small-get 72 → 67 µs/op, small-put 68 → 64; async −2.5% / −2.0%.** The optimized v2-sync
+small-get is now **≈ 67 µs/op** on this host against stock 2.54.0's ≈ 150, and against the bridged
+prototype's 74 from `pipeline_benchmark3/` it is ahead. The Phase C decision to keep construction per call
+was right on the information it had; what changed it was a survey that found no instance state anywhere
+in the stage graph and a per-call input that could travel on the context instead.
+
+### Where the sync call stands after H4–H11 (300k-op profile, 67 µs/op)
+
+| phase | µs/op | share |
+|---|---:|---:|
+| HTTP client (Apache 5 + connection + socket I/O + response parse) | 37.1 | 55% |
+| signing (`SigningStage`, SigV4 fast path) | 8.2 | 12% |
+| response handling (`HandleResponseStage` → JSON unmarshall; 4.3 of it in the generated `readJsonFields`) | 8.2 | 12% |
+| request-mutation stages (11 stages; endpoint 0.9, auth 0.7, checksum 0.7, user-agent 0.4, transaction id 0.4) | 4.0 | 6% |
+| marshalling (`GetItemRequestMarshaller`) | 2.0 | 3% |
+| execution context creation | 1.2 | 2% |
+| `finalizeSdkHttpFullRequest` other (`addHttpRequest` copy + body wrapper, interceptors) | 0.7 | 1% |
+| harness | ~4 | |
+
+Pipeline plumbing is down to ~7 µs, and none of what is left in it is above 1 µs. The two bars that
+matter now are the HTTP client (55%) and, on the async side, a 50 µs gap to sync in which signing (16 vs
+8 µs) and marshalling+unmarshalling (14 vs 10) both read about double their sync cost on the CRT client's
+event-loop threads — the next thing worth understanding rather than the next thing worth caching.
