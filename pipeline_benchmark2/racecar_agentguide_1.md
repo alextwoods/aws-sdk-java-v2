@@ -39,16 +39,20 @@ separate commit (Conventional Commits style, `perf(module): ...`). Doc updates a
 v2 batch-put now allocates **less than smithy-java** (0.87×/0.92×). Small ops remain 4–5× smithy's
 allocation; batch-get has barely moved (response-side, needs codegen work — not your problem).
 
-**Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H8,
+**Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H9,
 the TLS run, the bridged-pipeline comparison in `pipeline_benchmark3/`, and the 2.46→2.54 ladder).**
 Work lives on `feature/poc/benchmark3` (branched from `racecar`), which was *merged* with
 `origin/master` at 2.54.18-SNAPSHOT in H6 (commit `2f26679488e`; safety refs
 `racecar/pre-master-merge-h5` / `backup/benchmark3-pre-merge`) and carries PR #7371 (BDD endpoint
-providers with a result cache, DynamoDB included). Optimized v2-sync small-get is ≈ 79 µs/op app CPU
+providers with a result cache, DynamoDB included). Optimized v2-sync small-get is ≈ 77 µs/op app CPU
 on the host against stock 2.54.0's ≈ 150; batch ops are at parity with native smithy-java. Remaining
-known fixed costs on small ops (after H7 cached the call-independent half of auth resolution): the
-per-call endpoint params object built only for the cache key (~0.7%), the per-call user-agent business-metrics
-string (~0.5 µs; H8 removed the rest of the metrics-off measurement cost), response-side interceptor-context copies. The stock SDK's
+known fixed costs on small ops (after H7 cached auth resolution, H8 removed metrics-off measurement,
+H9 cached the User-Agent header and the constant business metrics): the per-call endpoint params
+object built only for the cache key (~0.7%), the header-store splices for headers added one at a time,
+the per-call `AdditionalMetadata` list, `ExecutionAttributes` puts, response-side interceptor-context
+copies, and ~2.2 KB/op of future nodes in the async finish path — none individually above ~0.5 µs.
+Host noise note from H9: pair spreads vary by session (±2% one night, ±6% the next); when the expected
+effect is ~1%, check the control's spread before believing either direction. The stock SDK's
 2.46→2.54 drift is attributed (two clean steps: #7017 in 2.47.0 and DynamoDB's own ruleset growth in
 2.51.0 — both addressed by BDD + cache and H4).
 

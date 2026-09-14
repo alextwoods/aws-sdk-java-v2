@@ -3960,3 +3960,159 @@ Follow-ups:
    question — it is a header — but the same resolve-once shape applies.
 2. `forwardExceptionTo`'s remaining async uses each cost a dependent stage; where the source future is
    already complete (the de-futured paths from Phase C), a direct completion would avoid it.
+
+## Phase H9 — the User-Agent header served from a cache, and fewer future links
+
+Both of H8's follow-ups, taken together as asked: the per-call user-agent/business-metrics assembly, and
+the `forwardExceptionTo` dependent stages attached to futures that were already complete.
+
+- Commits: `0d2a25e4686` (sdk-core: cache the assembled User-Agent header per client), `d16a26246f5`
+  (core: resolve the constant business metrics once per client; scan checksum headers without a set),
+  `0528ec3c615` (sdk-core: skip exception-forwarding stages on complete futures; one finish stage)
+- Raw: `paired/host-20260913-2220` (metrics off, small ops 7 reps), `host-20260913-2319` (batch-put,
+  5 reps), `host-20260913-2336` (metrics **on**, small-get 5 reps), `host-20260914-0010` (sync-only
+  rerun, 9 reps — see below), `raw/host-h9-profiles`
+- Correctness: utils 555/556 (the same pre-existing JDK 25 failure as H8), sdk-core 1648 + 651, aws-core
+  334, apache5-client 270, codegen-generated-classes 1075 (every `*UserAgent*`, `*BusinessMetric*`,
+  `*Metric*`, checksum, auth, endpoint and plugin suite), protocol-tests 726, japicmp clean, smoke 10/10
+  with the 11-family metric set intact under `--metrics`. New `UserAgentHeaderCacheTest` (10); three new
+  `CompletableFutureUtilsTest` cases pin the shortcut's three branches.
+
+### What was there
+
+The header is ~600 bytes and, for a given client, the same on nearly every call: a prefix that is a
+function of the client configuration; `md/io#…`, `md/http#…` metadata per operation shape; the
+business-metrics list (`m/D,AJ,Z,b,e`), which depends on retry mode, protocol, HTTP client, auth
+scheme, checksum configuration and credentials-provider type — all client- or operation-level. Yet
+`ApplyUserAgentStage` rebuilt it from parts on every call: a `StringBuilder`, `String.join` over the
+metrics, `toString`, and, feeding it, an `Optional` chain for the credentials provider's metric, a
+`HashSet` and capturing lambda in `HttpChecksumStage` for the checksum feature ids, and a re-derivation
+of the retry-mode metric (`instanceof` chain + `Optional`) at the top of every call in
+`AwsExecutionContextBuilder`. On the H8 profile that was **0.92 µs and 1.8 KB per sync call, 1.7 µs
+and 1.4 KB per async call** — the largest single per-call allocation left in the SDK's own code.
+
+On the async side, H8 had noted that `forwardExceptionTo` — which attaches a `whenComplete` to `src` so
+its failure reaches `dst` — was still being called on futures that were already complete, buying a
+`UniWhenComplete` node and a lambda (~390 B/op after H8) for a stage that runs once as a no-op.
+
+### What changed
+
+**A per-client `UserAgentHeaderCache` on `HttpClientDependencies`**, carried across `toBuilder()` like
+H7's `AuthSchemeResolutionCache`. It holds a `Snapshot` of the per-configuration constants (prefix,
+suffix, whether additional headers already carry a `User-Agent`) and a single-entry cache of the last
+header value, keyed by *equality* of the metric list and the metadata list. Equality, not identity,
+because the metadata list is a fresh `ArrayList` of fresh `AdditionalMetadata` per call (that is where
+`md/io#sync` comes from); comparing two five-element lists of interned strings is cheap, and it makes
+the cache correct by construction — any call whose metrics differ (a different auth scheme, a checksum
+header, an account-id mode) simply misses and rebuilds. Requests that carry their own `ApiName`s bypass
+the cache: those are per request by definition.
+
+One thing the first version got wrong, and the generated-classes suite caught: **the stage is built per
+call from a `HttpClientDependencies` whose `clientConfiguration` is swapped per call**
+(`BaseAsyncClientHandler.invoke` → `c.clientConfiguration(clientConfiguration)`), and only that per-call
+configuration carries `API_METADATA` (`api/DynamoDB_20120810#2.54.x`) — the client-level dependencies
+were built before the generated client added it. Deriving the constants once from the client-level
+configuration produced a header with no `api/` field. The snapshot is therefore keyed on the identity
+of the configuration it was derived from and re-derived when a different instance shows up; a request
+with plugins produces a fresh configuration and so a fresh snapshot, and the same consecutive-miss guard
+as the auth cache stops the store after eight misses in a row, so a client whose every request carries
+plugins pays what it paid before and nothing more. The stock code had been getting this right by
+accident — it rebuilt the prefix per call, so it always saw the right configuration.
+
+**Constant metrics resolved once.** The retry-mode metric is now the lazy client option
+`AwsInternalClientOption.RETRY_MODE_BUSINESS_METRIC` (empty string when the configuration maps to no
+metric), read per call; configurations assembled without the builder fall back to deriving it.
+`HttpChecksumStage` feeds checksum feature ids straight into the call's `BusinessMetricCollection`
+through a `Consumer`, tracking "seen" in a fixed array sized to the closed set of ten ids instead of a
+`HashSet` — a gates-round review caught the first array at eight, one short of what a request with
+every checksum header would need; the test that would have found it now exists.
+`resolveChecksumAlgorithmFeatureIds` keeps its `Set` signature over the same scan, now in a
+deterministic order (header ids in header order, then the algorithm's) that its unit test pins.
+
+**`forwardExceptionTo` returns `src` untouched when `src` has already completed normally** — there is
+no failure to forward, now or ever. A `src` that has already failed still forwards immediately; a
+pending one still gets the stage. And the async pipeline's two finishing stages (unwrap the response
+container, run after-execution interceptors), each a `thenApply` with its own backward link, are one
+dependent stage with one link: both transforms are synchronous and back to back, and cancellation only
+needs to reach the response future.
+
+### Measurement (paired, host, 200k/30k small × 7 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+Base is H8 rebuilt on the same harness commit (installed as `2.54.18-H8`):
+
+| client | scenario | h8 | h9 | Δ app CPU | pair spread | wins | Δ latency |
+|---|---|---:|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 76.4 | 76.3 | −0.0% | ±5.8% | 4/7 | +0.2% |
+| v2-sync | small-put | 71.9 | 71.6 | −0.2% | ±5.6% | 3/7 | −0.2% |
+| v2-async | small-get | 124.0 | 122.4 | **−1.3%** | ±1.1% | **6/7** | **−1.2% (7/7)** |
+| v2-async | small-put | 120.6 | 120.2 | −0.3% | ±1.4% | 4/7 | +0.3% |
+| smithy (control) | small-get / small-put | 48.9 / 47.1 | 51.0 / 46.0 | +4.9% / −1.8% | ±10.3% / ±11.3% | 2/7, 3/7 | |
+| v2-sync / v2-async | batch-put | 260.0 / 313.5 | 259.2 / 311.4 | −0.3% / −0.6% | ±1.5% / ±1.3% | 3/5, 4/5 | −0.3% / +0.2% |
+
+With a publisher **attached** (small-get, 5 reps) — H9 does not touch measurement, so this is a
+consistency check that happened to be the cleanest pass of the session:
+
+| client | h8 | h9 | Δ app CPU | pair spread | wins |
+|---|---:|---:|---:|---:|---:|
+| v2-sync | 96.1 | 95.0 | −1.1% | ±2.2% | 4/5 |
+| v2-async | 148.2 | 144.9 | **−2.2%** | ±1.0% | **5/5** |
+
+The sync cells in the main pass had a ±5.8% pair spread — identical code ran anywhere from 72 to 81
+µs across reps, and the smithy control swung ±20% — against ±2.3% in the H8 session. That cannot
+resolve a ~1% effect, so the sync cells were rerun alone once the host was quiet, 9 reps:
+
+| client | scenario | h8 | h9 | Δ app CPU | pair spread | wins |
+|---|---|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 77.9 | 78.5 | +0.8% | ±2.9% | 3/9 |
+| v2-sync | small-put | 72.6 | 73.5 | +1.3% | ±5.7% | 3/9 |
+| smithy (control) | small-get / small-put | 51.3 / 48.1 | 51.1 / 47.7 | −0.2% / −0.6% | ±8.5% / ±8.9% | 5/9, 5/9 |
+
+Sixteen sync small-get pairs across the two sessions come out at +0.4% with 7/16 wins: **flat**. That is
+not what the profile predicts (below), but it is not in tension with it either — the sync saving the
+profile shows is ~0.4 µs on a 77 µs call, and this host, on this night, resolved no better than ±3%.
+The async result is the resolvable one and it is consistent across three independent passes
+(−1.3%, −2.2% and −1.2% on latency, 6/7, 5/5, 7/7).
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+| | sync H8 | sync H9 | async H8 | async H9 |
+|---|---:|---:|---:|---:|
+| self time in user-agent / business-metric frames (µs/op) | 0.92 | **0.55** | 1.73 | **1.29** |
+| `ApplyUserAgentStage.execute`, inclusive share | 1.06% | 0.54% | 1.64% | **0.64%** |
+| allocation at user-agent / business-metric sites (B/op) | 1,783 | **629** | 1,408 | **719** |
+| … the header's `byte[]` + `String` from `finalizeUserAgent` | 794 + 45 | 0 | 509 + 60 | 0 |
+| … `HashMap` (checksum id set) + `Optional`s | 75 | 0 | 135 + 60 | 0 + 15 |
+| `forwardExceptionTo` stage + lambda (B/op) | — | — | 330 | **210** |
+| async finish stages: futures + `UniApply` nodes + lambdas (B/op) | — | — | 2,621 | **2,202** |
+| profile total (B/op) | 31,929 | **29,802** (−6.7%) | 36,228 | **34,820** (−3.9%) |
+
+The frames that were the cost are gone: `getBusinessMetricsString`, `credentialProviderBusinessMetrics`,
+`asBoundedString`, `buildConstantUserAgentPrefix`, `resolveChecksumAlgorithmFeatureIds`'s lambda. What
+replaced them is `Snapshot.headerValue` (0.14 µs sync / 0.39 async — the two list comparisons) and the
+`ChecksumHeaderScan`. What remains under the user-agent umbrella is now mostly *not* the header: the
+`putHeader` itself (the header store's `String[]` splice plus a `singletonList` for the value, ~250
+B/op) and the per-call `AdditionalMetadata` list from `AwsExecutionContextBuilder`, which are the next
+things one would look at, plus a ~45 B `ArrayList$Itr` from comparing the unmodifiable metric-list view
+against the cached `ArrayList` (reversing the operands would take the `ArrayList` fast path — noted,
+not worth a measurement cycle of its own).
+
+### Verdict
+
+Kept. **Async: −1.3% app CPU on small-get, −2.2% with a publisher attached, −1.2% latency 7/7.** Sync:
+the allocation and the frames are gone as designed (−2.1 KB/op, −6.7% of everything the process
+allocates per call), the CPU effect is below this host's resolving power and is reported as flat. The
+optimized v2-sync small-get sits at **≈ 77 µs/op** on this host against stock 2.54.0's ≈ 150.
+
+Two things worth carrying forward from this phase beyond the numbers:
+
+1. **Per-call pipeline construction hides configuration plumbing.** Because every stage is
+   reconstructed per call, stock code can read "the client configuration" from its constructor and be
+   right by accident when that configuration is actually per call. Any cache that lifts state out of a
+   stage's constructor has to ask what the constructor was really seeing — in this case, a configuration
+   the client-level dependencies never had. The identity-keyed snapshot is the general answer, and the
+   generated-classes `BusinessMetricsUserAgentTest` is the test that catches it.
+2. **The remaining fixed costs are now mostly plumbing, not policy.** After H4–H9 the per-call
+   frames that are not marshalling, signing or the HTTP client are: the endpoint params object built
+   for the cache key (~0.7%), the header-store splices for the headers the pipeline adds one at a
+   time, the `AdditionalMetadata` list, the `ExecutionAttributes` puts, and the async pipeline's
+   remaining ~2.2 KB of future nodes. None is individually larger than ~0.5 µs.
