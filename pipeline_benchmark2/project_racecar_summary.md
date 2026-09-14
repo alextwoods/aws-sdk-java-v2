@@ -4116,3 +4116,129 @@ Two things worth carrying forward from this phase beyond the numbers:
    for the cache key (~0.7%), the header-store splices for the headers the pipeline adds one at a
    time, the `AdditionalMetadata` list, the `ExecutionAttributes` puts, and the async pipeline's
    remaining ~2.2 KB of future nodes. None is individually larger than ~0.5 µs.
+
+## Phase H10 — the execution context seeded from a per-client template
+
+Picked from the H9 candidate profile as the largest remaining self-time frame in the pipeline that was
+neither marshalling, signing nor the HTTP client: `AttributeMap.get`, 1.4 µs self / 2.0 µs inclusive per
+sync call — 2.6% of the call — almost all of it `clientConfig.option(...)` reads, and 0.6 µs of that from
+one method, `AwsExecutionContextBuilder.invokeInterceptorsAndCreateExecutionContext`.
+
+- Commit: `efe1dbeea61` (core: seed client-constant execution attributes from a template)
+- Raw: `paired/host-20260914-1522` (small ops, 9 reps), `host-20260914-1638` (batch-put, 5 reps),
+  `raw/host-h10-profiles`
+- Correctness: sdk-core 1654, aws-core 651 + 342, apache5-client 270, codegen-generated-classes 1075,
+  protocol-tests 726, japicmp and spotbugs clean, smoke 10/10 with the 11-family metric set intact. New
+  `ExecutionAttributesTemplateTest` (5) and `ClientConstantExecutionAttributesTest` (8), the latter
+  pinning precedence, request-level layering, and both invalidation cases.
+
+### What was there
+
+The context builder starts every call by seeding the execution attributes — the bag every stage and
+interceptor reads from. Twenty-eight of the ~35 puts are functions of the client configuration alone:
+region, service name, endpoint prefix, dual-stack/FIPS flags, the client's endpoint provider, auth scheme
+provider, auth schemes and identity providers, checksum calculation/validation preferences, profile file
+supplier and name, the client-context params, the `SdkClient` back-reference, and so on. Each was an
+`option()` read — `Validate.notNull`, a `HashMap` lookup with the key's identity hash, a `Value.get`
+through an interface, a `Class::cast` through a `Function` — followed by a `putAttribute` through the
+attribute's storage object. Per call. On the H9 profile the seeding, interceptors excluded, was **3.4 µs
+sync and 5.7 µs async**, of which the option reads were 1.2 / 2.1 and the puts 0.7 / 1.1.
+
+### What changed
+
+`ExecutionAttributesTemplate`, an internal sdk-core class in the `core.interceptor` package (so it can
+reach the id-indexed raw storage `ExecutionAttributes` has had since Phase E): it snapshots the
+attributes set on an `ExecutionAttributes` as parallel `int[] ids` / `Object[] values` and `applyTo`
+replays them as one tight loop of raw writes. The client builder registers the client's template as the
+lazy option `AwsInternalClientOption.CLIENT_EXECUTION_ATTRIBUTES`, computed by a new
+`clientConstantExecutionAttributes(LazyValueSource)` that does the twenty-eight puts once onto a scratch
+`ExecutionAttributes`. The context builder applies it immediately after merging the client- and
+request-level execution-attribute overrides — which preserves the precedence the per-attribute puts had
+(the client constants overwrite both; a request cannot override `AWS_REGION` through execution
+attributes, and still cannot) — and then does only what is per call: operation name, protocol metadata,
+duplex/long-poll flags, the profile file (read through the supplier the template already put in place),
+the resolved checksum specs, the business-metrics collection.
+
+Two correctness points that the design had to get right:
+
+- **Invalidation.** The template depends on two dozen options, and two things change them after the
+  builder has run: the generated client's constructor adds `SDK_CLIENT` and `API_METADATA` to the
+  configuration it was handed, and a request-level plugin produces a fresh configuration with the
+  plugin's changes. Both go through `SdkClientConfiguration.toBuilder()...build()`, and the attribute
+  map's dependency graph (which records reads of *absent* keys as dependencies too, via a null
+  placeholder) clears the derived value's cache and re-primes it on `build()`. Two tests pin this — one
+  per case — and the H9 lesson about per-call configurations is why they exist.
+- **Request-level overrides of client constants.** Three attributes are the client's value unless the
+  request overrides it: endpoint provider, auth scheme provider, identity providers. The template seeds
+  the client's; `putRequestOverriddenAttributes` layers the request's on top when the request has an
+  override configuration at all (the common case has none, and skips it entirely). One deliberate
+  behaviour change here: the identity providers used to be *copied* for every request that carried any
+  `AwsRequestOverrideConfiguration`, even one that only set a timeout, and the copy is a fresh instance —
+  which also made H7's identity-keyed auth-resolution cache miss on every such request. They are now
+  copied only when the request actually overrides a credentials or token provider. Same providers
+  resolve either way; a request with an override configuration now also gets the auth cache.
+
+The singleton `AwsRequestIdentityProviderResolver` moved into the template as well. Configurations
+assembled without the builder (tests, and anything else that hands the context builder a bare
+`SdkClientConfiguration`) derive the template on the spot, at the cost the puts used to have.
+
+### Measurement (paired, host, 200k/30k small × 9 reps, 80k/15k batch × 5 reps, concurrency 1)
+
+Base is H9 rebuilt on the same harness commit (installed as `2.54.18-H9`). Nine reps on the small ops
+because the expected effect was ~2% and the host had been noisy the night before; it was noisy again
+(v2-sync pair spread ±5.8%, smithy ±9%):
+
+| client | scenario | h9 | h10 | Δ app CPU | pair spread | wins | Δ latency |
+|---|---|---:|---:|---:|---:|---:|---:|
+| v2-sync | small-get | 74.9 | 73.3 | **−2.0%** | ±5.8% | 5/9 | −0.6% |
+| v2-sync | small-put | 71.6 | 68.4 | **−4.2%** | ±5.0% | **7/9** | −2.0% (7/9) |
+| v2-async | small-get | 125.0 | 121.8 | **−2.6%** | ±3.1% | 6/9 | **−2.7% (7/9)** |
+| v2-async | small-put | 120.2 | 117.9 | **−1.9%** | ±2.4% | **7/9** | −1.7% (7/9) |
+| smithy (control) | small-get / small-put | 51.3 / 47.0 | 50.0 / 46.2 | −2.2% / −1.4% | ±8.7% / ±9.6% | 5/9, 5/9 | |
+| v2-sync / v2-async | batch-put | 259.9 / 309.8 | 255.1 / 304.1 | **−1.8% / −1.8%** | ±1.2% / ±1.1% | **5/5, 5/5** | −1.2% / −1.6% |
+
+The control's means moved by the same order as the treatment, but at 5/9 — a coin flip — against 7/9
+for three of the four v2 small-op cells and 5/5 for both batch cells at ±1.2%. Batch-put is the cleanest
+reading here and the one to quote: a fixed ~5 µs per call, taken off a call where the seeding is the same
+absolute work it is on a small op. Async small-get's −2.6% CPU and −2.7% latency at 7/9 agree with it.
+Small-get sync (5/9 at ±5.8%) is, once more, under this host's resolving power for a 2% effect.
+
+### Mechanism check (equal 35k-op alloc profiles; 300k-op CPU profiles)
+
+| | sync H9 | sync H10 | async H9 | async H10 |
+|---|---:|---:|---:|---:|
+| `invokeInterceptorsAndCreateExecutionContext`, inclusive, interceptors excluded (µs/op) | 3.37 | **1.51** | 5.67 | **3.13** |
+| … of which `clientConfig.option()` reads | 1.22 | **0.08** | 2.11 | **0.66** |
+| … of which `putAttribute` | 0.68 | 0.23 | 1.05 | 0.78 |
+| … `ExecutionAttributesTemplate.applyTo` | — | 0.10 | — | 0.12 |
+| all `AttributeMap.get` in the call (µs/op) | 2.27 | **1.41** | 3.86 | **2.83** |
+| allocation in the seeding (B/op) | 554 | 345 | 285 | 345 |
+| profile total (B/op) | 29,892 | 30,116 | 31,375 | 33,577 |
+
+Seeding cost −1.9 µs sync / −2.5 µs async, which is what the paired means say (−1.6 / −3.2 µs on
+small-get). Allocation is flat within sampling noise: this phase was CPU, not garbage — the option reads
+allocated nothing but the occasional escaped `ExpectCachedLazyValueSource`. What is left in the seeding
+is now per-call by nature (the `InterceptorContext` and `ExecutionContext` objects, the business-metrics
+collection, the profile-file supplier call) plus the async client's extra puts, and the remaining
+`AttributeMap.get` time in the call belongs to the stage constructors and the generated client, not to
+the context builder.
+
+### Verdict
+
+Kept. **Roughly −2 µs sync / −2.5 µs async per call, every call, every AWS client**, confirmed by the
+profile and by the tightest cells of the paired run (batch-put 5/5 at ±1.2%). The mechanism is the same
+one as H7 and H9 — a value that depends only on the client is computed when the client is — applied to
+the one place in the pipeline that had been doing the most of it per call.
+
+Next in line, from the same survey of the H9 profile (all per-call construction of things that depend
+only on the client configuration):
+
+1. **The stage graph itself.** `SyncApiCallPipeline.create` is 1.1 µs/op: every call constructs
+   `RequestMutationStages`, `AttemptStages` and their ~15 stage objects, several of whose constructors
+   read options (`ApplyRetryInfoStage` 0.25 µs, `MakeHttpRequestStage`, `CompressRequestStage`,
+   `ApiCallTimeoutTrackingStage`). ~600 B/op of stage objects. Cacheable per configuration with the
+   identity-keyed snapshot pattern, since stages are stateless apart from their dependencies.
+2. `BaseClientHandler.addHttpRequest` — 1.0 µs in an `InterceptorContext.copy(mutator)` that rebuilds
+   the context to attach the marshalled request; the response side does the same twice more.
+3. `TimerUtils.resolveTimeoutInMillis` — 0.55 µs self for an `Optional` chain over two suppliers, per
+   call, when no timeout is configured.

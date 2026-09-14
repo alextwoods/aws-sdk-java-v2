@@ -39,15 +39,17 @@ separate commit (Conventional Commits style, `perf(module): ...`). Doc updates a
 v2 batch-put now allocates **less than smithy-java** (0.87×/0.92×). Small ops remain 4–5× smithy's
 allocation; batch-get has barely moved (response-side, needs codegen work — not your problem).
 
-**Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H9,
+**Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H10,
 the TLS run, the bridged-pipeline comparison in `pipeline_benchmark3/`, and the 2.46→2.54 ladder).**
 Work lives on `feature/poc/benchmark3` (branched from `racecar`), which was *merged* with
 `origin/master` at 2.54.18-SNAPSHOT in H6 (commit `2f26679488e`; safety refs
 `racecar/pre-master-merge-h5` / `backup/benchmark3-pre-merge`) and carries PR #7371 (BDD endpoint
-providers with a result cache, DynamoDB included). Optimized v2-sync small-get is ≈ 77 µs/op app CPU
+providers with a result cache, DynamoDB included). Optimized v2-sync small-get is ≈ 73 µs/op app CPU
 on the host against stock 2.54.0's ≈ 150; batch ops are at parity with native smithy-java. Remaining
 known fixed costs on small ops (after H7 cached auth resolution, H8 removed metrics-off measurement,
-H9 cached the User-Agent header and the constant business metrics): the per-call endpoint params
+H9 cached the User-Agent header and the constant business metrics, H10 seeds the client-constant
+execution attributes from a per-client template): the per-call stage-graph construction
+(`SyncApiCallPipeline.create`, ~1.1 µs), the per-call endpoint params
 object built only for the cache key (~0.7%), the header-store splices for headers added one at a time,
 the per-call `AdditionalMetadata` list, `ExecutionAttributes` puts, response-side interceptor-context
 copies, and ~2.2 KB/op of future nodes in the async finish path — none individually above ~0.5 µs.
