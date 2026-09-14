@@ -41,8 +41,10 @@ allocation; batch-get has barely moved (response-side, needs codegen work — no
 
 **Where things stand after that table (the table is historical — see the summary for E2–E16, H1–H11,
 the TLS run, the bridged-pipeline comparison in `pipeline_benchmark3/`, and the 2.46→2.54 ladder).**
-Work lives on `feature/poc/benchmark3` (branched from `racecar`), which was *merged* with
-`origin/master` at 2.54.18-SNAPSHOT in H6 (commit `2f26679488e`; safety refs
+Work lives on `feature/poc/racecar`. (From Sep 11 to Sep 14 it was committed to `feature/poc/benchmark3`,
+a branch created for the `pipeline_benchmark3/` comparison that then carried H4–H11; `racecar` was
+fast-forwarded to it after H11 and the two names point at the same commit. Commit to `racecar`.) The
+branch was *merged* with `origin/master` at 2.54.18-SNAPSHOT in H6 (commit `2f26679488e`; safety refs
 `racecar/pre-master-merge-h5` / `backup/benchmark3-pre-merge`) and carries PR #7371 (BDD endpoint
 providers with a result cache, DynamoDB included). Optimized v2-sync small-get is ≈ 67 µs/op app CPU
 on the host against stock 2.54.0's ≈ 150; batch ops are at parity with native smithy-java. Remaining
