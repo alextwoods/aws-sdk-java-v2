@@ -152,6 +152,13 @@ public class ExecutionAttributes implements ToCopyableBuilder<ExecutionAttribute
         rawSet(id, update.apply(rawGet(id)));
     }
 
+    /**
+     * The raw storage, for {@link ExecutionAttributesTemplate} to snapshot. Callers must not mutate the array.
+     */
+    Object[] rawValues() {
+        return values;
+    }
+
     private void ensureCapacity(int id) {
         if (id >= values.length) {
             // An attribute registered after this instance was created; grow to cover all current ids.

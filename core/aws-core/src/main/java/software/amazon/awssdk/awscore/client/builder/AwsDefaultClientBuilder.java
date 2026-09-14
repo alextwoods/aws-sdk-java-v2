@@ -40,6 +40,7 @@ import software.amazon.awssdk.awscore.endpoint.FipsEnabledProvider;
 import software.amazon.awssdk.awscore.eventstream.EventStreamInitialRequestInterceptor;
 import software.amazon.awssdk.awscore.interceptor.HelpfulUnknownHostExceptionInterceptor;
 import software.amazon.awssdk.awscore.interceptor.TraceIdExecutionInterceptor;
+import software.amazon.awssdk.awscore.internal.AwsExecutionContextBuilder;
 import software.amazon.awssdk.awscore.internal.AwsInternalClientOption;
 import software.amazon.awssdk.awscore.internal.auth.Sigv4aSigningRegionSetProvider;
 import software.amazon.awssdk.awscore.internal.defaultsmode.AutoDefaultsModeDiscovery;
@@ -201,6 +202,8 @@ public abstract class AwsDefaultClientBuilder<BuilderT extends AwsClientBuilder<
                                         c -> BusinessMetricsUtils.resolveRetryMode(c.get(SdkClientOption.RETRY_POLICY),
                                                                                    c.get(SdkClientOption.RETRY_STRATEGY))
                                                                  .orElse(""))
+                            .lazyOption(AwsInternalClientOption.CLIENT_EXECUTION_ATTRIBUTES,
+                                        AwsExecutionContextBuilder::clientConstantExecutionAttributes)
                             .lazyOption(SdkClientOption.HTTP_CLIENT_CONFIG, this::resolveHttpClientConfig)
                             .applyMutation(this::configureRetryPolicy)
                             .applyMutation(this::configureRetryStrategy)

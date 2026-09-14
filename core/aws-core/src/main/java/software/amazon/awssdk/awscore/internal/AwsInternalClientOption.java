@@ -18,6 +18,7 @@ package software.amazon.awssdk.awscore.internal;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.SelectedAuthScheme;
 import software.amazon.awssdk.core.client.config.ClientOption;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributesTemplate;
 
 /**
  * Client options that are an implementation detail of the AWS request pipeline: computed once when the client is
@@ -48,6 +49,16 @@ public final class AwsInternalClientOption<T> extends ClientOption<T> {
      */
     public static final AwsInternalClientOption<String> RETRY_MODE_BUSINESS_METRIC =
         new AwsInternalClientOption<>(new UnsafeValueType(String.class));
+
+    /**
+     * The execution attributes that {@code AwsExecutionContextBuilder} seeds on every call and that are functions of the
+     * client configuration alone — region, service name, endpoint and auth-scheme settings, checksum preferences and the
+     * like — captured once as an {@link ExecutionAttributesTemplate}. They were being read from the configuration and
+     * written through attribute storage one at a time, some two dozen of them, at the start of every call. Being a lazy
+     * option, the template is recomputed if a plugin changes any option it was derived from.
+     */
+    public static final AwsInternalClientOption<ExecutionAttributesTemplate> CLIENT_EXECUTION_ATTRIBUTES =
+        new AwsInternalClientOption<>(new UnsafeValueType(ExecutionAttributesTemplate.class));
 
     private AwsInternalClientOption(UnsafeValueType unsafeValueType) {
         super(unsafeValueType);

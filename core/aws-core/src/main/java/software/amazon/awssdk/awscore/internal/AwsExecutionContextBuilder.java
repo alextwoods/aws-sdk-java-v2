@@ -26,6 +26,8 @@ import static software.amazon.awssdk.core.internal.useragent.BusinessMetricsUtil
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.signer.AwsSignerExecutionAttribute;
@@ -44,12 +46,14 @@ import software.amazon.awssdk.core.SdkResponse;
 import software.amazon.awssdk.core.SelectedAuthScheme;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.client.config.ClientOption;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
 import software.amazon.awssdk.core.http.ExecutionContext;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributesTemplate;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptorChain;
 import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
@@ -62,13 +66,14 @@ import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.core.useragent.AdditionalMetadata;
 import software.amazon.awssdk.core.useragent.BusinessMetricCollection;
 import software.amazon.awssdk.core.useragent.BusinessMetricFeatureId;
-import software.amazon.awssdk.endpoints.EndpointProvider;
 import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.auth.scheme.NoAuthAuthScheme;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthScheme;
-import software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeProvider;
 import software.amazon.awssdk.identity.spi.IdentityProviders;
 import software.amazon.awssdk.metrics.MetricCollector;
+import software.amazon.awssdk.profiles.ProfileFile;
+import software.amazon.awssdk.utils.AttributeMap;
+import software.amazon.awssdk.utils.AttributeMap.LazyValueSource;
 
 @SdkInternalApi
 public final class AwsExecutionContextBuilder {
@@ -87,66 +92,39 @@ public final class AwsExecutionContextBuilder {
         // Don't edit this without considering those
 
         SdkRequest originalRequest = executionParams.getInput();
+        Optional<? extends RequestOverrideConfiguration> requestOverride = originalRequest.overrideConfiguration();
         MetricCollector metricCollector = resolveMetricCollector(executionParams);
 
         ExecutionAttributes executionAttributes = mergeExecutionAttributeOverrides(
             executionParams.executionAttributes(),
             clientConfig.option(SdkClientOption.EXECUTION_ATTRIBUTES),
-            originalRequest.overrideConfiguration().map(c -> c.executionAttributes()).orElse(null));
+            requestOverride.map(c -> c.executionAttributes()).orElse(null));
 
         executionAttributes.putAttributeIfAbsent(SdkExecutionAttribute.API_CALL_METRIC_COLLECTOR, metricCollector);
 
+        // The attributes that are functions of the client configuration alone, in one pass. This overwrites any
+        // client- or request-level execution attribute overrides for those keys, as the per-attribute puts it replaces
+        // did. Everything below is per call, or layers a request-level override onto a client constant.
+        clientConstantExecutionAttributes(clientConfig).applyTo(executionAttributes);
+
         putSigningNameAndRegion(executionAttributes, clientConfig);
 
+        Supplier<ProfileFile> profileFileSupplier = executionAttributes.getAttribute(SdkExecutionAttribute.PROFILE_FILE_SUPPLIER);
         executionAttributes
-            .putAttribute(InternalCoreExecutionAttribute.EXECUTION_ATTEMPT, 1)
-            .putAttribute(SdkExecutionAttribute.SERVICE_CONFIG,
-                          clientConfig.option(SdkClientOption.SERVICE_CONFIGURATION))
-            .putAttribute(AwsExecutionAttribute.AWS_REGION, clientConfig.option(AwsClientOption.AWS_REGION))
-            .putAttribute(AwsExecutionAttribute.ENDPOINT_PREFIX, clientConfig.option(AwsClientOption.ENDPOINT_PREFIX))
             .putAttribute(SdkInternalExecutionAttribute.IS_FULL_DUPLEX, executionParams.isFullDuplex())
             .putAttribute(SdkInternalExecutionAttribute.IS_LONG_POLLING, executionParams.isLongPolling())
-            .putAttribute(SdkInternalExecutionAttribute.NEW_RETRIES_2026_ENABLED, clientConfig.option(NEW_RETRIES_2026_ENABLED))
             .putAttribute(SdkInternalExecutionAttribute.HAS_INITIAL_REQUEST_EVENT, executionParams.hasInitialRequestEvent())
-            .putAttribute(SdkExecutionAttribute.CLIENT_TYPE, clientConfig.option(SdkClientOption.CLIENT_TYPE))
-            .putAttribute(SdkExecutionAttribute.SERVICE_NAME, clientConfig.option(SdkClientOption.SERVICE_NAME))
             .putAttribute(SdkInternalExecutionAttribute.PROTOCOL_METADATA, executionParams.getProtocolMetadata())
-            .putAttribute(SdkExecutionAttribute.PROFILE_FILE, clientConfig.option(SdkClientOption.PROFILE_FILE_SUPPLIER) != null ?
-                                                              clientConfig.option(SdkClientOption.PROFILE_FILE_SUPPLIER).get() :
-                                                              null)
-            .putAttribute(SdkExecutionAttribute.PROFILE_FILE_SUPPLIER, clientConfig.option(SdkClientOption.PROFILE_FILE_SUPPLIER))
-            .putAttribute(SdkExecutionAttribute.PROFILE_NAME, clientConfig.option(SdkClientOption.PROFILE_NAME))
-            .putAttribute(AwsExecutionAttribute.DUALSTACK_ENDPOINT_ENABLED,
-                          clientConfig.option(AwsClientOption.DUALSTACK_ENDPOINT_ENABLED))
-            .putAttribute(AwsExecutionAttribute.FIPS_ENDPOINT_ENABLED,
-                          clientConfig.option(AwsClientOption.FIPS_ENDPOINT_ENABLED))
+            .putAttribute(SdkExecutionAttribute.PROFILE_FILE, profileFileSupplier != null ? profileFileSupplier.get() : null)
             .putAttribute(SdkExecutionAttribute.OPERATION_NAME, executionParams.getOperationName())
-            .putAttribute(SdkInternalExecutionAttribute.CLIENT_ENDPOINT_PROVIDER,
-                          clientConfig.option(SdkClientOption.CLIENT_ENDPOINT_PROVIDER))
-            .putAttribute(SdkInternalExecutionAttribute.ENDPOINT_PROVIDER,
-                          resolveEndpointProvider(originalRequest, clientConfig))
-            .putAttribute(SdkInternalExecutionAttribute.CLIENT_CONTEXT_PARAMS,
-                          clientConfig.option(SdkClientOption.CLIENT_CONTEXT_PARAMS))
-            .putAttribute(SdkInternalExecutionAttribute.DISABLE_HOST_PREFIX_INJECTION,
-                          clientConfig.option(SdkAdvancedClientOption.DISABLE_HOST_PREFIX_INJECTION))
-            .putAttribute(SdkInternalExecutionAttribute.SDK_CLIENT, clientConfig.option(SdkClientOption.SDK_CLIENT))
-            .putAttribute(SdkExecutionAttribute.SIGNER_OVERRIDDEN, clientConfig.option(SdkClientOption.SIGNER_OVERRIDDEN))
-            .putAttribute(AwsExecutionAttribute.USE_GLOBAL_ENDPOINT,
-                          clientConfig.option(AwsClientOption.USE_GLOBAL_ENDPOINT))
-            .putAttribute(AwsExecutionAttribute.AWS_AUTH_ACCOUNT_ID_ENDPOINT_MODE,
-                          clientConfig.option(AwsClientOption.ACCOUNT_ID_ENDPOINT_MODE))
             .putAttribute(RESOLVED_CHECKSUM_SPECS, HttpChecksumResolver.resolveChecksumSpecs(executionAttributes))
-            .putAttribute(SdkInternalExecutionAttribute.REQUEST_CHECKSUM_CALCULATION,
-                          clientConfig.option(SdkClientOption.REQUEST_CHECKSUM_CALCULATION))
-            .putAttribute(SdkInternalExecutionAttribute.RESPONSE_CHECKSUM_VALIDATION,
-                          clientConfig.option(SdkClientOption.RESPONSE_CHECKSUM_VALIDATION))
-            .putAttribute(SdkInternalExecutionAttribute.BUSINESS_METRICS, 
-                          resolveUserAgentBusinessMetrics(clientConfig, executionParams))
-            .putAttribute(AwsExecutionAttribute.AWS_SIGV4A_SIGNING_REGION_SET,
-                          clientConfig.option(AwsClientOption.AWS_SIGV4A_SIGNING_REGION_SET));
+            .putAttribute(SdkInternalExecutionAttribute.BUSINESS_METRICS,
+                          resolveUserAgentBusinessMetrics(clientConfig, executionParams));
 
-        // Auth Scheme resolution related attributes
-        putAuthSchemeResolutionAttributes(executionAttributes, clientConfig, originalRequest);
+        // Request-level overrides of client constants the template already seeded.
+        if (requestOverride.isPresent()) {
+            putRequestOverriddenAttributes(executionAttributes, requestOverride.get());
+        }
 
         if (executionParams.authSchemeOptionsResolver() != null) {
             executionAttributes.putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_OPTIONS_RESOLVER,
@@ -157,10 +135,6 @@ public final class AwsExecutionContextBuilder {
             executionAttributes.putAttribute(SdkInternalExecutionAttribute.ENDPOINT_RESOLVER,
                                              executionParams.endpointResolver());
         }
-
-        // Set the identity provider resolver for the pipeline stage to use
-        executionAttributes.putAttribute(SdkInternalExecutionAttribute.IDENTITY_PROVIDER_RESOLVER,
-                                         AwsRequestIdentityProviderResolver.create());
 
         ExecutionInterceptorChain executionInterceptorChain = SdkInternalClientOption.interceptorChain(clientConfig);
 
@@ -317,50 +291,6 @@ public final class AwsExecutionContextBuilder {
             .putAttribute(AwsSignerExecutionAttribute.SIGNING_REGION, clientConfig.option(AwsClientOption.SIGNING_REGION));
     }
 
-    private static void putAuthSchemeResolutionAttributes(ExecutionAttributes executionAttributes,
-                                                          SdkClientConfiguration clientConfig,
-                                                          SdkRequest originalRequest) {
-
-        // Use the request-level auth scheme provider if the customer specified an override, otherwise fall back to the one
-        // on the client.
-        AuthSchemeProvider authSchemeProvider = resolveAuthSchemeProvider(originalRequest, clientConfig);
-
-        // Use auth schemes that the user specified at the request level with
-        // preference over those on the client.
-        // TODO(request-override auth scheme feature): The request level schemes should be "merged" with client level, with
-        //  request preferred over client.
-        Map<String, AuthScheme<?>> authSchemes = clientConfig.option(SdkClientOption.AUTH_SCHEMES);
-
-        IdentityProviders identityProviders = resolveIdentityProviders(originalRequest, clientConfig);
-
-        executionAttributes
-            .putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_RESOLVER, authSchemeProvider)
-            .putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEMES, authSchemes)
-            .putAttribute(SdkInternalExecutionAttribute.IDENTITY_PROVIDERS, identityProviders);
-    }
-
-    private static IdentityProviders resolveIdentityProviders(SdkRequest originalRequest,
-                                                              SdkClientConfiguration clientConfig) {
-        IdentityProviders identityProviders = clientConfig.option(SdkClientOption.IDENTITY_PROVIDERS);
-
-        // identityProviders can be null, for new core with old client. In this case, even if AwsRequestOverrideConfiguration
-        // has credentialsIdentityProvider set (because it is in new core), it is ok to not setup IDENTITY_PROVIDERS, as old
-        // client won't have AUTH_SCHEME_PROVIDER/AUTH_SCHEMES set either, which are also needed for SRA logic.
-        if (identityProviders == null) {
-            return null;
-        }
-
-        return originalRequest
-            .overrideConfiguration()
-            .filter(c -> c instanceof AwsRequestOverrideConfiguration)
-            .map(c -> (AwsRequestOverrideConfiguration) c)
-            .map(c -> identityProviders.copy(b -> {
-                c.credentialsIdentityProvider().ifPresent(b::putIdentityProvider);
-                c.tokenIdentityProvider().ifPresent(b::putIdentityProvider);
-            }))
-            .orElse(identityProviders);
-    }
-
     /**
      * Finalize {@link SdkRequest} by running beforeExecution and modifyRequest interceptors.
      *
@@ -375,6 +305,111 @@ public final class AwsExecutionContextBuilder {
         return executionInterceptorChain.modifyRequest(interceptorContext, executionAttributes);
     }
 
+
+    /**
+     * The execution attributes seeded on every call that depend only on the client configuration, as a template built
+     * once per configuration. Registered by {@code AwsDefaultClientBuilder} as the lazy option
+     * {@link AwsInternalClientOption#CLIENT_EXECUTION_ATTRIBUTES}, so a plugin that changes any option read here gets a
+     * recomputed template.
+     *
+     * <p>Every attribute put here has plain storage (none is derived from another attribute's slot), which is what lets
+     * {@link ExecutionAttributesTemplate#applyTo} replay them as raw writes. Three of them — the endpoint provider, the
+     * auth scheme provider and the identity providers — are the client's values, onto which
+     * {@link #putRequestOverriddenAttributes} layers a request-level override when there is one.
+     */
+    public static ExecutionAttributesTemplate clientConstantExecutionAttributes(LazyValueSource config) {
+        ExecutionAttributes attributes = new ExecutionAttributes();
+        attributes
+            .putAttribute(InternalCoreExecutionAttribute.EXECUTION_ATTEMPT, 1)
+            .putAttribute(SdkExecutionAttribute.SERVICE_CONFIG, config.get(SdkClientOption.SERVICE_CONFIGURATION))
+            .putAttribute(AwsExecutionAttribute.AWS_REGION, config.get(AwsClientOption.AWS_REGION))
+            .putAttribute(AwsExecutionAttribute.ENDPOINT_PREFIX, config.get(AwsClientOption.ENDPOINT_PREFIX))
+            .putAttribute(SdkInternalExecutionAttribute.NEW_RETRIES_2026_ENABLED, config.get(NEW_RETRIES_2026_ENABLED))
+            .putAttribute(SdkExecutionAttribute.CLIENT_TYPE, config.get(SdkClientOption.CLIENT_TYPE))
+            .putAttribute(SdkExecutionAttribute.SERVICE_NAME, config.get(SdkClientOption.SERVICE_NAME))
+            .putAttribute(SdkExecutionAttribute.PROFILE_FILE_SUPPLIER, config.get(SdkClientOption.PROFILE_FILE_SUPPLIER))
+            .putAttribute(SdkExecutionAttribute.PROFILE_NAME, config.get(SdkClientOption.PROFILE_NAME))
+            .putAttribute(AwsExecutionAttribute.DUALSTACK_ENDPOINT_ENABLED,
+                          config.get(AwsClientOption.DUALSTACK_ENDPOINT_ENABLED))
+            .putAttribute(AwsExecutionAttribute.FIPS_ENDPOINT_ENABLED, config.get(AwsClientOption.FIPS_ENDPOINT_ENABLED))
+            .putAttribute(SdkInternalExecutionAttribute.CLIENT_ENDPOINT_PROVIDER,
+                          config.get(SdkClientOption.CLIENT_ENDPOINT_PROVIDER))
+            .putAttribute(SdkInternalExecutionAttribute.ENDPOINT_PROVIDER, config.get(SdkClientOption.ENDPOINT_PROVIDER))
+            .putAttribute(SdkInternalExecutionAttribute.CLIENT_CONTEXT_PARAMS, config.get(SdkClientOption.CLIENT_CONTEXT_PARAMS))
+            .putAttribute(SdkInternalExecutionAttribute.DISABLE_HOST_PREFIX_INJECTION,
+                          config.get(SdkAdvancedClientOption.DISABLE_HOST_PREFIX_INJECTION))
+            .putAttribute(SdkInternalExecutionAttribute.SDK_CLIENT, config.get(SdkClientOption.SDK_CLIENT))
+            .putAttribute(SdkExecutionAttribute.SIGNER_OVERRIDDEN, config.get(SdkClientOption.SIGNER_OVERRIDDEN))
+            .putAttribute(AwsExecutionAttribute.USE_GLOBAL_ENDPOINT, config.get(AwsClientOption.USE_GLOBAL_ENDPOINT))
+            .putAttribute(AwsExecutionAttribute.AWS_AUTH_ACCOUNT_ID_ENDPOINT_MODE,
+                          config.get(AwsClientOption.ACCOUNT_ID_ENDPOINT_MODE))
+            .putAttribute(SdkInternalExecutionAttribute.REQUEST_CHECKSUM_CALCULATION,
+                          config.get(SdkClientOption.REQUEST_CHECKSUM_CALCULATION))
+            .putAttribute(SdkInternalExecutionAttribute.RESPONSE_CHECKSUM_VALIDATION,
+                          config.get(SdkClientOption.RESPONSE_CHECKSUM_VALIDATION))
+            .putAttribute(AwsExecutionAttribute.AWS_SIGV4A_SIGNING_REGION_SET,
+                          config.get(AwsClientOption.AWS_SIGV4A_SIGNING_REGION_SET))
+            // Auth scheme resolution: the client's provider, schemes and identity providers, and the (stateless,
+            // singleton) resolver the pipeline stage uses to pick a provider for the selected scheme.
+            .putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_RESOLVER, config.get(SdkClientOption.AUTH_SCHEME_PROVIDER))
+            .putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEMES, config.get(SdkClientOption.AUTH_SCHEMES))
+            .putAttribute(SdkInternalExecutionAttribute.IDENTITY_PROVIDERS, config.get(SdkClientOption.IDENTITY_PROVIDERS))
+            .putAttribute(SdkInternalExecutionAttribute.IDENTITY_PROVIDER_RESOLVER,
+                          AwsRequestIdentityProviderResolver.create());
+        return ExecutionAttributesTemplate.of(attributes);
+    }
+
+    /**
+     * This client's template, or — for a configuration assembled without {@code AwsDefaultClientBuilder}, as tests
+     * do — one derived from the configuration on the spot, at the cost the per-attribute puts used to have.
+     */
+    private static ExecutionAttributesTemplate clientConstantExecutionAttributes(SdkClientConfiguration clientConfig) {
+        ExecutionAttributesTemplate template = clientConfig.option(AwsInternalClientOption.CLIENT_EXECUTION_ATTRIBUTES);
+        if (template != null) {
+            return template;
+        }
+        return clientConstantExecutionAttributes(new LazyValueSource() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public <T> T get(AttributeMap.Key<T> sourceKey) {
+                if (!(sourceKey instanceof ClientOption)) {
+                    throw new IllegalArgumentException("Not a client option: " + sourceKey);
+                }
+                return clientConfig.option((ClientOption<T>) sourceKey);
+            }
+        });
+    }
+
+    /**
+     * Layer the request's overrides of the endpoint provider, auth scheme provider and identity providers onto the
+     * client values the template seeded.
+     */
+    private static void putRequestOverriddenAttributes(ExecutionAttributes executionAttributes,
+                                                       RequestOverrideConfiguration requestOverride) {
+        requestOverride.endpointProvider()
+                       .ifPresent(p -> executionAttributes.putAttribute(SdkInternalExecutionAttribute.ENDPOINT_PROVIDER, p));
+        requestOverride.authSchemeProvider()
+                       .ifPresent(p -> executionAttributes.putAttribute(SdkInternalExecutionAttribute.AUTH_SCHEME_RESOLVER, p));
+
+        if (requestOverride instanceof AwsRequestOverrideConfiguration) {
+            AwsRequestOverrideConfiguration awsOverride = (AwsRequestOverrideConfiguration) requestOverride;
+
+            // identityProviders can be null, for new core with old client. In this case, even if
+            // AwsRequestOverrideConfiguration has credentialsIdentityProvider set (because it is in new core), it is ok to
+            // not setup IDENTITY_PROVIDERS, as old client won't have AUTH_SCHEME_PROVIDER/AUTH_SCHEMES set either, which
+            // are also needed for SRA logic.
+            IdentityProviders identityProviders =
+                executionAttributes.getAttribute(SdkInternalExecutionAttribute.IDENTITY_PROVIDERS);
+            if (identityProviders != null
+                && (awsOverride.credentialsIdentityProvider().isPresent() || awsOverride.tokenIdentityProvider().isPresent())) {
+                executionAttributes.putAttribute(SdkInternalExecutionAttribute.IDENTITY_PROVIDERS,
+                                                 identityProviders.copy(b -> {
+                                                     awsOverride.credentialsIdentityProvider().ifPresent(b::putIdentityProvider);
+                                                     awsOverride.tokenIdentityProvider().ifPresent(b::putIdentityProvider);
+                                                 }));
+            }
+        }
+    }
 
     private static <InputT extends SdkRequest, OutputT extends SdkResponse> ExecutionAttributes mergeExecutionAttributeOverrides(
         ExecutionAttributes executionAttributes,
@@ -402,26 +437,6 @@ public final class AwsExecutionContextBuilder {
      *
      * @return The endpoint provider that will be used by the SDK to resolve endpoints.
      */
-    private static EndpointProvider resolveEndpointProvider(SdkRequest request,
-                                                            SdkClientConfiguration clientConfig) {
-        return request.overrideConfiguration()
-                      .flatMap(RequestOverrideConfiguration::endpointProvider)
-                      .orElse(clientConfig.option(SdkClientOption.ENDPOINT_PROVIDER));
-    }
-
-    /**
-     * Resolves the auth scheme provider, with the request override configuration taking precedence over the provided client
-     * configuration.
-     *
-     * @return The auth scheme provider that will be used by the SDK to resolve auth schemes.
-     */
-    private static AuthSchemeProvider resolveAuthSchemeProvider(SdkRequest request,
-                                                               SdkClientConfiguration clientConfig) {
-        return request.overrideConfiguration()
-                      .flatMap(RequestOverrideConfiguration::authSchemeProvider)
-                      .orElse(clientConfig.option(SdkClientOption.AUTH_SCHEME_PROVIDER));
-    }
-
     private static <InputT extends SdkRequest, OutputT extends SdkResponse> BusinessMetricCollection
         resolveUserAgentBusinessMetrics(SdkClientConfiguration clientConfig,
                                         ClientExecutionParams<InputT, OutputT> executionParams) {
