@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-core</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>identity-providers</artifactId>
+    <name>AWS Java SDK V3 :: Core :: Identity Providers</name>
+    <description>Credential and token providers, including profile, environment, container, web identity, SSO, role, and instance-metadata providers.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Profiles, SystemSettings and region providers. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Instance metadata, container, STS and SSO calls go through the HTTP SPI; the engine is opt-in. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- STS AssumeRole is SigV4-signed with the source credentials. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth-aws</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Tests exercise the providers over a real transport against local JDK HTTP servers. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Property-based tests (AuthAndIdentityPrecedencePropertyTest, Property 44). Test scope only. Its modeled-auth
+             oracle, Smithy's ServiceIndex, comes from smithy-model, already on the classpath through smithy-runtime. -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

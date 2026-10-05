@@ -1,0 +1,769 @@
+{
+    "schemaVersion": 1,
+    "comment": "Human-maintained Parity Manifest classification rules (schema classification-rules-1.schema.json; semantics in ClassificationRules). Any entry in 'rules' beats any entry in 'defaults'; within a tier the most specific match wins (exact id > id glob with more literal characters > kind > deprecated); equally specific matches are an error. Defaults preserve only non-deprecated baseline entries and claim one dimension per kind; binary and behavioral claims need explicit rules backed by evidence. Deprecated entries have no default and must be classified explicitly.",
+    "rules": [
+        {
+            "name": "dynamodb-get-item-v2-bytecode",
+            "comment": "Binary and behavioral claims backed by V2 caller bytecode run against the generated V3 client and by the generated compatibility fixtures (codegen-generated-classes-test compatibility-scope.txt).",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.DynamoDbClient#getItem(*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary",
+                "behavior"
+            ],
+            "rationale": "The generated V3 DynamoDbClient keeps the V2 getItem overloads with identical JVM descriptors; compiled V2 callers link and receive the same modeled results.",
+            "evidenceIds": [
+                "DynamoDbGeneratedApiTest",
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-get-item-request-builder-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest#builder()*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 GetItemRequest keeps the static builder() factory and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-get-item-request-table-name-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest$Builder#tableName(*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 GetItemRequest.Builder keeps the fluent member setter and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-get-item-request-key-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest$Builder#key(Ljava/util/Map;)*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 GetItemRequest.Builder keeps the fluent map member setter and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-get-item-request-consistent-read-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest$Builder#consistentRead(*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 GetItemRequest.Builder keeps the boxed Boolean member setter and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-get-item-response-item-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.GetItemResponse#item()*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 GetItemResponse keeps the map member accessor and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-attribute-value-builder-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#builder()*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 AttributeValue union keeps the static builder() factory and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-attribute-value-s-setter-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue$Builder#s(Ljava/lang/String;)*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 AttributeValue.Builder keeps the string variant setter and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-attribute-value-s-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#s()*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 AttributeValue keeps the string variant accessor and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-attribute-value-n-v2-bytecode",
+            "comment": "Exercised by the V2 caller of V2BytecodeOnV3Test and its generated linkage fixture.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#n()*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 AttributeValue keeps the number variant accessor and its V2 JVM descriptor.",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "dynamodb-exception-v2-bytecode",
+            "comment": "Exception hierarchy verified by the generated hierarchy and linkage fixtures.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.DynamoDbException"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 service base exception keeps its name and the AwsServiceException -> SdkServiceException -> SdkException -> RuntimeException superclass chain.",
+            "evidenceIds": [
+                "ApiShapeCompatibilityTest"
+            ]
+        },
+        {
+            "name": "dynamodb-resource-not-found-exception-v2-bytecode",
+            "comment": "Exception hierarchy verified by the generated hierarchy and linkage fixtures.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The generated V3 modeled exception keeps its name and extends the binary-preserved DynamoDbException.",
+            "evidenceIds": [
+                "ApiShapeCompatibilityTest"
+            ]
+        },
+        {
+            "name": "dynamodb-service-client-configuration",
+            "comment": "V3 clients expose resolved options through the shared SdkClientConfiguration; the service-specific configuration type is not generated.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.dynamodb.DynamoDbClient#serviceClientConfiguration()*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The V3 client returns the resolved client configuration as SdkClientConfiguration.",
+            "differences": [
+                "Returns software.amazon.awssdk.core.client.config.SdkClientConfiguration instead of DynamoDbServiceClientConfiguration; DynamoDbServiceClientConfiguration is not generated."
+            ],
+            "replacement": "api:software.amazon.awssdk.services.dynamodb.DynamoDbClient#serviceClientConfiguration()Lsoftware/amazon/awssdk/core/client/config/SdkClientConfiguration;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Read resolved options through SdkClientConfiguration.get(SdkClientOption...) instead of the service-specific configuration type.",
+            "evidenceIds": [
+                "ManifestDiagnosticsTest"
+            ]
+        },
+        {
+            "name": "iam-policy-builder-api",
+            "comment": "Task 14.3. The V3 iam-policy-builder artifact keeps the whole V2 policy builder API. Source and binary claims: the generated compile, linkage, signature and hierarchy fixtures of codegen-generated-classes-test compatibility-scope.txt, and IamPolicyBuilderCompatibilityTest, which compares every public V2 member with V3 and runs V2-compiled caller bytecode against V3. Behavior claim: IamPolicyBuilderCompatibilityTest runs the released V2 library and V3 side by side on generated policies and documents (JSON text, accepted and rejected documents, exception types and messages, equality, hash and string rendering).",
+            "match": {
+                "id": "api:software.amazon.awssdk.policybuilder.iam.*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary",
+                "behavior"
+            ],
+            "rationale": "V3 ports the V2 policy builder over public V3 core APIs with the same types, members, JVM descriptors and builder hierarchy, the same validation, equality, hash and string rendering, the same accepted documents and byte-identical JSON output.",
+            "evidenceIds": [
+                "IamPolicyBuilderCompatibilityTest"
+            ]
+        },
+        {
+            "name": "s3-event-notifications-api",
+            "comment": "Task 14.4. The V3 s3-event-notifications artifact keeps the whole V2 model API (same classes, constructors, accessors, setters, fromJson/toJson overloads, equals, hashCode and toString) and additionally implements SerializableStruct with a published SCHEMA per type. Source and binary claims: the generated compile, linkage, signature and hierarchy fixtures of codegen-generated-classes-test compatibility-scope.txt. The JSON reading and writing behavior is claimed by behavior:s3-event-notifications.model (launch-evidence-hooks.txt: S3EventNotificationV2DifferentialTest).",
+            "match": {
+                "id": "api:software.amazon.awssdk.eventnotifications.s3.*",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The V3 event notification model types keep the V2 fully qualified names, members and JVM descriptors; they only add the SerializableStruct interface and SCHEMA/ID constants, so V2 source compiles and V2 bytecode links unchanged."
+        },
+        {
+            "name": "dynamodb-enhanced-api",
+            "comment": "Tasks 14.1 and 14.6. The V3 dynamodb-enhanced artifact ports the whole V2 DynamoDB Enhanced Client public API over the public V3 DynamoDB and core APIs. Source claim: EnhancedV2ApiDescriptorParityTest compares every public and protected member of every non-internal V2 baseline type with V3 by name and JVM descriptor, the ported V2 unit suites of the module compile unchanged against V3, and the generated compile and source signature/hierarchy fixtures of codegen-generated-classes-test compatibility-scope.txt compile V2 callers of every entry against V3. Binary claim: the generated linkage and binary signature/hierarchy fixtures load V2-compiled caller bytecode of every entry against the V3 artifact (V2BytecodeOnV3Test, ApiShapeCompatibilityTest). Inherited V2 SdkPublisher operators are sdk-core entries (api:software.amazon.awssdk.core.async.SdkPublisher#*), not part of this claim. Behavior is claimed by the behavior:dynamodb-enhanced.* entries (launch-evidence-hooks.txt).",
+            "match": {
+                "id": "api:software.amazon.awssdk.enhanced.dynamodb.*",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The V3 enhanced client types keep the V2 fully qualified names, members, overloads and JVM descriptors, so V2 source that uses them compiles and V2 caller bytecode links unchanged.",
+            "v3Artifact": "software.amazon.awssdk:dynamodb-enhanced",
+            "evidenceIds": [
+                "EnhancedV2ApiDescriptorParityTest"
+            ]
+        },
+        {
+            "name": "s3-transfer-manager-api",
+            "comment": "Task 14.6. The V3 s3-transfer-manager artifact keeps the V2 Transfer Manager public API over the public V3 S3 API; the more specific s3-transfer-manager-* rules are its ADAPTED members. Source and binary claims: the generated compile, linkage and signature/hierarchy fixtures of codegen-generated-classes-test compatibility-scope.txt (ManifestDiagnosticsTest, V2BytecodeOnV3Test, ApiShapeCompatibilityTest), which bind themselves to every entry they verify. The presigned-URL download API (downloadWithPresignedUrl, downloadFileWithPresignedUrl and the Presigned* model types) is not shipped: it is excluded from the fixture scope and stays NOT_SHIPPED in the launch gate. Behavior is claimed by the behavior:s3-transfer-manager.* entries (launch-evidence-hooks.txt).",
+            "match": {
+                "id": "api:software.amazon.awssdk.transfer.s3.*",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The V3 Transfer Manager types keep the V2 fully qualified names, members, overloads and JVM descriptors, so V2 source that uses them compiles and V2 caller bytecode links unchanged.",
+            "v3Artifact": "software.amazon.awssdk:s3-transfer-manager"
+        },
+        {
+            "name": "s3-transfer-manager-upload-request-body",
+            "comment": "Task 14.6. Introduced by the V3 streaming-upload fix: the S3 client retries a request body only if it declares itself replayable (AsyncRequestBody.isReplayable()). The Transfer Manager sends the caller's body directly for a known-length upload below the multipart threshold; multipart parts are its own replayable bodies.",
+            "match": {
+                "id": "api:software.amazon.awssdk.transfer.s3.model.UploadRequest$Builder#requestBody(Lsoftware/amazon/awssdk/core/async/AsyncRequestBody;)Lsoftware/amazon/awssdk/transfer/s3/model/UploadRequest$Builder;"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "requestBody keeps its V2 signature; a caller-supplied body is retried after its transmission began only when it declares itself replayable.",
+            "differences": [
+                "A custom AsyncRequestBody that does not override isReplayable() (and AsyncRequestBody.fromPublisher) is sent once: when the single PutObject of an upload below the multipart threshold fails after transmission began, the upload fails with that failure instead of being retried by subscribing to the body again as V2 did. The AsyncRequestBody factory bodies (fromBytes, fromString, fromFile and the other from* methods) are replayable and retried as in V2."
+            ],
+            "v3Artifact": "software.amazon.awssdk:s3-transfer-manager",
+            "replacement": "api:software.amazon.awssdk.core.async.AsyncRequestBody#isReplayable()Z",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Override isReplayable() to return true in a custom AsyncRequestBody whose subscribe() replays the same bytes on every subscription, or upload through an AsyncRequestBody factory body.",
+            "evidenceIds": [
+                "S3TransferManagerCompatibilityTest"
+            ]
+        },
+        {
+            "name": "legacy-retry-policy",
+            "comment": "V2 RetryPolicy and its builder are deprecated in favor of Modern Retry (Requirement 18).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.retry.RetryPolicy*"
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Legacy retry policies are replaced by the Modern Retry strategy API.",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace the legacy retry policy with a Modern Retry strategy on the client builder.",
+            "supportEvidence": "V2 marks software.amazon.awssdk.core.retry.RetryPolicy @Deprecated in favor of RetryStrategy.",
+            "evidenceIds": [
+                "ManifestDiagnosticsTest"
+            ]
+        },
+        {
+            "name": "legacy-request-signer-override",
+            "comment": "Pre-Smithy-Reference-Architecture signer overrides (Requirement 18.1).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(*"
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Pre-SRA signer APIs are excluded; signing is selected by auth scheme and identity provider.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Remove the legacy signer; configure the auth scheme and identity provider on the client builder.",
+            "supportEvidence": "Requirement 18.1: pre-Smithy-Reference-Architecture signer APIs are EXCLUDED from V3.",
+            "evidenceIds": [
+                "ManifestDiagnosticsTest"
+            ]
+        },
+        {
+            "name": "legacy-signers-auth",
+            "comment": "Deprecated V2 auth signers (Aws4Signer, AwsS3V4Signer, BearerTokenSigner, signer params and execution attributes).",
+            "match": {
+                "id": "api:software.amazon.awssdk.auth.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Pre-Smithy-Reference-Architecture signer, presigner and signer-override APIs are excluded; signing is selected by auth scheme resolution (Requirements 18.1, 18.2).",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Remove the legacy Signer/Presigner usage; configure the auth scheme, HttpSigner and identity provider on the client builder, or use the service presigner.",
+            "supportEvidence": "The V2 baseline marks these signer APIs @Deprecated in favor of software.amazon.awssdk.http.auth.spi.signer.HttpSigner."
+        },
+        {
+            "name": "legacy-signers-core",
+            "comment": "Deprecated V2 core Signer, AsyncSigner and Presigner contracts.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.signer.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Pre-Smithy-Reference-Architecture signer, presigner and signer-override APIs are excluded; signing is selected by auth scheme resolution (Requirements 18.1, 18.2).",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Remove the legacy Signer/Presigner usage; configure the auth scheme, HttpSigner and identity provider on the client builder, or use the service presigner.",
+            "supportEvidence": "The V2 baseline marks these signer APIs @Deprecated in favor of software.amazon.awssdk.http.auth.spi.signer.HttpSigner."
+        },
+        {
+            "name": "legacy-signer-override-utils",
+            "comment": "Deprecated V2 signer-override helpers.",
+            "match": {
+                "id": "api:software.amazon.awssdk.awscore.util.SignerOverrideUtils*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Pre-Smithy-Reference-Architecture signer, presigner and signer-override APIs are excluded; signing is selected by auth scheme resolution (Requirements 18.1, 18.2).",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Remove the legacy Signer/Presigner usage; configure the auth scheme, HttpSigner and identity provider on the client builder, or use the service presigner.",
+            "supportEvidence": "The V2 baseline marks these signer APIs @Deprecated in favor of software.amazon.awssdk.http.auth.spi.signer.HttpSigner."
+        },
+        {
+            "name": "legacy-retry-core",
+            "comment": "Deprecated V2 retry backoff strategies, retry conditions and retry-policy helpers (Requirement 18.4).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.retry.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Legacy retry policies, backoff strategies and retry conditions are excluded in favor of Modern Retry strategies (Requirement 18.4).",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace the legacy backoff strategy or retry condition with a Modern Retry strategy configured on the client builder.",
+            "supportEvidence": "The V2 baseline marks these retry APIs @Deprecated in favor of software.amazon.awssdk.retries.api.RetryStrategy."
+        },
+        {
+            "name": "legacy-retry-aws",
+            "comment": "Deprecated V2 AWS retry-policy helpers (AwsRetryPolicy) (Requirement 18.4).",
+            "match": {
+                "id": "api:software.amazon.awssdk.awscore.retry.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Legacy AWS retry policies are excluded in favor of Modern Retry strategies (Requirement 18.4).",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace AwsRetryPolicy with a Modern Retry strategy configured on the client builder.",
+            "supportEvidence": "The V2 baseline marks AwsRetryPolicy @Deprecated in favor of software.amazon.awssdk.retries.api.RetryStrategy."
+        },
+        {
+            "name": "legacy-core-checksums",
+            "comment": "Deprecated V2 sdk-core checksum classes, superseded by the checksums module.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.checksums.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated sdk-core checksum algorithms and specs are excluded; flexible checksums are configured through request checksum calculation and response checksum validation (Requirement 16.10).",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace the deprecated sdk-core checksum type with the checksums module algorithms and the client's checksum calculation/validation settings.",
+            "supportEvidence": "The V2 baseline marks the software.amazon.awssdk.core.checksums types @Deprecated in favor of the checksums module."
+        },
+        {
+            "name": "deprecated-service-model-api",
+            "comment": "Deprecated generated service APIs (deprecated operations, shapes and members from the model or customization.config). Not a launch blocker (Requirement 16.15 gates non-deprecated entries only); reclassify per entry when the V3 generator is shown to preserve them.",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated generated service API; V3 makes no preservation claim until candidate evidence shows the V3 generator keeps it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc (for example sourceBucket/sourceKey instead of copySource).",
+            "supportEvidence": "The V2 baseline marks this generated API @Deprecated."
+        },
+        {
+            "name": "deprecated-high-level-library-api",
+            "comment": "Deprecated DynamoDB Enhanced and S3 Transfer Manager APIs.",
+            "match": {
+                "id": "api:software.amazon.awssdk.enhanced.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated high-level-library API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
+            "supportEvidence": "The V2 baseline marks this DynamoDB Enhanced API @Deprecated."
+        },
+        {
+            "name": "deprecated-runtime-core",
+            "comment": "Remaining deprecated sdk-core APIs under software.amazon.awssdk.core not covered by a more specific legacy-* rule. Deprecated entries do not gate GA (Requirement 16.15); reclassify an entry as PRESERVED when candidate evidence shows V3 keeps it.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated V2 runtime API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
+            "supportEvidence": "The V2 baseline marks this API, or its declaring type, @Deprecated."
+        },
+        {
+            "name": "deprecated-runtime-awscore",
+            "comment": "Remaining deprecated aws-core APIs under software.amazon.awssdk.awscore not covered by a more specific legacy-* rule. Deprecated entries do not gate GA (Requirement 16.15); reclassify an entry as PRESERVED when candidate evidence shows V3 keeps it.",
+            "match": {
+                "id": "api:software.amazon.awssdk.awscore.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated V2 runtime API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
+            "supportEvidence": "The V2 baseline marks this API, or its declaring type, @Deprecated."
+        },
+        {
+            "name": "deprecated-runtime-utils",
+            "comment": "Remaining deprecated utils APIs under software.amazon.awssdk.utils not covered by a more specific legacy-* rule. Deprecated entries do not gate GA (Requirement 16.15); reclassify an entry as PRESERVED when candidate evidence shows V3 keeps it.",
+            "match": {
+                "id": "api:software.amazon.awssdk.utils.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated V2 runtime API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
+            "supportEvidence": "The V2 baseline marks this API, or its declaring type, @Deprecated."
+        },
+        {
+            "name": "deprecated-runtime-regions",
+            "comment": "Remaining deprecated regions APIs under software.amazon.awssdk.regions not covered by a more specific legacy-* rule. Deprecated entries do not gate GA (Requirement 16.15); reclassify an entry as PRESERVED when candidate evidence shows V3 keeps it.",
+            "match": {
+                "id": "api:software.amazon.awssdk.regions.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated V2 runtime API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
+            "supportEvidence": "The V2 baseline marks this API, or its declaring type, @Deprecated."
+        },
+        {
+            "name": "deprecated-runtime-endpoints",
+            "comment": "Remaining deprecated endpoints-spi APIs under software.amazon.awssdk.endpoints not covered by a more specific legacy-* rule. Deprecated entries do not gate GA (Requirement 16.15); reclassify an entry as PRESERVED when candidate evidence shows V3 keeps it.",
+            "match": {
+                "id": "api:software.amazon.awssdk.endpoints.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated V2 runtime API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
+            "supportEvidence": "The V2 baseline marks this API, or its declaring type, @Deprecated."
+        },
+        {
+            "name": "sns-message-manager-api",
+            "comment": "Task 14.5. The V3 sns-message-manager keeps the V2 public types, members and JVM descriptors (SdkBytes, Region and ToString keep their V2 names in V3); exceptions are the more specific sns-message-manager-* rules. Verified by the generated compatibility fixtures (codegen-generated-classes-test compatibility-scope.txt).",
+            "match": {
+                "id": "api:software.amazon.awssdk.messagemanager.sns.*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "The V3 SNS Message Manager keeps the V2 public API with identical JVM descriptors, so V2 sources compile and V2 caller bytecode links against it.",
+            "v3Artifact": "software.amazon.awssdk:sns-message-manager",
+            "evidenceIds": [
+                "V2BytecodeOnV3Test"
+            ]
+        },
+        {
+            "name": "sns-message-manager-parse-message",
+            "comment": "Task 14.5. Parsing and signature verification run end to end against the V3 library with locally generated test certificates (no network).",
+            "match": {
+                "id": "api:software.amazon.awssdk.messagemanager.sns.SnsMessageManager#parseMessage(*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source",
+                "binary",
+                "behavior"
+            ],
+            "rationale": "parseMessage keeps its V2 overloads and returns the same typed, signature-verified messages, rejecting unsigned, tampered and foreign-certificate messages with SdkClientException.",
+            "v3Artifact": "software.amazon.awssdk:sns-message-manager",
+            "evidenceIds": [
+                "SnsMessageManagerCompatibilityTest"
+            ]
+        },
+        {
+            "name": "sns-message-manager-builder-http-client",
+            "comment": "Task 14.5. The V2 SdkHttpClient is the V3 SdkSyncHttpClient (HTTP SPI, Requirement 12.1).",
+            "match": {
+                "id": "api:software.amazon.awssdk.messagemanager.sns.SnsMessageManager$Builder#httpClient(Lsoftware/amazon/awssdk/http/SdkHttpClient;)Lsoftware/amazon/awssdk/messagemanager/sns/SnsMessageManager$Builder;"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The builder takes the certificate-retrieval client as the V3 sync HTTP SPI type; ownership is unchanged (a caller-supplied client is never closed by the manager).",
+            "differences": [
+                "Takes software.amazon.awssdk.http.SdkSyncHttpClient instead of software.amazon.awssdk.http.SdkHttpClient; V2 HTTP clients cannot be passed."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sns-message-manager",
+            "replacement": "api:software.amazon.awssdk.messagemanager.sns.SnsMessageManager$Builder#httpClient(Lsoftware/amazon/awssdk/http/SdkSyncHttpClient;)Lsoftware/amazon/awssdk/messagemanager/sns/SnsMessageManager$Builder;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Pass a V3 SdkSyncHttpClient (for example the V3 apache-client, apache5-client or url-connection-client), or omit httpClient to use the installed V3 HTTP implementation.",
+            "evidenceIds": [
+                "SnsMessageManagerCompatibilityTest"
+            ]
+        },
+        {
+            "name": "sns-message-manager-subscription-confirmation-to-string",
+            "comment": "Task 14.5; Requirement 21.10. A subscription token confirms the subscription by itself.",
+            "match": {
+                "id": "api:software.amazon.awssdk.messagemanager.sns.model.SnsSubscriptionConfirmation#toString()Ljava/lang/String;"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "toString keeps its signature and format but redacts the subscription token.",
+            "differences": [
+                "The Token field, and the Token query parameter of SubscribeUrl, render as '*** Sensitive Data Redacted ***' instead of their values."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sns-message-manager",
+            "replacement": "api:software.amazon.awssdk.messagemanager.sns.model.SnsSubscriptionConfirmation#toString()Ljava/lang/String;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Read token() and subscribeUrl() instead of parsing toString().",
+            "evidenceIds": [
+                "SnsMessageManagerCompatibilityTest"
+            ]
+        },
+        {
+            "name": "sns-message-manager-unsubscribe-confirmation-to-string",
+            "comment": "Task 14.5; Requirement 21.10. The token re-confirms the subscription by itself.",
+            "match": {
+                "id": "api:software.amazon.awssdk.messagemanager.sns.model.SnsUnsubscribeConfirmation#toString()Ljava/lang/String;"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "toString keeps its signature and format but redacts the subscription token.",
+            "differences": [
+                "The Token field, and the Token query parameter of SubscribeUrl, render as '*** Sensitive Data Redacted ***' instead of their values."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sns-message-manager",
+            "replacement": "api:software.amazon.awssdk.messagemanager.sns.model.SnsUnsubscribeConfirmation#toString()Ljava/lang/String;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Read token() and subscribeUrl() instead of parsing toString().",
+            "evidenceIds": [
+                "SnsMessageManagerCompatibilityTest"
+            ]
+        },
+        {
+            "name": "sns-message-manager-verification-behavior",
+            "comment": "Task 14.5; Requirements 16.8, 21.10. Declared by the V3 artifact in META-INF/aws-sdk-java-v3/parity/capabilities.txt.",
+            "match": {
+                "id": "behavior:sns-message-manager.verification"
+            },
+            "classification": "ADAPTED",
+            "rationale": "SNS message parsing, certificate URL and signing-name validation, certificate caching and signature verification keep the V2 rules and V2 diagnostics; failure diagnostics no longer carry message content.",
+            "differences": [
+                "A message body that is not well-formed JSON is rejected with SdkClientException carrying no cause, instead of the UncheckedIOException of the V2 JSON parser.",
+                "A message URL that cannot be parsed is rejected with SdkClientException('Unable to parse URI') without the V2 IllegalArgumentException cause, whose message quoted the URL (a SubscribeURL carries the subscription token).",
+                "Nothing is logged; V2 logged the canonical signed string (message body and subscription token) and the resolved certificate endpoint at DEBUG.",
+                "Without httpClient, build() selects the installed V3 sync HTTP implementation (connection timeout 10s, read timeout 30s, as in V2) and fails with HttpImplementationSelectionException when none is installed."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sns-message-manager",
+            "replacement": "behavior:sns-message-manager.verification",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Catch SdkClientException for every rejected message; add a V3 HTTP implementation dependency (or pass httpClient) where V2 relied on a V2 HTTP implementation on the class path.",
+            "evidenceIds": [
+                "SnsMessageManagerCompatibilityTest",
+                "SnsMessageManagerSafeDiagnosticsTest"
+            ]
+        },
+        {
+            "name": "deprecated-runtime-http",
+            "comment": "Remaining deprecated http-client-spi and HTTP Implementations APIs under software.amazon.awssdk.http not covered by a more specific legacy-* rule. Deprecated entries do not gate GA (Requirement 16.15); reclassify an entry as PRESERVED when candidate evidence shows V3 keeps it.",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated V2 runtime API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
+            "supportEvidence": "The V2 baseline marks this API, or its declaring type, @Deprecated."
+        },
+        {
+            "name": "s3-transfer-manager-completed-object-transfer-response",
+            "comment": "Task 14.2. V3 has no SdkResponse base type: generated responses implement the Smithy Java SerializableStruct.",
+            "match": {
+                "id": "api:software.amazon.awssdk.transfer.s3.model.CompletedObjectTransfer#response()Lsoftware/amazon/awssdk/core/SdkResponse;"
+            },
+            "classification": "ADAPTED",
+            "rationale": "CompletedObjectTransfer.response() keeps its name and meaning but returns the V3 response supertype.",
+            "differences": [
+                "Returns software.amazon.smithy.java.core.schema.SerializableStruct instead of software.amazon.awssdk.core.SdkResponse; the concrete completed-transfer types still return their typed S3 response."
+            ],
+            "replacement": "api:software.amazon.awssdk.transfer.s3.model.CompletedObjectTransfer#response()Lsoftware/amazon/smithy/java/core/schema/SerializableStruct;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Declare the result as SerializableStruct, or use the typed response() of CompletedFileUpload, CompletedUpload, CompletedFileDownload or CompletedCopy.",
+            "v3Artifact": "software.amazon.awssdk:s3-transfer-manager",
+            "evidenceIds": [
+                "S3TransferManagerCompatibilityTest"
+            ]
+        },
+        {
+            "name": "s3-transfer-manager-progress-snapshot-sdk-response",
+            "comment": "Task 14.2. Same JVM descriptor (Optional is erased), so V2 bytecode links and erased V2 source compiles (task 14.6: the generated linkage and compile fixtures verify both); the element type changes from SdkResponse to SerializableStruct.",
+            "match": {
+                "id": "api:software.amazon.awssdk.transfer.s3.progress.TransferProgressSnapshot#sdkResponse()Ljava/util/Optional;"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source",
+                "binary"
+            ],
+            "rationale": "TransferProgressSnapshot.sdkResponse() keeps its name and descriptor; its element type is the V3 response supertype.",
+            "differences": [
+                "Returns Optional<software.amazon.smithy.java.core.schema.SerializableStruct> instead of Optional<software.amazon.awssdk.core.SdkResponse>."
+            ],
+            "replacement": "api:software.amazon.awssdk.transfer.s3.progress.TransferProgressSnapshot#sdkResponse()Ljava/util/Optional;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Declare the element type as SerializableStruct (or cast to the typed S3 response).",
+            "v3Artifact": "software.amazon.awssdk:s3-transfer-manager",
+            "evidenceIds": [
+                "S3TransferManagerCompatibilityTest"
+            ]
+        }
+    ],
+    "defaults": [
+        {
+            "name": "default-artifact",
+            "match": {
+                "kind": "ARTIFACT",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "Non-deprecated V2 artifact kept at its software.amazon.awssdk coordinates (Requirement 16.2)."
+        },
+        {
+            "name": "default-service",
+            "match": {
+                "kind": "SERVICE",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "Non-deprecated V2 AWS service launches at V3 general availability (Requirement 16.4)."
+        },
+        {
+            "name": "default-public-type",
+            "match": {
+                "kind": "PUBLIC_TYPE",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "Non-deprecated V2 public type keeps its fully qualified name and shape (Requirement 17.1)."
+        },
+        {
+            "name": "default-public-member",
+            "match": {
+                "kind": "PUBLIC_MEMBER",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "Non-deprecated V2 public member keeps its name and signatures (Requirement 17.1)."
+        },
+        {
+            "name": "default-configuration",
+            "match": {
+                "kind": "CONFIGURATION",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "configuration"
+            ],
+            "rationale": "Non-deprecated V2 configuration setting keeps its name, source and meaning (Requirement 16.10)."
+        },
+        {
+            "name": "default-http-mode",
+            "match": {
+                "kind": "HTTP_MODE",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "Non-deprecated V2 HTTP Implementation mode ships natively in V3 (Requirements 12.9, 12.10, 16.9)."
+        },
+        {
+            "name": "default-behavior",
+            "match": {
+                "kind": "BEHAVIOR",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "behavior"
+            ],
+            "rationale": "Documented V2 customer behavior is preserved (Requirement 16.10)."
+        }
+    ]
+}

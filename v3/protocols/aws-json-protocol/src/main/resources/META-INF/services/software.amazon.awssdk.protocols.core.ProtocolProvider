@@ -1,0 +1,2 @@
+software.amazon.awssdk.protocols.awsjson.AwsJson10ProtocolProvider
+software.amazon.awssdk.protocols.awsjson.AwsJson11ProtocolProvider

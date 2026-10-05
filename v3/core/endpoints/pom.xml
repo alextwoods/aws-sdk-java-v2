@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-core</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>endpoints</artifactId>
+    <name>AWS Java SDK V3 :: Core :: Endpoints</name>
+    <description>Endpoint rules runtime and endpoint resolution.</description>
+
+    <properties>
+        <!-- The canonical Smithy models whose endpoint rule sets and endpoint test cases the conformance tests run. -->
+        <v3.endpoints.canonicalModels>${project.basedir}/../../../.kiro/reference/aws-models</v3.endpoints.canonicalModels>
+        <v3.endpoints.partitions.dir>${project.build.directory}/generated-resources/partitions</v3.endpoints.partitions.dir>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Partition metadata is looked up by Region. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Parameter binding reads operation inputs through their Schema (SerializableStruct#getMemberValue). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Property-based tests (CanonicalEndpointDimensionsPropertyTest, Property 45). Test scope only. -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The canonical Smithy rules engine with the AWS rules functions (aws.partition, aws.parseArn,
+             aws.isVirtualHostableS3Bucket) is the oracle of CanonicalEndpointDimensionsPropertyTest. Test scope only:
+             it never enters this module's runtime dependency tree, which the architecture tests check. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-rules-engine</artifactId>
+            <version>${v3.smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-endpoints</artifactId>
+            <version>${v3.smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${v3.endpoints.partitions.dir}</directory>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <!-- The canonical partition table of the aws.partition rules function is copied, at build time, from the
+                     pinned smithy-aws-endpoints release (the same version aws-codegen reads rule sets with). It is not
+                     a runtime dependency: nothing from the Smithy model toolchain enters this module's runtime
+                     dependency tree (the test-scope rules engine above is only the oracle of the property test). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>canonical-partitions</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-aws-endpoints</artifactId>
+                                    <version>${v3.smithy.version}</version>
+                                    <type>jar</type>
+                                    <includes>software/amazon/smithy/rulesengine/aws/language/functions/partition/partitions.json</includes>
+                                    <outputDirectory>${v3.endpoints.partitions.dir}/software/amazon/awssdk/endpoints/partition</outputDirectory>
+                                    <fileMappers>
+                                        <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FlattenFileMapper"/>
+                                    </fileMappers>
+                                </artifactItem>
+                            </artifactItems>
+                            <overWriteReleases>true</overWriteReleases>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.endpoints.canonicalModels>${v3.endpoints.canonicalModels}</v3.endpoints.canonicalModels>
+                        <v3.endpoints.smithyVersion>${v3.smithy.version}</v3.endpoints.smithyVersion>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

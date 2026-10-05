@@ -1,0 +1,31 @@
+{
+  "testCases": [
+    {
+      "documentation": "For region us-east-1 with FIPS enabled and DualStack enabled",
+      "expect": {
+        "endpoint": {
+          "url": "https://signer-fips.us-east-1.api.aws"
+        }
+      },
+      "params": {
+        "Region": "us-east-1",
+        "UseFIPS": true,
+        "UseDualStack": true
+      }
+    },
+    {
+      "documentation": "For region us-east-1 with FIPS enabled and DualStack disabled",
+      "expect": {
+        "endpoint": {
+          "url": "https://signer-fips.us-east-1.amazonaws.com"
+        }
+      },
+      "params": {
+        "Region": "us-east-1",
+        "UseFIPS": true,
+        "UseDualStack": false
+      }
+    }
+  ],
+  "version": "1.0"
+}

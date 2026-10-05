@@ -1,0 +1,3 @@
+# Parity Manifest behaviors this artifact implements (CandidateInventoryScanner; Requirements 16.8, 16.10).
+# SNS message parsing and signature verification: SnsMessageManager.
+behavior:sns-message-manager.verification

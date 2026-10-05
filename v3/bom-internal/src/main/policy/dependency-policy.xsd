@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  Schema for the AWS SDK for Java V3 dependency policy (dependency-policy.xml).
+
+  Semantics (enforced by the architecture tests, not expressible in XSD alone):
+    * Edges are Maven dependencies in compile, runtime or provided scope. Test-scope dependencies are unrestricted.
+    * V3 module edges are closed-world: a module may depend on another V3 module only if the target is listed in
+      <requires>, <allows> or <requiresService>. <requires> edges are mandatory (they form the minimal dependency
+      tree); <allows> edges are optional. <requiresService> edges are mandatory edges to generated service modules
+      (which are not listed under <modules>); every one must name a generated service module of the reactor.
+    * Third-party edges are permitted only when an <allowsClass> artifact class matches and no <forbids> artifact
+      class matches. Forbidden classes always win, directly or transitively, except for an artifact covered by a
+      <waiver>: the waiver's "via" module may declare it, and other trees may contain it only through that module.
+    * The minimal dependency tree of a module is the transitive closure of its <requires> edges (for a service, one
+      module from each <requiresAnyOf> group is selected) together with every <requiresArtifact> declared along that
+      closure (Requirement 15.9). Third-party transitive dependencies of required artifacts are resolved by Maven.
+    * Coordinate patterns use '*' as a wildcard for any character sequence; other characters match literally.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:p="urn:software.amazon.awssdk:v3:dependency-policy:1"
+           targetNamespace="urn:software.amazon.awssdk:v3:dependency-policy:1"
+           elementFormDefault="qualified">
+
+    <xs:simpleType name="id">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="[a-z0-9]+(-[a-z0-9]+)*"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="pattern">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="[A-Za-z0-9_.*\-]+"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="moduleKind">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="api"/>
+            <xs:enumeration value="runtime"/>
+            <xs:enumeration value="protocol"/>
+            <xs:enumeration value="http-spi"/>
+            <xs:enumeration value="http-implementation"/>
+            <xs:enumeration value="telemetry-spi"/>
+            <xs:enumeration value="telemetry-exporter"/>
+            <xs:enumeration value="dynamic"/>
+            <xs:enumeration value="codegen"/>
+            <xs:enumeration value="service"/>
+            <xs:enumeration value="high-level-library"/>
+            <xs:enumeration value="migration-tool"/>
+            <xs:enumeration value="release-tooling"/>
+            <xs:enumeration value="test"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="moduleRef">
+        <xs:attribute name="module" type="p:id" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="classRef">
+        <xs:attribute name="class" type="p:id" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="anyOf">
+        <xs:sequence>
+            <xs:element name="module" type="p:moduleRef" minOccurs="2" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <!-- Dependency rules shared by <module> and <serviceTemplate>. -->
+    <xs:group name="edgeRules">
+        <xs:sequence>
+            <xs:element name="requires" type="p:moduleRef" minOccurs="0" maxOccurs="unbounded"/>
+            <!-- At least one listed module must be required; used for per-service protocol selection. -->
+            <xs:element name="requiresAnyOf" type="p:anyOf" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="allows" type="p:moduleRef" minOccurs="0" maxOccurs="unbounded"/>
+            <!-- Mandatory edge to one generated service module (kind="service", matched by the serviceTemplate path),
+                 for high-level libraries built on a service's public API. Generated services are not listed under
+                 <modules>, so these references are checked against the reactor's service modules by the
+                 architecture tests rather than by the moduleEdgeRef key reference. -->
+            <xs:element name="requiresService" type="p:moduleRef" minOccurs="0" maxOccurs="unbounded"/>
+            <!-- Exact third-party artifact that belongs to the minimal dependency tree. It must also match an
+                 <allowsClass> artifact class. -->
+            <xs:element name="requiresArtifact" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:attribute name="groupId" type="xs:string" use="required"/>
+                    <xs:attribute name="artifactId" type="xs:string" use="required"/>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="allowsClass" type="p:classRef" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="forbids" type="p:classRef" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:group>
+
+    <xs:element name="dependencyPolicy">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="description" type="xs:string"/>
+                <xs:element name="artifactClasses">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="artifactClass" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="description" type="xs:string"/>
+                                        <xs:choice maxOccurs="unbounded">
+                                            <!-- Third-party (or V2) Maven coordinates. -->
+                                            <xs:element name="coordinates">
+                                                <xs:complexType>
+                                                    <xs:attribute name="groupId" type="p:pattern" use="required"/>
+                                                    <xs:attribute name="artifactId" type="p:pattern" default="*"/>
+                                                    <xs:attribute name="version" type="p:pattern" default="*"/>
+                                                </xs:complexType>
+                                            </xs:element>
+                                            <!-- Every V3 module of a kind. -->
+                                            <xs:element name="v3Modules">
+                                                <xs:complexType>
+                                                    <xs:attribute name="kind" type="p:moduleKind" use="required"/>
+                                                </xs:complexType>
+                                            </xs:element>
+                                            <!-- One V3 module. -->
+                                            <xs:element name="v3Module" type="p:moduleRef"/>
+                                        </xs:choice>
+                                    </xs:sequence>
+                                    <xs:attribute name="id" type="p:id" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="concerns">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="concern" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="description" type="xs:string"/>
+                                        <xs:choice maxOccurs="unbounded">
+                                            <xs:element name="owner" type="p:moduleRef"/>
+                                            <!-- Owned by every module of a kind, e.g. generated services. -->
+                                            <xs:element name="ownerKind">
+                                                <xs:complexType>
+                                                    <xs:attribute name="kind" type="p:moduleKind" use="required"/>
+                                                </xs:complexType>
+                                            </xs:element>
+                                        </xs:choice>
+                                    </xs:sequence>
+                                    <xs:attribute name="id" type="p:id" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <!-- Explicit, tracked exceptions to a forbidden artifact class. A waived artifact may be declared
+                     directly only by the "via" module and may appear in other trees only transitively through it.
+                     Every waiver must name the class-level check that replaces the artifact-level ban. -->
+                <xs:element name="waivers">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="waiver" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="description" type="xs:string"/>
+                                        <xs:element name="enforcement" type="xs:string"/>
+                                    </xs:sequence>
+                                    <xs:attribute name="id" type="p:id" use="required"/>
+                                    <xs:attribute name="class" type="p:id" use="required"/>
+                                    <xs:attribute name="groupId" type="xs:string" use="required"/>
+                                    <xs:attribute name="artifactId" type="xs:string" use="required"/>
+                                    <xs:attribute name="via" type="p:id" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <!-- Rules applied to every generated service module (kind="service") under v3/services. -->
+                <xs:element name="serviceTemplate">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="owns" type="xs:string"/>
+                            <xs:group ref="p:edgeRules"/>
+                        </xs:sequence>
+                        <xs:attribute name="path" type="xs:string" use="required"/>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="modules">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="module" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="owns" type="xs:string"/>
+                                        <xs:group ref="p:edgeRules"/>
+                                    </xs:sequence>
+                                    <xs:attribute name="artifactId" type="p:id" use="required"/>
+                                    <!-- Module directory relative to v3/. -->
+                                    <xs:attribute name="path" type="xs:string" use="required"/>
+                                    <xs:attribute name="kind" type="p:moduleKind" use="required"/>
+                                    <!-- true: published release artifact managed by software.amazon.awssdk:bom. -->
+                                    <xs:attribute name="release" type="xs:boolean" use="required"/>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+            <xs:attribute name="schemaVersion" type="xs:positiveInteger" use="required"/>
+            <xs:attribute name="groupId" type="xs:string" use="required"/>
+            <xs:attribute name="releaseVersion" type="xs:string" use="required"/>
+        </xs:complexType>
+        <xs:key name="artifactClassId">
+            <xs:selector xpath="p:artifactClasses/p:artifactClass"/>
+            <xs:field xpath="@id"/>
+        </xs:key>
+        <xs:key name="moduleId">
+            <xs:selector xpath="p:modules/p:module"/>
+            <xs:field xpath="@artifactId"/>
+        </xs:key>
+        <xs:unique name="concernId">
+            <xs:selector xpath="p:concerns/p:concern"/>
+            <xs:field xpath="@id"/>
+        </xs:unique>
+        <xs:keyref name="moduleEdgeRef" refer="p:moduleId">
+            <xs:selector xpath=".//p:requires|.//p:allows|.//p:requiresAnyOf/p:module|.//p:owner|.//p:v3Module"/>
+            <xs:field xpath="@module"/>
+        </xs:keyref>
+        <xs:keyref name="artifactClassRef" refer="p:artifactClassId">
+            <xs:selector xpath=".//p:allowsClass|.//p:forbids|p:waivers/p:waiver"/>
+            <xs:field xpath="@class"/>
+        </xs:keyref>
+        <xs:keyref name="waiverViaRef" refer="p:moduleId">
+            <xs:selector xpath="p:waivers/p:waiver"/>
+            <xs:field xpath="@via"/>
+        </xs:keyref>
+    </xs:element>
+</xs:schema>

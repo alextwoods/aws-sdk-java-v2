@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  The lightweight Smithy Java runtime boundary.
+
+  This module is the only V3 module that declares Smithy Java runtime dependencies for generated service clients. It
+  exposes, unchanged, the Smithy Java types that generated code and the V3 pipeline use directly: shape identity
+  (ShapeId, ShapeType), runtime traits, Schema, SerializableStruct, ShapeBuilder, Document, TypeRegistry,
+  ShapeSerializer/ShapeDeserializer and the JSON, CBOR and XML codecs.
+
+  The curated module set is closed: core, io, logging, version-spi, retries-api, codec-commons, json-codec, cbor-codec
+  and xml-codec. Smithy Java codegen, dynamic-schemas, model bundles, client/server stacks and V2 bridges are not
+  declared here and are rejected by SmithyRuntimeClasspathTest if they ever become reachable.
+
+  Known limitation (design "Open decisions" #1): Smithy Java core (checked for 1.5.1 and the pinned 1.6.1) declares a
+  compile dependency on software.amazon.smithy:smithy-model because Schema and the codecs expose smithy-model's
+  ShapeId, ShapeType, Trait, trait and Node classes. smithy-model is a single jar that also contains
+  the IDL/JSON AST parser, the ModelAssembler, validators, selectors, knowledge indexes and model transforms, so it
+  cannot be excluded at the artifact level without removing the shape-identity and trait classes that Schema needs.
+  It is therefore declared explicitly below (so its version is pinned for every consumer by nearest-wins) and the
+  boundary is enforced at the class level instead: SmithyRuntimeBoundary lists the parser/assembler/codegen classes,
+  and SmithyRuntimeClassLoadingTest proves that a generated-style client resolves none of them and runs unchanged
+  when they are removed from the classpath. ShapeId.from itself resolves two classes from smithy-model's loader
+  package (ParserUtils and ModelSyntaxException); they are lexical shape-ID helpers with no other loader references and
+  are the only exemptions (SmithyRuntimeBoundary.SHAPE_IDENTITY_LOADER_CLASSES). The artifact-level exclusion becomes
+  possible once Smithy Java publishes a lightweight shape-identity/runtime-trait artifact separate from the
+  parser/assembler.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>aws-sdk-java-v3-parent</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+        <relativePath>../parent/pom.xml</relativePath>
+    </parent>
+    <artifactId>smithy-runtime</artifactId>
+    <name>AWS Java SDK V3 :: Smithy Runtime</name>
+    <description>The curated boundary for the Smithy Java runtime types used by generated clients: shape identity, runtime traits, Schema, SerializableStruct, builders, Document, and codecs, isolated from Smithy model parsing, assembly, and code generation.</description>
+
+    <properties>
+        <smithy-runtime.boundary.dir>${project.build.directory}/smithy-runtime-boundary</smithy-runtime.boundary.dir>
+    </properties>
+
+    <dependencies>
+        <!-- Shape identity, runtime traits, Schema, SerializableStruct, ShapeBuilder, Document, TypeRegistry, serde. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>core</artifactId>
+            <version>${v3.smithy-java.version}</version>
+        </dependency>
+        <!-- Codecs. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>json-codec</artifactId>
+            <version>${v3.smithy-java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>cbor-codec</artifactId>
+            <version>${v3.smithy-java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>xml-codec</artifactId>
+            <version>${v3.smithy-java.version}</version>
+        </dependency>
+        <!-- Smithy Java's transitive Smithy dependencies, declared explicitly so that the exact release Smithy Java
+             is built against is pinned for every consumer. See the known limitation at the top of this file. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-utils</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${v3.assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Property-based tests (DocumentRoundTripPropertyTest, Property 15). Test scope only: the boundary tests
+             read the recorded runtime-scope dependency set, which this does not change. -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!-- Records the resolved runtime (compile + runtime scope) dependency set of this module, which is the
+                     Smithy Java runtime closure every generated service client inherits. The boundary tests read
+                     these files instead of the test classpath so that test-only dependencies cannot mask or cause a
+                     violation. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>smithy-runtime-dependency-list</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>list</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputFile>${smithy-runtime.boundary.dir}/runtime-dependencies.txt</outputFile>
+                            <outputScope>true</outputScope>
+                            <sort>true</sort>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>smithy-runtime-classpath</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputFile>${smithy-runtime.boundary.dir}/runtime-classpath.txt</outputFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <smithy-runtime.dependencies>${smithy-runtime.boundary.dir}/runtime-dependencies.txt</smithy-runtime.dependencies>
+                        <smithy-runtime.classpath>${smithy-runtime.boundary.dir}/runtime-classpath.txt</smithy-runtime.classpath>
+                        <smithy-runtime.classes>${project.build.outputDirectory}</smithy-runtime.classes>
+                        <smithy-runtime.test-classes>${project.build.testOutputDirectory}</smithy-runtime.test-classes>
+                        <smithy-runtime.smithy-java.version>${v3.smithy-java.version}</smithy-runtime.smithy-java.version>
+                        <smithy-runtime.smithy.version>${v3.smithy.version}</smithy-runtime.smithy.version>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

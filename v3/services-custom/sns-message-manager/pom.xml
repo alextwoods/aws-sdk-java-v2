@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-services-custom</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>sns-message-manager</artifactId>
+    <name>AWS Java SDK V3 :: Services Custom :: SNS Message Manager</name>
+    <description>The SNS Message Manager high-level library: parses SNS HTTP/S messages and verifies their signatures.</description>
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- SdkBytes, SdkClientException and ToString of the public model. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The Smithy Java JSON codec and Document the message parser reads SNS JSON with. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Region of the builder. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The canonical partition table that yields the SNS regional certificate host. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The sync HTTP SPI that fetches signing certificates; implementations stay opt-in. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${v3.assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The generated SNS endpoint rule set: SnsHostProviderTest checks the partition-derived certificate host
+             against it for every region. Test scope only; the library does not depend on the service client. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

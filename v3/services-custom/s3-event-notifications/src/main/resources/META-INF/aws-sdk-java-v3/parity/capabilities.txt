@@ -1,0 +1,3 @@
+# Parity Manifest behaviors this artifact implements (CandidateInventoryScanner; Requirements 16.8, 16.10).
+# S3 event notification model JSON reading and writing: S3EventNotification.fromJson, toJson and toJsonPretty.
+behavior:s3-event-notifications.model

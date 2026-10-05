@@ -1,0 +1,184 @@
+{
+    "schemaVersion": 1,
+    "comment": "The high-level-library parity matrix (task 14.6; Requirements 16.6-16.8, 16.12, 16.14, 16.15, 19.7-19.9, 19.12), read by HighLevelLibraryMatrix. For each library: the Parity Manifest entries it owns ('entries' globs); for the libraries with asynchronous transfers, the lifecycle aspect entries (cancellation, failure-cleanup, fault-handling, concurrency) and the test methods that verify each; and its known launch gaps. Every non-deprecated owned entry that is not a known gap must have evidence for each compatibility dimension it claims: an api: entry through the generated compatibility fixtures (source: compile and source signature/hierarchy fixtures; binary: linkage and binary signature/hierarchy fixtures; behavior/configuration and ADAPTED differences: behavior fixtures running the entry's evidence tests), any other entry through its evidence hooks; every evidence ID must be a test class of the V3 tree. A known gap must stay a gap: claimed PRESERVED or ADAPTED, non-deprecated, and without evidence, so that the launch gate keeps blocking it (NOT_SHIPPED or MISSING_EVIDENCE_HOOK) until it is implemented and verified, and is then removed from this list. Gaps may name entries other libraries or the runtime own, when the library's V2 behavior depends on them.",
+    "libraries": [
+        {
+            "name": "dynamodb-enhanced",
+            "artifact": "software.amazon.awssdk:dynamodb-enhanced",
+            "entries": [
+                "artifact:software.amazon.awssdk:dynamodb-enhanced",
+                "api:software.amazon.awssdk.enhanced.dynamodb.*",
+                "behavior:dynamodb-enhanced.*"
+            ],
+            "lifecycle": {
+                "cancellation": {
+                    "entry": "behavior:dynamodb-enhanced.async-cancellation",
+                    "tests": [
+                        "EnhancedClientFaultInjectionTest#cancellingAnEnhancedFutureCancelsTheHttpExchange",
+                        "EnhancedClientFaultInjectionTest#cancellingAPageSubscriptionCancelsTheInFlightPageRequest",
+                        "EnhancedClientFaultInjectionTest#cancellingAnItemSubscriptionStopsFetchingPages"
+                    ]
+                },
+                "failure-cleanup": {
+                    "entry": "behavior:dynamodb-enhanced.failure-cleanup",
+                    "tests": [
+                        "EnhancedClientFaultInjectionTest#exhaustedConnectionFailuresSurfaceAsAClientFailureAfterMaxAttempts",
+                        "EnhancedClientFaultInjectionTest#modeledServiceErrorIsNotRetriedAndKeepsItsType",
+                        "EnhancedClientFaultInjectionTest#cancellingAPageSubscriptionCancelsTheInFlightPageRequest"
+                    ]
+                },
+                "fault-handling": {
+                    "entry": "behavior:dynamodb-enhanced.fault-handling",
+                    "tests": [
+                        "EnhancedClientFaultInjectionTest#retryableTransportFaultsAreRetriedBelowTheEnhancedCall",
+                        "EnhancedClientFaultInjectionTest#partialResponseBodyIsRetried",
+                        "EnhancedClientFaultInjectionTest#throttlingAndServerErrorsAreRetriedThenSucceed",
+                        "EnhancedClientFaultInjectionTest#persistentThrottlingSurfacesTheModeledThrottlingException",
+                        "EnhancedClientFaultInjectionTest#retryDelayHintIsAppliedBetweenAttempts",
+                        "EnhancedClientFaultInjectionTest#malformedSuccessResponseFailsTheEnhancedCall",
+                        "EnhancedClientFaultInjectionTest#identityFailureFailsBeforeAnyRequestIsSent",
+                        "EnhancedClientFaultInjectionTest#endpointFailureFailsBeforeAnyRequestIsSent"
+                    ]
+                },
+                "concurrency": {
+                    "entry": "behavior:dynamodb-enhanced.concurrency",
+                    "tests": [
+                        "EnhancedClientConcurrencyTest#concurrentOptimisticLockingIncrementsLoseNoUpdate",
+                        "EnhancedClientConcurrencyTest#concurrentAsyncWritesAndPaginatedQueriesSeeEveryItem",
+                        "EnhancedClientConcurrencyTest#concurrentAtomicCounterUpdatesAreAllApplied"
+                    ]
+                }
+            },
+            "knownGaps": [
+                {
+                    "entries": [
+                        "behavior:dynamodb-enhanced.user-agent-feature"
+                    ],
+                    "reason": "The V3 enhanced clients add no user-agent API name or feature to their requests (V2: hll/ddb-enh)."
+                },
+                {
+                    "entries": [
+                        "api:software.amazon.awssdk.core.async.SdkPublisher#*"
+                    ],
+                    "reason": "The V3 sdk-core SdkPublisher declares none of the V2 operators (map, filter, limit, flatMapIterable, buffer, subscribe(Consumer), doAfterOn*, addTrailingData, adapt, fromIterable), so V2 code that applies them to PagePublisher or its items() does not compile or link."
+                },
+                {
+                    "entries": [
+                        "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#nul()*",
+                        "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#fromNul(*",
+                        "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#createNul(*",
+                        "api:software.amazon.awssdk.services.dynamodb.model.AttributeValue$Builder#nul(*"
+                    ],
+                    "reason": "The generated V3 AttributeValue names the NULL member nullValue (nullValue(), fromNullValue, Builder.nullValue) instead of the V2 nul, used by custom AttributeConverters."
+                },
+                {
+                    "entries": [
+                        "behavior:errors.unmodeled-error-code"
+                    ],
+                    "reason": "The generated V3 DynamoDB client surfaces an unmodeled error code as AwsServiceException instead of DynamoDbException (EnhancedClientFaultInjectionTest#unmodeledServiceErrorSurfacesAsTheServiceBaseException records the V3 behavior)."
+                }
+            ]
+        },
+        {
+            "name": "s3-transfer-manager",
+            "artifact": "software.amazon.awssdk:s3-transfer-manager",
+            "entries": [
+                "artifact:software.amazon.awssdk:s3-transfer-manager",
+                "api:software.amazon.awssdk.transfer.s3.*",
+                "behavior:s3-transfer-manager.*"
+            ],
+            "lifecycle": {
+                "cancellation": {
+                    "entry": "behavior:s3-transfer-manager.cancellation",
+                    "tests": [
+                        "S3TransferManagerUploadTest#uploadFile_cancelled_cancelsPartsInFlightAndAbortsTheUpload",
+                        "S3TransferManagerUploadTest#close_withTransfersInFlight_cancelsAndCleansThemUp",
+                        "S3TransferManagerDownloadTest#downloadFile_cancelled_cancelsPartRequestsInFlight",
+                        "S3TransferManagerDirectoryAndCopyTest#uploadDirectory_cancelled_cancelsTheFileUploadsInFlight"
+                    ]
+                },
+                "failure-cleanup": {
+                    "entry": "behavior:s3-transfer-manager.failure-cleanup",
+                    "tests": [
+                        "S3TransferManagerUploadTest#upload_knownLengthBodyShorterThanDeclared_failsAndAborts",
+                        "S3TransferManagerUploadTest#uploadFile_partFailsWithThrottling_failsWithTheServiceErrorAndAbortsTheUpload",
+                        "S3TransferManagerUploadTest#resumeUploadFile_fileModifiedSincePause_uploadsAgainAndAbortsTheStaleUpload",
+                        "S3TransferManagerDirectoryAndCopyTest#copy_partFails_abortsTheMultipartCopy",
+                        "S3TransferManagerDirectoryAndCopyTest#uploadDirectory_failingFile_isCollectedWhileTheRestSucceed",
+                        "S3TransferManagerGeneratedClientTest#copy_partRejected_abortsTheMultipartCopyThroughTheGeneratedClient"
+                    ]
+                },
+                "fault-handling": {
+                    "entry": "behavior:s3-transfer-manager.fault-handling",
+                    "tests": [
+                        "S3TransferManagerDownloadTest#downloadFile_payloadBreaksMidStream_retriedAttemptRewritesThePartWithoutDoubleCountingProgress",
+                        "S3TransferManagerDownloadTest#downloadFile_objectReplacedDuringDownload_failsWithPreconditionFailed",
+                        "S3TransferManagerDownloadTest#downloadFile_missingKey_failsWithTheModeledErrorAndListenerFailure",
+                        "S3TransferManagerUploadTest#uploadFile_createMultipartUploadFails_failsWithoutAbort",
+                        "S3TransferManagerGeneratedClientTest#uploadFile_partTransmissionFails_clientRetriesThePartWithIdenticalBytes",
+                        "S3TransferManagerGeneratedClientTest#downloadFile_missingKey_surfacesTheModeledServiceError",
+                        "S3TransferManagerDirectoryAndCopyTest#downloadDirectory_listingFails_failsTheWholeTransfer"
+                    ]
+                },
+                "concurrency": {
+                    "entry": "behavior:s3-transfer-manager.concurrency",
+                    "tests": [
+                        "S3TransferManagerConcurrencyTest#sharedTransferManager_overlappingUploadsAndDownloads_allCompleteWithExactContent",
+                        "S3TransferManagerDirectoryAndCopyTest#uploadDirectory_concurrency_isBoundedByTransferDirectoryMaxConcurrency",
+                        "S3TransferManagerUploadTest#uploadFile_aboveThreshold_uploadsOrderedPartsWithBoundedConcurrency",
+                        "S3TransferManagerDownloadTest#downloadFile_multipartObject_fetchesEveryPartOnceWithIfMatchAndBoundedConcurrency"
+                    ]
+                }
+            },
+            "knownGaps": [
+                {
+                    "entries": [
+                        "api:software.amazon.awssdk.transfer.s3.S3TransferManager#*WithPresignedUrl(*",
+                        "api:software.amazon.awssdk.transfer.s3.model.Presigned*",
+                        "behavior:s3-transfer-manager.presigned-url-download"
+                    ],
+                    "reason": "The presigned-URL download API is not shipped: the V3 s3 artifact has no presignedurl model types (PresignedUrlDownloadRequest) to build it on. Excluded from the compatibility fixture scope."
+                },
+                {
+                    "entries": [
+                        "behavior:s3.bucket-addressing"
+                    ],
+                    "reason": "The generated V3 S3 client keeps the {Bucket} label in the path of virtual-hosted requests (S3GeneratedApiTest#syncGetObjectPutsTheBucketInTheHostOnly is disabled), so Transfer Manager requests name the bucket twice; a codegen/protocol defect outside the library."
+                },
+                {
+                    "entries": [
+                        "behavior:errors.unmodeled-error-code"
+                    ],
+                    "reason": "The generated V3 S3 client surfaces an unmodeled error code as AwsServiceException instead of S3Exception."
+                }
+            ]
+        },
+        {
+            "name": "iam-policy-builder",
+            "artifact": "software.amazon.awssdk:iam-policy-builder",
+            "entries": [
+                "artifact:software.amazon.awssdk:iam-policy-builder",
+                "api:software.amazon.awssdk.policybuilder.iam.*",
+                "behavior:iam-policy-builder.*"
+            ]
+        },
+        {
+            "name": "s3-event-notifications",
+            "artifact": "software.amazon.awssdk:s3-event-notifications",
+            "entries": [
+                "artifact:software.amazon.awssdk:s3-event-notifications",
+                "api:software.amazon.awssdk.eventnotifications.s3.*",
+                "behavior:s3-event-notifications.*"
+            ]
+        },
+        {
+            "name": "sns-message-manager",
+            "artifact": "software.amazon.awssdk:sns-message-manager",
+            "entries": [
+                "artifact:software.amazon.awssdk:sns-message-manager",
+                "api:software.amazon.awssdk.messagemanager.sns.*",
+                "behavior:sns-message-manager.*"
+            ]
+        }
+    ]
+}

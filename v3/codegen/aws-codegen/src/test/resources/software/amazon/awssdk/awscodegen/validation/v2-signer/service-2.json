@@ -1,0 +1,352 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2017-08-25",
+    "endpointPrefix": "signer",
+    "jsonVersion": "1.1",
+    "protocol": "rest-json",
+    "protocols": [
+      "rest-json"
+    ],
+    "serviceAbbreviation": "signer",
+    "serviceFullName": "AWS Signer",
+    "serviceId": "signer",
+    "signatureVersion": "v4",
+    "signingName": "signer",
+    "uid": "signer-2017-08-25",
+    "auth": [
+      "aws.auth#sigv4"
+    ]
+  },
+  "documentation": "<p>AWS Signer is a fully managed code-signing service to help you ensure the trust and integrity of your code. </p> <p>Signer supports the following applications:</p> <p>With code signing for AWS Lambda, you can sign <a href=\"http://docs.aws.amazon.com/lambda/latest/dg/\">AWS Lambda</a> deployment packages. Integrated support is provided for <a href=\"http://docs.aws.amazon.com/AmazonS3/latest/gsg/\">Amazon S3</a>, <a href=\"http://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/\">Amazon CloudWatch</a>, and <a href=\"http://docs.aws.amazon.com/awscloudtrail/latest/userguide/\">AWS CloudTrail</a>. In order to sign code, you create a signing profile and then use Signer to sign Lambda zip files in S3. </p> <p>With code signing for IoT, you can sign code for any IoT device that is supported by AWS. IoT code signing is available for <a href=\"http://docs.aws.amazon.com/freertos/latest/userguide/\">Amazon FreeRTOS</a> and <a href=\"http://docs.aws.amazon.com/iot/latest/developerguide/\">AWS IoT Device Management</a>, and is integrated with <a href=\"http://docs.aws.amazon.com/acm/latest/userguide/\">AWS Certificate Manager (ACM)</a>. In order to sign code, you import a third-party code-signing certificate using ACM, and use that to sign updates in Amazon FreeRTOS and AWS IoT Device Management. </p> <p>With Signer and the Notation CLI from the <a href=\"https://notaryproject.dev/\">Notary&#x2028; Project</a>, you can sign container images stored in a container registry such as Amazon Elastic Container Registry (ECR). The signatures are stored in the registry alongside the images, where they are available for verifying image authenticity and integrity.</p> <p>For more information about Signer, see the <a href=\"http://docs.aws.amazon.com/signer/latest/developerguide/Welcome.html\">AWS Signer Developer Guide</a>.</p>",
+  "operations": {
+    "ListSigningPlatforms": {
+      "name": "ListSigningPlatforms",
+      "http": {
+        "method": "GET",
+        "requestUri": "/signing-platforms"
+      },
+      "input": {
+        "shape": "ListSigningPlatformsRequest"
+      },
+      "output": {
+        "shape": "ListSigningPlatformsResponse"
+      },
+      "errors": [
+        {
+          "shape": "ValidationException"
+        },
+        {
+          "shape": "AccessDeniedException"
+        },
+        {
+          "shape": "TooManyRequestsException"
+        },
+        {
+          "shape": "InternalServiceErrorException"
+        }
+      ],
+      "documentation": "<p>Lists all signing platforms available in AWS Signer that match the request parameters. If additional jobs remain to be listed, Signer returns a <code>nextToken</code> value. Use this value in subsequent calls to <code>ListSigningJobs</code> to fetch the remaining values. You can continue calling <code>ListSigningJobs</code> with your <code>maxResults</code> parameter and with new values that Signer returns in the <code>nextToken</code> parameter until all of your signing jobs have been returned.</p>"
+    }
+  },
+  "shapes": {
+    "AccessDeniedException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        },
+        "code": {
+          "shape": "ErrorCode"
+        }
+      },
+      "documentation": "<p>You do not have sufficient access to perform this action.</p>",
+      "error": {
+        "httpStatusCode": 403
+      },
+      "exception": true
+    },
+    "Category": {
+      "type": "string",
+      "enum": [
+        "AWSIoT"
+      ]
+    },
+    "EncryptionAlgorithm": {
+      "type": "string",
+      "enum": [
+        "RSA",
+        "ECDSA"
+      ]
+    },
+    "EncryptionAlgorithmOptions": {
+      "type": "structure",
+      "required": [
+        "allowedValues",
+        "defaultValue"
+      ],
+      "members": {
+        "allowedValues": {
+          "shape": "EncryptionAlgorithms",
+          "documentation": "<p>The set of accepted encryption algorithms that are allowed in a code-signing job.</p>"
+        },
+        "defaultValue": {
+          "shape": "EncryptionAlgorithm",
+          "documentation": "<p>The default encryption algorithm that is used by a code-signing job.</p>"
+        }
+      },
+      "documentation": "<p>The encryption algorithm options that are available to a code-signing job.</p>"
+    },
+    "EncryptionAlgorithms": {
+      "type": "list",
+      "member": {
+        "shape": "EncryptionAlgorithm"
+      }
+    },
+    "ErrorCode": {
+      "type": "string"
+    },
+    "ErrorMessage": {
+      "type": "string"
+    },
+    "HashAlgorithm": {
+      "type": "string",
+      "enum": [
+        "SHA1",
+        "SHA256"
+      ]
+    },
+    "HashAlgorithmOptions": {
+      "type": "structure",
+      "required": [
+        "allowedValues",
+        "defaultValue"
+      ],
+      "members": {
+        "allowedValues": {
+          "shape": "HashAlgorithms",
+          "documentation": "<p>The set of accepted hash algorithms allowed in a code-signing job.</p>"
+        },
+        "defaultValue": {
+          "shape": "HashAlgorithm",
+          "documentation": "<p>The default hash algorithm that is used in a code-signing job.</p>"
+        }
+      },
+      "documentation": "<p>The hash algorithms that are available to a code-signing job.</p>"
+    },
+    "HashAlgorithms": {
+      "type": "list",
+      "member": {
+        "shape": "HashAlgorithm"
+      }
+    },
+    "ImageFormat": {
+      "type": "string",
+      "enum": [
+        "JSON",
+        "JSONEmbedded",
+        "JSONDetached"
+      ]
+    },
+    "ImageFormats": {
+      "type": "list",
+      "member": {
+        "shape": "ImageFormat"
+      }
+    },
+    "InternalServiceErrorException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        },
+        "code": {
+          "shape": "ErrorCode"
+        }
+      },
+      "documentation": "<p>An internal error occurred.</p>",
+      "error": {
+        "httpStatusCode": 500
+      },
+      "exception": true
+    },
+    "ListSigningPlatformsRequest": {
+      "type": "structure",
+      "members": {
+        "category": {
+          "shape": "String",
+          "documentation": "<p>The category type of a signing platform.</p>",
+          "location": "querystring",
+          "locationName": "category"
+        },
+        "partner": {
+          "shape": "String",
+          "documentation": "<p>Any partner entities connected to a signing platform.</p>",
+          "location": "querystring",
+          "locationName": "partner"
+        },
+        "target": {
+          "shape": "String",
+          "documentation": "<p>The validation template that is used by the target signing platform.</p>",
+          "location": "querystring",
+          "locationName": "target"
+        },
+        "maxResults": {
+          "shape": "MaxResults",
+          "documentation": "<p>The maximum number of results to be returned by this operation.</p>",
+          "location": "querystring",
+          "locationName": "maxResults"
+        },
+        "nextToken": {
+          "shape": "String",
+          "documentation": "<p>Value for specifying the next set of paginated results to return. After you receive a response with truncated results, use this parameter in a subsequent request. Set it to the value of <code>nextToken</code> from the response that you just received.</p>",
+          "location": "querystring",
+          "locationName": "nextToken"
+        }
+      }
+    },
+    "ListSigningPlatformsResponse": {
+      "type": "structure",
+      "members": {
+        "platforms": {
+          "shape": "SigningPlatforms",
+          "documentation": "<p>A list of all platforms that match the request parameters.</p>"
+        },
+        "nextToken": {
+          "shape": "String",
+          "documentation": "<p>Value for specifying the next set of paginated results to return.</p>"
+        }
+      }
+    },
+    "MaxResults": {
+      "type": "integer",
+      "box": true,
+      "max": 25,
+      "min": 1
+    },
+    "MaxSizeInMB": {
+      "type": "integer"
+    },
+    "SigningConfiguration": {
+      "type": "structure",
+      "required": [
+        "encryptionAlgorithmOptions",
+        "hashAlgorithmOptions"
+      ],
+      "members": {
+        "encryptionAlgorithmOptions": {
+          "shape": "EncryptionAlgorithmOptions",
+          "documentation": "<p>The encryption algorithm options that are available for a code-signing job.</p>"
+        },
+        "hashAlgorithmOptions": {
+          "shape": "HashAlgorithmOptions",
+          "documentation": "<p>The hash algorithm options that are available for a code-signing job.</p>"
+        }
+      },
+      "documentation": "<p>The configuration of a signing operation.</p>"
+    },
+    "SigningImageFormat": {
+      "type": "structure",
+      "required": [
+        "supportedFormats",
+        "defaultFormat"
+      ],
+      "members": {
+        "supportedFormats": {
+          "shape": "ImageFormats",
+          "documentation": "<p>The supported formats of a signing image.</p>"
+        },
+        "defaultFormat": {
+          "shape": "ImageFormat",
+          "documentation": "<p>The default format of a signing image.</p>"
+        }
+      },
+      "documentation": "<p>The image format of a AWS Signer platform or profile.</p>"
+    },
+    "SigningPlatform": {
+      "type": "structure",
+      "members": {
+        "platformId": {
+          "shape": "String",
+          "documentation": "<p>The ID of a signing platform.</p>"
+        },
+        "displayName": {
+          "shape": "String",
+          "documentation": "<p>The display name of a signing platform.</p>"
+        },
+        "partner": {
+          "shape": "String",
+          "documentation": "<p>Any partner entities linked to a signing platform.</p>"
+        },
+        "target": {
+          "shape": "String",
+          "documentation": "<p>The types of targets that can be signed by a signing platform.</p>"
+        },
+        "category": {
+          "shape": "Category",
+          "documentation": "<p>The category of a signing platform.</p>"
+        },
+        "signingConfiguration": {
+          "shape": "SigningConfiguration",
+          "documentation": "<p>The configuration of a signing platform. This includes the designated hash algorithm and encryption algorithm of a signing platform.</p>"
+        },
+        "signingImageFormat": {
+          "shape": "SigningImageFormat"
+        },
+        "maxSizeInMB": {
+          "shape": "MaxSizeInMB",
+          "documentation": "<p>The maximum size (in MB) of code that can be signed by a signing platform.</p>"
+        },
+        "revocationSupported": {
+          "shape": "bool",
+          "documentation": "<p>Indicates whether revocation is supported for the platform.</p>"
+        }
+      },
+      "documentation": "<p>Contains information about the signing configurations and parameters that are used to perform a code-signing job.</p>"
+    },
+    "SigningPlatforms": {
+      "type": "list",
+      "member": {
+        "shape": "SigningPlatform"
+      }
+    },
+    "String": {
+      "type": "string"
+    },
+    "TooManyRequestsException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        },
+        "code": {
+          "shape": "ErrorCode"
+        }
+      },
+      "documentation": "<p>The allowed number of job-signing requests has been exceeded.</p> <p>This error supersedes the error <code>ThrottlingException</code>.</p>",
+      "error": {
+        "httpStatusCode": 429
+      },
+      "exception": true
+    },
+    "ValidationException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        },
+        "code": {
+          "shape": "ErrorCode"
+        }
+      },
+      "documentation": "<p>You signing certificate could not be validated.</p>",
+      "error": {
+        "httpStatusCode": 400
+      },
+      "exception": true
+    },
+    "bool": {
+      "type": "boolean"
+    }
+  }
+}

@@ -1,0 +1,428 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  Concrete generated-API compile and compatibility fixtures (task 10.5). aws-codegen-maven-plugin generates a
+  synthetic service and the canonical DynamoDB and S3 models into target/generated-sources at build time; the test
+  sources call the preserved V2 surfaces (builders, clients, overloads, streams, paginators, waiters, presigners and
+  utilities) and only compile if the generated API keeps them. This is a test module: none of these generated types
+  is a published service artifact.
+
+  It also executes the compatibility fixtures generated from the Parity Manifest for its test scope (task 13.4;
+  src/test/resources/compatibility-scope.txt and compatibility-fixtures.json, kept current by tools/parity-manifest's
+  CompatibilityFixturesGoldenTest): compile fixtures (ManifestDiagnosticsTest), V2 bytecode linkage fixtures
+  (V2BytecodeOnV3Test), signature and hierarchy comparisons (ApiShapeCompatibilityTest) and behavior fixtures
+  (BehaviorCompatibilityTest).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>codegen-generated-classes-test</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Codegen Generated Classes Test</name>
+    <description>Compile and compatibility fixtures of generated synthetic, DynamoDB and S3 APIs.</description>
+    <properties>
+        <!-- The canonical models are read in place from the pinned checkout of the AWS models repository; the revision
+             is that checkout's commit, at which dynamodb/ and s3/ are unmodified. -->
+        <v3.canonicalModels>${project.basedir}/../../../.kiro/reference/aws-models</v3.canonicalModels>
+        <v3.canonicalModelRevision>d45b42cbc17fe09c6600e6454e83143c96c8e685</v3.canonicalModelRevision>
+        <v3.generatedResources>${project.build.directory}/generated-resources</v3.generatedResources>
+        <!-- A released V2 version whose API jars V2BytecodeOnV3Test compiles its V2 caller against. -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <!-- Generated operation descriptors, service metadata, clients and builders. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>protocol-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-pipeline</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The synthetic service and DynamoDB are awsJson1_0; S3 is restXml. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-protocol</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-xml-protocol</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- SigV4 services sign with the AWS auth schemes and default to DefaultCredentialsProvider. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth-aws</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-providers</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The IAM policy builder high-level library (task 14.3): its compatibility fixtures and
+             IamPolicyBuilderCompatibilityTest. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>iam-policy-builder</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The S3 event notifications high-level library (task 14.4): its compatibility fixtures. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3-event-notifications</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The SNS message manager high-level library (task 14.5): its compatibility fixtures and
+             SnsMessageManagerCompatibilityTest. Test scope: no production code of this module uses it. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns-message-manager</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The DynamoDB Enhanced Client and S3 Transfer Manager high-level libraries (task 14.6): their compatibility
+             fixtures and S3TransferManagerCompatibilityTest. Test scope. Each library is built against the fleet's
+             generated service artifact (services/dynamodb, services/s3), which this module does not put on its class
+             path: it generates the same services itself, from the same canonical model revision (checked by
+             S3TransferManagerCompatibilityTest), so the libraries link against this module's generated classes and
+             no class is on the class path twice. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb-enhanced</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>dynamodb</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3-transfer-manager</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>s3</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- BehaviorCompatibilityTest runs the evidence tests of behavior fixtures through a nested launcher; the
+             junit-bom version keeps it on the platform of junit-jupiter. -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>aws-codegen-maven-plugin</artifactId>
+                <version>${project.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-synthetic</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <service>software.amazon.awssdk.test.generated.synthetic#SyntheticService</service>
+                            <packageName>software.amazon.awssdk.test.generated.synthetic</packageName>
+                            <modelDirectory>${project.basedir}/src/main/smithy</modelDirectory>
+                            <outputDirectory>${project.build.directory}/generated-sources/synthetic</outputDirectory>
+                            <resourceOutputDirectory>${v3.generatedResources}/synthetic</resourceOutputDirectory>
+                            <!-- The synthetic model lives in this repository; this fixed commit ID stands in for the
+                                 canonical model revision every real service module pins. -->
+                            <modelRevision>c0de9e11fec7c1e0000000000000000000000105</modelRevision>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>generate-dynamodb</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <service>com.amazonaws.dynamodb#DynamoDB_20120810</service>
+                            <packageName>software.amazon.awssdk.services.dynamodb</packageName>
+                            <modelDirectory>${v3.canonicalModels}/dynamodb/smithy</modelDirectory>
+                            <outputDirectory>${project.build.directory}/generated-sources/dynamodb</outputDirectory>
+                            <resourceOutputDirectory>${v3.generatedResources}/dynamodb</resourceOutputDirectory>
+                            <modelRevision>${v3.canonicalModelRevision}</modelRevision>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>generate-s3</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <service>com.amazonaws.s3#AmazonS3</service>
+                            <packageName>software.amazon.awssdk.services.s3</packageName>
+                            <modelDirectory>${v3.canonicalModels}/s3/smithy</modelDirectory>
+                            <outputDirectory>${project.build.directory}/generated-sources/s3</outputDirectory>
+                            <resourceOutputDirectory>${v3.generatedResources}/s3</resourceOutputDirectory>
+                            <modelRevision>${v3.canonicalModelRevision}</modelRevision>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- The released V2 DynamoDB API jars (and the V2 supertypes javac needs) that V2BytecodeOnV3Test
+                     compiles its V2 caller against. They are copied into target/v2-api and never put on the test
+                     class path, so the caller's bytecode links against the generated V3 classes at run time. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>copy-v2-api</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-api</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>dynamodb</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>sdk-core</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>aws-core</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>utils</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>regions</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>annotations</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>http-client-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>metrics-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>identity-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>endpoints-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>http-auth-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>retries-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The IAM policy builder API (task 14.3; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>iam-policy-builder</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The S3 event notifications API (task 14.4; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3-event-notifications</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The SNS message manager API (task 14.5; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>sns-message-manager</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The DynamoDB Enhanced Client and S3 Transfer Manager APIs, and the S3 API the
+                                     Transfer Manager's signatures use (task 14.6; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>dynamodb-enhanced</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3-transfer-manager</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <!-- Third-party types of the V2 API (SdkPublisher extends the Reactive Streams Publisher), on
+                             the class path the V2 callers are compiled against; never on the test class path. -->
+                        <id>copy-v2-api-dependencies</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-api-dependencies</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.reactivestreams</groupId>
+                                    <artifactId>reactive-streams</artifactId>
+                                    <version>${v3.reactive-streams.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <!-- The released V2 IAM policy builder and its V2 runtime, which IamPolicyBuilderCompatibilityTest
+                             runs in an isolated class loader next to V3 (differential behavior evidence). Copied into
+                             target/v2-iam-runtime and never put on the test class path. -->
+                        <id>copy-v2-iam-runtime</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-iam-runtime</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>iam-policy-builder</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>json-utils</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>third-party-jackson-core</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>utils</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>annotations</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- The in-test javac compiles callers against java.class.path, so it must be the real path. -->
+                    <useManifestOnlyJar>false</useManifestOnlyJar>
+                    <systemPropertyVariables>
+                        <v3.fixture.v2Api>${project.build.directory}/v2-api</v3.fixture.v2Api>
+                        <v3.fixture.v2ApiDependencies>${project.build.directory}/v2-api-dependencies</v3.fixture.v2ApiDependencies>
+                        <!-- The model revision this module generates DynamoDB and S3 from, and the fleet POM whose
+                             aws.models.revision the high-level libraries' service artifacts were generated from. -->
+                        <v3.fixture.canonicalModelRevision>${v3.canonicalModelRevision}</v3.fixture.canonicalModelRevision>
+                        <v3.fixture.fleetPom>${project.basedir}/../../services/pom.xml</v3.fixture.fleetPom>
+                        <v3.fixture.v2IamRuntime>${project.build.directory}/v2-iam-runtime</v3.fixture.v2IamRuntime>
+                        <!-- The checked-in, locally generated test signing key and certificates of the SNS message
+                             manager (its src/test/fixtures/generate-signing-fixtures.sh); SnsMessageManagerCompatibilityTest. -->
+                        <v3.fixture.snsSigning>${project.basedir}/../../services-custom/sns-message-manager/src/test/resources/software/amazon/awssdk/messagemanager/sns/fixtures</v3.fixture.snsSigning>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

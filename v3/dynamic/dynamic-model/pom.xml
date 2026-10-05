@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  The optional dynamic model layer (Requirements 14.1-14.7, 14.17, 14.18): Smithy JSON AST parsing and model assembly,
+  conversion of a service closure to the same runtime schema types generated services use (smithy-runtime's
+  ServiceSchemaIndex/OperationSchemas, aws-core's AwsOperationDescriptor), and DynamicAwsOperation creation.
+
+  This is the only V3 production artifact that may carry the Smithy model parser/assembler: the dependency policy
+  classifies dynamic-model itself as a smithy-model-parser artifact, which every generated service and runtime module
+  forbids, so it can never enter a generated service runtime tree (verified by architecture-tests).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-dynamic</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>dynamic-model</artifactId>
+    <name>AWS Java SDK V3 :: Dynamic :: Dynamic Model</name>
+    <description>The Smithy JSON AST parser/model assembler and model-to-schema conversion used by the dynamic client.</description>
+
+    <dependencies>
+        <!-- DynamicModelException is an SdkClientException. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- ServiceSchemaIndex, OperationSchemas and UnknownTraits: the runtime schema view generated services use. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- AwsOperationDescriptor: dynamic operations carry the same descriptor type as generated operations. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The Smithy JSON AST parser and model assembler. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <!-- Trait definitions known to aws-codegen, so that a runtime model classifies exactly the same traits as known
+             or unknown as generation does (AWS protocol/auth/API traits, protocol traits, rules engine, AWS endpoints
+             and waiters). -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-traits</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-traits</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <!-- smithy-build (a codegen artifact, forbidden here) is excluded: in smithy-rules-engine only the CompileBdd
+             smithy-build projection transformer uses it, which model loading never instantiates. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-rules-engine</artifactId>
+            <version>${v3.smithy.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.smithy</groupId>
+                    <artifactId>smithy-build</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-endpoints</artifactId>
+            <version>${v3.smithy.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.smithy</groupId>
+                    <artifactId>smithy-build</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-waiters</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <!-- Schema-guided StructDocument builders for dynamic inputs and outputs. Its SchemaConverter is not used:
+             it keeps one unknown trait per schema and builds no enum member schemas. -->
+        <dependency>
+            <groupId>software.amazon.smithy.java</groupId>
+            <artifactId>dynamic-schemas</artifactId>
+            <version>${v3.smithy-java.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Property-based tests (ServiceOperationSelectionPropertyTest, Property 52). Test scope only. -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

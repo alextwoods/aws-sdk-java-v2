@@ -1,0 +1,113 @@
+# The registered evidence hooks of the V3 release candidate (task 13.3; Requirements 16.14, 16.15), in the
+# EvidenceHooks text form: one hook per line, "<evidenceId> [<entryId> ...]". An evidence ID is the simple name of a
+# V3 test class; the launch gate fails packaging when a registered hook names no test class of the V3 tree, when the
+# Parity Manifest names an evidence ID that is not registered here, or when a non-deprecated PRESERVED or ADAPTED
+# entry has no hook at all.
+#
+# Hooks are bound to entries in three ways: the entry's own evidenceIds (classification-rules.json), the generated
+# compatibility fixtures (v3/test/codegen-generated-classes-test/src/test/resources/compatibility-evidence-hooks.txt,
+# kept current by CompatibilityFixturesGoldenTest), and the bindings below. Bind an entry here only to a suite that
+# verifies the documented V2 behavior end to end; general availability additionally needs a passing candidate record
+# for every hook of the entry.
+
+# Suites that execute the generated compatibility fixtures (bound per entry by compatibility-evidence-hooks.txt).
+ManifestDiagnosticsTest
+V2BytecodeOnV3Test
+ApiShapeCompatibilityTest
+BehaviorCompatibilityTest
+
+# Generated service surfaces (v3/test/codegen-generated-classes-test).
+DynamoDbGeneratedApiTest service:dynamodb
+S3GeneratedApiTest service:s3
+
+# HTTP Implementations: the HTTP SPI TCK in each capability mode (v3/test/http-client-tests, Requirement 16.9).
+Apache4SyncTckTest http-mode:apache-client:sync
+Apache5SyncTckTest http-mode:apache5-client:sync
+UrlConnectionSyncTckTest http-mode:url-connection-client:sync
+NettyAsyncTckTest http-mode:netty-nio-client:async
+CrtSyncTckTest http-mode:aws-crt-client:sync
+CrtAsyncTckTest http-mode:aws-crt-client:async
+
+# Documented V2 behaviors (v2-behaviors.json, Requirement 16.10).
+StandardRetryStrategyTest behavior:retry.standard-strategy
+AdaptiveRetryStrategyTest behavior:retry.adaptive-strategy
+CanonicalEndpointTestVectorsTest behavior:endpoint.rules-resolution
+CanonicalEndpointDimensionsPropertyTest behavior:endpoint.rules-resolution behavior:endpoint.fips-dualstack
+RequestChecksumFeatureTest behavior:checksum.request-calculation
+ResponseChecksumFeatureTest behavior:checksum.response-validation
+RequestCompressionFeatureTest behavior:compression.request
+DefaultCredentialsProviderTest behavior:credentials.default-chain-order
+AuthAndIdentityPrecedencePropertyTest behavior:credentials.default-chain-order
+IdentityRefreshSigningPropertyTest behavior:credentials.caching-and-refresh
+NetworkCredentialsProvidersTest behavior:credentials.imds
+ProfileFileTest behavior:profile.file-loading behavior:region.default-chain-order
+GeneratedPaginatorWaiterTest behavior:paginators.sync-and-async behavior:waiters.sync-and-async
+PaginatorTerminationPropertyTest behavior:paginators.sync-and-async
+GeneratedEventStreamClientTest behavior:event-streams.duplex
+GeneratedStreamingClientTest behavior:streaming.sync-bodies
+AwsCallEngineStreamingAsyncTest behavior:streaming.async-bodies
+InterceptorOrderPropertyTest behavior:interceptors.execution-hooks
+InterceptorDispatchTest behavior:interceptors.execution-hooks
+DefaultHttpSelectionPropertyTest behavior:http.default-client-selection
+HttpClientResolverTest behavior:http.default-client-selection
+ApacheProxyTunnelTest behavior:http.proxy-configuration
+UrlConnectionTlsProxyTest behavior:http.proxy-configuration
+# IAM policy builder (task 14.3; Requirement 16.8): the V2-versus-V3 differential and API comparison suite in
+# v3/test/codegen-generated-classes-test. Its api: entries name it through classification-rules.json.
+IamPolicyBuilderCompatibilityTest artifact:software.amazon.awssdk:iam-policy-builder behavior:iam-policy-builder.policies
+
+# S3 event notifications (task 14.4; Requirement 16.8): the V2-versus-V3 differential suite
+# (v3/services-custom/s3-event-notifications) runs the released V2 library next to V3 on generated, mutated and edge
+# messages and compares read results, exceptions, toString and compact/pretty JSON output.
+S3EventNotificationV2DifferentialTest artifact:software.amazon.awssdk:s3-event-notifications behavior:s3-event-notifications.model
+# S3 Transfer Manager (task 14.2; Requirements 16.7, 19.7-19.11), v3/services-custom/s3-transfer-manager: upload,
+# download, directory, multipart, progress, cancellation, pause/resume and failure-cleanup suites over the public
+# S3AsyncClient API (an in-memory S3 with injected faults, and the generated client over an in-JVM HTTP S3), the
+# barrier-synchronized concurrency suite and the bounded-memory suite (payload larger than its -Xmx64m heap).
+S3TransferManagerUploadTest artifact:software.amazon.awssdk:s3-transfer-manager behavior:s3-transfer-manager.transfers
+S3TransferManagerDownloadTest artifact:software.amazon.awssdk:s3-transfer-manager behavior:s3-transfer-manager.transfers
+S3TransferManagerDirectoryAndCopyTest behavior:s3-transfer-manager.transfers
+S3TransferManagerConcurrencyTest behavior:s3-transfer-manager.transfers
+S3TransferManagerBoundedMemoryTest behavior:s3-transfer-manager.transfers
+S3TransferManagerGeneratedClientTest behavior:s3-transfer-manager.transfers
+ResumableTransferSerializationTest behavior:s3-transfer-manager.transfers
+# The lifecycle behaviors of the Transfer Manager (task 14.6; Requirements 16.7, 19.7-19.10), one manifest entry per
+# aspect so that each is shipped, hooked and (for general availability) passing on its own. The test methods behind
+# each aspect are listed, and checked to exist, in high-level-library-matrix.json (HighLevelLibraryParityMatrixTest).
+S3TransferManagerUploadTest behavior:s3-transfer-manager.cancellation behavior:s3-transfer-manager.failure-cleanup behavior:s3-transfer-manager.fault-handling behavior:s3-transfer-manager.concurrency
+S3TransferManagerDownloadTest behavior:s3-transfer-manager.cancellation behavior:s3-transfer-manager.fault-handling behavior:s3-transfer-manager.concurrency
+S3TransferManagerDirectoryAndCopyTest behavior:s3-transfer-manager.cancellation behavior:s3-transfer-manager.failure-cleanup behavior:s3-transfer-manager.fault-handling behavior:s3-transfer-manager.concurrency
+S3TransferManagerGeneratedClientTest behavior:s3-transfer-manager.failure-cleanup behavior:s3-transfer-manager.fault-handling
+S3TransferManagerConcurrencyTest behavior:s3-transfer-manager.concurrency
+# The Transfer Manager over the generated V3 S3 client of v3/test/codegen-generated-classes-test: the ADAPTED members
+# of the V2 API (SerializableStruct responses, the replayable-body retry rule). Its api: entries name it through
+# classification-rules.json.
+S3TransferManagerCompatibilityTest
+# DynamoDB Enhanced Client (task 14.1; Requirements 16.6, 19.7-19.10), v3/services-custom/dynamodb-enhanced: the
+# enhanced sync and async clients over the generated DynamoDbClient/DynamoDbAsyncClient pipelines and an in-JVM
+# awsJson1.0 DynamoDB. The parity suite runs one mapping/table/index/batch/transaction/pagination/extension/Document
+# scenario through both clients and requires identical results and byte-identical wire requests; the fault suite
+# injects every Requirement 19.7 fault under both clients; the concurrency suite is barrier-synchronized.
+EnhancedClientSyncAsyncParityTest artifact:software.amazon.awssdk:dynamodb-enhanced behavior:dynamodb-enhanced.mapping
+EnhancedClientFaultInjectionTest behavior:dynamodb-enhanced.mapping
+EnhancedClientConcurrencyTest behavior:dynamodb-enhanced.mapping
+# The lifecycle behaviors of the enhanced clients (task 14.6), one entry per aspect; their test methods are listed in
+# high-level-library-matrix.json. behavior:dynamodb-enhanced.user-agent-feature and behavior:errors.unmodeled-error-code
+# are known gaps: no V3 artifact declares them and no hook verifies them, so the launch gate blocks them.
+EnhancedClientFaultInjectionTest behavior:dynamodb-enhanced.async-cancellation behavior:dynamodb-enhanced.failure-cleanup behavior:dynamodb-enhanced.fault-handling
+EnhancedClientConcurrencyTest behavior:dynamodb-enhanced.concurrency
+# Source claim of api:software.amazon.awssdk.enhanced.dynamodb.* (classification-rules.json dynamodb-enhanced-api):
+# every V2 public member of the baseline release is shipped with the same name and JVM descriptor.
+EnhancedV2ApiDescriptorParityTest
+# V3 sdk-core SdkNumber (added with task 14.1 for EnhancedDocument.getNumber/getNumberSet): every V2 member's
+# conversion, string retention, equality and failure behavior (v3/core/sdk-core).
+SdkNumberTest api:software.amazon.awssdk.core.SdkNumber api:software.amazon.awssdk.core.SdkNumber#bigDecimalValue()Ljava/math/BigDecimal; api:software.amazon.awssdk.core.SdkNumber#doubleValue()D api:software.amazon.awssdk.core.SdkNumber#equals(Ljava/lang/Object;)Z api:software.amazon.awssdk.core.SdkNumber#floatValue()F api:software.amazon.awssdk.core.SdkNumber#hashCode()I api:software.amazon.awssdk.core.SdkNumber#intValue()I api:software.amazon.awssdk.core.SdkNumber#longValue()J api:software.amazon.awssdk.core.SdkNumber#stringValue()Ljava/lang/String; api:software.amazon.awssdk.core.SdkNumber#toString()Ljava/lang/String;
+SdkNumberTest api:software.amazon.awssdk.core.SdkNumber#fromBigDecimal(Ljava/math/BigDecimal;)Lsoftware/amazon/awssdk/core/SdkNumber; api:software.amazon.awssdk.core.SdkNumber#fromBigInteger(Ljava/math/BigInteger;)Lsoftware/amazon/awssdk/core/SdkNumber; api:software.amazon.awssdk.core.SdkNumber#fromDouble(D)Lsoftware/amazon/awssdk/core/SdkNumber; api:software.amazon.awssdk.core.SdkNumber#fromFloat(F)Lsoftware/amazon/awssdk/core/SdkNumber;
+SdkNumberTest api:software.amazon.awssdk.core.SdkNumber#fromInteger(I)Lsoftware/amazon/awssdk/core/SdkNumber; api:software.amazon.awssdk.core.SdkNumber#fromLong(J)Lsoftware/amazon/awssdk/core/SdkNumber; api:software.amazon.awssdk.core.SdkNumber#fromShort(S)Lsoftware/amazon/awssdk/core/SdkNumber; api:software.amazon.awssdk.core.SdkNumber#fromString(Ljava/lang/String;)Lsoftware/amazon/awssdk/core/SdkNumber;
+# SNS Message Manager (task 14.5; Requirements 16.8, 17.1, 19.12, 21.10): the V2-behavior suite over the public V3
+# API in v3/test/codegen-generated-classes-test (signed, tampered and foreign-certificate messages, the caller-owned
+# SdkSyncHttpClient replacement and token redaction, with locally generated certificates and an in-memory HTTP
+# client), and the safe-diagnostics canary suite in v3/services-custom/sns-message-manager. Their api: and behavior:
+# entries name them through classification-rules.json.
+SnsMessageManagerCompatibilityTest artifact:software.amazon.awssdk:sns-message-manager
+SnsMessageManagerSafeDiagnosticsTest

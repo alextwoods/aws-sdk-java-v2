@@ -79,6 +79,13 @@ jobs:
               echo "Skipping $MODULE_DIR - modules under services/ are excluded from verification"
               continue
             fi
+
+            # Skip AWS SDK for Java V3 modules; they are not V2 modules and are governed by the v3/ reactor's own
+            # BOM, dependency policy, and architecture tests.
+            if [[ "$MODULE_DIR" == v3 || "$MODULE_DIR" == v3/* ]]; then
+              echo "Skipping $MODULE_DIR - V3 modules under v3/ are excluded from V2 module verification"
+              continue
+            fi
             
             echo "New module detected: $MODULE_DIR"
             

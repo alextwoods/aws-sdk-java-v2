@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:software.amazon.awssdk:v3:model-provenance:1",
+  "title": "AWS SDK for Java V3 model provenance, format 1",
+  "description": "META-INF/aws-sdk-java-v3/services/<package>/model-provenance.json in every generated service artifact: the exact service shape ID and the untruncated immutable revision of the canonical Smithy model it was generated from (Requirements 2.12, 22.2). Written by aws-codegen with sorted keys, two-space indentation and \\n line endings.",
+  "type": "object",
+  "required": ["formatVersion", "model", "service"],
+  "additionalProperties": false,
+  "properties": {
+    "formatVersion": {"const": 1},
+    "service": {"$ref": "#/$defs/shapeId"},
+    "model": {
+      "type": "object",
+      "required": ["digest", "files", "revision", "revisionKind"],
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "description": "Exact revision: the full Git commit object ID (40 or 64 lower-case hex digits) of the canonical model source, or, for unpinned generation only, the model digest.",
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64}|sha256:[0-9a-f]{64})$"
+        },
+        "revisionKind": {"enum": ["git-commit", "model-digest"]},
+        "digest": {"$ref": "#/$defs/digest"},
+        "files": {
+          "description": "Every canonical model file, sorted by path.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["digest", "path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {"$ref": "#/$defs/relativePath"},
+              "digest": {"$ref": "#/$defs/digest"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "shapeId": {
+      "description": "Absolute Smithy shape ID (namespace#Name), exactly as modeled.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*#[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "relativePath": {
+      "description": "Relative path with / separators; never absolute, never escaping its root.",
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(^|/)\\.\\.?(/|$))[^\\\\]+$"
+    }
+  }
+}

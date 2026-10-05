@@ -1,0 +1,10 @@
+# Parity Manifest behaviors this artifact implements (CandidateInventoryScanner; Requirements 16.6, 16.10).
+# DynamoDB Enhanced sync and async clients: bean, immutable, static and document table schemas, table and index
+# operations, expressions, batch get/write, transactions, pagination, extensions and EnhancedDocument.
+behavior:dynamodb-enhanced.mapping
+# Its lifecycle behaviors (task 14.6). behavior:dynamodb-enhanced.user-agent-feature is not implemented and therefore
+# not declared.
+behavior:dynamodb-enhanced.async-cancellation
+behavior:dynamodb-enhanced.failure-cleanup
+behavior:dynamodb-enhanced.fault-handling
+behavior:dynamodb-enhanced.concurrency

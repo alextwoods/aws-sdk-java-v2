@@ -1,0 +1,83 @@
+# The test scope of this module's generated compatibility fixtures (task 13.4; Requirements 17.1-17.3, 19.12): one
+# Parity Manifest entry ID or '*' glob per line, or '!<glob>' to exclude the entries it matches. Every selected entry
+# gets compile, linkage, signature/hierarchy and behavior fixtures per its classification and compatibility
+# dimensions; a glob that matches nothing, an exclusion that excludes nothing, or an entry with no applicable fixture,
+# fails generation.
+#
+# The high-level libraries (task 14.6) are in scope entry by entry: tools/parity-manifest's
+# HighLevelLibraryParityMatrixTest requires every non-deprecated api: entry they own (high-level-library-matrix.json)
+# to be selected here unless it is a known gap listed there, and every known gap to be excluded.
+#
+# compatibility-fixtures.json is generated from this scope by CompatibilityFixturesGoldenTest in tools/parity-manifest
+# (the manifest of the V2 API jars of v3.v2Baseline.version under the checked-in classification rules). After editing
+# this file, regenerate it there with -Dv3.compatibilityFixtures.update=true.
+
+# Generated DynamoDB client: source-preserved type, binary-preserved getItem overloads, ADAPTED configuration accessor.
+api:software.amazon.awssdk.services.dynamodb.DynamoDbClient
+api:software.amazon.awssdk.services.dynamodb.DynamoDbClient#getItem(*
+api:software.amazon.awssdk.services.dynamodb.DynamoDbClient#builder()*
+api:software.amazon.awssdk.services.dynamodb.DynamoDbClient#serviceClientConfiguration()*
+
+# Generated models and builders (binary-preserved members used by V2BytecodeOnV3Test's V2 caller).
+api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest
+api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest#builder()*
+api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest$Builder#tableName(*
+api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest$Builder#key(Ljava/util/Map;)*
+api:software.amazon.awssdk.services.dynamodb.model.GetItemRequest$Builder#consistentRead(*
+api:software.amazon.awssdk.services.dynamodb.model.GetItemResponse#item()*
+api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#builder()*
+api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#s()*
+api:software.amazon.awssdk.services.dynamodb.model.AttributeValue#n()*
+api:software.amazon.awssdk.services.dynamodb.model.AttributeValue$Builder#s(Ljava/lang/String;)*
+
+# Exception inheritance (17.1): modeled and service exceptions and the runtime superclass chain.
+api:software.amazon.awssdk.services.dynamodb.model.DynamoDbException
+api:software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException
+api:software.amazon.awssdk.awscore.exception.AwsServiceException
+api:software.amazon.awssdk.awscore.exception.AwsServiceException#<init>(*
+api:software.amazon.awssdk.awscore.exception.AwsServiceException#builder()*
+api:software.amazon.awssdk.core.exception.SdkServiceException
+api:software.amazon.awssdk.core.exception.SdkException
+
+# Runtime value types: static factory and constant.
+api:software.amazon.awssdk.regions.Region#of(Ljava/lang/String;)*
+api:software.amazon.awssdk.regions.Region#US_EAST_1:*
+
+# EXCLUDED legacy facilities (Requirement 18): V2 source must not compile and V2 bytecode must not link.
+api:software.amazon.awssdk.core.retry.RetryPolicy
+api:software.amazon.awssdk.core.retry.RetryPolicy#builder()*
+api:software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)*
+# IAM policy builder (tasks 14.3, 14.6): every public type and member of the V2 API, source-, binary- and
+# behavior-preserved; the behavior fixtures run IamPolicyBuilderCompatibilityTest, the V2-versus-V3 differential suite.
+api:software.amazon.awssdk.policybuilder.iam.*
+# S3 event notifications (task 14.4): every public type and member of the V2 model API, source- and binary-preserved.
+api:software.amazon.awssdk.eventnotifications.s3.model.*
+# SNS message manager (task 14.5): every public type and member of the V2 API. Source- and binary-preserved except
+# the ADAPTED Builder#httpClient(SdkHttpClient) (V3 SdkSyncHttpClient) and the token-redacting toString of the
+# subscription messages; behavior by SnsMessageManagerCompatibilityTest.
+api:software.amazon.awssdk.messagemanager.sns.*
+# DynamoDB Enhanced Client (tasks 14.1, 14.6): every public type and member of the V2 API, source- and
+# binary-preserved. The deprecated members are EXCLUDED (not gated; V3 still ships them, see
+# EnhancedV2ApiDescriptorParityTest), so they are left out of the scope.
+api:software.amazon.awssdk.enhanced.dynamodb.*
+!api:software.amazon.awssdk.enhanced.dynamodb.IndexMetadata#partitionKey()*
+!api:software.amazon.awssdk.enhanced.dynamodb.IndexMetadata#sortKey()*
+!api:software.amazon.awssdk.enhanced.dynamodb.TableMetadata#allKeys()*
+!api:software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbFlatten#dynamoDbBeanClass()*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.Page#create(*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.TransactUpdateItemEnhancedRequest#ignoreNulls()*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.TransactUpdateItemEnhancedRequest$Builder#ignoreNulls(*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest$Builder#addDeleteItem(Lsoftware/amazon/awssdk/enhanced/dynamodb/MappedTableResource;Lsoftware/amazon/awssdk/enhanced/dynamodb/model/DeleteItemEnhancedRequest;)*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest$Builder#addPutItem(Lsoftware/amazon/awssdk/enhanced/dynamodb/MappedTableResource;Lsoftware/amazon/awssdk/enhanced/dynamodb/model/PutItemEnhancedRequest;)*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest$Builder#addUpdateItem(Lsoftware/amazon/awssdk/enhanced/dynamodb/MappedTableResource;Lsoftware/amazon/awssdk/enhanced/dynamodb/model/UpdateItemEnhancedRequest;)*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest#ignoreNulls()*
+!api:software.amazon.awssdk.enhanced.dynamodb.model.UpdateItemEnhancedRequest$Builder#ignoreNulls(*
+# S3 Transfer Manager (tasks 14.2, 14.6): every public type and member of the V2 API, source- and binary-preserved
+# except the ADAPTED SerializableStruct responses (CompletedObjectTransfer#response, TransferProgressSnapshot#sdkResponse)
+# and the replayable-body retry rule (UploadRequest$Builder#requestBody); behavior by
+# S3TransferManagerCompatibilityTest. Known gap, excluded so that no fixture claims it: the presigned-URL download API
+# is not shipped (V3 s3 has no presignedurl model types); the launch gate reports its entries NOT_SHIPPED and
+# high-level-library-matrix.json lists them.
+api:software.amazon.awssdk.transfer.s3.*
+!api:software.amazon.awssdk.transfer.s3.S3TransferManager#*WithPresignedUrl(*
+!api:software.amazon.awssdk.transfer.s3.model.Presigned*

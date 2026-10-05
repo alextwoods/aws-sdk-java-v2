@@ -1,0 +1,289 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2017-08-25",
+    "endpointPrefix": "signer",
+    "jsonVersion": "1.1",
+    "protocol": "rest-json",
+    "serviceAbbreviation": "signer",
+    "serviceFullName": "AWS Signer",
+    "serviceId": "signer",
+    "signatureVersion": "v4",
+    "signingName": "signer",
+    "uid": "signer-2017-08-25"
+  },
+  "operations": {
+    "ListSigningPlatforms": {
+      "name": "ListSigningPlatforms",
+      "http": {
+        "method": "GET",
+        "requestUri": "/signing-platforms"
+      },
+      "input": {
+        "shape": "ListSigningPlatformsRequest"
+      },
+      "output": {
+        "shape": "ListSigningPlatformsResponse"
+      },
+      "errors": [
+        {
+          "shape": "ValidationException"
+        },
+        {
+          "shape": "AccessDeniedException"
+        },
+        {
+          "shape": "ThrottlingException"
+        },
+        {
+          "shape": "InternalServiceErrorException"
+        }
+      ]
+    }
+  },
+  "shapes": {
+    "AccessDeniedException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        }
+      },
+      "error": {
+        "httpStatusCode": 403
+      },
+      "exception": true
+    },
+    "Category": {
+      "type": "string",
+      "enum": [
+        "AWSIoT"
+      ]
+    },
+    "EncryptionAlgorithm": {
+      "type": "string",
+      "enum": [
+        "RSA",
+        "ECDSA"
+      ]
+    },
+    "EncryptionAlgorithmOptions": {
+      "type": "structure",
+      "required": [
+        "allowedValues",
+        "defaultValue"
+      ],
+      "members": {
+        "allowedValues": {
+          "shape": "EncryptionAlgorithms"
+        },
+        "defaultValue": {
+          "shape": "EncryptionAlgorithm"
+        }
+      }
+    },
+    "EncryptionAlgorithms": {
+      "type": "list",
+      "member": {
+        "shape": "EncryptionAlgorithm"
+      }
+    },
+    "ErrorMessage": {
+      "type": "string"
+    },
+    "HashAlgorithm": {
+      "type": "string",
+      "enum": [
+        "SHA1",
+        "SHA256"
+      ]
+    },
+    "HashAlgorithmOptions": {
+      "type": "structure",
+      "required": [
+        "allowedValues",
+        "defaultValue"
+      ],
+      "members": {
+        "allowedValues": {
+          "shape": "HashAlgorithms"
+        },
+        "defaultValue": {
+          "shape": "HashAlgorithm"
+        }
+      }
+    },
+    "HashAlgorithms": {
+      "type": "list",
+      "member": {
+        "shape": "HashAlgorithm"
+      }
+    },
+    "ImageFormat": {
+      "type": "string",
+      "enum": [
+        "JSON"
+      ]
+    },
+    "ImageFormats": {
+      "type": "list",
+      "member": {
+        "shape": "ImageFormat"
+      }
+    },
+    "InternalServiceErrorException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        }
+      },
+      "error": {
+        "httpStatusCode": 500
+      },
+      "exception": true
+    },
+    "ListSigningPlatformsRequest": {
+      "type": "structure",
+      "members": {
+        "category": {
+          "shape": "String",
+          "location": "querystring",
+          "locationName": "category"
+        },
+        "partner": {
+          "shape": "String",
+          "location": "querystring",
+          "locationName": "partner"
+        },
+        "target": {
+          "shape": "String",
+          "location": "querystring",
+          "locationName": "target"
+        },
+        "maxResults": {
+          "shape": "MaxResults",
+          "location": "querystring",
+          "locationName": "maxResults"
+        },
+        "nextToken": {
+          "shape": "String",
+          "location": "querystring",
+          "locationName": "nextToken"
+        }
+      }
+    },
+    "ListSigningPlatformsResponse": {
+      "type": "structure",
+      "members": {
+        "platforms": {
+          "shape": "SigningPlatforms"
+        },
+        "nextToken": {
+          "shape": "String"
+        }
+      }
+    },
+    "MaxResults": {
+      "type": "integer",
+      "box": true,
+      "max": 25,
+      "min": 1
+    },
+    "MaxSizeInMB": {
+      "type": "integer"
+    },
+    "SigningConfiguration": {
+      "type": "structure",
+      "required": [
+        "encryptionAlgorithmOptions",
+        "hashAlgorithmOptions"
+      ],
+      "members": {
+        "encryptionAlgorithmOptions": {
+          "shape": "EncryptionAlgorithmOptions"
+        },
+        "hashAlgorithmOptions": {
+          "shape": "HashAlgorithmOptions"
+        }
+      }
+    },
+    "SigningImageFormat": {
+      "type": "structure",
+      "required": [
+        "supportedFormats",
+        "defaultFormat"
+      ],
+      "members": {
+        "supportedFormats": {
+          "shape": "ImageFormats"
+        },
+        "defaultFormat": {
+          "shape": "ImageFormat"
+        }
+      }
+    },
+    "SigningPlatform": {
+      "type": "structure",
+      "members": {
+        "platformId": {
+          "shape": "String"
+        },
+        "displayName": {
+          "shape": "String"
+        },
+        "partner": {
+          "shape": "String"
+        },
+        "target": {
+          "shape": "String"
+        },
+        "category": {
+          "shape": "Category"
+        },
+        "signingConfiguration": {
+          "shape": "SigningConfiguration"
+        },
+        "signingImageFormat": {
+          "shape": "SigningImageFormat"
+        },
+        "maxSizeInMB": {
+          "shape": "MaxSizeInMB"
+        }
+      }
+    },
+    "SigningPlatforms": {
+      "type": "list",
+      "member": {
+        "shape": "SigningPlatform"
+      }
+    },
+    "String": {
+      "type": "string"
+    },
+    "ThrottlingException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        }
+      },
+      "error": {
+        "httpStatusCode": 429
+      },
+      "exception": true
+    },
+    "ValidationException": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ErrorMessage"
+        }
+      },
+      "error": {
+        "httpStatusCode": 400
+      },
+      "exception": true
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:software.amazon.awssdk:v3:parity-manifest-classification-rules:1",
+    "title": "AWS SDK for Java V3 Parity Manifest classification rules",
+    "description": "Human-maintained rules that classify V2 baseline inventory items. Semantics (tiers, specificity, conflicts) are documented in ClassificationRules.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schemaVersion"],
+    "properties": {
+        "schemaVersion": { "const": 1 },
+        "comment": { "type": "string" },
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+        "defaults": { "type": "array", "items": { "$ref": "#/$defs/rule" } }
+    },
+    "$defs": {
+        "rule": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "classification"],
+            "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "comment": { "type": "string" },
+                "match": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": { "type": "string", "description": "Exact entry ID, or a glob where * matches any characters." },
+                        "kind": { "enum": ["ARTIFACT", "SERVICE", "PUBLIC_TYPE", "PUBLIC_MEMBER", "CONFIGURATION", "HTTP_MODE", "BEHAVIOR"] },
+                        "deprecated": { "type": "boolean" }
+                    }
+                },
+                "classification": { "enum": ["PRESERVED", "ADAPTED", "EXCLUDED"] },
+                "dimensions": { "type": "array", "items": { "enum": ["source", "binary", "behavior", "configuration"] } },
+                "rationale": { "type": "string" },
+                "differences": { "type": "array", "items": { "type": "string" } },
+                "v3Artifact": { "type": "string" },
+                "replacement": { "type": "string" },
+                "migrationKind": { "enum": ["RECIPE", "DIAGNOSTIC", "COMPILE_TIME"] },
+                "migration": { "type": "string" },
+                "supportEvidence": { "type": "string" },
+                "evidenceIds": { "type": "array", "items": { "type": "string" } }
+            }
+        }
+    }
+}

@@ -1,0 +1,10 @@
+# Parity Manifest behaviors this artifact implements (CandidateInventoryScanner; Requirements 16.7, 16.10).
+# S3 Transfer Manager upload, download, directory, multipart, progress, cancellation, resume and failure-cleanup
+# behaviors over the public S3AsyncClient API: S3TransferManager.
+behavior:s3-transfer-manager.transfers
+# Its lifecycle behaviors (task 14.6). behavior:s3-transfer-manager.presigned-url-download is not implemented and
+# therefore not declared.
+behavior:s3-transfer-manager.cancellation
+behavior:s3-transfer-manager.failure-cleanup
+behavior:s3-transfer-manager.fault-handling
+behavior:s3-transfer-manager.concurrency

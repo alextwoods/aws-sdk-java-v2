@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  The service fleet: maps every service of the V2 Launch Parity Baseline (the V2 services/ modules) to its canonical
+  Smithy model at one pinned aws-models revision, writes the generated service modules under v3/services/ (with their
+  vendored canonical model files) from that plan, and gates the fleet build (Requirements 2.1, 2.2, 2.10, 16.4, 16.5):
+  ServiceFleetRepositoryTest fails when a baseline service has no generated service module, when a module, the
+  services aggregator or the BOM is out of date with services/service-fleet.json, or when a vendored model file, the
+  pinned revision or the canonical checkout (when present) disagree. Regenerate the fleet after moving the canonical
+  checkout to a new revision with ServiceFleetCli sync (see its Javadoc for the arguments).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-tools</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>service-fleet</artifactId>
+    <name>AWS Java SDK V3 :: Tools :: Service Fleet</name>
+    <description>Plans, writes and gates the generated V3 service fleet from the canonical AWS Smithy models.</description>
+    <dependencies>
+        <!-- JSON reading and writing (Smithy Node), the JSON library the V3 build tooling already uses. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.root>${project.basedir}/../..</v3.root>
+                        <!-- The V2 checkout whose services/ modules are the Launch Parity Baseline. -->
+                        <v3.repositoryRoot>${project.basedir}/../../..</v3.repositoryRoot>
+                        <!-- The canonical aws-models checkout; optional. When present, its revision and model files
+                             must equal the pinned ones. -->
+                        <v3.canonicalModels>${project.basedir}/../../../.kiro/reference/aws-models</v3.canonicalModels>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

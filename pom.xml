@@ -715,6 +715,23 @@
 
     <profiles>
         <profile>
+            <!-- Adds the AWS SDK for Java V3 reactor (v3/pom.xml) to the root build. V3 requires JDK 21+, so the
+                 profile activates only on JDK 21 or newer; builds on older JDKs are the unchanged V2 build.
+                 V3 modules do not inherit from this POM and carry their own 3.x build policy.
+                 - Exclude V3 from a JDK 21+ root build: -Dv3.skip
+                 - Force V3 on an older JDK (fails in V3's validate phase, before compilation): -Pv3 -->
+            <id>v3</id>
+            <activation>
+                <jdk>[21,)</jdk>
+                <property>
+                    <name>!v3.skip</name>
+                </property>
+            </activation>
+            <modules>
+                <module>v3</module>
+            </modules>
+        </profile>
+        <profile>
             <id>sonar-generate</id>
             <properties>
                 <checkstyle.skip>true</checkstyle.skip>

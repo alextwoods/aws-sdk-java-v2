@@ -1,0 +1,266 @@
+# Required suites of the core-runtime verification gate (task 11.1, profile v3-core-runtime).
+#
+# CoreRuntimeSuiteReportsTest fails the -Dv3.aggregate=core-runtime build unless every suite below wrote
+# <module>/target/surefire-reports/TEST-<class>.xml during this Maven session with at least one executed (non-skipped)
+# test and no failures or errors. ReactorInventoryTest checks that every entry names an existing, concrete test class in
+# a module that v3-core-runtime builds, and that release-reactor-tests' core-runtime-gate profile orders the build of
+# every listed module before the gate.
+#
+# Format: <module directory relative to v3/> <fully qualified test class>. '#' starts a comment.
+# Property tests are tagged with the spec task and property they verify.
+
+# Task 6: configuration, overrides, client constants, resource ownership, unsupported options, bodies (6.4 P24 ConfigurationPrecedence, 6.5 P25 ScopedOverrides, 6.6 P26 ClientConstantResolution, 6.7 P27 ResourceOwnership, 6.8 P28 UnsupportedOptionDiagnostics)
+core/sdk-core software.amazon.awssdk.core.SdkBytesTest
+core/sdk-core software.amazon.awssdk.core.SdkRequestOverrideConfigurationTest
+core/sdk-core software.amazon.awssdk.core.SdkResponseMetadataTest
+core/sdk-core software.amazon.awssdk.core.async.AsyncRequestBodyTckTest
+core/sdk-core software.amazon.awssdk.core.async.AsyncRequestBodyTest
+core/sdk-core software.amazon.awssdk.core.async.AsyncResponseTransformerTest
+core/sdk-core software.amazon.awssdk.core.client.config.ClientConfigurationResolverTest
+core/sdk-core software.amazon.awssdk.core.client.config.ClientConstantResolutionPropertyTest
+core/sdk-core software.amazon.awssdk.core.client.config.ClientOverrideConfigurationTest
+core/sdk-core software.amazon.awssdk.core.client.config.ConfigurationKeysAndTimeoutsTest
+core/sdk-core software.amazon.awssdk.core.client.config.ConfigurationPrecedencePropertyTest
+core/sdk-core software.amazon.awssdk.core.client.config.SdkClientConfigurationTest
+core/sdk-core software.amazon.awssdk.core.client.config.UnsupportedOptionDiagnosticsPropertyTest
+core/sdk-core software.amazon.awssdk.core.exception.ExceptionHierarchyTest
+core/sdk-core software.amazon.awssdk.core.exception.ModelConflictExceptionTest
+core/sdk-core software.amazon.awssdk.core.exception.SdkExceptionTest
+core/sdk-core software.amazon.awssdk.core.internal.model.ModelCollectionsTest
+core/sdk-core software.amazon.awssdk.core.override.CallOptionsConcurrencyTest
+core/sdk-core software.amazon.awssdk.core.override.CallOptionsTest
+core/sdk-core software.amazon.awssdk.core.override.ScopedOverridesPropertyTest
+core/sdk-core software.amazon.awssdk.core.pagination.PaginationTest
+core/sdk-core software.amazon.awssdk.core.resource.ManagedResourceTest
+core/sdk-core software.amazon.awssdk.core.resource.ResourceOwnershipPropertyTest
+core/sdk-core software.amazon.awssdk.core.resource.ResourceScopeTest
+core/sdk-core software.amazon.awssdk.core.sync.RequestBodyTest
+core/sdk-core software.amazon.awssdk.core.sync.ResponseTransformerTest
+core/sdk-core software.amazon.awssdk.core.waiters.WaiterTest
+core/sdk-core software.amazon.awssdk.utils.ToStringTest
+
+# Task 6.1: AWS configuration, metadata, exception, and operation descriptor APIs
+core/aws-core software.amazon.awssdk.awscore.AwsConfigurationTest
+core/aws-core software.amazon.awssdk.awscore.client.config.AwsClientSettingsTest
+core/aws-core software.amazon.awssdk.awscore.exception.AwsServiceExceptionTest
+core/aws-core software.amazon.awssdk.awscore.metadata.ModelProvenanceTest
+core/aws-core software.amazon.awssdk.awscore.operation.AwsOperationDescriptorTest
+core/aws-core software.amazon.awssdk.awscore.override.AwsCallOptionTest
+
+# Task 9: pipeline plans, sync/async engines, lifecycle, retry ownership, interceptors, plugins, cancellation, hot path (9.7 P29 PipelineLifecycle, 9.8 P31 RetryTokenAttempt, 9.9 P32 AttemptDataVisibility, 9.10 P33 InactiveExtension, 9.11 P34 ProtocolTransportValidation, 9.12 P35 InterceptorContext, 9.13 P36 InterceptorOrder, 9.14 P37 InterceptorMutation, 9.15 P38 ContextLifetime, 9.16 P39 InterceptorFailure; 8.13 P51 ModelConflict)
+core/aws-pipeline software.amazon.awssdk.pipeline.AttemptDataVisibilityPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEngineAsyncTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEngineCancellationTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEngineEventStreamTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEngineLifecycleTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEnginePresignTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEngineStreamingAsyncTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEngineStreamingSyncTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsCallEngineSyncTest
+core/aws-pipeline software.amazon.awssdk.pipeline.AwsClientBuildStateDefaultCredentialsTest
+core/aws-pipeline software.amazon.awssdk.pipeline.CallStateTest
+core/aws-pipeline software.amazon.awssdk.pipeline.CancellationScopeTest
+core/aws-pipeline software.amazon.awssdk.pipeline.ClientRuntimeTest
+core/aws-pipeline software.amazon.awssdk.pipeline.ContextLifetimePropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.InactiveExtensionPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.InterceptorContextPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.InterceptorDispatchTest
+core/aws-pipeline software.amazon.awssdk.pipeline.InterceptorFailurePropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.InterceptorMutationPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.InterceptorOrderPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.ModelConflictPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.PipelineHotPathTest
+core/aws-pipeline software.amazon.awssdk.pipeline.PipelineLifecyclePropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.ProtocolTransportValidationPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.RetryTokenAttemptPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.TypedContextTest
+core/aws-pipeline software.amazon.awssdk.pipeline.feature.IdempotencyTokenFeatureTest
+
+# Task 8.1: Modern Auth scheme selection
+core/auth-api software.amazon.awssdk.auth.api.ModeledAuthSelectionTest
+
+# Task 8.1: SigV4, SigV4a, presigning
+core/auth-aws software.amazon.awssdk.auth.aws.AwsAuthSchemeOptionsTest
+core/auth-aws software.amazon.awssdk.auth.aws.AwsV4HttpSignerTest
+core/auth-aws software.amazon.awssdk.auth.aws.AwsV4PresigningTest
+core/auth-aws software.amazon.awssdk.auth.aws.AwsV4aHttpSignerTest
+core/auth-aws software.amazon.awssdk.auth.aws.internal.V4RequestSigningTest
+
+# Task 8.1: identity types and caching
+core/identity-spi software.amazon.awssdk.identity.spi.IdentityTypesTest
+core/identity-spi software.amazon.awssdk.identity.spi.cache.IdentityCacheTest
+
+# Task 8.1: identity providers (8.6 P44 AuthAndIdentityPrecedence, 8.12 P50 IdentityRefreshSigning)
+core/identity-providers software.amazon.awssdk.identity.providers.AuthAndIdentityPrecedencePropertyTest
+core/identity-providers software.amazon.awssdk.identity.providers.DefaultCredentialsProviderTest
+core/identity-providers software.amazon.awssdk.identity.providers.IdentityRefreshSigningPropertyTest
+core/identity-providers software.amazon.awssdk.identity.providers.NetworkCredentialsProvidersTest
+core/identity-providers software.amazon.awssdk.identity.providers.ProfileCredentialsProviderTest
+
+# Task 8.1: profiles and regions
+core/regions software.amazon.awssdk.profiles.ProfileFileTest
+core/regions software.amazon.awssdk.regions.RegionTest
+
+# Task 8.2: canonical endpoint rules, binding, discovery (8.7 P45 CanonicalEndpointDimensions)
+core/endpoints software.amazon.awssdk.endpoints.binding.EndpointBindingTest
+core/endpoints software.amazon.awssdk.endpoints.binding.HostPrefixTest
+core/endpoints software.amazon.awssdk.endpoints.binding.OperationContextPathTest
+core/endpoints software.amazon.awssdk.endpoints.discovery.EndpointDiscoveryCacheTest
+core/endpoints software.amazon.awssdk.endpoints.internal.JsonTest
+core/endpoints software.amazon.awssdk.endpoints.partition.PartitionsTest
+core/endpoints software.amazon.awssdk.endpoints.rules.CanonicalEndpointDimensionsPropertyTest
+core/endpoints software.amazon.awssdk.endpoints.rules.CanonicalEndpointTestVectorsTest
+core/endpoints software.amazon.awssdk.endpoints.rules.EndpointRuleSetTest
+core/endpoints software.amazon.awssdk.endpoints.rules.internal.RulesFunctionsTest
+
+# Task 8.3: standard and adaptive retries (8.11 P49 BoundedRetryHintsAndClassification)
+core/retries software.amazon.awssdk.retries.AdaptiveRetryStrategyTest
+core/retries software.amazon.awssdk.retries.BackoffStrategyTest
+core/retries software.amazon.awssdk.retries.BoundedRetryHintsAndClassificationPropertyTest
+core/retries software.amazon.awssdk.retries.RetryClassifierTest
+core/retries software.amazon.awssdk.retries.RetryHintsTest
+core/retries software.amazon.awssdk.retries.RetrySchedulerTest
+core/retries software.amazon.awssdk.retries.StandardRetryStrategyTest
+core/retries software.amazon.awssdk.retries.internal.ClientRateLimiterTest
+
+# Task 8.4: checksums and compression (8.8 P46 IntegrityAndCompression)
+core/checksums software.amazon.awssdk.checksums.ChunkTransformsTest
+core/checksums software.amazon.awssdk.checksums.HttpChecksumMetadataTest
+core/checksums software.amazon.awssdk.checksums.IntegrityAndCompressionPropertyTest
+core/checksums software.amazon.awssdk.checksums.RequestChecksumFeatureTest
+core/checksums software.amazon.awssdk.checksums.ResponseChecksumFeatureTest
+core/checksums software.amazon.awssdk.checksums.SdkChecksumTest
+core/checksums software.amazon.awssdk.checksums.TransformingPublisherTckTest
+core/checksums software.amazon.awssdk.checksums.compression.RequestCompressionFeatureTest
+
+# Task 8.5: Event Stream framing and signing
+core/eventstream software.amazon.awssdk.eventstream.EventStreamSignerTest
+core/eventstream software.amazon.awssdk.eventstream.MessageCodecTest
+
+# Tasks 7.1-7.2: HTTP SPI, provider selection, capabilities (7.9 P40 HttpRepresentationFidelity, 7.11 P42 DefaultHttpSelection, 7.12 P43 HttpCapabilityCheck)
+http-client-spi software.amazon.awssdk.http.AsyncHttpSpiTest
+http-client-spi software.amazon.awssdk.http.HttpCapabilitiesAndFailuresTest
+http-client-spi software.amazon.awssdk.http.HttpMessagesTest
+http-client-spi software.amazon.awssdk.http.HttpRepresentationFidelityPropertyTest
+http-client-spi software.amazon.awssdk.http.RequestBodyAdapterTest
+http-client-spi software.amazon.awssdk.http.StreamingBodiesTckTest
+http-client-spi software.amazon.awssdk.http.StreamingBodiesTest
+http-client-spi software.amazon.awssdk.http.SyncHttpSpiTest
+http-client-spi software.amazon.awssdk.http.provider.DefaultHttpSelectionPropertyTest
+http-client-spi software.amazon.awssdk.http.provider.HttpCapabilityCheckPropertyTest
+http-client-spi software.amazon.awssdk.http.provider.HttpClientResolverTest
+http-client-spi software.amazon.awssdk.http.provider.HttpImplementationDiscoveryTest
+
+# Task 7.3: Apache HTTP Client 4 sync transport
+http-clients/apache-client software.amazon.awssdk.http.apache.ApacheFailureMapperTest
+http-clients/apache-client software.amazon.awssdk.http.apache.ApacheHttpClientTest
+http-clients/apache-client software.amazon.awssdk.http.apache.ApacheProxyTunnelTest
+http-clients/apache-client software.amazon.awssdk.http.apache.ApacheWireFramingTest
+
+# Task 7.4: Apache HTTP Client 5 sync and async transports
+http-clients/apache5-client software.amazon.awssdk.http.apache5.Apache5AsyncHttpClientTest
+http-clients/apache5-client software.amazon.awssdk.http.apache5.Apache5FailureMappingTest
+http-clients/apache5-client software.amazon.awssdk.http.apache5.Apache5HttpClientTest
+http-clients/apache5-client software.amazon.awssdk.http.apache5.PublisherEntityProducerBufferTest
+http-clients/apache5-client software.amazon.awssdk.http.apache5.PublisherEntityProducerTckTest
+http-clients/apache5-client software.amazon.awssdk.http.apache5.ResponseBodyPublisherTckTest
+
+# Task 7.5: URLConnection sync transport
+http-clients/url-connection-client software.amazon.awssdk.http.urlconnection.UrlConnectionExchangeTest
+http-clients/url-connection-client software.amazon.awssdk.http.urlconnection.UrlConnectionFailuresTest
+http-clients/url-connection-client software.amazon.awssdk.http.urlconnection.UrlConnectionHeadersTest
+http-clients/url-connection-client software.amazon.awssdk.http.urlconnection.UrlConnectionProviderTest
+http-clients/url-connection-client software.amazon.awssdk.http.urlconnection.UrlConnectionTlsProxyTest
+
+# Task 7.6: Netty NIO async transport
+http-clients/netty-nio-client software.amazon.awssdk.http.nio.netty.Http2Test
+http-clients/netty-nio-client software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClientTest
+http-clients/netty-nio-client software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpServiceTest
+http-clients/netty-nio-client software.amazon.awssdk.http.nio.netty.internal.NettyFailuresTest
+http-clients/netty-nio-client software.amazon.awssdk.http.nio.netty.internal.ResponseBodyPublisherTckTest
+http-clients/netty-nio-client software.amazon.awssdk.http.nio.netty.internal.ResponseBodyPublisherTest
+
+# Task 7.7: CRT sync and async transports
+http-clients/aws-crt-client software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClientTest
+http-clients/aws-crt-client software.amazon.awssdk.http.crt.AwsCrtHttpClientTest
+http-clients/aws-crt-client software.amazon.awssdk.http.crt.CrtProvidersAndLifecycleTest
+http-clients/aws-crt-client software.amazon.awssdk.http.crt.internal.CrtFailureMappingTest
+http-clients/aws-crt-client software.amazon.awssdk.http.crt.internal.CrtResponsePublisherTckTest
+http-clients/aws-crt-client software.amazon.awssdk.http.crt.internal.CrtResponsePublisherTest
+
+# Task 7.8: HTTP SPI TCK in every capability mode (7.10 P41 TransportFailureCategory)
+test/http-client-tests software.amazon.awssdk.http.tck.Apache4SyncTckTest
+test/http-client-tests software.amazon.awssdk.http.tck.Apache5AsyncTckTest
+test/http-client-tests software.amazon.awssdk.http.tck.Apache5SyncTckTest
+test/http-client-tests software.amazon.awssdk.http.tck.CrtAsyncTckTest
+test/http-client-tests software.amazon.awssdk.http.tck.CrtSyncTckTest
+test/http-client-tests software.amazon.awssdk.http.tck.NettyAsyncTckTest
+test/http-client-tests software.amazon.awssdk.http.tck.TransportFailureCategoryPropertyTest
+test/http-client-tests software.amazon.awssdk.http.tck.UrlConnectionSyncTckTest
+
+# Task 8.5 / 8.9 / 8.10: protocol-level Event Stream signature chains, publisher-backed Event Stream pump (8.5 on the
+# 4.3 SERDE), and idempotency stability
+protocols/protocol-core software.amazon.awssdk.protocols.core.eventstream.EventStreamSignatureChainPropertyTest
+protocols/protocol-core software.amazon.awssdk.protocols.core.eventstream.PublisherEventStreamPumpTckTest
+protocols/protocol-core software.amazon.awssdk.protocols.core.eventstream.PublisherEventStreamTest
+test/protocol-property-tests software.amazon.awssdk.test.protocols.IdempotencyTokenStabilityPropertyTest
+
+# Tasks 6.2 and 9.6: dependency, runtime-version, bytecode, and pipeline architecture enforcement
+test/architecture-tests software.amazon.awssdk.test.architecture.BytecodePurityTest
+test/architecture-tests software.amazon.awssdk.test.architecture.DependencyPolicyTest
+test/architecture-tests software.amazon.awssdk.test.architecture.PipelineArchitectureTest
+test/architecture-tests software.amazon.awssdk.test.architecture.ReleaseAlignmentBuildTest
+test/architecture-tests software.amazon.awssdk.test.architecture.RuntimeDependencyPurityTest
+test/architecture-tests software.amazon.awssdk.test.architecture.RuntimeVersionCoherencePropertyTest
+
+# Task 10.1-10.4: generated sync/async clients, paginators, waiters, presigners, utilities, streaming, async behavior,
+# and generated endpoint binding (8.2) (10.6 P19 PaginatorTermination, 10.7 P20 DerivedClientConfiguration,
+# 10.8 P21 EarlyAsyncReturn, 10.9 P22 ReachableAsyncCause, 10.10 P23 TerminalCancellation)
+test/codegen-tests software.amazon.awssdk.test.codegen.CanonicalEndpointBindingTest
+test/codegen-tests software.amazon.awssdk.test.codegen.DerivedClientConfigurationPropertyTest
+test/codegen-tests software.amazon.awssdk.test.codegen.EarlyAsyncReturnPropertyTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedAsyncBehaviorTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedClientTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedCloudFrontUtilitiesTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedDsqlUtilitiesTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedEndpointBindingTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedPaginatorWaiterTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedPresignerTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedRdsUtilitiesTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedS3UtilitiesTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedStreamingClientTest
+test/codegen-tests software.amazon.awssdk.test.codegen.PaginatorTerminationPropertyTest
+test/codegen-tests software.amazon.awssdk.test.codegen.ReachableAsyncCausePropertyTest
+test/codegen-tests software.amazon.awssdk.test.codegen.TerminalCancellationPropertyTest
+# Tasks 8.4, 8.5, and 10.1-10.4: generated Event Stream clients (sync/async, SigV4 frame signing) and generated
+# httpChecksum request/response integrity
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedEventStreamClientTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedHttpChecksumTest
+# Task 12.5 P30 ClientProjectionLifecycle and 12.8 P54 GeneratedDynamicWireEquivalence: gated here because they hold
+# the generated sync/async clients to the same engine lifecycle and wire bytes as the dynamic projection.
+test/codegen-tests software.amazon.awssdk.test.codegen.ClientProjectionLifecyclePropertyTest
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedDynamicWireEquivalencePropertyTest
+# Not listed (outside this gate's tasks 6-10 scope; the profile still builds and runs them, and any failure still
+# fails the build, but the gate does not require their reports):
+#   - task 12 Dynamic Client suites: dynamic/dynamic-model (DynamicModelTest, DynamicServiceTest,
+#     DynamicPaginationWaiterTest, 12.6 P52 ServiceOperationSelectionPropertyTest), dynamic/dynamic-client
+#     (DynamicClientTest, DynamicAsyncClientTest, DynamicStreamingTest, DynamicAsyncStreamingTest, DynamicPaginatorTest,
+#     DynamicWaiterTest, DynamicServiceBindingTest, DynamicInputValidationTest, 12.7 P53
+#     DynamicInputValidationPropertyTest, DeclaredMemberOrderTest), and 12.4 test/architecture-tests
+#     DynamicIsolationRuntimeTest. A task-12 gate would list these and add dynamic-model and dynamic-client to the
+#     core-runtime-gate profile.
+#   - codegen/aws-codegen generator unit suites (including EventStreamClientGenerationTest): the generator belongs to
+#     the foundation tasks, and this list covers no codegen/ module; generated Event Stream behavior is gated through
+#     GeneratedEventStreamClientTest above.
+
+# Task 10.5: concrete generated API compile and compatibility fixtures
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.DynamoDbGeneratedApiTest
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.ManifestDiagnosticsTest
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.S3GeneratedApiTest
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.SyntheticGeneratedApiTest
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.V2BytecodeOnV3Test
+
+# Task 13.4: Parity Manifest-generated compatibility fixtures (ManifestDiagnosticsTest and V2BytecodeOnV3Test above run
+# the compile and linkage fixtures)
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.ApiShapeCompatibilityTest
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.BehaviorCompatibilityTest

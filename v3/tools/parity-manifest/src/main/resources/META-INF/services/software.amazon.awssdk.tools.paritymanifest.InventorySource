@@ -1,0 +1,7 @@
+software.amazon.awssdk.tools.paritymanifest.ArtifactInventorySource
+software.amazon.awssdk.tools.paritymanifest.BehaviorInventorySource
+software.amazon.awssdk.tools.paritymanifest.ConfigurationInventorySource
+software.amazon.awssdk.tools.paritymanifest.HttpModeInventorySource
+software.amazon.awssdk.tools.paritymanifest.PublicApiInventorySource
+software.amazon.awssdk.tools.paritymanifest.ServiceInventorySource
+software.amazon.awssdk.tools.paritymanifest.V2CodegenSurfaceInventorySource

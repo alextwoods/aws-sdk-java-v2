@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  Black-box tests of aws-codegen through its public entry point, AwsCodegen.generate: byte-tree determinism of
+  generated source/resource trees (Requirement 3.6) and integration conflict diagnostics (Requirement 3.7). The
+  reusable fixtures (GeneratedTree, SmithyModelFixture, TestIntegration) live under
+  software.amazon.awssdk.test.codegen.support in the test sources so later property tests can build on them.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>codegen-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Codegen Tests</name>
+    <description>Determinism and integration-conflict tests of the AWS code generator.</description>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-codegen</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The runtime reader (ModelProvenance) of the generated model provenance, and the class path against which
+             generated GeneratedServiceInfo sources are compiled in-test. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Generated service metadata declares the modeled protocols as ServiceProtocols. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>protocol-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- GeneratedEventStreamClientTest encodes response frames and decodes request frames (protocol-core's
+             eventstream dependency is optional). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>eventstream</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Generated endpoint parameters, providers, rules and operation bindings (task 8.2) compile against the
+             endpoints runtime, and CanonicalEndpointBindingTest runs their canonical endpoint test vectors. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Generated clients (task 10.1) compile against the AWS pipeline, and GeneratedClientTest calls them through
+             the awsJson1_0 protocol against a fake HTTP transport. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-pipeline</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- The streaming-output client test binds a streaming blob @httpPayload, which needs an HTTP binding
+                 protocol. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-json-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- The generated presigner test presigns operations of a synthetic restXml (S3-shaped) service. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-xml-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- Generated clients of SigV4 services sign with the AWS auth schemes. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth-aws</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- Generated builders of SigV4 services default to DefaultCredentialsProvider. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-providers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The V3 dynamic model: the runtime model and runtime schema views of Property 2 (unknown trait
+             preservation) load runtime models through it and compare its schemas with the generated ones. It replaces
+             Smithy Java's SchemaConverter, the former stand-in for the runtime schema view. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamic-model</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The V3 Dynamic Client: Property 30 (equivalent client-projection lifecycles) calls the same synthetic
+             model through generated sync/async clients and dynamic sync/async clients and compares their traces. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamic-client</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!-- The pinned canonical AWS models (as read by service generation), whose endpoint test cases
+                             with operation inputs CanonicalEndpointBindingTest runs through generated bindings. -->
+                        <v3.canonicalModels>${project.basedir}/../../../.kiro/reference/aws-models</v3.canonicalModels>
+                        <!-- The V2 repository root, whose services/pom.xml module list is the Launch Parity Baseline
+                             of the opt-in fleet generation gate (FleetGenerationTest, -Dv3.fleetGeneration=true). -->
+                        <v3.repositoryRoot>${project.basedir}/../../..</v3.repositoryRoot>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

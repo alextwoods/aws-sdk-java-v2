@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  Maven build fixture for JdkFailureModeFixtureTest. It is NOT a reactor module: the test copies it next to a clean
+  checkout of v3/, to <checkout>/fixtures/jdk-baseline-fixture/ (so the relativePath below resolves to the real V3
+  parent while the checked-out v3/ tree stays unmodified), and builds it with a chosen JDK:
+    * JDK 21 and newer: compiles its Java 21 language/API usage to release 21 bytecode and packages it.
+    * JDK older than 21, real or simulated with -Dv3.minimum.jdk.version: rejected by the parent's v3-build-policy
+      execution in the validate phase, so no class file is produced although the module has sources.
+  It deliberately declares no dependencies so that the forked build needs nothing beyond the parent's plugins.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>aws-sdk-java-v3-parent</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+        <relativePath>../../v3/parent/pom.xml</relativePath>
+    </parent>
+    <artifactId>jdk-baseline-fixture</artifactId>
+    <name>AWS Java SDK V3 :: Test :: JDK Baseline Fixture</name>
+    <description>Build fixture that compiles only on JDK 21+ and must be rejected before compilation on older JDKs.</description>
+</project>

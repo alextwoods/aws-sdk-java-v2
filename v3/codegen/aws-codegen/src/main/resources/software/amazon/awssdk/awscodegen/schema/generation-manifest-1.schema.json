@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:software.amazon.awssdk:v3:generation-manifest:1",
+  "title": "AWS SDK for Java V3 generation manifest, format 1",
+  "description": "META-INF/aws-sdk-java-v3/services/<package>/generation-manifest.json in every generated service artifact: the generator, JDK and configuration identity of the generation, the digest of every other generated file, and the required semantic inventory. Written by aws-codegen with sorted keys, two-space indentation and \\n line endings; it contains no timestamps or absolute paths.",
+  "type": "object",
+  "required": ["configuration", "files", "formatVersion", "generator", "inventory", "jdk", "provenance", "service"],
+  "additionalProperties": false,
+  "properties": {
+    "formatVersion": {"const": 1},
+    "service": {"$ref": "#/$defs/shapeId"},
+    "provenance": {
+      "description": "Resource path of the model provenance of this generation.",
+      "$ref": "#/$defs/relativePath"
+    },
+    "generator": {
+      "type": "object",
+      "required": ["artifactId", "groupId", "smithyVersion", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "groupId": {"$ref": "#/$defs/nonEmpty"},
+        "artifactId": {"$ref": "#/$defs/nonEmpty"},
+        "version": {"$ref": "#/$defs/nonEmpty"},
+        "smithyVersion": {"$ref": "#/$defs/nonEmpty"}
+      }
+    },
+    "jdk": {
+      "type": "object",
+      "required": ["specificationVersion", "vendor"],
+      "additionalProperties": false,
+      "properties": {
+        "specificationVersion": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "vendor": {"$ref": "#/$defs/nonEmpty"}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "required": ["digest", "settings"],
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "description": "Digest of the canonical JSON encoding of settings.",
+          "$ref": "#/$defs/digest"
+        },
+        "settings": {
+          "type": "object",
+          "required": ["integrations", "packageName", "service"],
+          "additionalProperties": false,
+          "properties": {
+            "service": {"$ref": "#/$defs/shapeId"},
+            "packageName": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*$"},
+            "integrations": {
+              "description": "Integration identifiers in execution order.",
+              "type": "array",
+              "items": {"$ref": "#/$defs/nonEmpty"}
+            }
+          }
+        }
+      }
+    },
+    "files": {
+      "description": "Every generated file except this manifest, sorted by root and then path.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["digest", "path", "root"],
+        "additionalProperties": false,
+        "properties": {
+          "root": {"enum": ["resources", "sources"]},
+          "path": {"$ref": "#/$defs/relativePath"},
+          "digest": {"$ref": "#/$defs/digest"}
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "required": ["authSchemes", "operationTable", "operations", "protocols", "serviceVersion", "shapeClosure"],
+      "additionalProperties": false,
+      "properties": {
+        "serviceVersion": {"type": "string"},
+        "protocols": {
+          "description": "Protocol trait IDs applied to the service, sorted.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/shapeId"}
+        },
+        "authSchemes": {
+          "description": "Effective auth scheme trait IDs of the service in modeled priority order.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/shapeId"}
+        },
+        "operationTable": {"$ref": "#/$defs/javaTypeName"},
+        "operations": {
+          "description": "Every operation in the service closure with its static descriptor class, sorted by ID.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["descriptor", "id"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"$ref": "#/$defs/shapeId"},
+              "descriptor": {"$ref": "#/$defs/javaTypeName"}
+            }
+          }
+        },
+        "shapeClosure": {
+          "description": "Every non-member, non-prelude shape in the service closure, sorted by ID.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"$ref": "#/$defs/shapeId"},
+              "type": {
+                "enum": ["blob", "boolean", "string", "timestamp", "byte", "short", "integer", "long", "float",
+                         "document", "double", "bigDecimal", "bigInteger", "enum", "intEnum", "list", "set", "map",
+                         "structure", "union", "service", "resource", "operation"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmpty": {"type": "string", "minLength": 1},
+    "shapeId": {
+      "description": "Absolute Smithy shape ID (namespace#Name), exactly as modeled.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*#[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "javaTypeName": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*\\.[A-Za-z_$][A-Za-z0-9_$]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "relativePath": {
+      "description": "Relative path with / separators; never absolute, never escaping its root.",
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(^|/)\\.\\.?(/|$))[^\\\\]+$"
+    }
+  }
+}

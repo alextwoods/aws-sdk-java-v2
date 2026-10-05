@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  Parent and plugin-management POM for every AWS SDK for Java V3 module.
+
+  This POM intentionally does NOT inherit from the V2 root POM (aws-sdk-java-pom). V2 targets Java 8 and carries
+  V2-specific checkstyle, spotbugs, japicmp and publishing configuration; V3 targets Java 21 and owns its own build
+  policy. All V3 modules inherit from this POM (directly or through a group POM), which guarantees:
+
+    * 3.x coordinates for every V3 artifact (enforced by the "v3-coordinates" rule below);
+    * Java release 21 bytecode (maven.compiler.release=21);
+    * the JDK 21 minimum is checked in the validate phase, before any source generation or compilation;
+    * exact plugin versions (no ranges, LATEST, RELEASE or plugin SNAPSHOTs);
+    * reproducible archives (fixed project.build.outputTimestamp, verified by maven-artifact-plugin).
+
+  The V3 build is Maven-only; no Gradle executable is invoked or required.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>software.amazon.awssdk</groupId>
+    <artifactId>aws-sdk-java-v3-parent</artifactId>
+    <version>3.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>AWS Java SDK V3 :: Parent</name>
+    <description>Parent and plugin-management POM for the AWS SDK for Java V3.</description>
+    <url>https://aws.amazon.com/sdkforjava</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://aws.amazon.com/apache2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <id>amazonwebservices</id>
+            <organization>Amazon Web Services</organization>
+            <organizationUrl>https://aws.amazon.com</organizationUrl>
+            <roles>
+                <role>developer</role>
+            </roles>
+        </developer>
+    </developers>
+    <scm>
+        <url>https://github.com/aws/aws-sdk-java-v2</url>
+        <connection>scm:git:git://github.com/aws/aws-sdk-java-v2.git</connection>
+    </scm>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Requirement 1.1: every V3 production class is Java release 21 bytecode. -->
+        <maven.compiler.release>21</maven.compiler.release>
+
+        <!-- Requirement 1.6: minimum JDK and Maven versions checked in the validate phase, before compilation. -->
+        <v3.minimum.jdk.version>21</v3.minimum.jdk.version>
+        <v3.minimum.maven.version>3.9.5</v3.minimum.maven.version>
+
+        <!-- Reproducible archives: fixed entry timestamps for every jar/pom produced by the V3 reactor.
+             The release process updates this value; it must never be derived from the wall clock. -->
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+
+        <!-- Requirement 15.10: the v3-release-alignment enforcer execution fails the build when any
+             software.amazon.awssdk dependency is not at exactly ${project.version}. Skip only in modules that must
+             resolve other SDK versions on purpose (for example V2 differential fixtures), with a justification. -->
+        <v3.releaseAlignment.skip>false</v3.releaseAlignment.skip>
+
+        <!-- Exact plugin versions. Ranges, LATEST, RELEASE and SNAPSHOT plugin versions are rejected by the enforcer. -->
+        <maven-antrun-plugin.version>3.1.0</maven-antrun-plugin.version>
+        <maven-artifact-plugin.version>3.7.0</maven-artifact-plugin.version>
+        <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
+        <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
+        <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
+        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+        <maven-install-plugin.version>3.2.0</maven-install-plugin.version>
+        <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
+        <maven-plugin-plugin.version>3.16.0</maven-plugin-plugin.version>
+        <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
+        <maven-site-plugin.version>3.22.0</maven-site-plugin.version>
+        <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
+
+        <!-- Build-time API and test dependency versions used by the codegen wrapper and V3 test modules. -->
+        <v3.maven-api.version>3.9.9</v3.maven-api.version>
+        <v3.maven-plugin-annotations.version>3.16.0</v3.maven-plugin-annotations.version>
+        <v3.junit5.version>5.10.3</v3.junit5.version>
+        <v3.assertj.version>3.27.7</v3.assertj.version>
+        <!-- Property-based testing library (design "Testing Strategy"). 1.8.5 is the newest jqwik release built
+             against JUnit Platform 1.10.x; jqwik 1.9.x requires Platform 1.11 and would mix platform versions with
+             ${v3.junit5.version}. Upgrade both together. -->
+        <v3.jqwik.version>1.8.5</v3.jqwik.version>
+        <!-- JUnit Platform engine for TestNG, test scope only: runs the TestNG-based Reactive Streams TCK
+             (reactive-streams-tck ${v3.reactive-streams.version}) on JUnit Platform next to the JUnit 5 tests, since
+             surefire ${maven-surefire-plugin.version} has no TestNG provider. -->
+        <v3.testng-engine.version>1.1.0</v3.testng-engine.version>
+        <!-- JUnit Platform release of ${v3.junit5.version}. Modules that pin the surefire JUnit Platform provider (the
+             TCK modules) declare this launcher so surefire runs the platform of junit-jupiter, not its own. -->
+        <v3.junit-platform.version>1.10.3</v3.junit-platform.version>
+        <!-- Reactive Streams API of every public async streaming surface (design "Async body APIs preserve Reactive
+             Streams compatibility at launch"). 1.0.4 also ships org.reactivestreams.FlowAdapters, used only at the
+             Smithy Java boundary, whose DataStream is a java.util.concurrent.Flow.Publisher. -->
+        <v3.reactive-streams.version>1.0.4</v3.reactive-streams.version>
+        <!-- HTTP engines of the opt-in native transports under v3/http-clients (design, "Maven module and dependency
+             architecture"). Each version is exactly the one the V2 SDK in this repository ships (root pom.xml
+             properties httpcomponents.*, commons-codec.verion, netty.version, netty-open-ssl-version, awscrt.version);
+             upgrade them together with V2. -->
+        <v3.httpcomponents.httpclient.version>4.5.13</v3.httpcomponents.httpclient.version>
+        <v3.httpcomponents.httpcore.version>4.4.16</v3.httpcomponents.httpcore.version>
+        <!-- Overrides the commons-codec 1.11 that httpclient 4.5.13 declares, as V2 apache-client does. -->
+        <v3.commons-codec.version>1.17.1</v3.commons-codec.version>
+        <v3.httpcomponents.client5.version>5.6.4</v3.httpcomponents.client5.version>
+        <!-- httpcore5 and httpcore5-h2 release of httpclient5 ${v3.httpcomponents.client5.version}. -->
+        <v3.httpcomponents.core5.version>5.4.3</v3.httpcomponents.core5.version>
+        <v3.netty.version>4.1.138.Final</v3.netty.version>
+        <!-- netty-tcnative release that Netty ${v3.netty.version} is built against (netty 4.1 pom.xml "tcnative.version");
+             test scope only, for OpenSSL-provider TLS tests. Update together with ${v3.netty.version}. -->
+        <v3.netty-tcnative.version>2.0.84.Final</v3.netty-tcnative.version>
+        <v3.aws-crt.version>0.48.4</v3.aws-crt.version>
+
+        <!-- Pinned Smithy Java runtime release consumed through v3/smithy-runtime, and the exact smithy-model /
+             smithy-utils release that Smithy Java core is built against (see v3/smithy-runtime/pom.xml). -->
+        <v3.smithy-java.version>1.6.1</v3.smithy-java.version>
+        <v3.smithy.version>1.73.0</v3.smithy.version>
+        <maven-dependency-plugin.version>3.11.0</maven-dependency-plugin.version>
+    </properties>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                    <version>${maven-antrun-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-artifact-plugin</artifactId>
+                    <version>${maven-artifact-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>${maven-clean-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                        <compilerArgs>
+                            <!-- Emit package-info.class for every package-info.java so that even annotation-free
+                                 packages produce release-21 class files that bytecode checks can inspect. -->
+                            <arg>-Xpkginfo:always</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${maven-deploy-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${maven-enforcer-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${maven-install-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven-jar-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-plugin-plugin</artifactId>
+                    <version>${maven-plugin-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${maven-resources-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>${maven-site-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <!-- Bound to validate so that an unsupported JDK is rejected before source generation or
+                             compilation and no V3 class files are produced (Requirements 1.6, 1.7). -->
+                        <id>v3-build-policy</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <fail>true</fail>
+                            <failFast>false</failFast>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[${v3.minimum.jdk.version},)</version>
+                                    <message>The AWS SDK for Java V3 requires JDK ${v3.minimum.jdk.version} or newer (minimum supported JDK: ${v3.minimum.jdk.version}). The current JDK is ${java.version} at ${java.home}. Set JAVA_HOME to a JDK ${v3.minimum.jdk.version}+ installation and re-run the build.</message>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[${v3.minimum.maven.version},)</version>
+                                    <message>The AWS SDK for Java V3 requires Maven ${v3.minimum.maven.version} or newer.</message>
+                                </requireMavenVersion>
+                                <requireProperty>
+                                    <!-- Every V3 artifact must carry 3.x coordinates. -->
+                                    <property>project.version</property>
+                                    <regex>3\.\d+\.\d+(-SNAPSHOT)?</regex>
+                                    <regexMessage>AWS SDK for Java V3 artifacts must use 3.x coordinates, but ${project.groupId}:${project.artifactId} has version ${project.version}.</regexMessage>
+                                </requireProperty>
+                                <requireProperty>
+                                    <property>project.build.outputTimestamp</property>
+                                    <message>project.build.outputTimestamp must be set to a fixed value for reproducible V3 archives.</message>
+                                </requireProperty>
+                                <requirePluginVersions>
+                                    <message>Every plugin used by the V3 build must declare an exact version.</message>
+                                    <banLatest>true</banLatest>
+                                    <banRelease>true</banRelease>
+                                    <banSnapshots>true</banSnapshots>
+                                    <banTimestamps>true</banTimestamps>
+                                    <!-- The V3 code generator's Maven wrapper is built in this reactor and always
+                                         carries the reactor's exact version (${project.version}). -->
+                                    <unCheckedPluginList>software.amazon.awssdk:aws-codegen-maven-plugin</unCheckedPluginList>
+                                </requirePluginVersions>
+                                <banDynamicVersions>
+                                    <!-- Exact dependency versions only: no ranges, LATEST or RELEASE. SNAPSHOT versions are
+                                         permitted only for V3 reactor artifacts, which are released atomically. -->
+                                    <allowSnapshots>false</allowSnapshots>
+                                    <allowRanges>false</allowRanges>
+                                    <allowLatest>false</allowLatest>
+                                    <allowRelease>false</allowRelease>
+                                    <ignores>
+                                        <ignore>software.amazon.awssdk:*:${project.version}</ignore>
+                                    </ignores>
+                                </banDynamicVersions>
+                            </rules>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <!-- Requirement 15.10: exact release alignment. Every software.amazon.awssdk artifact in the
+                             module's dependency tree (direct or transitive, any scope) must be at exactly
+                             ${project.version}; the enforcer lists every conflicting module and version. The
+                             "[version]" include form is required: a bare version is treated as a minimum. -->
+                        <id>v3-release-alignment</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${v3.releaseAlignment.skip}</skip>
+                            <fail>true</fail>
+                            <rules>
+                                <bannedDependencies>
+                                    <message>Incompatible AWS SDK for Java runtime versions in ${project.groupId}:${project.artifactId}:${project.version}. Every software.amazon.awssdk dependency must be at exactly ${project.version}; each banned artifact listed below is a conflicting module and version. Import software.amazon.awssdk:bom:${project.version} to align them.</message>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>software.amazon.awssdk</exclude>
+                                    </excludes>
+                                    <includes>
+                                        <include>software.amazon.awssdk:*:[${project.version}]</include>
+                                    </includes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-artifact-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <!-- Fails the build if any plugin in the build plan is known to produce non-reproducible
+                             output, or if project.build.outputTimestamp is not configured. -->
+                        <id>v3-reproducible-build-plan</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check-buildplan</goal>
+                        </goals>
+                        <configuration>
+                            <failOnNonReproducible>true</failOnNonReproducible>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <!-- Runtime module version resource (Requirement 15.11). Every non-POM V3 module publishes
+                             META-INF/aws-sdk-java-v3/modules/<artifactId>.properties, which
+                             software.amazon.awssdk.smithy.runtime.version.RuntimeVersionHandshake reads at client
+                             construction. The content is fixed per release (no timestamps) for reproducible jars. -->
+                        <id>v3-runtime-module-version</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target xmlns:if="ant:if">
+                                <condition property="v3.module.jar">
+                                    <not>
+                                        <equals arg1="${project.packaging}" arg2="pom"/>
+                                    </not>
+                                </condition>
+                                <echo if:set="v3.module.jar" encoding="UTF-8" append="false" file="${project.build.outputDirectory}/META-INF/aws-sdk-java-v3/modules/${project.artifactId}.properties"># Generated by the AWS SDK for Java V3 build. Do not edit.&#10;groupId=${project.groupId}&#10;artifactId=${project.artifactId}&#10;version=${project.version}&#10;</echo>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <!-- Mirrors the V2 "quick" profile: compile and package without running tests. -->
+            <id>quick</id>
+            <properties>
+                <skipTests>true</skipTests>
+            </properties>
+        </profile>
+    </profiles>
+</project>

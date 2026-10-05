@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-tools</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>parity-manifest</artifactId>
+    <name>AWS Java SDK V3 :: Tools :: Parity Manifest</name>
+    <description>The Parity Manifest schema, model, and release gate.</description>
+
+    <dependencies>
+        <!-- JSON reading and writing (Smithy Node), the JSON library the V3 build tooling already uses. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Property-based tests (design "Testing Strategy"; Properties 56-58). Test scope only. -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <properties>
+        <!-- The released V2 version whose API jars the compatibility fixtures of test/codegen-generated-classes-test are
+             generated from; it must equal that module's v3.v2Baseline.version (V2BytecodeOnV3Test checks the jars it
+             compiles against carry the version recorded in the fixtures). -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+        <!-- The launch gate stage (packaging or general-availability); empty disables LaunchGateRepositoryTest. Setting
+             it activates the launch-gate profile below. -->
+        <v3.launchGate></v3.launchGate>
+        <!-- Candidate evidence (CandidateEvidence JSON) for -Dv3.launchGate=general-availability. -->
+        <v3.launchGate.evidence></v3.launchGate.evidence>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!-- The V2 baseline API jars CompatibilityFixturesGoldenTest scans, classifies and generates the
+                     checked-in compatibility fixtures from: the same set codegen-generated-classes-test compiles its
+                     V2 callers against. Copied into target/v2-api; never on the test class path. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>copy-v2-api</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-api</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>dynamodb</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>sdk-core</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>aws-core</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>utils</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>regions</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>annotations</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>http-client-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>metrics-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>identity-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>endpoints-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>http-auth-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>retries-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The IAM policy builder API (task 14.3; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>iam-policy-builder</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The S3 event notifications API (task 14.4; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3-event-notifications</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The SNS message manager API (task 14.5; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>sns-message-manager</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The DynamoDB Enhanced Client and S3 Transfer Manager APIs, and the S3 API the
+                                     Transfer Manager's signatures use (task 14.6; compatibility-scope.txt). -->
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>dynamodb-enhanced</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3-transfer-manager</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <!-- Third-party types of the V2 baseline API (SdkPublisher extends the Reactive Streams
+                             Publisher): on the class path the generated callers are compiled against and in the
+                             baseline class index, but not scanned into the manifest. -->
+                        <id>copy-v2-api-dependencies</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-api-dependencies</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.reactivestreams</groupId>
+                                    <artifactId>reactive-streams</artifactId>
+                                    <version>${v3.reactive-streams.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <!-- Released V2 service jars that V2CodegenSurfaceInventorySourceTest checks the source-derived
+                             paginator and customization surface against (dynamodb is in target/v2-api). -->
+                        <id>copy-v2-codegen-surface-oracles</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-surface-api</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>cognitoidentityprovider</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.fixture.v2Api>${project.build.directory}/v2-api</v3.fixture.v2Api>
+                        <v3.fixture.v2ApiDependencies>${project.build.directory}/v2-api-dependencies</v3.fixture.v2ApiDependencies>
+                        <v3.fixture.v2SurfaceApi>${project.build.directory}/v2-surface-api</v3.fixture.v2SurfaceApi>
+                        <v3.fixture.v2Version>${v3.v2Baseline.version}</v3.fixture.v2Version>
+                        <!-- The launch gate (LaunchGateRepositoryTest); see the launch-gate profile below. -->
+                        <v3.launchGate>${v3.launchGate}</v3.launchGate>
+                        <v3.launchGate.candidateVersion>${project.version}</v3.launchGate.candidateVersion>
+                        <v3.launchGate.evidence>${v3.launchGate.evidence}</v3.launchGate.evidence>
+                        <v3.launchGate.mavenRepository>${settings.localRepository}</v3.launchGate.mavenRepository>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <!--
+              The launch-surface and behavior inventory gate (task 13.3; Requirements 16.4, 16.5, 16.9, 16.10, 16.12,
+              16.14, 16.15). Enable with -Dv3.launchGate=packaging (or general-availability, which also requires
+              -Dv3.launchGate.evidence=<candidate-evidence.json>). LaunchGateRepositoryTest then generates the Parity
+              Manifest of the V2 baseline (this repository, the released V2 API jars of v3.v2Baseline.version),
+              scans the compiled output of every release artifact the V3 BOM manages, and fails this module's test
+              phase, before anything is packaged after it, unless the candidate ships every non-deprecated PRESERVED
+              capability and every replacement, every expected artifact is built, and every non-deprecated PRESERVED
+              or ADAPTED entry has a registered evidence hook that exists as a V3 test class. Reports:
+              target/launch-gate/{parity-manifest.json,launch-gate-report.json,launch-gate-report.txt}.
+
+              The gate reads the module outputs of the V3 tree, so run it in a build that compiled them first: after
+              the release artifacts in the same sequential reactor (tools/ follows every production module in v3-all),
+              or after a separate build of the tree.
+            -->
+            <id>launch-gate</id>
+            <activation>
+                <property>
+                    <name>v3.launchGate</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- Resolves the V2 API jars PublicApiInventorySource scans (its DEFAULT_MODULES) into the
+                             local repository; the scan itself reads them from there, offline. -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <version>${maven-dependency-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>resolve-v2-launch-baseline</id>
+                                <phase>generate-test-resources</phase>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.directory}/v2-launch-api</outputDirectory>
+                                    <artifactItems>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>annotations</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>utils</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>sdk-core</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>aws-core</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>regions</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>auth</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>profiles</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-client-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>identity-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-auth-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-auth</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-auth-aws</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>checksums-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>checksums</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>retries-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>retries</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>metrics-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>endpoints-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>json-utils</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>arns</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>crt-core</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>apache-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>apache5-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>url-connection-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>netty-nio-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>aws-crt-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>cloudwatch-metric-publisher</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>dynamodb</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>dynamodb-enhanced</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>s3-transfer-manager</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>iam-policy-builder</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>s3-event-notifications</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                        <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>sns-message-manager</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                    </artifactItems>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  Internal bill of materials for building the AWS SDK for Java V3. Not intended for customers.
+
+  * Imports the public V3 BOM, so V3 modules resolve sibling V3 artifacts at the exact release version.
+  * Manages third-party dependencies used by V3 modules at exact versions (version properties live in the V3
+    parent POM; its banDynamicVersions rule rejects ranges, LATEST, RELEASE and third-party SNAPSHOTs).
+
+  V3 modules that declare dependencies import this POM:
+
+    <dependencyManagement>
+      <dependencies>
+        <dependency>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>bom-internal</artifactId>
+          <version>${project.version}</version>
+          <type>pom</type>
+          <scope>import</scope>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
+
+  The parent POM cannot import this BOM (this POM inherits from the parent) and must not declare
+  dependencyManagement itself, because the public BOM inherits from the parent and would leak third-party entries to
+  customers.
+
+  src/main/policy/dependency-policy.xml is the machine-readable V3 dependency policy (Requirement 15.2): the owning
+  artifact for every SDK concern, and the allowed, required and forbidden dependency edges of every V3 module. The
+  architecture tests consume it as the generated resource META-INF/aws-sdk-java-v3/dependency-policy.xml.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>aws-sdk-java-v3-parent</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+        <relativePath>../parent/pom.xml</relativePath>
+    </parent>
+    <artifactId>bom-internal</artifactId>
+    <packaging>pom</packaging>
+    <name>AWS Java SDK V3 :: Bill of Materials Internal</name>
+    <description>Internal dependency management and dependency policy for building the AWS SDK for Java V3.</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- V3 artifacts at the exact release version. -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Version properties are defined once in the V3 parent POM so that modules which declare a version
+                 directly and modules that import this BOM resolve the same version. -->
+
+            <!-- Smithy Java runtime boundary (declared only by smithy-runtime; see dependency-policy.xml). -->
+            <dependency>
+                <groupId>software.amazon.smithy.java</groupId>
+                <artifactId>core</artifactId>
+                <version>${v3.smithy-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy.java</groupId>
+                <artifactId>json-codec</artifactId>
+                <version>${v3.smithy-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy.java</groupId>
+                <artifactId>cbor-codec</artifactId>
+                <version>${v3.smithy-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy.java</groupId>
+                <artifactId>xml-codec</artifactId>
+                <version>${v3.smithy-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-model</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-utils</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+
+            <!-- Smithy directed code generation (declared only by the codegen-kind aws-codegen module). -->
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-codegen-core</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-build</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <!-- Canonical AWS model trait definitions (declared only by aws-codegen) and the Smithy modules they
+                 depend on, pinned to the same Smithy release. -->
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-aws-traits</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-protocol-traits</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-rules-engine</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-aws-endpoints</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-waiters</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-diff</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-jmespath</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.smithy</groupId>
+                <artifactId>smithy-model-jmespath</artifactId>
+                <version>${v3.smithy.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.reactivestreams</groupId>
+                <artifactId>reactive-streams</artifactId>
+                <version>${v3.reactive-streams.version}</version>
+            </dependency>
+            <!-- HTTP engines, each declared only by its opt-in transport under v3/http-clients (see
+                 dependency-policy.xml: engine-apache4, engine-apache5, engine-netty, engine-crt). -->
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpclient</artifactId>
+                <version>${v3.httpcomponents.httpclient.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpcore</artifactId>
+                <version>${v3.httpcomponents.httpcore.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>${v3.commons-codec.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>${v3.httpcomponents.client5.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5</artifactId>
+                <version>${v3.httpcomponents.core5.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5-h2</artifactId>
+                <version>${v3.httpcomponents.core5.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-codec-http</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-codec-http2</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-codec</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-transport</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-common</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-buffer</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-handler</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-transport-classes-epoll</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-resolver</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-resolver-dns</artifactId>
+                <version>${v3.netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-tcnative-boringssl-static</artifactId>
+                <version>${v3.netty-tcnative.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk.crt</groupId>
+                <artifactId>aws-crt</artifactId>
+                <version>${v3.aws-crt.version}</version>
+            </dependency>
+            <!-- Test dependencies -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${v3.junit5.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${v3.assertj.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.jqwik</groupId>
+                <artifactId>jqwik</artifactId>
+                <version>${v3.jqwik.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

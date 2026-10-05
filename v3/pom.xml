@@ -1,0 +1,376 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  Aggregate (reactor) POM for the AWS SDK for Java V3.
+
+  The single supported V3 build command (JDK 21+, from the repository root) is:
+    mvn -f v3/pom.xml verify
+  It generates service sources, then compiles, tests, and packages the full release reactor (profile v3-all below).
+  The clean-checkout reactor test (test/release-reactor-tests) verifies exactly this command; run it with
+    mvn -f v3/pom.xml verify -Dv3.aggregate=release-evidence
+  A root build (mvn install) also includes V3 through the root "v3" profile on JDK 21+.
+
+  Shared build policy (JDK 21 enforcement, release 21 bytecode, pinned plugins, reproducible archives) lives in
+  parent/pom.xml. Group directories (core, protocols, http-clients, ...) are intermediate parents that aggregate the
+  artifacts defined in the V3 design's "Maven module and dependency architecture" table.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>aws-sdk-java-v3-parent</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+        <relativePath>parent/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>aws-sdk-java-v3-pom</artifactId>
+    <packaging>pom</packaging>
+    <name>AWS Java SDK V3 :: Aggregator</name>
+    <description>Reactor aggregator for the AWS SDK for Java V3.</description>
+
+    <modules>
+        <module>parent</module>
+        <module>bom</module>
+        <module>bom-internal</module>
+    </modules>
+
+    <!--
+      Aggregate build profiles. The modules above are always built; the rest of the reactor comes from exactly one of
+      the profiles below.
+
+        (no v3.aggregate)            v3-all: the full release reactor (the single supported command)
+        -Dv3.aggregate=foundation    v3-foundation: foundation verification gate (build policy, dependency and
+                                     architecture enforcement, codegen, generated-model, protocol, streaming and
+                                     Document/registry tests) without benchmarks or release-evidence tooling
+        -Dv3.aggregate=core-runtime  v3-core-runtime: foundation gate plus the core-runtime and generated-client gate
+                                     (configuration/resources, every HTTP TCK mode, auth/endpoint/retry/integrity,
+                                     pipeline/interceptor, generated sync/async clients), which fails unless every
+                                     required core-runtime suite ran and passed in this build
+        -Dv3.aggregate=runtime       v3-runtime: Smithy runtime, core, protocols, HTTP SPI, telemetry SPI, dynamic client
+                                     (plus url-connection-client, which the core identity-provider tests use)
+        -Dv3.aggregate=http          v3-http: HTTP SPI and every HTTP client implementation
+        -Dv3.aggregate=services      v3-services: the fleet build: code generator, every generated service artifact
+                                     (services/, one module per V2 baseline service module) and the fleet gate
+                                     (tools/service-fleet)
+        -Dv3.aggregate=high-level    v3-high-level: services plus high-level libraries (services-custom)
+        -Dv3.aggregate=migration     v3-migration: high-level libraries plus the V2 migration tooling
+        -Dv3.aggregate=tests         v3-tests: every automated verification module and what it verifies
+        -Dv3.aggregate=benchmarks    v3-benchmarks: the performance harness and what it measures
+        -Dv3.aggregate=release-evidence
+                                     v3-release-evidence: parity/release-evidence tooling plus the clean-checkout
+                                     reactor test, which forks the full release reactor from a clean checkout
+
+      The launch-surface and behavior inventory gate (task 13.3) is enabled in any build that includes
+      tools/parity-manifest by -Dv3.launchGate=packaging (or general-availability with
+      -Dv3.launchGate.evidence=<candidate evidence>): it compares the compiled output of every BOM artifact with the
+      non-deprecated Parity Manifest entries of the V2 baseline and fails tools/parity-manifest's test phase, so the
+      reactor stops before release packaging, on any missing PRESERVED capability, missing replacement, unbuilt
+      release artifact or missing evidence hook. Run it after the release artifacts are compiled, for example
+        mvn -f v3/pom.xml verify -Dv3.launchGate=packaging
+      (tools/ builds after every production module in the sequential v3-all reactor).
+
+      Every subset profile lists the upstream V3 modules it needs, so each one builds from a clean checkout without
+      previously installed V3 artifacts. Activation is property-based (not activeByDefault) so that adding unrelated
+      profiles here can never silently empty the release reactor. When adding a module, add it to v3-all and to every
+      subset profile that needs it; release-reactor-tests (ReactorInventoryTest) fails the build if an artifact module
+      is not selectable by any subset profile or a subset profile is missing a V3 module that one of its modules
+      depends on (dependencies and build plugins, including those inherited from parent POMs).
+    -->
+    <profiles>
+        <profile>
+            <id>v3-all</id>
+            <activation>
+                <property>
+                    <name>!v3.aggregate</name>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <module>http-clients</module>
+                <module>telemetry</module>
+                <module>dynamic</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>services-custom</module>
+                <module>tools</module>
+                <module>test</module>
+            </modules>
+        </profile>
+        <profile>
+            <!--
+              Foundation verification gate. Every module runs validate through verify in Maven dependency order, and
+              any failure fails the build:
+                validate      JDK 21 / Maven / exact-version / release-alignment enforcer rules and the
+                              reproducible build-plan check (parent/pom.xml) in every module
+                compile       every production module, including generated sources (codegen-lifecycle-tests)
+                test          unit and property tests of smithy-runtime (Document, type registry, schemas), core
+                              (sdk-core, aws-core, eventstream), http-spi, the seven protocols, and aws-codegen
+                package       jars and the aws-codegen-maven-plugin descriptor
+                test/*        architecture-tests (dependency policy, dependency trees, bytecode purity, generation
+                              paths, release alignment), release-reactor-tests (reactor inventory, build audit, JDK
+                              failure modes), codegen-lifecycle-tests, codegen-tests, protocol-property-tests
+              architecture-tests inspects the compiled classes of every release module, so the profile builds every
+              production module (including modules that are still skeletons) before test/. It excludes benchmarks
+              (test/sdk-benchmarks) and release-evidence tooling (tools/parity-manifest, tools/release-evidence).
+            -->
+            <id>v3-foundation</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>foundation</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <module>http-clients</module>
+                <module>telemetry</module>
+                <module>dynamic</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>services-custom</module>
+                <module>tools/v2-migration</module>
+                <module>test/architecture-tests</module>
+                <module>test/codegen-generated-classes-test</module>
+                <module>test/codegen-lifecycle-tests</module>
+                <module>test/codegen-tests</module>
+                <module>test/http-client-tests</module>
+                <module>test/protocol-property-tests</module>
+                <module>test/release-reactor-tests</module>
+            </modules>
+        </profile>
+        <profile>
+            <!--
+              Core-runtime and generated-client verification gate: a superset of v3-foundation (ReactorInventoryTest
+              enforces that it builds every v3-foundation module) that adds a fail-closed suite gate. Every module
+              runs validate through verify in Maven dependency order, and any failure fails the build:
+                foundation    everything v3-foundation runs (see above)
+                core runtime  configuration precedence, overrides, client constants, resource ownership and close
+                              aggregation, unsupported options and runtime version checks (core/sdk-core, aws-core,
+                              smithy-runtime, architecture-tests release alignment)
+                HTTP          the HTTP SPI, provider selection and capability checks (http-client-spi), every native
+                              transport (http-clients/*), and the TCK in every capability mode (test/http-client-tests:
+                              Apache 4 sync, Apache 5 sync and async, URLConnection sync, Netty async, CRT sync and
+                              async)
+                AWS features  auth and identity (auth-api, auth-aws, identity-spi, identity-providers, regions),
+                              endpoints, retries, checksums/compression/idempotency, Event Stream framing and signing
+                pipeline      aws-pipeline lifecycle, retry ownership, interceptor/plugin, cancellation and hot-path
+                              suites, and architecture-tests pipeline/bytecode/dependency enforcement
+                clients       generated sync/async clients, paginators, waiters, presigners, utilities, streaming,
+                              backpressure, event-loop, executor and cancellation suites (test/codegen-tests) and the
+                              compile/compatibility fixtures (test/codegen-generated-classes-test)
+              The gate itself is CoreRuntimeSuiteReportsTest in test/release-reactor-tests (enabled by this property
+              value; see that module's core-runtime-gate profile, whose classpath-free dependencies order it after
+              every module that holds a required suite). It fails unless each suite listed in
+              test/release-reactor-tests/src/test/resources/core-runtime-suites.txt wrote a surefire report during this
+              Maven session (newer than ${maven.build.timestamp}) with executed tests and no failures or errors, so a
+              suite that is renamed, filtered out, skipped, silently discovers no tests, left over from an earlier or
+              resumed (-rf) build, or fails under -Dmaven.test.failure.ignore fails the profile. ReactorInventoryTest
+              checks that every listed suite is a concrete test class of a module this profile builds.
+            -->
+            <id>v3-core-runtime</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>core-runtime</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <module>http-clients</module>
+                <module>telemetry</module>
+                <module>dynamic</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>services-custom</module>
+                <module>tools/v2-migration</module>
+                <module>test/architecture-tests</module>
+                <module>test/codegen-generated-classes-test</module>
+                <module>test/codegen-lifecycle-tests</module>
+                <module>test/codegen-tests</module>
+                <module>test/http-client-tests</module>
+                <module>test/protocol-property-tests</module>
+                <module>test/release-reactor-tests</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-runtime</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>runtime</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <!-- core/identity-providers tests run the providers over this transport (test scope). -->
+                <module>http-clients/url-connection-client</module>
+                <module>telemetry</module>
+                <module>dynamic</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-http</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>http</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <module>http-clients</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-services</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>services</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <!-- core/identity-providers tests run the providers over this transport (test scope). -->
+                <module>http-clients/url-connection-client</module>
+                <module>codegen</module>
+                <module>services</module>
+                <!-- The fleet gate: every V2 baseline service has a generated module pinned to the canonical model
+                     revision, and every module, the aggregator and the BOM match services/service-fleet.json. -->
+                <module>tools/service-fleet</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-high-level</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>high-level</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <!-- core/identity-providers tests run the providers over this transport (test scope). -->
+                <module>http-clients/url-connection-client</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>services-custom</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-migration</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>migration</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <!-- core/identity-providers tests run the providers over this transport (test scope). -->
+                <module>http-clients/url-connection-client</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>services-custom</module>
+                <module>tools/v2-migration</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-tests</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>tests</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <module>http-clients</module>
+                <module>telemetry</module>
+                <module>dynamic</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>services-custom</module>
+                <module>tools/v2-migration</module>
+                <module>test</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-benchmarks</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>benchmarks</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <module>http-clients</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>test/sdk-benchmarks</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>v3-release-evidence</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>release-evidence</value>
+                </property>
+            </activation>
+            <modules>
+                <module>tools/parity-manifest</module>
+                <module>tools/release-evidence</module>
+                <module>test/release-reactor-tests</module>
+            </modules>
+        </profile>
+    </profiles>
+</project>

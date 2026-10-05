@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  Fixture service that proves the generated-service lifecycle: it inherits from v3-services exactly as a real
+  generated service does, so aws-codegen:generate runs in generate-sources and the hand-written main source
+  (which references a generated type) only compiles if generation ran first. It is a test module and is not a
+  published AWS service artifact.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-services</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+        <relativePath>../../services/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>codegen-lifecycle-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Codegen Lifecycle Tests</name>
+    <description>Fixture service verifying that generated service sources exist before compilation.</description>
+
+    <properties>
+        <aws.codegen.service>software.amazon.awssdk.test.codegen.lifecycle#CodegenLifecycleFixture</aws.codegen.service>
+        <aws.codegen.packageName>software.amazon.awssdk.test.codegen.lifecycle</aws.codegen.packageName>
+        <!-- The fixture model lives in this repository rather than in the canonical AWS models repository, so this
+             fixed full-length (40 hex digit) commit ID stands in for the canonical model revision that every real
+             service module must pin. It is recorded verbatim in the generated model provenance. -->
+        <aws.codegen.modelRevision>c0de9e11fec7c1e0000000000000000000000001</aws.codegen.modelRevision>
+    </properties>
+
+    <dependencies>
+        <!-- Generated operation descriptors are AwsOperationDescriptor constants (aws-core). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Generated service metadata declares the modeled protocols as ServiceProtocols (protocol-core). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>protocol-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Generated clients, builders and default implementations call the AWS pipeline (aws-pipeline). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-pipeline</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <!-- The fixture service is SigV4-signed: its generated builders use the AWS auth schemes. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth-aws</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <!-- SigV4-signed: without a credentials provider, generated builders use DefaultCredentialsProvider. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-providers</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.fixture.modelDirectory>${project.basedir}/src/main/smithy</v3.fixture.modelDirectory>
+                        <v3.fixture.generatedSourceRoot>${project.build.directory}/generated-sources/aws-codegen</v3.fixture.generatedSourceRoot>
+                        <v3.fixture.generatedResourceRoot>${project.build.directory}/generated-resources/aws-codegen</v3.fixture.generatedResourceRoot>
+                        <v3.fixture.modelRevision>${aws.codegen.modelRevision}</v3.fixture.modelRevision>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

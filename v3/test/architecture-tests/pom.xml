@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  V3 architecture tests.
+
+  The build generates META-INF/aws-sdk-java-v3/dependency-policy.xml (and its schema) from
+  bom-internal/src/main/policy with ${project.version} resolved; DependencyPolicy.load() reads and schema-validates it.
+  The tests verify that the policy is internally consistent, that it covers exactly the reactor's artifact modules,
+  that the public BOM manages exactly the policy's release artifacts at the release version, and that every declared
+  module dependency satisfies the policy's allowed/forbidden edges. ReleaseAlignmentBuildTest forks Maven on a
+  generated fixture reactor to prove the parent's v3-release-alignment rule fails misaligned builds and lists every
+  conflicting module and version. RuntimeVersionCoherencePropertyTest (jqwik, Property 55) checks the public BOM
+  and smithy-runtime's RuntimeVersionHandshake against independent oracles. Dependency-tree and bytecode inspections build on the same DependencyPolicy API.
+
+  Runtime dependency purity (Requirements 15.3-15.9): RuntimeDependencyPurityTest forks one
+  maven-dependency-plugin:tree -Dscope=runtime -Dverbose=true run over a generated aggregator of the real V3 reactor
+  plus synthetic fixture services (target/dependency-purity-reactor), and checks every module's resolved tree against
+  the policy, including every services/* module and every module inheriting from v3-services. BytecodePurityTest
+  reads the target/classes of every production module, so those modules must be compiled earlier in the reactor
+  (v3-all and v3-tests build them before test/; the codegen-lifecycle-tests edge below orders that sibling).
+  BytecodeInspectionTest compiles negative fixtures with the JDK compiler.
+
+  Forbidden generation paths (task 2.6; Requirements 2.1, 2.3-2.8, 3.1, 3.3, 3.4, 3.8, 3.9, 5.3, 5.4, 10.5, 10.12,
+  12.15, 20.22): ForbiddenGenerationPathsTest applies GenerationPathInspector to the same compiled classes, their
+  packaged resources, and the generated source/resource trees of every generated-code module (one DirectedCodegen and
+  one entry point, a wrapper-only Maven plugin, no SDK intermediate model or serialized model, C2J/sidecar names and
+  parsing only in the rejecting classifier, no per-operation protocol transformers, static descriptor references, and
+  no class-name lookup, reflection, service discovery, model loading or V2 fallback on the generated-client path).
+  GenerationPathInspectionTest proves every rule against compiled and synthetic negative fixtures.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>architecture-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Architecture Tests</name>
+    <description>Enforces the V3 dependency policy, BOM alignment and module boundaries.</description>
+
+    <properties>
+        <v3.dependencyPolicy.dir>${project.basedir}/../../bom-internal/src/main/policy</v3.dependencyPolicy.dir>
+        <!-- Set to true to run the forked fixture build with -o (for example when the outer build runs offline). -->
+        <v3.architectureTests.offline>false</v3.architectureTests.offline>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- RuntimeVersionCoherencePropertyTest (Property 55) drives the runtime version handshake; the bytecode
+             purity tests reuse SmithyRuntimeBoundary's parser/assembler class rules. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-runtime</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Reactor ordering only (a POM-type edge adds nothing to the class path): BytecodePurityTest inspects the
+             compiled generated-service fixture, which the test/ aggregator would otherwise build after this module. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codegen-lifecycle-tests</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <!-- Generated dependency-policy metadata: the policy with ${project.version} resolved. -->
+            <resource>
+                <directory>${v3.dependencyPolicy.dir}</directory>
+                <targetPath>META-INF/aws-sdk-java-v3</targetPath>
+                <filtering>true</filtering>
+                <includes>
+                    <include>dependency-policy.xml</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>${v3.dependencyPolicy.dir}</directory>
+                <targetPath>META-INF/aws-sdk-java-v3</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>dependency-policy.xsd</include>
+                </includes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <configuration>
+                    <!-- Only ${...} is a filter token; the policy legitimately contains '@'. -->
+                    <useDefaultDelimiters>false</useDefaultDelimiters>
+                    <delimiters>
+                        <delimiter>${*}</delimiter>
+                    </delimiters>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.root>${project.basedir}/../..</v3.root>
+                        <v3.releaseVersion>${project.version}</v3.releaseVersion>
+                        <!-- ReleaseAlignmentBuildTest forks Maven on a generated fixture reactor. -->
+                        <v3.architectureTests.workDirectory>${project.build.directory}</v3.architectureTests.workDirectory>
+                        <maven.home>${maven.home}</maven.home>
+                        <v3.localRepository>${settings.localRepository}</v3.localRepository>
+                        <v3.offline>${v3.architectureTests.offline}</v3.offline>
+                        <!-- ResolvedDependencyTrees runs this exact plugin version in its forked build. -->
+                        <v3.dependencyPluginVersion>${maven-dependency-plugin.version}</v3.dependencyPluginVersion>
+                        <v3.smithyVersion>${v3.smithy.version}</v3.smithyVersion>
+                        <!-- The dynamic-model leak fixture expects the Smithy Java dynamic-schemas path. -->
+                        <v3.smithyJavaVersion>${v3.smithy-java.version}</v3.smithyJavaVersion>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

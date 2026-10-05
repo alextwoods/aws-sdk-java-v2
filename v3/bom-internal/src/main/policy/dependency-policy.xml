@@ -1,0 +1,1082 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  AWS SDK for Java V3 dependency policy: the single machine-readable source of truth for module ownership and
+  dependency edges (Requirement 15.2), derived from the design's "Maven module and dependency architecture" table.
+  Semantics are documented in dependency-policy.xsd. ${project.version} is resolved when the architecture tests
+  generate META-INF/aws-sdk-java-v3/dependency-policy.xml from this file.
+
+  Every jar/maven-plugin module in the V3 reactor must appear under <modules>, and every module with
+  release="true" must be managed by software.amazon.awssdk:bom (both verified by v3/test/architecture-tests).
+  When a module gains a dependency, update its rules here in the same change.
+-->
+<dependencyPolicy xmlns="urn:software.amazon.awssdk:v3:dependency-policy:1"
+                  schemaVersion="1"
+                  groupId="software.amazon.awssdk"
+                  releaseVersion="${project.version}">
+    <description>Module ownership, allowed/required V3 module edges and forbidden artifact classes for the AWS SDK for Java V3.</description>
+
+    <artifactClasses>
+        <!-- Forbidden-dependency classes -->
+        <artifactClass id="v2-runtime">
+            <description>AWS SDK for Java V2 artifacts and Smithy Java bridges that pull them in.</description>
+            <coordinates groupId="software.amazon.awssdk" version="2.*"/>
+            <coordinates groupId="software.amazon.smithy.java" artifactId="aws-sdkv2-*"/>
+        </artifactClass>
+        <artifactClass id="codegen">
+            <description>Code-generation artifacts (Smithy build/codegen toolchains and the V3 generator).</description>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-build"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-codegen-core"/>
+            <coordinates groupId="software.amazon.smithy.java" artifactId="codegen-*"/>
+            <coordinates groupId="software.amazon.smithy.java" artifactId="gradle*"/>
+            <coordinates groupId="software.amazon.smithy.java.codegen"/>
+            <v3Modules kind="codegen"/>
+        </artifactClass>
+        <artifactClass id="smithy-model-parser">
+            <description>Full Smithy model parser/assembler artifacts and everything built on the semantic model, including the optional V3 dynamic layer (dynamic-model and dynamic-client), which parses runtime models (Requirements 14.18, 15.5).</description>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-model"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-syntax"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-diff"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-cli"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-aws-traits"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-aws-endpoints"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-aws-iam-traits"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-aws-cloudformation-traits"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-rules-engine"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-waiters"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-validation-model"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-protocol-traits"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-protocol-test-traits"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-smoke-test-traits"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-model-jmespath"/>
+            <coordinates groupId="software.amazon.smithy.java" artifactId="dynamic-schemas"/>
+            <coordinates groupId="software.amazon.smithy.java" artifactId="dynamic-client"/>
+            <coordinates groupId="software.amazon.smithy.java" artifactId="aws-service-bundle*"/>
+            <v3Modules kind="dynamic"/>
+        </artifactClass>
+        <artifactClass id="generated-protocol-marshaller">
+            <description>Per-service generated protocol marshaller artifacts (V3 protocols are schema-driven).</description>
+            <coordinates groupId="software.amazon.awssdk" artifactId="*-marshaller*"/>
+            <coordinates groupId="software.amazon.awssdk" artifactId="*-transform"/>
+        </artifactClass>
+        <artifactClass id="concrete-http">
+            <description>Concrete HTTP implementations and engines (opt-in only, Requirement 15.7).</description>
+            <coordinates groupId="org.apache.httpcomponents"/>
+            <coordinates groupId="org.apache.httpcomponents.client5"/>
+            <coordinates groupId="org.apache.httpcomponents.core5"/>
+            <coordinates groupId="io.netty"/>
+            <coordinates groupId="software.amazon.awssdk.crt"/>
+            <v3Modules kind="http-implementation"/>
+        </artifactClass>
+        <artifactClass id="telemetry-exporter">
+            <description>Telemetry exporter/SDK implementations (opt-in only, Requirement 15.7).</description>
+            <coordinates groupId="io.opentelemetry" artifactId="opentelemetry-sdk*"/>
+            <coordinates groupId="io.opentelemetry" artifactId="opentelemetry-exporter-*"/>
+            <coordinates groupId="io.micrometer" artifactId="micrometer-registry-*"/>
+            <coordinates groupId="software.amazon.smithy.java" artifactId="client-metrics-otel"/>
+            <v3Modules kind="telemetry-exporter"/>
+        </artifactClass>
+        <artifactClass id="logging-implementation">
+            <description>Third-party logging implementations and bindings (Requirement 15.8).</description>
+            <coordinates groupId="ch.qos.logback"/>
+            <coordinates groupId="ch.qos.reload4j"/>
+            <coordinates groupId="log4j" artifactId="log4j"/>
+            <coordinates groupId="org.apache.logging.log4j" artifactId="log4j-core"/>
+            <coordinates groupId="org.apache.logging.log4j" artifactId="log4j-slf4j*-impl"/>
+            <coordinates groupId="org.slf4j" artifactId="slf4j-simple"/>
+            <coordinates groupId="org.slf4j" artifactId="slf4j-nop"/>
+            <coordinates groupId="org.slf4j" artifactId="slf4j-jdk14"/>
+            <coordinates groupId="org.slf4j" artifactId="slf4j-reload4j"/>
+            <coordinates groupId="org.slf4j" artifactId="slf4j-log4j12"/>
+        </artifactClass>
+        <artifactClass id="generated-service">
+            <description>Generated V3 service artifacts.</description>
+            <v3Modules kind="service"/>
+        </artifactClass>
+        <artifactClass id="non-production">
+            <description>V3 migration, release-evidence and test modules, which must stay out of production trees.</description>
+            <v3Modules kind="migration-tool"/>
+            <v3Modules kind="release-tooling"/>
+            <v3Modules kind="test"/>
+        </artifactClass>
+        <artifactClass id="async-engine">
+            <description>Asynchronous HTTP engines.</description>
+            <coordinates groupId="io.netty"/>
+            <v3Module module="netty-nio-client"/>
+        </artifactClass>
+        <artifactClass id="sync-engine">
+            <description>Synchronous HTTP engines.</description>
+            <coordinates groupId="org.apache.httpcomponents"/>
+            <coordinates groupId="org.apache.httpcomponents.client5"/>
+            <coordinates groupId="org.apache.httpcomponents.core5"/>
+            <v3Module module="apache-client"/>
+            <v3Module module="apache5-client"/>
+            <v3Module module="url-connection-client"/>
+        </artifactClass>
+
+        <!-- Allowed third-party classes. The pinned subset actually used is selected in bom-internal. -->
+        <artifactClass id="smithy-java">
+            <description>Smithy Java runtime modules. Parser, codegen, bridge and exporter modules are excluded by the forbidden classes above, which always win.</description>
+            <coordinates groupId="software.amazon.smithy.java"/>
+            <coordinates groupId="software.amazon.smithy" artifactId="smithy-utils"/>
+        </artifactClass>
+        <artifactClass id="smithy-model-toolchain">
+            <description>Smithy model and codegen toolchains, allowed only for build-time generation and the optional dynamic model.</description>
+            <coordinates groupId="software.amazon.smithy"/>
+            <coordinates groupId="software.amazon.smithy.java"/>
+            <coordinates groupId="software.amazon.smithy.java.codegen"/>
+        </artifactClass>
+        <artifactClass id="reactive-streams">
+            <description>Reactive Streams API, retained for asynchronous streaming parity.</description>
+            <coordinates groupId="org.reactivestreams" artifactId="reactive-streams"/>
+        </artifactClass>
+        <artifactClass id="engine-apache4">
+            <description>Apache HttpClient 4.x.</description>
+            <coordinates groupId="org.apache.httpcomponents"/>
+            <coordinates groupId="commons-logging" artifactId="commons-logging"/>
+            <coordinates groupId="commons-codec" artifactId="commons-codec"/>
+        </artifactClass>
+        <artifactClass id="engine-apache5">
+            <description>Apache HttpClient 5.x.</description>
+            <coordinates groupId="org.apache.httpcomponents.client5"/>
+            <coordinates groupId="org.apache.httpcomponents.core5"/>
+        </artifactClass>
+        <artifactClass id="engine-netty">
+            <description>Netty.</description>
+            <coordinates groupId="io.netty"/>
+        </artifactClass>
+        <artifactClass id="engine-crt">
+            <description>AWS Common Runtime.</description>
+            <coordinates groupId="software.amazon.awssdk.crt"/>
+        </artifactClass>
+        <artifactClass id="maven-plugin-api">
+            <description>Maven plugin API and annotations.</description>
+            <coordinates groupId="org.apache.maven"/>
+            <coordinates groupId="org.apache.maven.plugin-tools"/>
+        </artifactClass>
+        <artifactClass id="openrewrite">
+            <description>OpenRewrite recipe tooling.</description>
+            <coordinates groupId="org.openrewrite"/>
+            <coordinates groupId="org.openrewrite.recipe"/>
+        </artifactClass>
+    </artifactClasses>
+
+    <!-- Requirement 15.2: owning artifacts for every SDK concern. -->
+    <concerns>
+        <concern id="public-api">
+            <description>Public API: stability annotations, base exceptions, builders, request overrides and AWS client contracts.</description>
+            <owner module="annotations"/>
+            <owner module="sdk-core"/>
+            <owner module="aws-core"/>
+        </concern>
+        <concern id="schema-serde">
+            <description>Schema SERDE: Smithy Java Schema, SerializableStruct, Document and codecs, plus the runtime version handshake.</description>
+            <owner module="smithy-runtime"/>
+        </concern>
+        <concern id="protocol-runtime">
+            <description>Protocol runtime: protocol selection, HTTP bindings and schema-driven protocol implementations.</description>
+            <owner module="protocol-core"/>
+            <owner module="aws-json-protocol"/>
+            <owner module="rest-json-protocol"/>
+            <owner module="rest-xml-protocol"/>
+            <owner module="aws-query-protocol"/>
+            <owner module="ec2-query-protocol"/>
+            <owner module="rpcv2-cbor-protocol"/>
+        </concern>
+        <concern id="aws-pipeline">
+            <description>AWS pipeline: call engine, pipeline plans, stages, interceptor/plugin dispatch, cancellation and timeouts.</description>
+            <owner module="aws-pipeline"/>
+        </concern>
+        <concern id="auth">
+            <description>Auth schemes and signers.</description>
+            <owner module="auth-api"/>
+            <owner module="auth-aws"/>
+        </concern>
+        <concern id="identity">
+            <description>Identity SPI and identity providers.</description>
+            <owner module="identity-spi"/>
+            <owner module="identity-providers"/>
+        </concern>
+        <concern id="endpoint">
+            <description>Endpoint resolution, regions and partitions.</description>
+            <owner module="endpoints"/>
+            <owner module="regions"/>
+        </concern>
+        <concern id="retry">
+            <description>Retry strategies.</description>
+            <owner module="retries"/>
+        </concern>
+        <concern id="checksum">
+            <description>Request and response checksums.</description>
+            <owner module="checksums"/>
+        </concern>
+        <concern id="event-stream">
+            <description>Event stream framing.</description>
+            <owner module="eventstream"/>
+        </concern>
+        <concern id="telemetry">
+            <description>Telemetry contract; exporters are separate opt-in artifacts.</description>
+            <owner module="telemetry-spi"/>
+        </concern>
+        <concern id="http-spi">
+            <description>HTTP SPI: immutable HTTP messages, sync/async SPIs, streaming and cancellation.</description>
+            <owner module="http-spi"/>
+        </concern>
+        <concern id="http-implementation">
+            <description>Opt-in HTTP implementations.</description>
+            <owner module="apache-client"/>
+            <owner module="apache5-client"/>
+            <owner module="url-connection-client"/>
+            <owner module="netty-nio-client"/>
+            <owner module="aws-crt-client"/>
+        </concern>
+        <concern id="dynamic-model">
+            <description>Optional dynamic model layer and dynamic client.</description>
+            <owner module="dynamic-model"/>
+            <owner module="dynamic-client"/>
+        </concern>
+        <concern id="codegen">
+            <description>The single AWS code generator and its Maven lifecycle wrapper.</description>
+            <owner module="aws-codegen"/>
+            <owner module="aws-codegen-maven-plugin"/>
+        </concern>
+        <concern id="service">
+            <description>Generated service clients, models, descriptors and registries.</description>
+            <ownerKind kind="service"/>
+        </concern>
+        <concern id="high-level-library">
+            <description>High-level libraries.</description>
+            <owner module="dynamodb-enhanced"/>
+            <owner module="s3-transfer-manager"/>
+            <owner module="iam-policy-builder"/>
+            <owner module="s3-event-notifications"/>
+            <owner module="sns-message-manager"/>
+        </concern>
+        <concern id="migration">
+            <description>V2-to-V3 migration tooling.</description>
+            <owner module="v2-migration"/>
+        </concern>
+        <concern id="release-evidence">
+            <description>Parity manifest, release gates, evidence and architecture tests.</description>
+            <owner module="parity-manifest"/>
+            <owner module="release-evidence"/>
+            <owner module="service-fleet"/>
+            <owner module="architecture-tests"/>
+        </concern>
+    </concerns>
+
+    <waivers>
+        <waiver id="smithy-model-shape-identity" class="smithy-model-parser"
+                groupId="software.amazon.smithy" artifactId="smithy-model" via="smithy-runtime">
+            <description>Every published Smithy Java core release declares a compile dependency on smithy-model, whose single jar holds both the ShapeId/ShapeType/Trait/Node classes that Schema exposes and the IDL/JSON AST parser and ModelAssembler. The artifact cannot be excluded until Smithy Java publishes a separate shape-identity/runtime-trait artifact. This is an open deviation from Requirement 15.5 at the artifact level; remove the waiver once that artifact exists.</description>
+            <enforcement>Class-level: smithy-runtime's SmithyRuntimeBoundary lists the forbidden parser/assembler/codegen classes and SmithyRuntimeClassLoadingTest proves generated-style clients resolve none of them. No module other than smithy-runtime may declare smithy-model.</enforcement>
+        </waiver>
+    </waivers>
+
+    <!-- Rules for every generated service module. The minimal service tree (Requirement 15.9) is the closure of the
+         required edges below plus exactly one protocol module per protocol the service supports. -->
+    <serviceTemplate path="services/*">
+        <owns>Generated types, clients, operation descriptors, registry and small service-specific plugin descriptors.</owns>
+        <requires module="sdk-core"/>
+        <requires module="smithy-runtime"/>
+        <requires module="aws-core"/>
+        <requires module="aws-pipeline"/>
+        <!-- Generated <Service>ServiceMetadata declares the modeled protocols as a protocol-core ServiceProtocols. -->
+        <requires module="protocol-core"/>
+        <requiresAnyOf>
+            <module module="aws-json-protocol"/>
+            <module module="rest-json-protocol"/>
+            <module module="rest-xml-protocol"/>
+            <module module="aws-query-protocol"/>
+            <module module="ec2-query-protocol"/>
+            <module module="rpcv2-cbor-protocol"/>
+        </requiresAnyOf>
+        <allows module="annotations"/>
+        <allows module="auth-aws"/>
+        <allows module="identity-providers"/>
+        <allows module="regions"/>
+        <!-- Generated <Service>EndpointParams/EndpointProvider/EndpointRules reference the endpoints runtime. -->
+        <allows module="endpoints"/>
+        <allows module="eventstream"/>
+        <allows module="telemetry-spi"/>
+        <allowsClass class="smithy-java"/>
+        <forbids class="v2-runtime"/>
+        <forbids class="codegen"/>
+        <forbids class="smithy-model-parser"/>
+        <forbids class="generated-protocol-marshaller"/>
+        <forbids class="concrete-http"/>
+        <forbids class="telemetry-exporter"/>
+        <forbids class="logging-implementation"/>
+        <forbids class="non-production"/>
+    </serviceTemplate>
+
+    <modules>
+        <!-- Core runtime -->
+        <module artifactId="annotations" path="core/annotations" kind="api" release="true">
+            <owns>Public stability and thread-safety annotations.</owns>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="sdk-core" path="core/sdk-core" kind="runtime" release="true">
+            <owns>Base exceptions, request/response metadata, builders, typed configuration keys, request overrides, close aggregation, sync/async body transformers, and the pagination (SdkIterable, SdkPublisher, page publisher) and waiter (acceptors, Smithy backoff, sync and non-blocking async poll loops) runtimes.</owns>
+            <allows module="annotations"/>
+            <allows module="smithy-runtime"/>
+            <allowsClass class="smithy-java"/>
+            <allowsClass class="reactive-streams"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="smithy-runtime" path="smithy-runtime" kind="runtime" release="true">
+            <owns>Curated re-export and compatibility boundary for Smithy Java Schema, SerializableStruct, Document, codecs and protocol interfaces; runtime version handshake.</owns>
+            <allows module="annotations"/>
+            <requiresArtifact groupId="software.amazon.smithy.java" artifactId="core"/>
+            <requiresArtifact groupId="software.amazon.smithy.java" artifactId="json-codec"/>
+            <requiresArtifact groupId="software.amazon.smithy.java" artifactId="cbor-codec"/>
+            <requiresArtifact groupId="software.amazon.smithy.java" artifactId="xml-codec"/>
+            <requiresArtifact groupId="software.amazon.smithy" artifactId="smithy-model"/>
+            <requiresArtifact groupId="software.amazon.smithy" artifactId="smithy-utils"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="aws-core" path="core/aws-core" kind="runtime" release="true">
+            <owns>AwsClient, AwsClientConfiguration, region/partition/configuration providers, identity APIs and AWS metadata.</owns>
+            <requires module="sdk-core"/>
+            <requires module="smithy-runtime"/>
+            <!-- AwsClientConfiguration exposes Region and IdentityProvider<? extends AwsCredentialsIdentity>. -->
+            <requires module="identity-spi"/>
+            <requires module="regions"/>
+            <allows module="annotations"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="aws-pipeline" path="core/aws-pipeline" kind="runtime" release="true">
+            <owns>AwsCallEngine, PipelinePlan, stages, context, interceptor/plugin dispatch, cancellation, timeout and exception mapping.</owns>
+            <requires module="aws-core"/>
+            <requires module="protocol-core"/>
+            <requires module="auth-api"/>
+            <requires module="endpoints"/>
+            <requires module="retries"/>
+            <requires module="checksums"/>
+            <requires module="http-spi"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="identity-spi"/>
+            <allows module="regions"/>
+            <allows module="telemetry-spi"/>
+            <!-- Optional: the sign stage chain-signs input event stream frames with EventStreamSigner. -->
+            <allows module="eventstream"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- AWS behavior -->
+        <module artifactId="auth-api" path="core/auth-api" kind="runtime" release="true">
+            <owns>Auth scheme and signer APIs.</owns>
+            <requires module="identity-spi"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <!-- HttpSigner signs the SPI's immutable SdkHttpRequest. -->
+            <allows module="http-spi"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="auth-aws" path="core/auth-aws" kind="runtime" release="true">
+            <owns>AWS auth schemes and signers (SigV4, SigV4a, bearer).</owns>
+            <requires module="auth-api"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="identity-spi"/>
+            <allows module="checksums"/>
+            <allows module="http-spi"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="identity-spi" path="core/identity-spi" kind="runtime" release="true">
+            <owns>Identity types and identity-provider SPI.</owns>
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="identity-providers" path="core/identity-providers" kind="runtime" release="true">
+            <owns>Default AWS identity providers and provider chains.</owns>
+            <requires module="identity-spi"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="regions"/>
+            <allows module="http-spi"/>
+            <!-- STS AssumeRole (role profiles) is SigV4-signed with the source credentials. -->
+            <allows module="auth-api"/>
+            <allows module="auth-aws"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="regions" path="core/regions" kind="runtime" release="true">
+            <owns>Regions, partitions and region providers.</owns>
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="endpoints" path="core/endpoints" kind="runtime" release="true">
+            <owns>Endpoint resolution and endpoint-rules runtime.</owns>
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <allows module="regions"/>
+            <allows module="smithy-runtime"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="retries" path="core/retries" kind="runtime" release="true">
+            <owns>Retry strategies and retry-token buckets.</owns>
+            <requires module="sdk-core"/>
+            <!-- Modeled classification reads the @retryable trait from error Schemas (Requirement 13.15). -->
+            <requires module="smithy-runtime"/>
+            <!-- Transport classification reads the stable HttpFailureCategory of HttpTransportException and the
+                 retry-delay hint of SdkHttpResponse (Requirements 12.7, 13.12). -->
+            <requires module="http-spi"/>
+            <allows module="annotations"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="checksums" path="core/checksums" kind="runtime" release="true">
+            <owns>Checksum algorithms and request/response integrity, request compression and content-encoding feature plugins.</owns>
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <!-- Feature plans read operation/member schemas and runtime traits; features transform HTTP messages. -->
+            <allows module="smithy-runtime"/>
+            <allows module="http-spi"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="eventstream" path="core/eventstream" kind="runtime" release="true">
+            <owns>Event stream framing and codecs.</owns>
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <allows module="smithy-runtime"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- Protocols -->
+        <module artifactId="protocol-core" path="protocols/protocol-core" kind="protocol" release="true">
+            <owns>Protocol selection and HTTP binding contracts, shared SERDE helpers (including event stream SERDE over the eventstream framing), and the shared XML reader/writer of the XML protocols.</owns>
+            <requires module="sdk-core"/>
+            <requires module="smithy-runtime"/>
+            <requires module="http-spi"/>
+            <requires module="aws-core"/>
+            <!-- Optional: event stream SERDE; services with event stream operations declare eventstream themselves. -->
+            <allows module="eventstream"/>
+            <allows module="annotations"/>
+            <allowsClass class="smithy-java"/>
+            <!-- The event stream publisher and the DataStream/StreamingBody adapters implement Reactive Streams types. -->
+            <allowsClass class="reactive-streams"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="generated-protocol-marshaller"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="aws-json-protocol" path="protocols/aws-json-protocol" kind="protocol" release="true">
+            <owns>Schema-driven awsJson1_0/awsJson1_1 protocol.</owns>
+            <requires module="protocol-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="http-spi"/>
+            <allows module="aws-core"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="generated-protocol-marshaller"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="rest-json-protocol" path="protocols/rest-json-protocol" kind="protocol" release="true">
+            <owns>Schema-driven restJson1 protocol.</owns>
+            <requires module="protocol-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="http-spi"/>
+            <allows module="aws-core"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="generated-protocol-marshaller"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="rest-xml-protocol" path="protocols/rest-xml-protocol" kind="protocol" release="true">
+            <owns>Schema-driven restXml protocol, over the shared XML reader/writer of protocol-core.</owns>
+            <requires module="protocol-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="http-spi"/>
+            <allows module="aws-core"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="generated-protocol-marshaller"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="aws-query-protocol" path="protocols/aws-query-protocol" kind="protocol" release="true">
+            <owns>Schema-driven awsQuery protocol.</owns>
+            <requires module="protocol-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="http-spi"/>
+            <allows module="aws-core"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="generated-protocol-marshaller"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="ec2-query-protocol" path="protocols/ec2-query-protocol" kind="protocol" release="true">
+            <owns>Schema-driven ec2Query protocol, over the shared query runtime (form serializer, response and error handling) of aws-query-protocol.</owns>
+            <requires module="protocol-core"/>
+            <requires module="aws-query-protocol"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="http-spi"/>
+            <allows module="aws-core"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="generated-protocol-marshaller"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="rpcv2-cbor-protocol" path="protocols/rpcv2-cbor-protocol" kind="protocol" release="true">
+            <owns>Schema-driven Smithy RPC v2 CBOR protocol.</owns>
+            <requires module="protocol-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="http-spi"/>
+            <allows module="aws-core"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="generated-protocol-marshaller"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- HTTP SPI and opt-in HTTP implementations -->
+        <module artifactId="http-spi" path="http-client-spi" kind="http-spi" release="true">
+            <owns>Immutable HTTP messages, separate sync/async SPIs, streaming, cancellation and configuration capabilities.</owns>
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <!-- The async body contract (StreamingBody) is a Reactive Streams Publisher (design, "HTTP SPI"). -->
+            <requiresArtifact groupId="org.reactivestreams" artifactId="reactive-streams"/>
+            <allowsClass class="reactive-streams"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="apache-client" path="http-clients/apache-client" kind="http-implementation" release="true">
+            <owns>Native synchronous Apache HttpClient 4.x implementation.</owns>
+            <requires module="http-spi"/>
+            <!-- The HTTP SPI exposes sdk-core types (exceptions, ManagedResource, RequestBody). -->
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <!-- Engine artifacts of V2 apache-client; commons-codec overrides the older release httpclient declares. -->
+            <requiresArtifact groupId="org.apache.httpcomponents" artifactId="httpclient"/>
+            <requiresArtifact groupId="org.apache.httpcomponents" artifactId="httpcore"/>
+            <requiresArtifact groupId="commons-codec" artifactId="commons-codec"/>
+            <allowsClass class="engine-apache4"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="async-engine"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="apache5-client" path="http-clients/apache5-client" kind="http-implementation" release="true">
+            <owns>Native synchronous Apache HttpClient 5.x implementation, plus an isolated async provider when the parity manifest enables it.</owns>
+            <requires module="http-spi"/>
+            <!-- The HTTP SPI exposes sdk-core types (exceptions, ManagedResource, RequestBody, AsyncRequestBody). -->
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <!-- Engine artifacts of V2 apache5-client (httpcore5-h2 arrives transitively from httpclient5). -->
+            <requiresArtifact groupId="org.apache.httpcomponents.client5" artifactId="httpclient5"/>
+            <requiresArtifact groupId="org.apache.httpcomponents.core5" artifactId="httpcore5"/>
+            <allowsClass class="engine-apache5"/>
+            <!-- The optional async provider implements the Reactive Streams StreamingBody contract. -->
+            <allowsClass class="reactive-streams"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="async-engine"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="url-connection-client" path="http-clients/url-connection-client" kind="http-implementation" release="true">
+            <owns>Native synchronous java.net.URLConnection implementation.</owns>
+            <requires module="http-spi"/>
+            <!-- The HTTP SPI exposes sdk-core types (exceptions, ManagedResource, RequestBody). -->
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <!-- JDK only: no HTTP engine and no other HTTP implementation module, directly or transitively. -->
+            <forbids class="concrete-http"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="async-engine"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="netty-nio-client" path="http-clients/netty-nio-client" kind="http-implementation" release="true">
+            <owns>Native asynchronous Netty implementation.</owns>
+            <requires module="http-spi"/>
+            <!-- The HTTP SPI exposes sdk-core types (exceptions, ManagedResource, AsyncRequestBody). -->
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <!-- Netty modules of V2 netty-nio-client; netty-resolver-dns is optional there and here, so it is allowed
+                 by engine-netty but not required. -->
+            <requiresArtifact groupId="io.netty" artifactId="netty-codec-http"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-codec-http2"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-codec"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-transport"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-common"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-buffer"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-handler"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-transport-classes-epoll"/>
+            <requiresArtifact groupId="io.netty" artifactId="netty-resolver"/>
+            <requiresArtifact groupId="org.reactivestreams" artifactId="reactive-streams"/>
+            <allowsClass class="engine-netty"/>
+            <allowsClass class="reactive-streams"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="sync-engine"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="aws-crt-client" path="http-clients/aws-crt-client" kind="http-implementation" release="true">
+            <owns>Native synchronous and asynchronous AWS CRT implementations.</owns>
+            <requires module="http-spi"/>
+            <!-- The HTTP SPI exposes sdk-core types (exceptions, ManagedResource, RequestBody, AsyncRequestBody). -->
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <requiresArtifact groupId="software.amazon.awssdk.crt" artifactId="aws-crt"/>
+            <requiresArtifact groupId="org.reactivestreams" artifactId="reactive-streams"/>
+            <allowsClass class="engine-crt"/>
+            <allowsClass class="reactive-streams"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="generated-service"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- Telemetry -->
+        <module artifactId="telemetry-spi" path="telemetry/telemetry-spi" kind="telemetry-spi" release="true">
+            <owns>Optional telemetry contract; exporters are separate opt-in artifacts.</owns>
+            <requires module="sdk-core"/>
+            <allows module="annotations"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- Dynamic client -->
+        <module artifactId="dynamic-client" path="dynamic/dynamic-client" kind="dynamic" release="true">
+            <owns>V3 dynamic facade and dynamic operation descriptors.</owns>
+            <!-- Dynamic calls run on the same engine, runtime and build state as generated clients (Requirement
+                 14.14), with every launch protocol and Modern Auth available to any runtime model (Requirement 14.15). -->
+            <requires module="aws-pipeline"/>
+            <requires module="dynamic-model"/>
+            <requires module="aws-json-protocol"/>
+            <requires module="rest-json-protocol"/>
+            <requires module="rest-xml-protocol"/>
+            <requires module="aws-query-protocol"/>
+            <requires module="ec2-query-protocol"/>
+            <requires module="rpcv2-cbor-protocol"/>
+            <requires module="auth-aws"/>
+            <!-- protocol-core's optional event stream framing, which generated services with event stream
+                 operations declare themselves: any runtime model may have event stream operations (Requirement
+                 14.12). -->
+            <requires module="eventstream"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <allows module="aws-core"/>
+            <allows module="protocol-core"/>
+            <allows module="auth-api"/>
+            <allows module="identity-spi"/>
+            <!-- The default credentials chain of clients of services with AWS credential auth schemes, as in
+                 generated services. -->
+            <allows module="identity-providers"/>
+            <allows module="regions"/>
+            <allows module="endpoints"/>
+            <allows module="retries"/>
+            <allows module="checksums"/>
+            <allows module="http-spi"/>
+            <allowsClass class="smithy-java"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="dynamic-model" path="dynamic/dynamic-model" kind="dynamic" release="true">
+            <owns>Smithy JSON AST parser/model assembler, model-to-schema conversion and dynamic operation descriptors.</owns>
+            <!-- Dynamic schemas are registered in smithy-runtime's ServiceSchemaIndex/OperationSchemas, and dynamic
+                 operations carry aws-core's AwsOperationDescriptor: the runtime types generated services use. -->
+            <requires module="smithy-runtime"/>
+            <requires module="aws-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- Code generation (build time only) -->
+        <module artifactId="aws-codegen" path="codegen/aws-codegen" kind="codegen" release="true">
+            <owns>The only AWS Smithy DirectedCodegen implementation.</owns>
+            <allows module="annotations"/>
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="concrete-http"/>
+            <forbids class="generated-service"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="aws-codegen-maven-plugin" path="codegen/aws-codegen-maven-plugin" kind="codegen" release="true">
+            <owns>Maven lifecycle integration for aws-codegen; no emitters of its own.</owns>
+            <requires module="aws-codegen"/>
+            <allowsClass class="maven-plugin-api"/>
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="concrete-http"/>
+            <forbids class="generated-service"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- High-level libraries -->
+        <module artifactId="dynamodb-enhanced" path="services-custom/dynamodb-enhanced" kind="high-level-library" release="true">
+            <owns>DynamoDB Enhanced synchronous and asynchronous clients.</owns>
+            <requires module="aws-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="smithy-runtime"/>
+            <!-- Built on the public API of the generated DynamoDB clients and models only. -->
+            <requiresService module="dynamodb"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="s3-transfer-manager" path="services-custom/s3-transfer-manager" kind="high-level-library" release="true">
+            <owns>S3 Transfer Manager.</owns>
+            <requires module="aws-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="http-spi"/>
+            <allows module="checksums"/>
+            <!-- Model schemas, used to copy members between related S3 shapes and to serialize resumable tokens. -->
+            <allows module="smithy-runtime"/>
+            <!-- Built on the public API of the generated S3 client and model only. -->
+            <requiresService module="s3"/>
+            <allowsClass class="reactive-streams"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="iam-policy-builder" path="services-custom/iam-policy-builder" kind="high-level-library" release="true">
+            <owns>IAM policy builder.</owns>
+            <requires module="aws-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="s3-event-notifications" path="services-custom/s3-event-notifications" kind="high-level-library" release="true">
+            <owns>S3 event notification models, schemas, primary type registry and JSON reading and writing.</owns>
+            <requires module="aws-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <!-- Schema, SerializableStruct, ShapeBuilder and SchemaTypeRegistry of the published event types. -->
+            <allows module="smithy-runtime"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="sns-message-manager" path="services-custom/sns-message-manager" kind="high-level-library" release="true">
+            <owns>SNS message parsing and signature verification.</owns>
+            <requires module="aws-core"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <allows module="http-spi"/>
+            <!-- The Smithy Java JSON codec and Document that parse SNS message JSON. -->
+            <allows module="smithy-runtime"/>
+            <!-- Region, and the canonical partition table that yields the regional SNS certificate host (the
+                 library does not depend on the generated SNS client). -->
+            <allows module="regions"/>
+            <allows module="endpoints"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
+            <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+
+        <!-- Migration, release and test tooling (never in production dependency trees) -->
+        <module artifactId="v2-migration" path="tools/v2-migration" kind="migration-tool" release="true">
+            <owns>OpenRewrite-style V2-to-V3 recipes, diagnostics and the migration manifest reader.</owns>
+            <allowsClass class="openrewrite"/>
+            <forbids class="generated-service"/>
+            <forbids class="concrete-http"/>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="parity-manifest" path="tools/parity-manifest" kind="release-tooling" release="false">
+            <owns>Launch parity manifest and its validation.</owns>
+            <!-- smithy-model only, for Smithy Node JSON reading and writing of the manifest and rules. -->
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="service-fleet" path="tools/service-fleet" kind="release-tooling" release="false">
+            <owns>The generated service fleet plan (V2 baseline to canonical models), its writer and the fleet gate.</owns>
+            <!-- smithy-model only, for Smithy Node JSON reading and writing of the fleet plan and the C2J/Smithy
+                 JSON identities it maps. -->
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="release-evidence" path="tools/release-evidence" kind="release-tooling" release="false">
+            <owns>Release gates and release evidence.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="architecture-tests" path="test/architecture-tests" kind="test" release="false">
+            <owns>Architecture tests that enforce this policy, the BOM and runtime version alignment.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="codegen-generated-classes-test" path="test/codegen-generated-classes-test" kind="test" release="false">
+            <owns>Compile and compatibility fixtures of generated synthetic, DynamoDB and S3 APIs, and execution of the Parity Manifest's generated compatibility fixtures: preserved V2 surfaces compile, link and keep their signatures and hierarchy, adapted and excluded calls are rejected with manifest-linked diagnostics, and V2 caller bytecode runs against V3.</owns>
+            <allows module="aws-core"/>
+            <allows module="protocol-core"/>
+            <allows module="endpoints"/>
+            <allows module="aws-pipeline"/>
+            <allows module="http-spi"/>
+            <!-- The synthetic service and DynamoDB are awsJson1_0; S3 is restXml. -->
+            <allows module="aws-json-protocol"/>
+            <allows module="rest-xml-protocol"/>
+            <!-- SigV4 services sign with the AWS auth schemes and default to the default credentials chain. -->
+            <allows module="auth-aws"/>
+            <allows module="identity-providers"/>
+            <!-- The IAM policy builder's compatibility fixtures and its V2 differential suite (task 14.3). -->
+            <allows module="iam-policy-builder"/>
+            <!-- The S3 event notifications' compatibility fixtures (task 14.4). -->
+            <allows module="s3-event-notifications"/>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="codegen-lifecycle-tests" path="test/codegen-lifecycle-tests" kind="test" release="false">
+            <owns>Fixture service module proving aws-codegen-maven-plugin generates sources before compilation and that generated operation descriptors and clients compile against the V3 runtime.</owns>
+            <allows module="aws-core"/>
+            <allows module="protocol-core"/>
+            <allows module="aws-pipeline"/>
+            <!-- The fixture service is SigV4-signed, so its generated builders use the AWS auth schemes. -->
+            <allows module="auth-aws"/>
+            <!-- Without a credentials provider, its generated builders use the default credentials chain. -->
+            <allows module="identity-providers"/>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="codegen-tests" path="test/codegen-tests" kind="test" release="false">
+            <owns>Black-box aws-codegen tests: byte-identical generated trees and integration conflict diagnostics.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="http-client-tests" path="test/http-client-tests" kind="test" release="false">
+            <owns>HTTP SPI TCK: capability-driven sync and async conformance suites run against every HTTP implementation and mode.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="protocol-property-tests" path="test/protocol-property-tests" kind="test" release="false">
+            <owns>Cross-protocol property tests of the launch protocol runtimes: Schema SERDE round trips over random schemas.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="release-reactor-tests" path="test/release-reactor-tests" kind="test" release="false">
+            <owns>Clean-checkout release reactor and aggregate-profile inventory tests.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="sdk-benchmarks" path="test/sdk-benchmarks" kind="test" release="false">
+            <owns>Performance harness and benchmarks, including the generated DynamoDB benchmark fixture.</owns>
+            <allows module="aws-core"/>
+            <allows module="protocol-core"/>
+            <!-- The generated DynamoDB endpoint parameters, provider, rules and operation bindings. -->
+            <allows module="endpoints"/>
+            <!-- The generated DynamoDB clients: the client pipeline, the SigV4 auth schemes and, without a
+                 credentials provider, the default credentials chain. -->
+            <allows module="aws-pipeline"/>
+            <allows module="auth-aws"/>
+            <allows module="identity-providers"/>
+            <!-- The runnable harness (src/main): the awsJson1.0 runtime and every native transport it drives, at compile
+                 scope so target/classpath.txt carries them. Test/tooling only (release="false"); no production module
+                 may depend on this one. -->
+            <allows module="aws-json-protocol"/>
+            <allows module="http-spi"/>
+            <allows module="apache-client"/>
+            <allows module="apache5-client"/>
+            <allows module="url-connection-client"/>
+            <allows module="aws-crt-client"/>
+            <allows module="netty-nio-client"/>
+            <forbids class="logging-implementation"/>
+        </module>
+    </modules>
+</dependencyPolicy>

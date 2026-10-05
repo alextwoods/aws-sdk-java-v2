@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-codegen</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>aws-codegen</artifactId>
+    <name>AWS Java SDK V3 :: Codegen :: AWS Codegen</name>
+    <description>The single AWS Smithy directed code generator.</description>
+
+    <dependencies>
+        <!-- Smithy directed code generation: CodegenDirector, DirectedCodegen, SmithyIntegration, SymbolProvider,
+             SymbolWriter and WriterDelegator. This is the only generation framework aws-codegen builds on; Smithy
+             Java's own codegen plugins (software.amazon.smithy.java:codegen-*) are deliberately not used because they
+             carry a second integration SPI and a second set of directed generators. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-codegen-core</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <!-- Used directly (Model/ModelAssembler and FileManifest); declared so their versions are pinned explicitly
+             rather than through smithy-codegen-core's transitive declarations. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-build</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-utils</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <!-- Trait definitions of canonical AWS models, discovered by ModelAssembler from this module's class loader so
+             that AWS traits are validated and typed rather than retained as unknown traits: aws.protocols, aws.auth,
+             aws.api and aws.customizations (smithy-aws-traits), smithy.protocols (smithy-protocol-traits),
+             smithy.rules (smithy-rules-engine) with the AWS rules functions and built-ins (smithy-aws-endpoints), and
+             smithy.waiters (smithy-waiters). The validation package also reads the protocol and auth trait IDs. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-traits</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-traits</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-rules-engine</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-endpoints</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-waiters</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <resources>
+            <!-- JSON Schemas of the generated model provenance and generation manifest (published contracts). -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+            <!-- generator.properties: the generator identity (coordinates, Smithy version) recorded in every
+                 generation manifest. Filtering substitutes build properties only; it adds no timestamps. -->
+            <resource>
+                <directory>src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+    </build>
+</project>

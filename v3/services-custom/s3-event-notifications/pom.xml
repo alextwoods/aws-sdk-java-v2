@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  S3 event notifications (task 14.4; Requirements 6.8, 16.8, 17.1, 19.12).
+
+  The V2 model types keep their package, names, constructors, accessors, equals/hashCode/toString and JSON reading
+  and writing, and additionally implement SerializableStruct with one published Schema each, so they convert to and
+  from Smithy Documents and register in a primary SchemaTypeRegistry (S3EventNotificationMetadata.typeRegistry())
+  that composes with the generated S3 registry. The schemas are hand-written because the V2-preserved types are not
+  generator-shaped (public constructors and get* accessors); S3EventNotificationSchemaFidelityTest checks every one
+  against the Smithy model in src/main/smithy.
+
+  The tests compare V3 with the released V2 artifact (S3EventNotificationV2DifferentialTest) by loading the V2 jars of
+  v3.v2Baseline.version in an isolated class loader. They are copied into target/v2-baseline and never put on the
+  test class path, because they declare the same class names as this module.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-services-custom</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>s3-event-notifications</artifactId>
+    <name>AWS Java SDK V3 :: Services Custom :: S3 Event Notifications</name>
+    <description>The S3 Event Notifications high-level library.</description>
+    <properties>
+        <!-- The released V2 version the differential tests compare against: the Parity Manifest's compatibility
+             baseline (tools/parity-manifest v3.v2Baseline.version). -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- ToString, the toString format shared with V2. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Schema, SerializableStruct, ShapeBuilder, Document and SchemaTypeRegistry. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- The generated S3 registry that S3EventNotificationRegistryTest composes with. Test scope only. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${v3.assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- EqualsAndHashCodeTest, ported from V2. -->
+        <dependency>
+            <groupId>nl.jqno.equalsverifier</groupId>
+            <artifactId>equalsverifier</artifactId>
+            <version>3.15.1</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <!-- The released V2 artifact and its runtime closure, for S3EventNotificationV2DifferentialTest's isolated class loader. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>copy-v2-baseline</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-baseline</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>s3-event-notifications</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>json-utils</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>third-party-jackson-core</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>utils</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>annotations</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <!-- The slf4j-api release V2 utils is built against (V2 pom slf4j.version). -->
+                                <artifactItem>
+                                    <groupId>org.slf4j</groupId>
+                                    <artifactId>slf4j-api</artifactId>
+                                    <version>1.7.36</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.v2Baseline.dir>${project.build.directory}/v2-baseline</v3.v2Baseline.dir>
+                        <v3.v2Baseline.version>${v3.v2Baseline.version}</v3.v2Baseline.version>
+                        <v3.smithyModel.dir>${project.basedir}/src/main/smithy</v3.smithyModel.dir>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

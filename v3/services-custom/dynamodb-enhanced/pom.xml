@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  DynamoDB Enhanced Client for V3: the V2 mapper, schema, table, index, expression, batch, transaction, pagination,
+  extension and EnhancedDocument behaviors, built only on the public API of the generated V3 DynamoDB clients and
+  models (services/dynamodb) and V3 core types (sdk-core, aws-core). It has no privileged transport or pipeline path
+  (design, "High-level libraries and launch parity") and no V2 or bridge dependency (dependency-policy.xml).
+
+  Tests run the enhanced clients over the real generated DynamoDbClient/DynamoDbAsyncClient pipelines against an
+  in-process awsJson1.0 DynamoDB transport (src/test/.../testing), so request serialization, retries, error mapping and
+  cancellation are the production paths.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-services-custom</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>dynamodb-enhanced</artifactId>
+    <name>AWS Java SDK V3 :: Services Custom :: DynamoDB Enhanced Client</name>
+    <description>The DynamoDB Enhanced Client high-level library.</description>
+
+    <properties>
+        <!-- The V2 release the Parity Manifest baselines (tools/parity-manifest v3.v2Baseline.version). Its
+             dynamodb-enhanced jar is copied into target/v2-baseline for EnhancedV2ApiDescriptorParityTest and never
+             put on any class path, because it declares the same class names as this module. -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${v3.assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Reactive Streams TCK (TestNG) for the enhanced publishers (SdkPublishers map/flatMapIterable, the
+             batch-get page publisher), run on JUnit Platform through testng-engine; see the surefire provider below. -->
+        <dependency>
+            <groupId>org.reactivestreams</groupId>
+            <artifactId>reactive-streams-tck</artifactId>
+            <version>${v3.reactive-streams.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.support</groupId>
+            <artifactId>testng-engine</artifactId>
+            <version>${v3.testng-engine.version}</version>
+            <scope>test</scope>
+            <!-- testng-engine is built against JUnit Platform 1.7; use the platform of junit-jupiter instead. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.junit.platform</groupId>
+                    <artifactId>junit-platform-engine</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- Aligns the launcher of the pinned surefire JUnit Platform provider with junit-jupiter's platform. -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>${v3.junit-platform.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The ported V2 unit suites use EqualsVerifier (equals/hashCode contracts of the request, response and model
+             value types) and Hamcrest matchers; pinned to the releases the V2 module tests with. Test scope only. -->
+        <dependency>
+            <groupId>nl.jqno.equalsverifier</groupId>
+            <artifactId>equalsverifier</artifactId>
+            <version>3.15.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest</artifactId>
+            <version>2.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>v2-baseline</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-baseline</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>dynamodb-enhanced</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.v2Baseline.dir>${project.build.directory}/v2-baseline</v3.v2Baseline.dir>
+                        <v3.v2Baseline.version>${v3.v2Baseline.version}</v3.v2Baseline.version>
+                    </systemPropertyVariables>
+                </configuration>
+                <!-- The TCK brings TestNG, which surefire's provider auto-detection would pick over JUnit Platform,
+                     silently skipping the JUnit 5 tests. Pinning the JUnit Platform provider runs every test there; the
+                     TestNG TCK classes run through testng-engine. -->
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.maven.surefire</groupId>
+                        <artifactId>surefire-junit-platform</artifactId>
+                        <version>${maven-surefire-plugin.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
+</project>
