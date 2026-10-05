@@ -108,19 +108,19 @@ class ForbiddenGenerationPathsTest {
                                     "setterHasValidReturnType", "validateGetter"),
         enhancedSchemaIntrospection("internal.mapper.BeanAttributeGetter", "create"),
         enhancedSchemaIntrospection("internal.mapper.BeanAttributeSetter", "create"),
-        enhancedSchemaIntrospection("internal.mapper.LambdaToMethodBridgeBuilder", "lambda$build$1",
-                                    "lambda$build$3"),
+        enhancedSchemaIntrospection("internal.mapper.LambdaToMethodBridgeBuilder", "unreflectConstructor",
+                                    "unreflectMethod"),
         enhancedSchemaIntrospection("internal.mapper.ObjectConstructor", "create"),
         enhancedSchemaIntrospection("internal.mapper.ObjectGetterMethod", "create"),
         enhancedSchemaIntrospection("internal.mapper.StaticGetterMethod", "create"),
         enhancedSchemaIntrospection("mapper.AnnotationUtils", "extractFromContainer"),
-        enhancedSchemaIntrospection("mapper.BeanTableSchema", "findFluentSetter", "getPropertyAnnotation",
-                                    "lambda$addTagsToAttribute$0", "lambda$createStaticTableSchema$1",
-                                    "lambda$findFluentSetter$0", "newObjectSupplierForClass", "propertyAnnotations",
-                                    "staticAttributeBuilder", "validateDynamoDbFlattenAnnotations"),
-        enhancedSchemaIntrospection("mapper.ImmutableTableSchema", "getPropertyAnnotation", "immutableAttributeBuilder",
-                                    "lambda$addTagsToAttribute$0", "lambda$createStaticImmutableTableSchema$0",
-                                    "newObjectSupplierForClass", "propertyAnnotations"))
+        enhancedSchemaIntrospection("mapper.BeanTableSchema", "addFlattenedProperty", "addTagForAnnotation",
+                                    "findFluentSetter", "getPropertyAnnotation", "isFluentSetter",
+                                    "newObjectSupplierForClass", "propertyAnnotations", "staticAttributeBuilder",
+                                    "validateDynamoDbFlattenAnnotations"),
+        enhancedSchemaIntrospection("mapper.ImmutableTableSchema", "addFlattenedProperty", "addTagForAnnotation",
+                                    "getPropertyAnnotation", "immutableAttributeBuilder", "newObjectSupplierForClass",
+                                    "propertyAnnotations"))
         .flatMap(List::stream).toList();
 
     /**

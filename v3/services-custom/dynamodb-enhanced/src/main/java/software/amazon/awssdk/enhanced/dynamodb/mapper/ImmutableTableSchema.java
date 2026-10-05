@@ -244,10 +244,7 @@ public final class ImmutableTableSchema<T> extends WrappedTableSchema<T, StaticI
                   DynamoDbFlatten dynamoDbFlatten = getPropertyAnnotation(propertyDescriptor, DynamoDbFlatten.class);
 
                   if (dynamoDbFlatten != null) {
-                      builder.flatten(TableSchemaFactory.fromClass(propertyDescriptor.getter().getReturnType(),
-                                                                   ExecutionContext.FLATTENED),
-                                      getterForProperty(propertyDescriptor, immutableClass, lookup),
-                                      setterForProperty(propertyDescriptor, builderClass, lookup));
+                      addFlattenedProperty(builder, propertyDescriptor, immutableClass, builderClass, lookup);
                   } else {
                       AttributeConfiguration beanAttributeConfiguration = resolveAttributeConfiguration(propertyDescriptor);
                       ImmutableAttribute.Builder<T, B, ?> attributeBuilder =
@@ -270,6 +267,17 @@ public final class ImmutableTableSchema<T> extends WrappedTableSchema<T, StaticI
         builder.attributes(attributes);
 
         return builder.build();
+    }
+
+    private static <T, B> void addFlattenedProperty(StaticImmutableTableSchema.Builder<T, B> builder,
+                                                    ImmutablePropertyDescriptor propertyDescriptor,
+                                                    Class<T> immutableClass,
+                                                    Class<B> builderClass,
+                                                    MethodHandles.Lookup lookup) {
+        builder.flatten(TableSchemaFactory.fromClass(propertyDescriptor.getter().getReturnType(),
+                                                     ExecutionContext.FLATTENED),
+                        getterForProperty(propertyDescriptor, immutableClass, lookup),
+                        setterForProperty(propertyDescriptor, builderClass, lookup));
     }
 
     private static List<AttributeConverterProvider> createConverterProvidersFromAnnotation(Class<?> immutableClass,
@@ -382,43 +390,45 @@ public final class ImmutableTableSchema<T> extends WrappedTableSchema<T, StaticI
     private static void addTagsToAttribute(ImmutableAttribute.Builder<?, ?, ?> attributeBuilder,
                                            ImmutablePropertyDescriptor propertyDescriptor) {
 
-        propertyAnnotations(propertyDescriptor).forEach(annotation -> {
-            BeanTableSchemaAttributeTag beanTableSchemaAttributeTag =
-                annotation.annotationType().getAnnotation(BeanTableSchemaAttributeTag.class);
+        propertyAnnotations(propertyDescriptor).forEach(annotation -> addTagForAnnotation(attributeBuilder, annotation));
+    }
 
-            if (beanTableSchemaAttributeTag != null) {
-                Class<?> tagClass = beanTableSchemaAttributeTag.value();
+    private static void addTagForAnnotation(ImmutableAttribute.Builder<?, ?, ?> attributeBuilder, Annotation annotation) {
+        BeanTableSchemaAttributeTag beanTableSchemaAttributeTag =
+            annotation.annotationType().getAnnotation(BeanTableSchemaAttributeTag.class);
 
-                Method tagMethod;
-                try {
-                    tagMethod = tagClass.getDeclaredMethod(ATTRIBUTE_TAG_STATIC_SUPPLIER_NAME,
-                                                           annotation.annotationType());
-                } catch (NoSuchMethodException e) {
-                    throw new RuntimeException(
-                        String.format("Could not find a static method named '%s' on class '%s' that returns " +
-                                          "an AttributeTag for annotation '%s'", ATTRIBUTE_TAG_STATIC_SUPPLIER_NAME,
-                                      tagClass, annotation.annotationType()), e);
-                }
+        if (beanTableSchemaAttributeTag != null) {
+            Class<?> tagClass = beanTableSchemaAttributeTag.value();
 
-                if (!Modifier.isStatic(tagMethod.getModifiers())) {
-                    throw new RuntimeException(
-                        String.format("Could not find a static method named '%s' on class '%s' that returns " +
-                                          "an AttributeTag for annotation '%s'", ATTRIBUTE_TAG_STATIC_SUPPLIER_NAME,
-                                      tagClass, annotation.annotationType()));
-                }
-
-                StaticAttributeTag staticAttributeTag;
-                try {
-                    staticAttributeTag = (StaticAttributeTag) tagMethod.invoke(null, annotation);
-                } catch (IllegalAccessException | InvocationTargetException e) {
-                    throw new RuntimeException(
-                        String.format("Could not invoke method to create AttributeTag for annotation '%s' on class " +
-                                          "'%s'.", annotation.annotationType(), tagClass), e);
-                }
-
-                attributeBuilder.addTag(staticAttributeTag);
+            Method tagMethod;
+            try {
+                tagMethod = tagClass.getDeclaredMethod(ATTRIBUTE_TAG_STATIC_SUPPLIER_NAME,
+                                                       annotation.annotationType());
+            } catch (NoSuchMethodException e) {
+                throw new RuntimeException(
+                    String.format("Could not find a static method named '%s' on class '%s' that returns " +
+                                      "an AttributeTag for annotation '%s'", ATTRIBUTE_TAG_STATIC_SUPPLIER_NAME,
+                                  tagClass, annotation.annotationType()), e);
             }
-        });
+
+            if (!Modifier.isStatic(tagMethod.getModifiers())) {
+                throw new RuntimeException(
+                    String.format("Could not find a static method named '%s' on class '%s' that returns " +
+                                      "an AttributeTag for annotation '%s'", ATTRIBUTE_TAG_STATIC_SUPPLIER_NAME,
+                                  tagClass, annotation.annotationType()));
+            }
+
+            StaticAttributeTag staticAttributeTag;
+            try {
+                staticAttributeTag = (StaticAttributeTag) tagMethod.invoke(null, annotation);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                throw new RuntimeException(
+                    String.format("Could not invoke method to create AttributeTag for annotation '%s' on class " +
+                                      "'%s'.", annotation.annotationType(), tagClass), e);
+            }
+
+            attributeBuilder.addTag(staticAttributeTag);
+        }
     }
 
     private static <T, R> Supplier<R> newObjectSupplier(ImmutableInfo<T> immutableInfo, Class<R> builderClass,

@@ -15,8 +15,6 @@
 
 package software.amazon.awssdk.enhanced.dynamodb.internal.mapper;
 
-import static software.amazon.awssdk.enhanced.dynamodb.internal.util.FunctionalUtils.invokeSafely;
-
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -81,8 +79,8 @@ public class LambdaToMethodBridgeBuilder<T> {
         MethodHandles.Lookup metaFactoryLookup = resolveLookup();
         try {
             MethodHandle targetMethodHandle = targetMethod.map(
-                m -> invokeSafely(() -> metaFactoryLookup.unreflect(m)),
-                c -> invokeSafely(() -> metaFactoryLookup.unreflectConstructor(c)));
+                m -> unreflectMethod(metaFactoryLookup, m),
+                c -> unreflectConstructor(metaFactoryLookup, c));
 
             return lambdaType.cast(
                 LambdaMetafactory.metafactory(metaFactoryLookup,
@@ -95,6 +93,24 @@ public class LambdaToMethodBridgeBuilder<T> {
                                  .invoke());
         } catch (Throwable e) {
             throw new IllegalArgumentException("Failed to generate method handle.", e);
+        }
+    }
+
+    // Named methods rather than lambdas so the reflective access has a stable, compiler-independent name for the
+    // architecture tests' allowances. The checked exception is wrapped as FunctionalUtils.invokeSafely would.
+    private static MethodHandle unreflectMethod(MethodHandles.Lookup lookup, Method method) {
+        try {
+            return lookup.unreflect(method);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static MethodHandle unreflectConstructor(MethodHandles.Lookup lookup, Constructor<?> constructor) {
+        try {
+            return lookup.unreflectConstructor(constructor);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
         }
     }
 
