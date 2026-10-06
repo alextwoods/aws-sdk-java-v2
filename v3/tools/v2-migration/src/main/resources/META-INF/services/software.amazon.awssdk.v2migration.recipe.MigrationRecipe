@@ -10,3 +10,12 @@ software.amazon.awssdk.v2migration.recipe.core.RenamedMemberRecipe$RequestOverri
 software.amazon.awssdk.v2migration.recipe.core.RenamedConfigurationKeyRecipe
 software.amazon.awssdk.v2migration.recipe.core.ReplacedSignatureTypeRecipe
 software.amazon.awssdk.v2migration.recipe.core.UnsupportedOptionRecipe
+# Interceptor, HTTP, streaming, pagination, waiter and high-level-library recipes (task 15.3).
+software.amazon.awssdk.v2migration.recipes.runtime.InterceptorRecipe
+software.amazon.awssdk.v2migration.recipes.runtime.HttpRecipe
+software.amazon.awssdk.v2migration.recipes.runtime.StreamingRecipe
+software.amazon.awssdk.v2migration.recipes.runtime.PaginatorRecipe
+software.amazon.awssdk.v2migration.recipes.runtime.WaiterRecipe
+software.amazon.awssdk.v2migration.recipes.runtime.HighLevelLibraryRecipe
+software.amazon.awssdk.v2migration.recipes.runtime.KnownGapRecipe
+software.amazon.awssdk.v2migration.recipes.runtime.ConvertedImportRecipe

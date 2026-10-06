@@ -75,6 +75,22 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- The high-level-library parity matrix of the release tooling, bundled unchanged so the recipes report
+                 its known launch gaps (APIs the manifest still claims but the candidate does not ship or verify)
+                 without a copy that could drift. parity-manifest is not released, so this is a build-time resource,
+                 not a dependency. -->
+            <resource>
+                <directory>${project.basedir}/../parity-manifest/src/main/resources/software/amazon/awssdk/tools/paritymanifest</directory>
+                <includes>
+                    <include>high-level-library-matrix.json</include>
+                </includes>
+                <targetPath>META-INF/aws-sdk-java-v3/v2-migration</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
