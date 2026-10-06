@@ -239,7 +239,7 @@
                 "software.amazon.awssdk.core",
                 "software.amazon.awssdk.core.signer"
             ],
-            "diagnostic": "[api:software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder;] EXCLUDED method software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder; -> no V3 replacement: Remove the legacy signer; configure the auth scheme and identity provider on the client builder.",
+            "diagnostic": "[api:software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder;] EXCLUDED method software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder; -> api:software.amazon.awssdk.auth.aws.AwsAuthSchemeOptions: Remove the legacy signer; configure the auth scheme and identity provider on the client builder.",
             "supertypes": [],
             "evidenceIds": []
         },
@@ -262,7 +262,7 @@
             },
             "source": "@SuppressWarnings({\"unchecked\", \"rawtypes\", \"deprecation\", \"removal\"})\npublic final class CompatCaller {\n    private CompatCaller() {\n    }\n\n    public static void link() throws java.lang.Throwable {\n        Target target = software.amazon.awssdk.core.RequestOverrideConfiguration.Builder::signer;\n    }\n\n    interface Target {\n        software.amazon.awssdk.core.RequestOverrideConfiguration.Builder apply(software.amazon.awssdk.core.RequestOverrideConfiguration.Builder p0, software.amazon.awssdk.core.signer.Signer p1);\n    }\n}\n",
             "symbols": [],
-            "diagnostic": "[api:software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder;] EXCLUDED method software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder; -> no V3 replacement: Remove the legacy signer; configure the auth scheme and identity provider on the client builder.",
+            "diagnostic": "[api:software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder;] EXCLUDED method software.amazon.awssdk.core.RequestOverrideConfiguration$Builder#signer(Lsoftware/amazon/awssdk/core/signer/Signer;)Lsoftware/amazon/awssdk/core/RequestOverrideConfiguration$Builder; -> api:software.amazon.awssdk.auth.aws.AwsAuthSchemeOptions: Remove the legacy signer; configure the auth scheme and identity provider on the client builder.",
             "supertypes": [],
             "evidenceIds": []
         },

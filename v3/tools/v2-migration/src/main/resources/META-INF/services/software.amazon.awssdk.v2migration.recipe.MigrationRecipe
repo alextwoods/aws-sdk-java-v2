@@ -19,3 +19,7 @@ software.amazon.awssdk.v2migration.recipes.runtime.WaiterRecipe
 software.amazon.awssdk.v2migration.recipes.runtime.HighLevelLibraryRecipe
 software.amazon.awssdk.v2migration.recipes.runtime.KnownGapRecipe
 software.amazon.awssdk.v2migration.recipes.runtime.ConvertedImportRecipe
+# Modern Auth and Modern Retry replacements and excluded legacy signer/retry facilities (task 15.4).
+software.amazon.awssdk.v2migration.recipes.modern.ModernTypeRecipe$Auth
+software.amazon.awssdk.v2migration.recipes.modern.ModernTypeRecipe$Retry
+software.amazon.awssdk.v2migration.recipes.modern.ExcludedFacilityRecipe

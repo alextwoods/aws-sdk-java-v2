@@ -167,7 +167,7 @@
         "diagnostic": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["severity", "location", "construct", "entryId", "classification", "rationale", "replacement", "migrationKind", "migration", "differences", "reason", "message"],
+            "required": ["severity", "location", "construct", "entryId", "classification", "rationale", "replacement", "migrationKind", "migration", "documentationId", "differences", "reason", "message"],
             "properties": {
                 "severity": { "const": "BLOCKING" },
                 "location": { "$ref": "#/$defs/location" },
@@ -178,6 +178,7 @@
                 "replacement": { "$ref": "#/$defs/nullableString" },
                 "migrationKind": { "enum": ["RECIPE", "DIAGNOSTIC", "COMPILE_TIME", null] },
                 "migration": { "$ref": "#/$defs/nullableString" },
+                "documentationId": { "$ref": "#/$defs/nullableString", "description": "The Parity Manifest entry ID under which V3 publishes an ADAPTED or EXCLUDED entry's documentation; null otherwise." },
                 "differences": { "type": "array", "items": { "type": "string" } },
                 "reason": { "type": "string", "minLength": 1 },
                 "message": { "type": "string", "minLength": 1 }

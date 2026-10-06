@@ -443,13 +443,13 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 15.1 Implement the migration engine, Maven plugin, and manifest reader
     - Build `v3/tools/v2-migration` with source parsing, effective dependency/BOM inventory, manifest-backed dispositions, deterministic edits, source locations, and machine-readable reports.
     - _Requirements: 17.4, 17.5, 17.10, 17.11, 17.12_
-  - [ ] 15.2 Implement dependency, import, builder, client, and configuration recipes
+  - [x] 15.2 Implement dependency, import, builder, client, and configuration recipes
     - Transform Maven/JDK settings, BOM/dependencies, imports, model/client builders, request overrides, region/identity/configuration, and supported option changes; leave uncertain nodes unchanged with diagnostics.
     - _Requirements: 9.10, 17.3, 17.4, 17.5, 17.6, 17.7, 17.9_
-  - [ ] 15.3 Implement interceptor, HTTP, streaming, and high-level-library recipes
+  - [x] 15.3 Implement interceptor, HTTP, streaming, and high-level-library recipes
     - Convert typed interceptor contexts/scopes, HTTP clients/options, async body/response types, paginators/waiters, DynamoDB Enhanced, Transfer Manager, IAM, event notification, and SNS usages according to manifest classifications.
     - _Requirements: 11.12, 17.4, 17.5, 17.6, 17.7, 17.9, 17.11_
-  - [ ] 15.4 Implement Modern Auth/Retry replacements and blocking exclusion diagnostics
+  - [x] 15.4 Implement Modern Auth/Retry replacements and blocking exclusion diagnostics
     - Transform safe modern APIs, diagnose excluded legacy signer/presigner/retry/deprecated APIs, preserve unsafe source unchanged, and include rationale/replacement/documentation IDs.
     - Add public API scans proving excluded contracts are absent from V3.
     - _Requirements: 18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 18.7, 18.8, 18.9_

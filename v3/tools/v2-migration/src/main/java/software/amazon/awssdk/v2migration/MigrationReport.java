@@ -65,8 +65,8 @@ public final class MigrationReport {
     static final List<String> EDIT_MEMBERS = List.of("path", "startOffset", "endOffset", "replacement");
     static final List<String> DIAGNOSTIC_MEMBERS = List.of("severity", "location", "construct", "entryId",
                                                            "classification", "rationale", "replacement",
-                                                           "migrationKind", "migration", "differences", "reason",
-                                                           "message");
+                                                           "migrationKind", "migration", "documentationId",
+                                                           "differences", "reason", "message");
 
     private static final String TOOL = "v2-migration";
 
@@ -216,6 +216,7 @@ public final class MigrationReport {
                    .withMember("replacement", nullable(d.replacement()))
                    .withMember("migrationKind", nullable(d.migrationKind() == null ? null : d.migrationKind().name()))
                    .withMember("migration", nullable(d.migration()))
+                   .withMember("documentationId", nullable(d.documentationId()))
                    .withMember("differences", Node.fromStrings(d.differences()))
                    .withMember("reason", d.reason())
                    .withMember("message", d.message())

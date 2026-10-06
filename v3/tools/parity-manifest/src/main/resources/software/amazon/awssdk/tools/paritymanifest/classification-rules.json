@@ -325,6 +325,7 @@
             },
             "classification": "EXCLUDED",
             "rationale": "Pre-SRA signer APIs are excluded; signing is selected by auth scheme and identity provider.",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsAuthSchemeOptions",
             "migrationKind": "DIAGNOSTIC",
             "migration": "Remove the legacy signer; configure the auth scheme and identity provider on the client builder.",
             "supportEvidence": "Requirement 18.1: pre-Smithy-Reference-Architecture signer APIs are EXCLUDED from V3.",
@@ -334,39 +335,83 @@
         },
         {
             "name": "legacy-signers-auth",
-            "comment": "Deprecated V2 auth signers (Aws4Signer, AwsS3V4Signer, BearerTokenSigner, signer params and execution attributes).",
+            "comment": "Deprecated V2 auth signers (Aws4Signer, AwsS3V4Signer, BearerTokenSigner, signer params and execution attributes); the deprecated credentials APIs of the auth artifact are deprecated-credentials-api. The replacement is the Modern Auth signer contract (Requirement 18.7).",
             "match": {
                 "id": "api:software.amazon.awssdk.auth.*",
                 "deprecated": true
             },
             "classification": "EXCLUDED",
             "rationale": "Pre-Smithy-Reference-Architecture signer, presigner and signer-override APIs are excluded; signing is selected by auth scheme resolution (Requirements 18.1, 18.2).",
+            "replacement": "api:software.amazon.awssdk.auth.api.HttpSigner",
             "migrationKind": "DIAGNOSTIC",
             "migration": "Remove the legacy Signer/Presigner usage; configure the auth scheme, HttpSigner and identity provider on the client builder, or use the service presigner.",
             "supportEvidence": "The V2 baseline marks these signer APIs @Deprecated in favor of software.amazon.awssdk.http.auth.spi.signer.HttpSigner."
         },
         {
+            "name": "deprecated-credentials-api",
+            "comment": "Deprecated members of the V2 credentials providers (DefaultCredentialsProvider#create, ProcessCredentialsProvider.Builder#command(String)); not signer APIs, so not legacy-signers-auth.",
+            "match": {
+                "id": "api:software.amazon.awssdk.auth.credentials.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Deprecated V2 credentials API; V3 makes no preservation claim for it.",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc (for example DefaultCredentialsProvider.builder().build(), or ProcessCredentialsProvider.Builder#command(List)).",
+            "supportEvidence": "The V2 baseline marks these credentials APIs @Deprecated."
+        },
+        {
             "name": "legacy-signers-core",
-            "comment": "Deprecated V2 core Signer, AsyncSigner and Presigner contracts.",
+            "comment": "Deprecated V2 core Signer, AsyncSigner and request-body signer contracts; the Presigner contract is legacy-presigner-core. The replacement is the Modern Auth signer contract (Requirement 18.7).",
             "match": {
                 "id": "api:software.amazon.awssdk.core.signer.*",
                 "deprecated": true
             },
             "classification": "EXCLUDED",
             "rationale": "Pre-Smithy-Reference-Architecture signer, presigner and signer-override APIs are excluded; signing is selected by auth scheme resolution (Requirements 18.1, 18.2).",
+            "replacement": "api:software.amazon.awssdk.auth.api.HttpSigner",
             "migrationKind": "DIAGNOSTIC",
             "migration": "Remove the legacy Signer/Presigner usage; configure the auth scheme, HttpSigner and identity provider on the client builder, or use the service presigner.",
             "supportEvidence": "The V2 baseline marks these signer APIs @Deprecated in favor of software.amazon.awssdk.http.auth.spi.signer.HttpSigner."
         },
         {
+            "name": "legacy-presigner-core",
+            "comment": "The deprecated V2 generic Presigner extension contract (Requirements 18.2, 18.3). Its replacement is the Modern Auth presigning adjustment that generated service presigners (for example S3Presigner) apply to the auth scheme option their client selects.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.signer.Presigner*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "The legacy Presigner extension contract is excluded; service presigners sign through the auth scheme their client's auth-scheme resolution selects (Requirements 18.2, 18.3).",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsV4Presigning",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Remove the legacy Presigner; presign with the service presigner (for example S3Presigner), which signs through the client's Modern Auth scheme.",
+            "supportEvidence": "The V2 baseline marks software.amazon.awssdk.core.signer.Presigner @Deprecated in favor of the service presigners and software.amazon.awssdk.http.auth.spi.signer.HttpSigner."
+        },
+        {
+            "name": "legacy-signer-client-option",
+            "comment": "The deprecated V2 SIGNER and TOKEN_SIGNER advanced client options, client-level pre-SRA signer overrides (Requirement 18.1); the Modern Auth replacement is the modeled auth scheme options (Requirement 18.7).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.client.config.SdkAdvancedClientOption#*SIGNER:*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Pre-SRA signer APIs are excluded; signing is selected by auth scheme and identity provider.",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsAuthSchemeOptions",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Remove the signer advanced option; V3 signs each operation with the auth scheme its model selects, using the client's credentials or token identity provider.",
+            "supportEvidence": "The V2 baseline marks SdkAdvancedClientOption.SIGNER and TOKEN_SIGNER @Deprecated in favor of auth schemes."
+        },
+        {
             "name": "legacy-signer-override-utils",
-            "comment": "Deprecated V2 signer-override helpers.",
+            "comment": "Deprecated V2 signer-override helpers. The replacement is the modeled auth scheme options of the Modern Auth scheme resolution (Requirement 18.7).",
             "match": {
                 "id": "api:software.amazon.awssdk.awscore.util.SignerOverrideUtils*",
                 "deprecated": true
             },
             "classification": "EXCLUDED",
             "rationale": "Pre-Smithy-Reference-Architecture signer, presigner and signer-override APIs are excluded; signing is selected by auth scheme resolution (Requirements 18.1, 18.2).",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsAuthSchemeOptions",
             "migrationKind": "DIAGNOSTIC",
             "migration": "Remove the legacy Signer/Presigner usage; configure the auth scheme, HttpSigner and identity provider on the client builder, or use the service presigner.",
             "supportEvidence": "The V2 baseline marks these signer APIs @Deprecated in favor of software.amazon.awssdk.http.auth.spi.signer.HttpSigner."
@@ -380,9 +425,78 @@
             },
             "classification": "EXCLUDED",
             "rationale": "Legacy retry policies, backoff strategies and retry conditions are excluded in favor of Modern Retry strategies (Requirement 18.4).",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy",
             "migrationKind": "DIAGNOSTIC",
             "migration": "Replace the legacy backoff strategy or retry condition with a Modern Retry strategy configured on the client builder.",
             "supportEvidence": "The V2 baseline marks these retry APIs @Deprecated in favor of software.amazon.awssdk.retries.api.RetryStrategy."
+        },
+        {
+            "name": "legacy-retry-policy-client-override",
+            "comment": "The deprecated V2 retry-policy setters of the client override configuration (Requirement 18.4); the Modern Retry replacement is the strategy the V3 client builder accepts (Requirement 18.8).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.client.config.ClientOverrideConfiguration$Builder#retryPolicy(*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Legacy retry policies are replaced by the Modern Retry strategy API.",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Configure a Modern Retry strategy with retryStrategy on the client builder (for retry mode standard or adaptive, StandardRetryStrategy or AdaptiveRetryStrategy) instead of the override configuration's retry policy.",
+            "supportEvidence": "The V2 baseline marks ClientOverrideConfiguration.Builder#retryPolicy @Deprecated in favor of retryStrategy."
+        },
+        {
+            "name": "legacy-retry-backoff",
+            "comment": "Deprecated V2 legacy backoff strategies (Requirement 18.4); the Modern Retry replacement is its backoff contract (Requirement 18.8).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.retry.backoff.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Legacy retry policies, backoff strategies and retry conditions are excluded in favor of Modern Retry strategies (Requirement 18.4).",
+            "replacement": "api:software.amazon.awssdk.retries.BackoffStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace the legacy backoff strategy with a Modern Retry BackoffStrategy (none, fixedDelay or exponentialDelay) on the Modern Retry strategy builder.",
+            "supportEvidence": "The V2 baseline marks these backoff strategies @Deprecated in favor of software.amazon.awssdk.retries.api.BackoffStrategy."
+        },
+        {
+            "name": "legacy-retry-conditions",
+            "comment": "Deprecated V2 legacy retry conditions (Requirement 18.4); the Modern Retry replacement is its retry classifier contract (Requirement 18.8).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.retry.conditions.*",
+                "deprecated": true
+            },
+            "classification": "EXCLUDED",
+            "rationale": "Legacy retry policies, backoff strategies and retry conditions are excluded in favor of Modern Retry strategies (Requirement 18.4).",
+            "replacement": "api:software.amazon.awssdk.retries.RetryClassifier",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace the legacy retry condition with a Modern Retry RetryClassifier, or retryOnException, on the Modern Retry strategy builder.",
+            "supportEvidence": "The V2 baseline marks these retry conditions @Deprecated in favor of software.amazon.awssdk.retries.api.RetryStrategy."
+        },
+        {
+            "name": "legacy-retry-strategy",
+            "comment": "The V2 legacy-mode retry strategy (Requirement 18.4; design 'Migration API comparison': legacy retry policy and legacy strategy are EXCLUDED). V3's Modern Retry modes are standard and adaptive only (software.amazon.awssdk.retries.RetryMode). Not deprecated in V2, so the general-availability gate reports it until the exclusion is approved.",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.LegacyRetryStrategy*"
+            },
+            "classification": "EXCLUDED",
+            "rationale": "The pre-Smithy-Reference-Architecture legacy retry mode is excluded; V3 retries with the standard or adaptive Modern Retry strategy (Requirement 18.4).",
+            "replacement": "api:software.amazon.awssdk.retries.StandardRetryStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace the legacy retry strategy with StandardRetryStrategy (retry mode standard) on the client builder; review its different default attempts and backoff.",
+            "supportEvidence": "Requirement 18.4 and the design's Migration API comparison exclude the legacy retry strategy; V3 RetryMode has no legacy mode."
+        },
+        {
+            "name": "legacy-retry-strategy-default-builder",
+            "comment": "DefaultRetryStrategy#legacyStrategyBuilder (see legacy-retry-strategy).",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.DefaultRetryStrategy#legacyStrategyBuilder(*"
+            },
+            "classification": "EXCLUDED",
+            "rationale": "The pre-Smithy-Reference-Architecture legacy retry mode is excluded; V3 retries with the standard or adaptive Modern Retry strategy (Requirement 18.4).",
+            "replacement": "api:software.amazon.awssdk.retries.StandardRetryStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Replace the legacy retry strategy with StandardRetryStrategy (retry mode standard) on the client builder; review its different default attempts and backoff.",
+            "supportEvidence": "Requirement 18.4 and the design's Migration API comparison exclude the legacy retry strategy; V3 RetryMode has no legacy mode."
         },
         {
             "name": "legacy-retry-aws",
@@ -393,9 +507,468 @@
             },
             "classification": "EXCLUDED",
             "rationale": "Legacy AWS retry policies are excluded in favor of Modern Retry strategies (Requirement 18.4).",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy",
             "migrationKind": "DIAGNOSTIC",
             "migration": "Replace AwsRetryPolicy with a Modern Retry strategy configured on the client builder.",
             "supportEvidence": "The V2 baseline marks AwsRetryPolicy @Deprecated in favor of software.amazon.awssdk.retries.api.RetryStrategy."
+        },
+        {
+            "name": "modern-retry-retry-strategy",
+            "comment": "Task 15.4: the V2 Modern Retry type software.amazon.awssdk.retries.api.RetryStrategy keeps its name in the V3 package of software.amazon.awssdk.retries.RetryStrategy; the retry.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-retry-retry-strategy-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.RetryStrategy"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.retries.RetryStrategy instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-retry-strategy-members",
+            "comment": "The members of the V2 Modern Retry type software.amazon.awssdk.retries.api.RetryStrategy (see modern-retry-retry-strategy).",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.RetryStrategy#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.retries.RetryStrategy, whose signatures follow the V3 Modern Retry contract.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-retry-strategy-builder",
+            "comment": "Task 15.4: the V2 Modern Retry type software.amazon.awssdk.retries.api.RetryStrategy.Builder keeps its name in the V3 package of software.amazon.awssdk.retries.RetryStrategy.Builder; the retry.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-retry-retry-strategy-builder-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.RetryStrategy$Builder"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy$Builder",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.retries.RetryStrategy.Builder instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-retry-strategy-builder-members",
+            "comment": "The members of the V2 Modern Retry type software.amazon.awssdk.retries.api.RetryStrategy.Builder (see modern-retry-retry-strategy-builder).",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.RetryStrategy$Builder#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy$Builder",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.retries.RetryStrategy.Builder, whose signatures follow the V3 Modern Retry contract.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-backoff-strategy",
+            "comment": "Task 15.4: the V2 Modern Retry type software.amazon.awssdk.retries.api.BackoffStrategy keeps its name in the V3 package of software.amazon.awssdk.retries.BackoffStrategy; the retry.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-retry-backoff-strategy-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.BackoffStrategy"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.BackoffStrategy",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.retries.BackoffStrategy instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "BackoffStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-backoff-strategy-members",
+            "comment": "The members of the V2 Modern Retry type software.amazon.awssdk.retries.api.BackoffStrategy (see modern-retry-backoff-strategy).",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.BackoffStrategy#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.BackoffStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.retries.BackoffStrategy, whose signatures follow the V3 Modern Retry contract.",
+            "evidenceIds": [
+                "BackoffStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-retry-token",
+            "comment": "Task 15.4: the V2 Modern Retry type software.amazon.awssdk.retries.api.RetryToken keeps its name in the V3 package of software.amazon.awssdk.retries.RetryToken; the retry.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-retry-retry-token-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.RetryToken"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.RetryToken",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.retries.RetryToken instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-retry-token-members",
+            "comment": "The members of the V2 Modern Retry type software.amazon.awssdk.retries.api.RetryToken (see modern-retry-retry-token).",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.RetryToken#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.RetryToken",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.retries.RetryToken, whose signatures follow the V3 Modern Retry contract.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-acquire-initial-token-request",
+            "comment": "Task 15.4: the V2 Modern Retry type software.amazon.awssdk.retries.api.AcquireInitialTokenRequest keeps its name in the V3 package of software.amazon.awssdk.retries.AcquireInitialTokenRequest; the retry.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-retry-acquire-initial-token-request-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.AcquireInitialTokenRequest"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.AcquireInitialTokenRequest",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.retries.AcquireInitialTokenRequest instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-acquire-initial-token-request-members",
+            "comment": "The members of the V2 Modern Retry type software.amazon.awssdk.retries.api.AcquireInitialTokenRequest (see modern-retry-acquire-initial-token-request).",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.AcquireInitialTokenRequest#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.AcquireInitialTokenRequest",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.retries.AcquireInitialTokenRequest, whose signatures follow the V3 Modern Retry contract.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-acquire-initial-token-response",
+            "comment": "Task 15.4: the V2 Modern Retry type software.amazon.awssdk.retries.api.AcquireInitialTokenResponse keeps its name in the V3 package of software.amazon.awssdk.retries.AcquireInitialTokenResponse; the retry.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-retry-acquire-initial-token-response-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.AcquireInitialTokenResponse"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.AcquireInitialTokenResponse",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.retries.AcquireInitialTokenResponse instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-retry-acquire-initial-token-response-members",
+            "comment": "The members of the V2 Modern Retry type software.amazon.awssdk.retries.api.AcquireInitialTokenResponse (see modern-retry-acquire-initial-token-response).",
+            "match": {
+                "id": "api:software.amazon.awssdk.retries.api.AcquireInitialTokenResponse#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Retry SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Retry SPI from software.amazon.awssdk.retries.api to software.amazon.awssdk.retries: a strategy refreshes a token with the failed attempt (AttemptFailure) and returns a RetryDecision instead of exchanging RefreshRetryTokenRequest/Response and RecordSuccessRequest/Response objects."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.AcquireInitialTokenResponse",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.retries.AcquireInitialTokenResponse, whose signatures follow the V3 Modern Retry contract.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-auth-http-signer",
+            "comment": "Task 15.4: the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.signer.HttpSigner keeps its name in the V3 package of software.amazon.awssdk.auth.api.HttpSigner; the auth.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-auth-http-signer-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.signer.HttpSigner"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.HttpSigner",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.auth.api.HttpSigner instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "AwsV4HttpSignerTest"
+            ]
+        },
+        {
+            "name": "modern-auth-http-signer-members",
+            "comment": "The members of the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.signer.HttpSigner (see modern-auth-http-signer).",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.signer.HttpSigner#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.HttpSigner",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.auth.api.HttpSigner, whose signatures follow the V3 Modern Auth contract.",
+            "evidenceIds": [
+                "AwsV4HttpSignerTest"
+            ]
+        },
+        {
+            "name": "modern-auth-signer-property",
+            "comment": "Task 15.4: the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.signer.SignerProperty keeps its name in the V3 package of software.amazon.awssdk.auth.api.SignerProperty; the auth.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-auth-signer-property-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.signer.SignerProperty"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.SignerProperty",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.auth.api.SignerProperty instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "AwsV4HttpSignerTest"
+            ]
+        },
+        {
+            "name": "modern-auth-signer-property-members",
+            "comment": "The members of the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.signer.SignerProperty (see modern-auth-signer-property).",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.signer.SignerProperty#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.SignerProperty",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.auth.api.SignerProperty, whose signatures follow the V3 Modern Auth contract.",
+            "evidenceIds": [
+                "AwsV4HttpSignerTest"
+            ]
+        },
+        {
+            "name": "modern-auth-auth-scheme",
+            "comment": "Task 15.4: the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.scheme.AuthScheme keeps its name in the V3 package of software.amazon.awssdk.auth.api.AuthScheme; the auth.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-auth-auth-scheme-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.scheme.AuthScheme"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.AuthScheme",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.auth.api.AuthScheme instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "ModeledAuthSelectionTest"
+            ]
+        },
+        {
+            "name": "modern-auth-auth-scheme-members",
+            "comment": "The members of the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.scheme.AuthScheme (see modern-auth-auth-scheme).",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.scheme.AuthScheme#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.AuthScheme",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.auth.api.AuthScheme, whose signatures follow the V3 Modern Auth contract.",
+            "evidenceIds": [
+                "ModeledAuthSelectionTest"
+            ]
+        },
+        {
+            "name": "modern-auth-auth-scheme-option",
+            "comment": "Task 15.4: the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption keeps its name in the V3 package of software.amazon.awssdk.auth.api.AuthSchemeOption; the auth.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-auth-auth-scheme-option-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.AuthSchemeOption",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.auth.api.AuthSchemeOption instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "AwsAuthSchemeOptionsTest",
+                "ModeledAuthSelectionTest"
+            ]
+        },
+        {
+            "name": "modern-auth-auth-scheme-option-members",
+            "comment": "The members of the V2 Modern Auth type software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption (see modern-auth-auth-scheme-option).",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeOption#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "api:software.amazon.awssdk.auth.api.AuthSchemeOption",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.auth.api.AuthSchemeOption, whose signatures follow the V3 Modern Auth contract.",
+            "evidenceIds": [
+                "AwsAuthSchemeOptionsTest",
+                "ModeledAuthSelectionTest"
+            ]
+        },
+        {
+            "name": "modern-auth-aws-v4-http-signer",
+            "comment": "Task 15.4: the V2 Modern Auth type software.amazon.awssdk.http.auth.aws.signer.AwsV4HttpSigner keeps its name in the V3 package of software.amazon.awssdk.auth.aws.AwsV4HttpSigner; the auth.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-auth-aws-v4-http-signer-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.aws.signer.AwsV4HttpSigner"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-aws",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsV4HttpSigner",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.auth.aws.AwsV4HttpSigner instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "AwsV4HttpSignerTest"
+            ]
+        },
+        {
+            "name": "modern-auth-aws-v4-http-signer-members",
+            "comment": "The members of the V2 Modern Auth type software.amazon.awssdk.http.auth.aws.signer.AwsV4HttpSigner (see modern-auth-aws-v4-http-signer).",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.aws.signer.AwsV4HttpSigner#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-aws",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsV4HttpSigner",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.auth.aws.AwsV4HttpSigner, whose signatures follow the V3 Modern Auth contract.",
+            "evidenceIds": [
+                "AwsV4HttpSignerTest"
+            ]
+        },
+        {
+            "name": "modern-auth-aws-v4a-http-signer",
+            "comment": "Task 15.4: the V2 Modern Auth type software.amazon.awssdk.http.auth.aws.signer.AwsV4aHttpSigner keeps its name in the V3 package of software.amazon.awssdk.auth.aws.AwsV4aHttpSigner; the auth.modern-type-package migration recipe rewrites its imports and qualified references. Its members are modern-auth-aws-v4a-http-signer-members.",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.aws.signer.AwsV4aHttpSigner"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; the type keeps its name and role.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-aws",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsV4aHttpSigner",
+            "migrationKind": "RECIPE",
+            "migration": "Import software.amazon.awssdk.auth.aws.AwsV4aHttpSigner instead; the migration tool rewrites single-type imports and fully qualified references.",
+            "evidenceIds": [
+                "AwsV4aHttpSignerTest"
+            ]
+        },
+        {
+            "name": "modern-auth-aws-v4a-http-signer-members",
+            "comment": "The members of the V2 Modern Auth type software.amazon.awssdk.http.auth.aws.signer.AwsV4aHttpSigner (see modern-auth-aws-v4a-http-signer).",
+            "match": {
+                "id": "api:software.amazon.awssdk.http.auth.aws.signer.AwsV4aHttpSigner#*"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The Modern Auth SPI is a V3 core module with V3 packages; member signatures follow the V3 contract.",
+            "differences": [
+                "V3 moves the Modern Auth SPI from software.amazon.awssdk.http.auth.spi and software.amazon.awssdk.http.auth.aws.signer to software.amazon.awssdk.auth.api and software.amazon.awssdk.auth.aws: an auth scheme's identity provider is optional, and signers sign V3 HTTP requests."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-aws",
+            "replacement": "api:software.amazon.awssdk.auth.aws.AwsV4aHttpSigner",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Check this use against the members of software.amazon.awssdk.auth.aws.AwsV4aHttpSigner, whose signatures follow the V3 Modern Auth contract.",
+            "evidenceIds": [
+                "AwsV4aHttpSignerTest"
+            ]
         },
         {
             "name": "legacy-core-checksums",
@@ -435,6 +1008,115 @@
             "migrationKind": "DIAGNOSTIC",
             "migration": "Use the non-deprecated replacement named in the V2 @deprecated Javadoc.",
             "supportEvidence": "The V2 baseline marks this DynamoDB Enhanced API @Deprecated."
+        },
+        {
+            "name": "deprecated-endpoints-endpoint-url-shipped",
+            "comment": "Deprecated V2 API: the endpoints Endpoint#url accessor and Endpoint.Builder#url setter. Task 15.4: ExcludedContractsAbsentTest scans the compiled V3 release artifacts and finds every one of these deprecated V2 APIs shipped with its exact V2 descriptor, so they cannot be EXCLUDED (Requirement 18.6: V3 exposes no EXCLUDED deprecated API); the test also fails if a deprecated PRESERVED entry stops shipping. Deprecated entries do not gate general availability (Requirement 16.15).",
+            "match": {
+                "id": "api:software.amazon.awssdk.endpoints.Endpoint*",
+                "deprecated": true
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "V3 still ships this deprecated V2 API with its V2 signature; it stays deprecated and should be migrated to the non-deprecated replacement named in its @deprecated Javadoc.",
+            "v3Artifact": "software.amazon.awssdk:endpoints",
+            "supportEvidence": "ExcludedContractsAbsentTest finds the exact V2 member in the V3 candidate's public API.",
+            "evidenceIds": [
+                "ExcludedContractsAbsentTest"
+            ]
+        },
+        {
+            "name": "deprecated-dynamodb-enhanced-api-shipped",
+            "comment": "Deprecated V2 API: the deprecated members of the DynamoDB Enhanced Client API (see also EnhancedV2ApiDescriptorParityTest). Task 15.4: ExcludedContractsAbsentTest scans the compiled V3 release artifacts and finds every one of these deprecated V2 APIs shipped with its exact V2 descriptor, so they cannot be EXCLUDED (Requirement 18.6: V3 exposes no EXCLUDED deprecated API); the test also fails if a deprecated PRESERVED entry stops shipping. Deprecated entries do not gate general availability (Requirement 16.15).",
+            "match": {
+                "id": "api:software.amazon.awssdk.enhanced.dynamodb.*",
+                "deprecated": true
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "V3 still ships this deprecated V2 API with its V2 signature; it stays deprecated and should be migrated to the non-deprecated replacement named in its @deprecated Javadoc.",
+            "v3Artifact": "software.amazon.awssdk:dynamodb-enhanced",
+            "supportEvidence": "ExcludedContractsAbsentTest finds the exact V2 member in the V3 candidate's public API.",
+            "evidenceIds": [
+                "ExcludedContractsAbsentTest",
+                "EnhancedV2ApiDescriptorParityTest"
+            ]
+        },
+        {
+            "name": "deprecated-s3-copy-object-members-shipped",
+            "comment": "Deprecated V2 API: the S3 CopyObjectRequest bucket/key/copySource members (kept by the V3 S3 customization). Task 15.4: ExcludedContractsAbsentTest scans the compiled V3 release artifacts and finds every one of these deprecated V2 APIs shipped with its exact V2 descriptor, so they cannot be EXCLUDED (Requirement 18.6: V3 exposes no EXCLUDED deprecated API); the test also fails if a deprecated PRESERVED entry stops shipping. Deprecated entries do not gate general availability (Requirement 16.15).",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.s3.model.CopyObjectRequest*",
+                "deprecated": true
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "V3 still ships this deprecated V2 API with its V2 signature; it stays deprecated and should be migrated to the non-deprecated replacement named in its @deprecated Javadoc.",
+            "v3Artifact": "software.amazon.awssdk:s3",
+            "supportEvidence": "ExcludedContractsAbsentTest finds the exact V2 member in the V3 candidate's public API.",
+            "evidenceIds": [
+                "ExcludedContractsAbsentTest"
+            ]
+        },
+        {
+            "name": "deprecated-s3-upload-part-copy-members-shipped",
+            "comment": "Deprecated V2 API: the S3 UploadPartCopyRequest bucket/key/copySource members (kept by the V3 S3 customization). Task 15.4: ExcludedContractsAbsentTest scans the compiled V3 release artifacts and finds every one of these deprecated V2 APIs shipped with its exact V2 descriptor, so they cannot be EXCLUDED (Requirement 18.6: V3 exposes no EXCLUDED deprecated API); the test also fails if a deprecated PRESERVED entry stops shipping. Deprecated entries do not gate general availability (Requirement 16.15).",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.s3.model.UploadPartCopyRequest*",
+                "deprecated": true
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "V3 still ships this deprecated V2 API with its V2 signature; it stays deprecated and should be migrated to the non-deprecated replacement named in its @deprecated Javadoc.",
+            "v3Artifact": "software.amazon.awssdk:s3",
+            "supportEvidence": "ExcludedContractsAbsentTest finds the exact V2 member in the V3 candidate's public API.",
+            "evidenceIds": [
+                "ExcludedContractsAbsentTest"
+            ]
+        },
+        {
+            "name": "deprecated-s3-lifecycle-rule-prefix-shipped",
+            "comment": "Deprecated V2 API: the S3 LifecycleRule prefix member (generated from the model). Task 15.4: ExcludedContractsAbsentTest scans the compiled V3 release artifacts and finds every one of these deprecated V2 APIs shipped with its exact V2 descriptor, so they cannot be EXCLUDED (Requirement 18.6: V3 exposes no EXCLUDED deprecated API); the test also fails if a deprecated PRESERVED entry stops shipping. Deprecated entries do not gate general availability (Requirement 16.15).",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.s3.model.LifecycleRule*",
+                "deprecated": true
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "V3 still ships this deprecated V2 API with its V2 signature; it stays deprecated and should be migrated to the non-deprecated replacement named in its @deprecated Javadoc.",
+            "v3Artifact": "software.amazon.awssdk:s3",
+            "supportEvidence": "ExcludedContractsAbsentTest finds the exact V2 member in the V3 candidate's public API.",
+            "evidenceIds": [
+                "ExcludedContractsAbsentTest"
+            ]
+        },
+        {
+            "name": "deprecated-s3-replication-rule-prefix-shipped",
+            "comment": "Deprecated V2 API: the S3 ReplicationRule prefix member (generated from the model). Task 15.4: ExcludedContractsAbsentTest scans the compiled V3 release artifacts and finds every one of these deprecated V2 APIs shipped with its exact V2 descriptor, so they cannot be EXCLUDED (Requirement 18.6: V3 exposes no EXCLUDED deprecated API); the test also fails if a deprecated PRESERVED entry stops shipping. Deprecated entries do not gate general availability (Requirement 16.15).",
+            "match": {
+                "id": "api:software.amazon.awssdk.services.s3.model.ReplicationRule*",
+                "deprecated": true
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "V3 still ships this deprecated V2 API with its V2 signature; it stays deprecated and should be migrated to the non-deprecated replacement named in its @deprecated Javadoc.",
+            "v3Artifact": "software.amazon.awssdk:s3",
+            "supportEvidence": "ExcludedContractsAbsentTest finds the exact V2 member in the V3 candidate's public API.",
+            "evidenceIds": [
+                "ExcludedContractsAbsentTest"
+            ]
         },
         {
             "name": "deprecated-runtime-core",

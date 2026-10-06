@@ -56,8 +56,18 @@ public record MigrationDiagnostic(SourceLocation location,
     }
 
     /**
+     * The documentation identifier of the diagnostic (Requirement 18.9): for an {@code ADAPTED} or {@code EXCLUDED}
+     * entry, its Parity Manifest entry ID, under which V3 publishes the entry's rationale, replacement, differences and
+     * migration action (Requirements 16.6, 16.7, 22.6, 22.7); {@code null} for a construct without such an entry.
+     */
+    public String documentationId() {
+        return entryId != null && (classification == Classification.ADAPTED
+                                   || classification == Classification.EXCLUDED) ? entryId : null;
+    }
+
+    /**
      * A one-line human-readable form: {@code path:line:column: construct [entry, CLASSIFICATION]: reason}, followed by
-     * the rationale, replacement and migration text when present.
+     * the rationale, replacement, migration text and documentation identifier when present.
      */
     public String message() {
         StringBuilder out = new StringBuilder();
@@ -78,6 +88,10 @@ public record MigrationDiagnostic(SourceLocation location,
         }
         if (migration != null) {
             out.append(" Migration: ").append(migration);
+        }
+        String documentation = documentationId();
+        if (documentation != null) {
+            out.append(" Documentation: ").append(documentation).append('.');
         }
         return out.toString();
     }

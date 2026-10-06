@@ -57,8 +57,9 @@ api:software.amazon.awssdk.eventnotifications.s3.model.*
 # subscription messages; behavior by SnsMessageManagerCompatibilityTest.
 api:software.amazon.awssdk.messagemanager.sns.*
 # DynamoDB Enhanced Client (tasks 14.1, 14.6): every public type and member of the V2 API, source- and
-# binary-preserved. The deprecated members are EXCLUDED (not gated; V3 still ships them, see
-# EnhancedV2ApiDescriptorParityTest), so they are left out of the scope.
+# binary-preserved. The deprecated members are not gated (Requirement 16.15) and claim only the source dimension
+# (classification-rules.json deprecated-dynamodb-enhanced-api-shipped; ExcludedContractsAbsentTest and
+# EnhancedV2ApiDescriptorParityTest show V3 still ships them), so they are left out of the scope.
 api:software.amazon.awssdk.enhanced.dynamodb.*
 !api:software.amazon.awssdk.enhanced.dynamodb.IndexMetadata#partitionKey()*
 !api:software.amazon.awssdk.enhanced.dynamodb.IndexMetadata#sortKey()*

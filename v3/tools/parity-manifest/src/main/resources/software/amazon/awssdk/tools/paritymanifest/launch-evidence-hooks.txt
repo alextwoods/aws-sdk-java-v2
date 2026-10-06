@@ -111,3 +111,14 @@ SdkNumberTest api:software.amazon.awssdk.core.SdkNumber#fromInteger(I)Lsoftware/
 # entries name them through classification-rules.json.
 SnsMessageManagerCompatibilityTest artifact:software.amazon.awssdk:sns-message-manager
 SnsMessageManagerSafeDiagnosticsTest
+# Modern Retry and Modern Auth (task 15.4; Requirements 18.3, 18.5, 18.7, 18.8): the V3 suites of the core retries,
+# auth-api and auth-aws modules that verify the V3 types the ADAPTED modern-retry-* and modern-auth-* entries of
+# classification-rules.json move V2 callers to. Their api: entries name them through classification-rules.json.
+BackoffStrategyTest
+AwsV4HttpSignerTest
+AwsV4aHttpSignerTest
+ModeledAuthSelectionTest
+AwsAuthSchemeOptionsTest
+# The public API scan of tools/parity-manifest (task 15.4; Requirements 18.1-18.6): no EXCLUDED contract ships in the
+# V3 release artifacts, and every deprecated PRESERVED api: entry (the deprecated-*-shipped rules) ships exactly.
+ExcludedContractsAbsentTest

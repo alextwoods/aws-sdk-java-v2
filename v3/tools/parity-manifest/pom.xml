@@ -198,6 +198,57 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <!-- The V2 API jars of every module PublicApiInventorySource scans by default (its
+                             DEFAULT_MODULES; ExcludedContractsAbsentTest checks the set is exactly that list):
+                             ExcludedContractsAbsentTest classifies them under the checked-in rules and proves no
+                             EXCLUDED contract, including the legacy signers of auth and the legacy retry strategies of
+                             retries (Requirement 18), is part of the compiled V3 release artifacts. -->
+                        <id>copy-v2-public-api</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-public-api</outputDirectory>
+                            <artifactItems>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>annotations</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>utils</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>sdk-core</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>aws-core</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>regions</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>auth</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>profiles</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-client-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>identity-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-auth-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-auth</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>http-auth-aws</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>checksums-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>checksums</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>retries-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>retries</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>metrics-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>endpoints-spi</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>json-utils</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>arns</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>crt-core</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>apache-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>apache5-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>url-connection-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>netty-nio-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>aws-crt-client</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>cloudwatch-metric-publisher</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>dynamodb</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>dynamodb-enhanced</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>s3-transfer-manager</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>iam-policy-builder</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>s3-event-notifications</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                                <artifactItem><groupId>software.amazon.awssdk</groupId><artifactId>sns-message-manager</artifactId><version>${v3.v2Baseline.version}</version></artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <!-- Released V2 service jars that V2CodegenSurfaceInventorySourceTest checks the source-derived
                              paginator and customization surface against (dynamodb is in target/v2-api). -->
                         <id>copy-v2-codegen-surface-oracles</id>
@@ -231,6 +282,7 @@
                         <v3.fixture.v2Api>${project.build.directory}/v2-api</v3.fixture.v2Api>
                         <v3.fixture.v2ApiDependencies>${project.build.directory}/v2-api-dependencies</v3.fixture.v2ApiDependencies>
                         <v3.fixture.v2SurfaceApi>${project.build.directory}/v2-surface-api</v3.fixture.v2SurfaceApi>
+                        <v3.fixture.v2PublicApi>${project.build.directory}/v2-public-api</v3.fixture.v2PublicApi>
                         <v3.fixture.v2Version>${v3.v2Baseline.version}</v3.fixture.v2Version>
                         <!-- The launch gate (LaunchGateRepositoryTest); see the launch-gate profile below. -->
                         <v3.launchGate>${v3.launchGate}</v3.launchGate>
