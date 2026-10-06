@@ -44,6 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
 import software.amazon.awssdk.v2migration.MigrationRequest;
 import software.amazon.awssdk.v2migration.manifest.MigrationManifest;
 import software.amazon.awssdk.v2migration.pom.ProjectDependencies;
+import software.amazon.awssdk.v2migration.recipe.MigrationRecipe;
 import software.amazon.awssdk.v2migration.recipe.Recipes;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
@@ -197,8 +198,12 @@ class MigrationMojoTest {
     }
 
     @Test
-    void discover_pluginClassLoader_findsNoRecipesUntilRecipeFamiliesRegister() {
-        assertEquals(List.of(), Recipes.discover(AbstractMigrationMojo.class.getClassLoader()));
+    void discover_pluginClassLoader_findsTheRegisteredRecipesInIdOrder() {
+        List<String> ids = Recipes.discover(AbstractMigrationMojo.class.getClassLoader()).stream()
+                                  .map(MigrationRecipe::id).toList();
+
+        assertFalse(ids.isEmpty());
+        assertEquals(ids.stream().sorted().toList(), ids);
     }
 
     private <T extends AbstractMigrationMojo> T configure(T mojo) {

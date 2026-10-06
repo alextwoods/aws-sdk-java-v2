@@ -52,7 +52,7 @@
                 },
                 "categories": {
                     "type": "object",
-                    "required": ["DEPENDENCY", "BOM", "IMPORT", "BUILDER", "CLIENT", "CONFIGURATION", "INTERCEPTOR", "HTTP", "RETRY", "SIGNER", "STREAMING", "HIGH_LEVEL_LIBRARY", "API"],
+                    "required": ["DEPENDENCY", "BOM", "IMPORT", "BUILDER", "CLIENT", "CONFIGURATION", "INTERCEPTOR", "HTTP", "RETRY", "SIGNER", "STREAMING", "HIGH_LEVEL_LIBRARY", "BUILD", "API"],
                     "additionalProperties": { "$ref": "#/$defs/dispositionCounts" },
                     "propertyNames": { "$ref": "#/$defs/category" }
                 }
@@ -92,7 +92,7 @@
     "$defs": {
         "nullableString": { "type": ["string", "null"] },
         "classification": { "enum": ["PRESERVED", "ADAPTED", "EXCLUDED", null] },
-        "category": { "enum": ["DEPENDENCY", "BOM", "IMPORT", "BUILDER", "CLIENT", "CONFIGURATION", "INTERCEPTOR", "HTTP", "RETRY", "SIGNER", "STREAMING", "HIGH_LEVEL_LIBRARY", "API"] },
+        "category": { "enum": ["DEPENDENCY", "BOM", "IMPORT", "BUILDER", "CLIENT", "CONFIGURATION", "INTERCEPTOR", "HTTP", "RETRY", "SIGNER", "STREAMING", "HIGH_LEVEL_LIBRARY", "BUILD", "API"] },
         "classificationCounts": {
             "type": "object",
             "additionalProperties": false,
@@ -132,7 +132,7 @@
             "additionalProperties": false,
             "required": ["kind", "category", "id", "construct", "location", "disposition", "classification", "recipe", "reason", "edits"],
             "properties": {
-                "kind": { "enum": ["DEPENDENCY", "MANAGED_DEPENDENCY", "BOM_IMPORT", "EFFECTIVE_DEPENDENCY", "IMPORT", "STATIC_IMPORT", "TYPE_REFERENCE", "METHOD_INVOCATION", "CONSTRUCTOR_CALL", "FIELD_ACCESS", "METHOD_OVERRIDE", "CONFIGURATION_KEY", "UNATTRIBUTED_SOURCE"] },
+                "kind": { "enum": ["DEPENDENCY", "MANAGED_DEPENDENCY", "BOM_IMPORT", "EFFECTIVE_DEPENDENCY", "VERSION_PROPERTY", "BUILD_SETTING", "IMPORT", "STATIC_IMPORT", "TYPE_REFERENCE", "METHOD_INVOCATION", "CONSTRUCTOR_CALL", "FIELD_ACCESS", "METHOD_OVERRIDE", "CONFIGURATION_KEY", "UNATTRIBUTED_SOURCE"] },
                 "category": { "$ref": "#/$defs/category" },
                 "id": { "$ref": "#/$defs/nullableString", "description": "The Parity Manifest entry ID the construct was joined by." },
                 "construct": { "type": "string" },

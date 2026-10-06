@@ -28,6 +28,17 @@ public enum ItemKind {
      * inherited); a position at the declaration it arrives through.
      */
     EFFECTIVE_DEPENDENCY,
+    /**
+     * A {@code <properties>} element of a POM that supplies, as {@code ${name}}, the version of a V2 declaration of
+     * the same POM; spans the property element.
+     */
+    VERSION_PROPERTY,
+    /**
+     * A POM element that selects the Java language level a V2 project compiles for: a {@code maven.compiler.*}
+     * property, or a {@code source}, {@code target} or {@code release} parameter of the {@code maven-compiler-plugin};
+     * spans the element.
+     */
+    BUILD_SETTING,
     /** A single-type import; spans the whole {@code import ...;} declaration. */
     IMPORT,
     /** A single static import; spans the whole {@code import static ...;} declaration. */

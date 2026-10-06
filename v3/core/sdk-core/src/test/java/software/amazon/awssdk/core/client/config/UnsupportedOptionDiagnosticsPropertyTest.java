@@ -61,15 +61,17 @@ import software.amazon.awssdk.core.exception.SdkClientConfigurationException;
  * and is identical on repeated resolution. When construction succeeds every supplied option is present in the resolved
  * configuration with its value and provenance, so no option vanishes.
  *
- * <p><b>Migration diagnostic equality (Requirement 9.10) is deferred.</b> No migration diagnostic producer exists yet:
- * {@code v3/tools/parity-manifest} is a skeleton and {@code v3/tools/v2-migration} does not exist. This test pins the
- * runtime half of the equality obligation as the seam {@link UnsupportedOptionDiagnostic}: option name, Parity
- * Manifest disposition and source. Task 15.2 (configuration recipes, which validates 9.10), on top of 15.1's manifest
- * reader and source locations and 13.1's manifest dispositions, must report for each V2 configuration option without
- * V3 behavior a diagnostic whose option name and disposition equal the {@link UnsupportedOptionDiagnostic} the runtime
- * reports for the same manifest entry, plus the V2 source file and line (which only migration tooling can know; at
- * runtime the source is the {@link ConfigurationSource} provenance). That task should extend this property, or add a
- * cross-module one, comparing the two for generated V2 builder code.
+ * <p><b>Migration diagnostics (Requirement 9.10) are checked by the migration tooling, not here.</b> This test pins the
+ * runtime half as the seam {@link UnsupportedOptionDiagnostic}: option name, Parity Manifest disposition and source.
+ * The migration half is the {@code configuration.unsupported-options} recipe of {@code v3/tools/v2-migration} (task
+ * 15.2, {@code UnsupportedOptionRecipe}): for each use of a V2 configuration option whose Parity Manifest entry is
+ * {@code EXCLUDED} without a replacement it leaves the source unchanged and reports the option in the same
+ * {@code <option> (disposition <classification>)} form, with the V2 source file, line and column in place of the
+ * runtime {@link ConfigurationSource} provenance; {@code UnsupportedOptionRecipeTest} there verifies it. No
+ * cross-module property compares the two for the same generated V2 builder code yet: {@code v2-migration} does not
+ * depend on this module, and the runtime names an option by its {@link ClientOption} name while the tool names it by
+ * the V2 member or setting name, so the names agree only where the two coincide. The V2 migration corpus (task 15.5) is where both halves
+ * run against one project.
  *
  * <p>Gap, not covered here: options with no V3 behavior are only detected when supplied through the client builder
  * configuration. The resolver has no JVM property, environment variable or profile property names for unsupported
@@ -212,8 +214,8 @@ class UnsupportedOptionDiagnosticsPropertyTest {
 
     /**
      * The runtime half of the Requirement 9.10 equality seam: what construction reports for one supplied option without
-     * V3 behavior. Migration tooling (task 15.2) must report the same option name and disposition for the same manifest
-     * entry, plus the V2 source file and line.
+     * V3 behavior. The migration tooling's {@code configuration.unsupported-options} recipe reports the option name and
+     * disposition in the same form for the same manifest entry, plus the V2 source file and line.
      */
     record UnsupportedOptionDiagnostic(String option, String disposition, ConfigurationSource source) {
     }

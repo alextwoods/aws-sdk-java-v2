@@ -17,6 +17,7 @@ package software.amazon.awssdk.v2migration.pom;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * The effective dependency and BOM inventory of one Maven project: what its POM declares (with the effective version
@@ -75,6 +76,16 @@ public record ProjectDependencies(List<Declared> declared, List<Resolved> resolv
         /** True for a {@code <type>pom</type><scope>import</scope>} BOM import. */
         public boolean isBomImport() {
             return "import".equals(scope) && "pom".equals(type);
+        }
+
+        /** The property name when the version is written as exactly one property reference, {@code ${name}}. */
+        public Optional<String> versionProperty() {
+            if (declaredVersion == null) {
+                return Optional.empty();
+            }
+            String v = declaredVersion.strip();
+            boolean reference = v.length() > 3 && v.startsWith("${") && v.indexOf('}') == v.length() - 1;
+            return reference ? Optional.of(v.substring(2, v.length() - 1)) : Optional.empty();
         }
 
         /** {@code groupId:artifactId:effectiveVersion}. */

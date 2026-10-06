@@ -37,6 +37,8 @@ public enum MigrationCategory {
     SIGNER,
     STREAMING,
     HIGH_LEVEL_LIBRARY,
+    /** Maven build settings of the project, such as the Java language level it compiles for. */
+    BUILD,
     /** Any other V2 public API, and source the compiler could not attribute. */
     API;
 
@@ -80,7 +82,10 @@ public enum MigrationCategory {
             case DEPENDENCY:
             case MANAGED_DEPENDENCY:
             case EFFECTIVE_DEPENDENCY:
+            case VERSION_PROPERTY:
                 return DEPENDENCY;
+            case BUILD_SETTING:
+                return BUILD;
             case BOM_IMPORT:
                 return BOM;
             case IMPORT:

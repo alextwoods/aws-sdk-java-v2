@@ -1,0 +1,12 @@
+# Dependency, import, builder, client and configuration recipes (task 15.2).
+software.amazon.awssdk.v2migration.recipe.core.DependencyCoordinatesRecipe
+software.amazon.awssdk.v2migration.recipe.core.EffectiveDependencyRecipe
+software.amazon.awssdk.v2migration.recipe.core.JavaReleaseRecipe
+software.amazon.awssdk.v2migration.recipe.core.RenamedTypeRecipe
+software.amazon.awssdk.v2migration.recipe.core.RenamedMemberRecipe$Builders
+software.amazon.awssdk.v2migration.recipe.core.RenamedMemberRecipe$Clients
+software.amazon.awssdk.v2migration.recipe.core.RenamedMemberRecipe$Configuration
+software.amazon.awssdk.v2migration.recipe.core.RenamedMemberRecipe$RequestOverrides
+software.amazon.awssdk.v2migration.recipe.core.RenamedConfigurationKeyRecipe
+software.amazon.awssdk.v2migration.recipe.core.ReplacedSignatureTypeRecipe
+software.amazon.awssdk.v2migration.recipe.core.UnsupportedOptionRecipe
