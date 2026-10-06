@@ -982,8 +982,13 @@
 
         <!-- Migration, release and test tooling (never in production dependency trees) -->
         <module artifactId="v2-migration" path="tools/v2-migration" kind="migration-tool" release="true">
-            <owns>OpenRewrite-style V2-to-V3 recipes, diagnostics and the migration manifest reader.</owns>
+            <owns>OpenRewrite-style V2-to-V3 recipes, diagnostics and the migration manifest reader: the migration engine and its recipe extension point, the Parity Manifest reader, the machine-readable migration report, and the Maven plugin that runs them. It reads V2 source and POMs but never links V2 or V3 runtime code.</owns>
             <allowsClass class="openrewrite"/>
+            <!-- The Maven plugin's provided-scope Maven APIs. -->
+            <allowsClass class="maven-plugin-api"/>
+            <!-- smithy-model only, for Smithy Node JSON reading and writing of the Parity Manifest and the report. -->
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="v2-runtime"/>
             <forbids class="generated-service"/>
             <forbids class="concrete-http"/>
             <forbids class="logging-implementation"/>

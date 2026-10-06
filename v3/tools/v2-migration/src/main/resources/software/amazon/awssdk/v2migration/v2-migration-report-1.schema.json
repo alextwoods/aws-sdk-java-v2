@@ -1,0 +1,187 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:software.amazon.awssdk:v3:v2-migration-report:1",
+    "title": "AWS SDK for Java V3 V2 Migration Report",
+    "description": "One V2-to-V3 migration run of one project (Requirements 17.4, 17.9-17.12): every encountered item with exactly one disposition, and a blocking, source-located diagnostic for every unresolved item. Written by MigrationReport: fixed member order, items and diagnostics in item order, UTF-8, trailing newline, no timestamps.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schemaVersion", "tool", "project", "applied", "manifest", "summary", "recipes", "files", "items", "diagnostics"],
+    "properties": {
+        "schemaVersion": { "const": 1 },
+        "tool": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version"],
+            "properties": {
+                "name": { "const": "v2-migration" },
+                "version": { "type": "string", "minLength": 1 }
+            }
+        },
+        "project": { "$ref": "#/$defs/nullableString" },
+        "applied": { "type": "boolean", "description": "Whether the transformed files were written." },
+        "manifest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["v2Version", "gitRevision", "scannerVersion", "candidateVersion", "entries", "summary"],
+            "properties": {
+                "v2Version": { "type": "string", "minLength": 1 },
+                "gitRevision": { "$ref": "#/$defs/nullableString" },
+                "scannerVersion": { "type": "string", "minLength": 1 },
+                "candidateVersion": { "$ref": "#/$defs/nullableString" },
+                "entries": { "type": "integer", "minimum": 0 },
+                "summary": { "$ref": "#/$defs/classificationCounts" }
+            }
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["items", "dispositions", "classifications", "categories"],
+            "properties": {
+                "items": { "type": "integer", "minimum": 0 },
+                "dispositions": { "$ref": "#/$defs/dispositionCounts" },
+                "classifications": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["PRESERVED", "ADAPTED", "EXCLUDED", "UNCLASSIFIED"],
+                    "properties": {
+                        "PRESERVED": { "type": "integer", "minimum": 0 },
+                        "ADAPTED": { "type": "integer", "minimum": 0 },
+                        "EXCLUDED": { "type": "integer", "minimum": 0 },
+                        "UNCLASSIFIED": { "type": "integer", "minimum": 0, "description": "Items without a manifest entry." }
+                    }
+                },
+                "categories": {
+                    "type": "object",
+                    "required": ["DEPENDENCY", "BOM", "IMPORT", "BUILDER", "CLIENT", "CONFIGURATION", "INTERCEPTOR", "HTTP", "RETRY", "SIGNER", "STREAMING", "HIGH_LEVEL_LIBRARY", "API"],
+                    "additionalProperties": { "$ref": "#/$defs/dispositionCounts" },
+                    "propertyNames": { "$ref": "#/$defs/category" }
+                }
+            }
+        },
+        "recipes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "description", "preserved", "transformed", "unresolved"],
+                "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "description": { "type": "string" },
+                    "preserved": { "type": "integer", "minimum": 0 },
+                    "transformed": { "type": "integer", "minimum": 0 },
+                    "unresolved": { "type": "integer", "minimum": 0 }
+                }
+            }
+        },
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "items", "changed"],
+                "properties": {
+                    "path": { "type": "string", "minLength": 1 },
+                    "items": { "type": "integer", "minimum": 0 },
+                    "changed": { "type": "boolean" }
+                }
+            }
+        },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+        "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+    },
+    "$defs": {
+        "nullableString": { "type": ["string", "null"] },
+        "classification": { "enum": ["PRESERVED", "ADAPTED", "EXCLUDED", null] },
+        "category": { "enum": ["DEPENDENCY", "BOM", "IMPORT", "BUILDER", "CLIENT", "CONFIGURATION", "INTERCEPTOR", "HTTP", "RETRY", "SIGNER", "STREAMING", "HIGH_LEVEL_LIBRARY", "API"] },
+        "classificationCounts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["PRESERVED", "ADAPTED", "EXCLUDED"],
+            "properties": {
+                "PRESERVED": { "type": "integer", "minimum": 0 },
+                "ADAPTED": { "type": "integer", "minimum": 0 },
+                "EXCLUDED": { "type": "integer", "minimum": 0 }
+            }
+        },
+        "dispositionCounts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["PRESERVED", "TRANSFORMED", "UNRESOLVED"],
+            "properties": {
+                "PRESERVED": { "type": "integer", "minimum": 0 },
+                "TRANSFORMED": { "type": "integer", "minimum": 0 },
+                "UNRESOLVED": { "type": "integer", "minimum": 0 }
+            }
+        },
+        "location": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "line", "column", "endLine", "endColumn", "startOffset", "endOffset"],
+            "properties": {
+                "path": { "type": "string", "minLength": 1, "description": "Project-relative, '/'-separated." },
+                "line": { "type": "integer", "minimum": 1 },
+                "column": { "type": "integer", "minimum": 1 },
+                "endLine": { "type": "integer", "minimum": 1 },
+                "endColumn": { "type": "integer", "minimum": 1 },
+                "startOffset": { "type": "integer", "minimum": 0, "description": "UTF-16 code unit offset." },
+                "endOffset": { "type": "integer", "minimum": 0, "description": "Exclusive." }
+            }
+        },
+        "item": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "category", "id", "construct", "location", "disposition", "classification", "recipe", "reason", "edits"],
+            "properties": {
+                "kind": { "enum": ["DEPENDENCY", "MANAGED_DEPENDENCY", "BOM_IMPORT", "EFFECTIVE_DEPENDENCY", "IMPORT", "STATIC_IMPORT", "TYPE_REFERENCE", "METHOD_INVOCATION", "CONSTRUCTOR_CALL", "FIELD_ACCESS", "METHOD_OVERRIDE", "CONFIGURATION_KEY", "UNATTRIBUTED_SOURCE"] },
+                "category": { "$ref": "#/$defs/category" },
+                "id": { "$ref": "#/$defs/nullableString", "description": "The Parity Manifest entry ID the construct was joined by." },
+                "construct": { "type": "string" },
+                "location": { "$ref": "#/$defs/location" },
+                "disposition": { "enum": ["PRESERVED", "TRANSFORMED", "UNRESOLVED"] },
+                "classification": { "$ref": "#/$defs/classification" },
+                "recipe": { "$ref": "#/$defs/nullableString" },
+                "reason": { "$ref": "#/$defs/nullableString" },
+                "edits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["path", "startOffset", "endOffset", "replacement"],
+                        "properties": {
+                            "path": { "type": "string", "minLength": 1 },
+                            "startOffset": { "type": "integer", "minimum": 0 },
+                            "endOffset": { "type": "integer", "minimum": 0 },
+                            "replacement": { "type": "string" }
+                        }
+                    }
+                }
+            },
+            "allOf": [
+                {
+                    "if": { "properties": { "disposition": { "const": "TRANSFORMED" } } },
+                    "then": { "properties": { "edits": { "minItems": 1 }, "recipe": { "type": "string" } } },
+                    "else": { "properties": { "edits": { "maxItems": 0 } } }
+                }
+            ]
+        },
+        "diagnostic": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["severity", "location", "construct", "entryId", "classification", "rationale", "replacement", "migrationKind", "migration", "differences", "reason", "message"],
+            "properties": {
+                "severity": { "const": "BLOCKING" },
+                "location": { "$ref": "#/$defs/location" },
+                "construct": { "type": "string" },
+                "entryId": { "$ref": "#/$defs/nullableString" },
+                "classification": { "$ref": "#/$defs/classification" },
+                "rationale": { "$ref": "#/$defs/nullableString" },
+                "replacement": { "$ref": "#/$defs/nullableString" },
+                "migrationKind": { "enum": ["RECIPE", "DIAGNOSTIC", "COMPILE_TIME", null] },
+                "migration": { "$ref": "#/$defs/nullableString" },
+                "differences": { "type": "array", "items": { "type": "string" } },
+                "reason": { "type": "string", "minLength": 1 },
+                "message": { "type": "string", "minLength": 1 }
+            }
+        }
+    }
+}

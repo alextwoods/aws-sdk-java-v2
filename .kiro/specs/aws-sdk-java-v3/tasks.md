@@ -435,12 +435,12 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 14.5 Implement SNS message manager
     - Port message parsing, signature verification integration, safe diagnostics, and manifest-classified behavior with deterministic fixtures.
     - _Requirements: 16.8, 17.1, 19.12, 21.10_
-  - [ ] 14.6 Add high-level-library parity, fault, concurrency, and compatibility gates
+  - [x] 14.6 Add high-level-library parity, fault, concurrency, and compatibility gates
     - Generate manifest-driven test matrices across DynamoDB Enhanced, Transfer Manager, IAM, S3 notifications, and SNS; assert preserved/adapted behavior, cancellation, cleanup, and source/binary claims.
     - _Requirements: 16.6, 16.7, 16.8, 16.12, 16.14, 16.15, 19.7, 19.8, 19.9, 19.12_
 
 - [ ] 15. Implement Maven-delivered V2 migration recipes, diagnostics, and corpus validation
-  - [ ] 15.1 Implement the migration engine, Maven plugin, and manifest reader
+  - [x] 15.1 Implement the migration engine, Maven plugin, and manifest reader
     - Build `v3/tools/v2-migration` with source parsing, effective dependency/BOM inventory, manifest-backed dispositions, deterministic edits, source locations, and machine-readable reports.
     - _Requirements: 17.4, 17.5, 17.10, 17.11, 17.12_
   - [ ] 15.2 Implement dependency, import, builder, client, and configuration recipes

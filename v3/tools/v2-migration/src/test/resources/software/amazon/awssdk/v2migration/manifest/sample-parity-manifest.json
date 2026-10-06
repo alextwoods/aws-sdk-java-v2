@@ -1,0 +1,131 @@
+{
+    "schemaVersion": 1,
+    "baseline": {
+        "v2Version": "2.54.0",
+        "gitRevision": "e1ec10e99088686ca5f238aaca21a15b9a7b09d4",
+        "featureFreezeCutoff": "2026-01-15",
+        "supportStatus": "general-availability",
+        "scannerVersion": "parity-manifest/3.0.0"
+    },
+    "candidate": {
+        "v3Version": "3.0.0",
+        "gitRevision": null
+    },
+    "summary": {
+        "PRESERVED": 3,
+        "ADAPTED": 1,
+        "EXCLUDED": 1
+    },
+    "entries": [
+        {
+            "id": "api:software.amazon.awssdk.core.retry.RetryPolicy#defaultRetryPolicy()Lsoftware/amazon/awssdk/core/retry/RetryPolicy;",
+            "kind": "PUBLIC_MEMBER",
+            "v2Surface": "method software.amazon.awssdk.core.retry.RetryPolicy#defaultRetryPolicy()",
+            "source": {
+                "artifact": "sdk-core",
+                "path": "software/amazon/awssdk/core/retry/RetryPolicy.class"
+            },
+            "deprecated": true,
+            "classification": "EXCLUDED",
+            "dimensions": [],
+            "binary": false,
+            "rationale": "Legacy retry policies are replaced by Modern Retry.",
+            "differences": [],
+            "v3Artifact": null,
+            "replacement": "api:software.amazon.awssdk.retries.StandardRetryStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use StandardRetryStrategy.",
+            "supportEvidence": null,
+            "evidenceIds": [],
+            "evidence": null
+        },
+        {
+            "id": "api:software.amazon.awssdk.regions.Region",
+            "kind": "PUBLIC_TYPE",
+            "v2Surface": "class software.amazon.awssdk.regions.Region",
+            "source": {
+                "artifact": "regions",
+                "path": null
+            },
+            "deprecated": false,
+            "classification": "PRESERVED",
+            "dimensions": ["binary", "source"],
+            "binary": true,
+            "rationale": "Kept unchanged.",
+            "differences": [],
+            "v3Artifact": "software.amazon.awssdk:regions",
+            "replacement": null,
+            "migrationKind": null,
+            "migration": null,
+            "supportEvidence": null,
+            "evidenceIds": ["CompileTest", "LinkTest"],
+            "evidence": "CompileTest, LinkTest"
+        },
+        {
+            "id": "api:software.amazon.awssdk.services.s3.S3Client$Builder",
+            "kind": "PUBLIC_TYPE",
+            "v2Surface": "interface software.amazon.awssdk.services.s3.S3Client$Builder",
+            "source": {
+                "artifact": "s3",
+                "path": null
+            },
+            "deprecated": false,
+            "classification": "PRESERVED",
+            "dimensions": ["source"],
+            "binary": false,
+            "rationale": "Kept unchanged.",
+            "differences": [],
+            "v3Artifact": "software.amazon.awssdk:s3",
+            "replacement": null,
+            "migrationKind": null,
+            "migration": null,
+            "supportEvidence": null,
+            "evidenceIds": [],
+            "evidence": null
+        },
+        {
+            "id": "api:software.amazon.awssdk.transfer.s3.model.CompletedObjectTransfer#response()Lsoftware/amazon/awssdk/core/SdkResponse;",
+            "kind": "PUBLIC_MEMBER",
+            "v2Surface": "method software.amazon.awssdk.transfer.s3.model.CompletedObjectTransfer#response()",
+            "source": {
+                "artifact": "s3-transfer-manager",
+                "path": null
+            },
+            "deprecated": false,
+            "classification": "ADAPTED",
+            "dimensions": [],
+            "binary": false,
+            "rationale": "Returns the V3 response supertype.",
+            "differences": ["Returns SerializableStruct instead of SdkResponse."],
+            "v3Artifact": "software.amazon.awssdk:s3-transfer-manager",
+            "replacement": "api:software.amazon.awssdk.transfer.s3.model.CompletedObjectTransfer#response()Lsoftware/amazon/smithy/java/core/schema/SerializableStruct;",
+            "migrationKind": "RECIPE",
+            "migration": "Cast the result to the concrete response type.",
+            "supportEvidence": null,
+            "evidenceIds": ["HighLevelLibraryParityTest"],
+            "evidence": "HighLevelLibraryParityTest"
+        },
+        {
+            "id": "config:env:AWS_REGION",
+            "kind": "CONFIGURATION",
+            "v2Surface": "environment variable AWS_REGION",
+            "source": {
+                "artifact": "regions",
+                "path": null
+            },
+            "deprecated": false,
+            "classification": "PRESERVED",
+            "dimensions": ["configuration"],
+            "binary": false,
+            "rationale": "Same name and semantics.",
+            "differences": [],
+            "v3Artifact": "software.amazon.awssdk:regions",
+            "replacement": null,
+            "migrationKind": null,
+            "migration": null,
+            "supportEvidence": null,
+            "evidenceIds": [],
+            "evidence": null
+        }
+    ]
+}
