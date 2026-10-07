@@ -467,7 +467,7 @@ All tasks are required for general availability. No task is marked optional beca
     - **Property 61: Excluded facilities receive modern diagnostics.** Generate excluded signer/retry usages and manifest replacements; assert exact Modern Auth/Retry replacement IDs and source locations.
     - **Validates: Requirements 18.7, 18.8**
 
-- [ ] 16. Implement response metadata, telemetry, logging, user-agent, and safe diagnostics
+- [x] 16. Implement response metadata, telemetry, logging, user-agent, and safe diagnostics
   - [x] 16.1 Implement response/exception metadata propagation
     - Add request IDs, extended IDs, status, service code, attempts, transport metadata, and documented absent values to modeled responses and SDK exceptions through the terminal pipeline.
     - _Requirements: 21.1, 21.13_
@@ -489,10 +489,10 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 16.7 Write the property test for diagnostic redaction
     - **Property 69: Sensitive data is absent from diagnostics.** Generate nested sensitive values, headers, credentials, logs, exceptions, telemetry, and diagnostics with unique canaries; assert no canary appears in rendered output.
     - **Validates: Requirements 21.10**
-  - [-] 16.8 Write the property test for nonduplicative logging
+  - [x] 16.8 Write the property test for nonduplicative logging
     - **Property 70: Logging does not duplicate caller-visible failures.** Generate returned failures and repeated benign warning keys; compare captured log counts to zero/semaphore suppression rules.
     - **Validates: Requirements 21.11, 21.12**
-  - [ ] 16.9 Write the property test for isolated telemetry failures
+  - [x] 16.9 Write the property test for isolated telemetry failures
     - **Property 71: Telemetry failures are isolated.** Generate callback failures over successful and failed calls; assert terminal result identity and exact telemetry-failure-channel delivery.
     - **Validates: Requirements 21.14, 21.15**
 
