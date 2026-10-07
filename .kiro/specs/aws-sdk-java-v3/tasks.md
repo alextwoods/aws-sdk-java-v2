@@ -468,13 +468,13 @@ All tasks are required for general availability. No task is marked optional beca
     - **Validates: Requirements 18.7, 18.8**
 
 - [ ] 16. Implement response metadata, telemetry, logging, user-agent, and safe diagnostics
-  - [-] 16.1 Implement response/exception metadata propagation
+  - [x] 16.1 Implement response/exception metadata propagation
     - Add request IDs, extended IDs, status, service code, attempts, transport metadata, and documented absent values to modeled responses and SDK exceptions through the terminal pipeline.
     - _Requirements: 21.1, 21.13_
-  - [-] 16.2 Implement opt-in telemetry SPI and exporters
+  - [x] 16.2 Implement opt-in telemetry SPI and exporters
     - Build `telemetry-spi`, terminal call/attempt records, required dimensions, isolated callback failure handling, and separate exporter artifacts; allocate no telemetry state when absent.
     - _Requirements: 15.7, 21.2, 21.3, 21.4, 21.5, 21.14, 21.15_
-  - [-] 16.3 Implement logging facade, redaction, user-agent contribution, and warning suppression
+  - [x] 16.3 Implement logging facade, redaction, user-agent contribution, and warning suppression
     - Route runtime logs through a facade, prohibit runtime INFO, avoid duplicate caller-visible WARN/ERROR logs, lazily redact credentials/auth/tokens/cookies/sensitive members, and include exactly contributing user-agent feature IDs.
     - _Requirements: 15.8, 21.6, 21.7, 21.8, 21.9, 21.10, 21.11, 21.12_
   - [ ] 16.4 Write the property test for response metadata presence
