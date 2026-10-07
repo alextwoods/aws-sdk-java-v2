@@ -1,5 +1,11 @@
 # V2-on-smithy-java: compatibility issue ledger
 
+> **This ledger is about the full pipeline bridge, not this branch.** `smithy-java-serde-only` keeps v2's
+> request pipeline and replaces only the marshaller and the success response unmarshaller, so almost nothing
+> here applies to it: sections 1-11 and 13-17 are about components it does not touch. Its own findings —
+> and which of this ledger's section 12 entries survive — are in `smithy-java-serde-only.md`. Read this one
+> for what replacing the *pipeline* costs.
+
 Branch: `smithy-java-bridge-alexwoo-full`. Scope: **DynamoDB (awsJson) and S3 (rest-xml), sync client**,
 covering non-streaming operations (sections 1-12), sync streaming (13) and multipart through a sync-backed
 async façade (14). smithy-java 1.6.1 / smithy 1.73.0 / AWS SDK for Java v2 2.46.11-SNAPSHOT.

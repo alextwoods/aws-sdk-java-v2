@@ -91,7 +91,7 @@ final class NativeInputs {
     static byte[] allMembersJson(software.amazon.smithy.java.core.schema.Schema inputSchema,
                                  SdkPojo v2Request) {
         java.nio.ByteBuffer bb = JSON_CODEC.serialize(
-                software.amazon.awssdk.bridge.smithyjava.serde.BridgeStruct.of(inputSchema, v2Request));
+                software.amazon.awssdk.protocols.smithyjava.BridgeStruct.of(inputSchema, v2Request));
         byte[] b = new byte[bb.remaining()];
         bb.get(b);
         return b;

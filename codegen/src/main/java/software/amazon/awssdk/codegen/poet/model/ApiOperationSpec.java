@@ -22,24 +22,20 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeSpec;
 import java.util.List;
-import java.util.stream.Collectors;
 import javax.lang.model.element.Modifier;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
 import software.amazon.awssdk.codegen.model.intermediate.Protocol;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeMarshaller;
-import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.poet.ClassSpec;
 import software.amazon.awssdk.codegen.poet.PoetExtension;
 import software.amazon.awssdk.codegen.poet.PoetUtils;
-import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumRequiredTrait;
-import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumTrait;
-import software.amazon.awssdk.codegen.poet.client.traits.RequestCompressionTrait;
 
 /**
- * Generates a static singleton {@code ApiOperation} implementation per service operation.
- * These provide the smithy-java protocol layer with operation/input/output schemas,
- * error registries, and builder factories — without needing DynamicClient or a Smithy model at runtime.
+ * Generates a static singleton {@code ApiOperation} implementation per service operation, for the
+ * smithy-java serde path: the operation schema (with its {@code @http} trait for the REST protocols), the
+ * input and output schemas, and the builders smithy's codecs deserialize into. Errors are still
+ * unmarshalled by v2, so the error registry is empty and no error schemas are listed.
  */
 public class ApiOperationSpec implements ClassSpec {
 
@@ -54,11 +50,7 @@ public class ApiOperationSpec implements ClassSpec {
         ClassName.get("software.amazon.smithy.java.core.schema", "SerializableStruct");
     private static final ClassName TYPE_REGISTRY =
         ClassName.get("software.amazon.smithy.java.core.serde", "TypeRegistry");
-    private static final ClassName V2_MODELED_ERROR =
-        ClassName.get("software.amazon.awssdk.bridge.smithyjava.error", "V2ModeledError");
     private static final ClassName LIST = ClassName.get("java.util", "List");
-    private static final ClassName V2_OPERATION_METADATA =
-        ClassName.get("software.amazon.awssdk.bridge.smithyjava.client", "V2OperationMetadata");
 
     private final IntermediateModel model;
     private final OperationModel operationModel;
@@ -83,19 +75,13 @@ public class ApiOperationSpec implements ClassSpec {
         ClassName self = className();
         ParameterizedTypeName apiOpType = ParameterizedTypeName.get(API_OPERATION, inputType, outputType);
 
-        CodeBlock executionAttributes = executionAttributes();
         TypeSpec.Builder type = TypeSpec.classBuilder(self);
-        if (!executionAttributes.isEmpty()) {
-            type.addSuperinterface(ParameterizedTypeName.get(V2_OPERATION_METADATA, inputType))
-                .addMethod(putExecutionAttributesMethod(executionAttributes));
-        }
 
         return type.addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                    .addAnnotation(PoetUtils.generatedAnnotation())
                    .addSuperinterface(apiOpType)
                    .addField(instanceField(self))
                    .addField(schemaField())
-                   .addField(typeRegistryField())
                    .addField(schemesField())
                    .addMethod(instanceMethod(self))
                    .addMethod(privateConstructor())
@@ -109,40 +95,6 @@ public class ApiOperationSpec implements ClassSpec {
                    .addMethod(effectiveAuthSchemesMethod())
                    .addMethod(serviceMethod())
                    .build();
-    }
-
-    /**
-     * The operation-level traits stock v2 writes into a call's execution attributes, emitted by the same
-     * generators the stock client method uses, so the bridge writes exactly what stock v2 writes.
-     *
-     * <p>{@code httpChecksum} and {@code httpChecksumRequired} decide request checksums and response
-     * validation; {@code requestCompression} decides compression. None of them is a shape trait in v2 —
-     * they live on the call — and none of them has a working smithy-java 1.6.1 consumer except
-     * {@code @httpChecksumRequired}, which smithy implements as {@code Content-MD5} where current v2 sends a
-     * CRC32. So they travel as v2 attributes, to v2's signer, rather than as smithy traits; see
-     * {@code V2OperationMetadata}.
-     */
-    private CodeBlock executionAttributes() {
-        if (operationModel.getInputShape() == null) {
-            return CodeBlock.of("");
-        }
-        return CodeBlock.builder()
-                        .add(HttpChecksumRequiredTrait.putHttpChecksumAttribute(operationModel))
-                        .add(HttpChecksumTrait.create(operationModel))
-                        .add(RequestCompressionTrait.create(operationModel, model))
-                        .build();
-    }
-
-    private MethodSpec putExecutionAttributesMethod(CodeBlock executionAttributes) {
-        return MethodSpec.methodBuilder("putExecutionAttributes")
-                         .addAnnotation(Override.class)
-                         .addModifiers(Modifier.PUBLIC)
-                         .addParameter(inputType, operationModel.getInput().getVariableName())
-                         .addParameter(V2_OPERATION_METADATA.nestedClass("Attributes"), "attributes")
-                         .addCode("attributes")
-                         .addCode(executionAttributes)
-                         .addCode(";\n")
-                         .build();
     }
 
     @Override
@@ -253,45 +205,6 @@ public class ApiOperationSpec implements ClassSpec {
         }
     }
 
-    /**
-     * Registers every modeled error of this operation under the {@code V2ModeledError} shim.
-     *
-     * <p>The obvious registration — {@code putType(id, SomeException.class, SomeException::builder)} —
-     * cannot work: smithy-java's {@code HttpErrorDeserializer} looks builders up with
-     * {@code createBuilder(id, ModeledException.class)}, and a v2 exception already extends
-     * {@code AwsServiceException} so it cannot also extend {@code ModeledException}. The shim is a
-     * {@code ModeledException} whose builder delegates to the v2 exception's generated builder, so
-     * deserialization still produces a real v2 exception instance.
-     */
-    private FieldSpec typeRegistryField() {
-        CodeBlock.Builder builder = CodeBlock.builder()
-            .add("$T.builder()\n", TYPE_REGISTRY);
-
-        // Every error the service models, not only the operation's own: stock v2's generated error mapping
-        // for each operation lists them all (DynamoDB's GetItem maps ConditionalCheckFailedException), so a
-        // service error an operation does not declare still arrives as its modeled type. Registering only the
-        // operation's errors turned those into the service's base exception. Operation errors first, so an
-        // operation-specific registration wins any duplicate.
-        List<String> exceptions = java.util.stream.Stream.concat(
-                operationModel.getExceptions().stream().map(e -> e.getExceptionName()),
-                model.getShapes().values().stream()
-                     .filter(shape -> shape.getShapeType() == ShapeType.Exception)
-                     .map(shape -> shape.getShapeName()))
-            .distinct()
-            .collect(Collectors.toList());
-
-        for (String exceptionName : exceptions) {
-            ClassName exceptionClass = poetExtensions.getModelClass(exceptionName);
-            builder.add("    .putType($T.$$SCHEMA.id(), $T.class, $T.builderFactory($T.$$SCHEMA, $T::builder))\n",
-                        exceptionClass, V2_MODELED_ERROR, V2_MODELED_ERROR, exceptionClass, exceptionClass);
-        }
-        builder.add("    .build()");
-
-        return FieldSpec.builder(TYPE_REGISTRY, "TYPE_REGISTRY", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                        .initializer(builder.build())
-                        .build();
-    }
-
     private FieldSpec schemesField() {
         return FieldSpec.builder(ParameterizedTypeName.get(LIST, SHAPE_ID), "SCHEMES",
                                  Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -365,29 +278,16 @@ public class ApiOperationSpec implements ClassSpec {
                          .addAnnotation(Override.class)
                          .addModifiers(Modifier.PUBLIC)
                          .returns(TYPE_REGISTRY)
-                         .addStatement("return TYPE_REGISTRY")
+                         .addStatement("return $T.empty()", TYPE_REGISTRY)
                          .build();
     }
 
     private MethodSpec errorSchemasMethod() {
-        CodeBlock.Builder listBuilder = CodeBlock.builder().add("$T.of(", LIST);
-        List<String> exceptions = operationModel.getExceptions().stream()
-            .map(e -> e.getExceptionName())
-            .collect(Collectors.toList());
-        for (int i = 0; i < exceptions.size(); i++) {
-            ClassName exceptionClass = poetExtensions.getModelClass(exceptions.get(i));
-            listBuilder.add("$T.$$SCHEMA", exceptionClass);
-            if (i < exceptions.size() - 1) {
-                listBuilder.add(", ");
-            }
-        }
-        listBuilder.add(")");
-
         return MethodSpec.methodBuilder("errorSchemas")
                          .addAnnotation(Override.class)
                          .addModifiers(Modifier.PUBLIC)
                          .returns(ParameterizedTypeName.get(LIST, SCHEMA))
-                         .addStatement("return $L", listBuilder.build())
+                         .addStatement("return $T.of()", LIST)
                          .build();
     }
 

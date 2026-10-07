@@ -47,9 +47,12 @@
     </build>
 
     <dependencies>
+        <!-- Request marshalling and response unmarshalling by smithy-java's codecs, enabled for this
+             service by "generateSmithyJavaSerde" in customization.config. aws-json-protocol below is still
+             needed: error unmarshalling, and the aws.smithyJavaSerde=false fallback, are v2's. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>smithy-java-bridge</artifactId>
+            <artifactId>smithy-java-serde</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
@@ -91,8 +94,13 @@
         </dependency>
         <dependency>
             <groupId>software.amazon.smithy.java</groupId>
-            <artifactId>aws-client-awsjson</artifactId>
+            <artifactId>core</artifactId>
             <version>${smithy.java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${smithy.version}</version>
         </dependency>
     </dependencies>
 </project>

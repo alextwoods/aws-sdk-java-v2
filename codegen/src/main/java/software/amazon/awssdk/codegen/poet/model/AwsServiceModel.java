@@ -50,6 +50,7 @@ import javax.lang.model.element.Modifier;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.codegen.docs.DocumentationBuilder;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
+import software.amazon.awssdk.codegen.model.config.customization.ShareModelConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.MemberModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
@@ -443,15 +444,15 @@ public class AwsServiceModel implements ClassSpec {
     private static final ClassName SMITHY_SHAPE_SERIALIZER =
         ClassName.get("software.amazon.smithy.java.core.serde", "ShapeSerializer");
     private static final ClassName SDK_SCHEMA_FACTORY =
-        ClassName.get("software.amazon.awssdk.bridge.smithyjava.serde", "SdkSchemaFactory");
+        ClassName.get("software.amazon.awssdk.protocols.smithyjava", "SdkSchemaFactory");
     private static final ClassName SDK_POJO_SERIALIZER =
-        ClassName.get("software.amazon.awssdk.bridge.smithyjava.serde", "SdkPojoSerializer");
+        ClassName.get("software.amazon.awssdk.protocols.smithyjava", "SdkPojoSerializer");
     private static final ClassName SDK_AUTO_CONSTRUCT_LIST =
         ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructList");
     private static final ClassName SDK_AUTO_CONSTRUCT_MAP =
         ClassName.get("software.amazon.awssdk.core.util", "SdkAutoConstructMap");
     private static final ClassName SDK_POJO_DESERIALIZER =
-        ClassName.get("software.amazon.awssdk.bridge.smithyjava.serde", "SdkPojoDeserializer");
+        ClassName.get("software.amazon.awssdk.protocols.smithyjava", "SdkPojoDeserializer");
     private static final ClassName SDK_BYTES =
         ClassName.get("software.amazon.awssdk.core", "SdkBytes");
     private static final ClassName RAW_LIST = ClassName.get("java.util", "List");
@@ -472,9 +473,20 @@ public class AwsServiceModel implements ClassSpec {
         // `__type` the service puts on the wire. The error would then miss the operation's
         // TypeRegistry and fall through to the unmodeled path, losing its v2 exception type, its error
         // code, and -- because retries are classified from the v2 exception -- its retryability.
+        //
+        // The namespace is the model-owning service's: a service that shares another's model package
+        // (DynamoDB Streams shares DynamoDB's) regenerates the shared shapes into the same files, and the
+        // generator refuses to overwrite a file with different content.
         String name = shapeModel.getC2jName() != null ? shapeModel.getC2jName() : shapeModel.getShapeName();
-        return "com.amazonaws." + intermediateModel.getMetadata().getServiceName().toLowerCase(java.util.Locale.US)
-               + "#" + name;
+        return "com.amazonaws." + modelOwnerServiceName().toLowerCase(java.util.Locale.US) + "#" + name;
+    }
+
+    private String modelOwnerServiceName() {
+        ShareModelConfig shareModelConfig = intermediateModel.getCustomizationConfig().getShareModelConfig();
+        if (shareModelConfig != null && shareModelConfig.getShareModelWith() != null) {
+            return shareModelConfig.getShareModelWith();
+        }
+        return intermediateModel.getMetadata().getServiceName();
     }
 
     private FieldSpec smithySchemaField() {

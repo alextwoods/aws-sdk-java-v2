@@ -128,7 +128,9 @@ public class QueryProtocolSpec implements ProtocolSpec {
                             .add(".withMarshaller($L));", syncStreamingMarshaller(intermediateModel, opModel, marshaller))
                             .build();
         }
-        return codeBlock.add(".withMarshaller(new $T(protocolFactory)) $L);", marshaller,
+        return codeBlock.add(".withMarshaller($L) $L);",
+                             SmithyJavaSerdeSpec.marshaller(intermediateModel, opModel,
+                                                            CodeBlock.of("new $T(protocolFactory)", marshaller)),
                              opModel.hasStreamingOutput() ? ", responseTransformer" : "").build();
     }
 

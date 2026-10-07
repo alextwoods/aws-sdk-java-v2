@@ -45,3 +45,6 @@ bin/
 # benchmark-provenance.properties (phase + commit) that every run manifest records, so a result stays
 # traceable to the code that produced it via scripts/build-jar.sh without the binary in git.
 pipeline_benchmark2/jars/
+
+# JMH raw output from test/smithy-java-serde-benchmarks; summary.md per run is committed.
+test/smithy-java-serde-benchmarks/results/*/jmh.log

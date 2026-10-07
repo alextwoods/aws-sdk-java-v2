@@ -37,6 +37,7 @@
         <module>aws-xml-protocol</module>
         <module>smithy-rpcv2-protocol</module>
         <module>protocol-core</module>
+        <module>smithy-java-serde</module>
     </modules>
 
 </project>

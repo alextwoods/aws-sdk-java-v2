@@ -132,6 +132,13 @@ interface Workloads {
                 return v1(endpoint, metrics, concurrency);
             case "v2-sync":
                 return v2Sync(endpoint, metrics, concurrency);
+            case "v2-sync-v2-serde":
+                // On an SDK built with smithy-java serde (branch smithy-java-serde-only), v2-sync marshals
+                // and unmarshals with smithy-java's codecs; this arm is the same client on v2's own serde,
+                // from the same jar. Everything else in the pipeline is identical, so v2-sync minus this arm
+                // is the serde difference alone. On an SDK without smithy-java serde the property is unread
+                // and the two arms measure the same thing.
+                return withV2Serde(() -> v2Sync(endpoint, metrics, concurrency));
             case "v2-sync-stripped":
                 // Only meaningful on a jar built against the smithy-java bridge SDK: it asks the
                 // bridge to use smithy-java's own endpoint, retry, interceptor and error components
@@ -167,6 +174,8 @@ interface Workloads {
                 return s3Sync(client, endpoint, metrics, concurrency);
             case "v2-async":
                 return v2Async(endpoint, metrics, concurrency, false);
+            case "v2-async-v2-serde":
+                return withV2Serde(() -> v2Async(endpoint, metrics, concurrency, false));
             case "v2-async-netty":
                 // The other v2 async transport. A bridged async client has to drive both, and they park
                 // and wake differently (a Java event loop versus a native one), so a transport-specific
@@ -176,6 +185,24 @@ interface Workloads {
                 return smithy(endpoint, metrics, concurrency);
             default:
                 throw new IllegalArgumentException("unknown client: " + client);
+        }
+    }
+
+    /**
+     * Builds a client with smithy-java serde switched off. Generated clients read {@code aws.smithyJavaSerde}
+     * once, at construction, so the property only has to be in place while the client is built.
+     */
+    private static Workload withV2Serde(java.util.function.Supplier<Workload> build) {
+        String previous = System.getProperty("aws.smithyJavaSerde");
+        System.setProperty("aws.smithyJavaSerde", "false");
+        try {
+            return build.get();
+        } finally {
+            if (previous == null) {
+                System.clearProperty("aws.smithyJavaSerde");
+            } else {
+                System.setProperty("aws.smithyJavaSerde", previous);
+            }
         }
     }
 

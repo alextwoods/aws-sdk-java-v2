@@ -34,7 +34,6 @@ import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.poet.PoetExtension;
-import software.amazon.awssdk.codegen.poet.client.ClientClassUtils;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumRequiredTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.RequestCompressionTrait;
@@ -88,21 +87,27 @@ public final class XmlProtocolSpec extends QueryProtocolSpec {
             ClassName.get(HttpResponseHandler.class),
             ParameterizedTypeName.get(ClassName.get(software.amazon.awssdk.core.Response.class), responseType));
 
+        CodeBlock v2Handler = CodeBlock.of("protocolFactory.createCombinedResponseHandler($T::builder, "
+                                           + "new $T().withHasStreamingSuccessResponse($L))",
+                                           responseType, XmlOperationMetadata.class, opModel.hasStreamingOutput());
+        CodeBlock v2Factory = CodeBlock.of("f -> f.createCombinedResponseHandler($T::builder, "
+                                           + "new $T().withHasStreamingSuccessResponse($L))",
+                                           responseType, XmlOperationMetadata.class, opModel.hasStreamingOutput());
         return CodeBlock.builder()
-                        .addStatement("\n\n$T responseHandler = protocolFactory.createCombinedResponseHandler($T::builder, "
-                                      + "new $T().withHasStreamingSuccessResponse($L))",
-                          handlerType, responseType, XmlOperationMetadata.class, opModel.hasStreamingOutput())
+                        .addStatement("\n\n$T responseHandler = $L", handlerType,
+                                      SmithyJavaSerdeSpec.combinedResponseHandler(model, opModel, v2Handler, v2Factory))
                         .build();
     }
 
     private CodeBlock streamingResponseHandler(OperationModel opModel) {
         ClassName responseType = poetExtensions.getModelClass(opModel.getReturnType().getReturnType());
 
+        CodeBlock v2Handler = CodeBlock.of("protocolFactory.createResponseHandler($T::builder, "
+                                           + "new $T().withHasStreamingSuccessResponse($L))",
+                                           responseType, XmlOperationMetadata.class, opModel.hasStreamingOutput());
         return CodeBlock.builder()
-                        .addStatement("\n\n$T<$T> responseHandler = protocolFactory.createResponseHandler($T::builder, "
-                                      + "new $T().withHasStreamingSuccessResponse($L))",
-                                      HttpResponseHandler.class, responseType, responseType, XmlOperationMetadata.class,
-                                      opModel.hasStreamingOutput())
+                        .addStatement("\n\n$T<$T> responseHandler = $L", HttpResponseHandler.class, responseType,
+                                      SmithyJavaSerdeSpec.responseHandler(intermediateModel, opModel, v2Handler))
                         .build();
     }
 
@@ -117,10 +122,6 @@ public final class XmlProtocolSpec extends QueryProtocolSpec {
 
     @Override
     public CodeBlock executionHandler(OperationModel opModel) {
-        if (ClientClassUtils.usesSmithyPipeline(model, opModel)) {
-            return ClientClassUtils.smithyJavaExecutionHandler(model, opModel);
-        }
-
         if (opModel.hasStreamingOutput()) {
             return streamingExecutionHandler(opModel);
         }
@@ -152,7 +153,9 @@ public final class XmlProtocolSpec extends QueryProtocolSpec {
                             .add(".withMarshaller($L));", syncStreamingMarshaller(intermediateModel, opModel, marshaller))
                             .build();
         }
-        return codeBlock.add(".withMarshaller(new $T(protocolFactory)) $L);", marshaller,
+        return codeBlock.add(".withMarshaller($L) $L);",
+                             SmithyJavaSerdeSpec.marshaller(intermediateModel, opModel,
+                                                            CodeBlock.of("new $T(protocolFactory)", marshaller)),
                              opModel.hasStreamingOutput() ? ", responseTransformer" : "").build();
     }
 

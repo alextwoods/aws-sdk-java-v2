@@ -50,10 +50,11 @@
 
     <dependencies>
         <!-- Bridge serde benchmark: smithy-java dynamic client + restJson protocol, plus
-             the in-repo v2<->smithy-java bridge module. From Maven Central / reactor. -->
+             the in-repo v2<->smithy-java schema/serde adapters (smithy-java-serde). From Maven
+             Central / reactor. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>smithy-java-bridge</artifactId>
+            <artifactId>smithy-java-serde</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>

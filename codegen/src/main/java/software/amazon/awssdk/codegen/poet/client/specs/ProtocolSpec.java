@@ -140,7 +140,7 @@ public interface ProtocolSpec {
         if (opModel.hasStreamingInput()) {
             return streamingMarshallerCode(model, opModel, marshaller, protocolFactory, true);
         } else {
-            return CodeBlock.builder().add("new $T($L)", marshaller, protocolFactory).build();
+            return SmithyJavaSerdeSpec.marshaller(model, opModel, CodeBlock.of("new $T($L)", marshaller, protocolFactory));
         }
     }
 
@@ -148,10 +148,9 @@ public interface ProtocolSpec {
                                               String protocolFactory, boolean isAsync) {
         CodeBlock.Builder builder = CodeBlock
             .builder()
-            .add("$T.builder().delegateMarshaller(new $T($L))",
+            .add("$T.builder().delegateMarshaller($L)",
                  isAsync ? AsyncStreamingRequestMarshaller.class : StreamingRequestMarshaller.class,
-                 marshaller,
-                 protocolFactory)
+                 SmithyJavaSerdeSpec.marshaller(model, opModel, CodeBlock.of("new $T($L)", marshaller, protocolFactory)))
             .add(".$L(requestBody)", isAsync ? "asyncRequestBody" : "requestBody");
 
         if (opModel.hasRequiresLengthInInput()) {

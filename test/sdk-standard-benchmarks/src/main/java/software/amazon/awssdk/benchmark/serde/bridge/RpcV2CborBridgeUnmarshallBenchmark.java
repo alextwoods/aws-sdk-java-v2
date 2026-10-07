@@ -35,7 +35,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import software.amazon.awssdk.benchmark.serde.BenchmarkTestCaseLoader;
-import software.amazon.awssdk.bridge.smithyjava.serde.BridgeOutputOperation;
+import software.amazon.awssdk.protocols.smithyjava.BridgeOutputOperation;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.smithy.java.client.rpcv2.RpcV2CborProtocol;
 import software.amazon.smithy.java.context.Context;

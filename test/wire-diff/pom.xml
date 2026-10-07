@@ -62,15 +62,6 @@
             <artifactId>aws-crt-client</artifactId>
             <version>${aws.sdk.v2.version}</version>
         </dependency>
-        <!-- Test scope, on its own version, so that the goldens can be captured from a *stock* published
-             SDK (-Daws.sdk.v2.version=2.46.10), which has no bridge artifact to resolve. CaptureMain runs
-             on the runtime classpath, so it never sees this; only the transport-bridge tests use it. -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>smithy-java-bridge</artifactId>
-            <version>${bridge.version}</version>
-            <scope>test</scope>
-        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

@@ -57,7 +57,6 @@
         <module>retries</module>
         <module>checksums-spi</module>
         <module>checksums</module>
-        <module>smithy-java-bridge</module>
     </modules>
 
     <dependencyManagement>

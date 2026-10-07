@@ -41,7 +41,6 @@ import software.amazon.awssdk.codegen.model.intermediate.Protocol;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.poet.PoetExtension;
-import software.amazon.awssdk.codegen.poet.client.ClientClassUtils;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumRequiredTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.LongPollTrait;
@@ -155,11 +154,13 @@ public class JsonProtocolSpec implements ProtocolSpec {
         if (opModel.hasEventStreamOutput()) {
             responseHandlersForEventStreaming(opModel, pojoResponseType, protocolFactory, builder);
         } else {
-            builder.add("\n\n$T<$T> responseHandler = $L.createResponseHandler(operationMetadata, $T::builder);",
+            builder.add("\n\n$T<$T> responseHandler = $L;",
                         HttpResponseHandler.class,
                         pojoResponseType,
-                        protocolFactory,
-                        pojoResponseType);
+                        SmithyJavaSerdeSpec.responseHandler(
+                            model, opModel,
+                            CodeBlock.of("$L.createResponseHandler(operationMetadata, $T::builder)",
+                                         protocolFactory, pojoResponseType)));
         }
         return builder.build();
     }
@@ -206,12 +207,6 @@ public class JsonProtocolSpec implements ProtocolSpec {
 
     @Override
     public CodeBlock executionHandler(OperationModel opModel) {
-        // When smithy-java serde is enabled, use the smithy-java protocol directly instead of
-        // the v2 ClientExecutionParams + Marshaller pipeline.
-        if (ClientClassUtils.usesSmithyPipeline(model, opModel)) {
-            return ClientClassUtils.smithyJavaExecutionHandler(model, opModel);
-        }
-
         TypeName responseType = getPojoResponseType(opModel, poetExtensions);
         ClassName requestType = poetExtensions.getModelClass(opModel.getInput().getVariableType());
         ClassName marshaller = poetExtensions.getRequestTransformClass(opModel.getInputShape().getShapeName() + "Marshaller");
@@ -244,7 +239,8 @@ public class JsonProtocolSpec implements ProtocolSpec {
             codeBlock.add(".withRequestBody(requestBody)")
                      .add(".withMarshaller($L)", syncStreamingMarshaller(model, opModel, marshaller));
         } else {
-            codeBlock.add(".withMarshaller(new $T(protocolFactory))", marshaller);
+            codeBlock.add(".withMarshaller($L)",
+                          SmithyJavaSerdeSpec.marshaller(model, opModel, CodeBlock.of("new $T(protocolFactory)", marshaller)));
         }
 
         return codeBlock.add("$L);", opModel.hasStreamingOutput() ? ", responseTransformer" : "")

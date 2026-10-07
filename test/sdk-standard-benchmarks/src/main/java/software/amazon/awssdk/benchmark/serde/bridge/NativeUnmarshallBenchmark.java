@@ -33,7 +33,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import software.amazon.awssdk.benchmark.serde.BenchmarkTestCaseLoader;
-import software.amazon.awssdk.bridge.smithyjava.serde.GeneratedOutputOperation;
+import software.amazon.awssdk.protocols.smithyjava.GeneratedOutputOperation;
 import software.amazon.smithy.java.client.http.HttpClientProtocol;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.schema.ApiOperation;

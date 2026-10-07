@@ -57,6 +57,7 @@ import software.amazon.awssdk.codegen.poet.PoetUtils;
 import software.amazon.awssdk.codegen.poet.client.specs.Ec2ProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.JsonProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.ProtocolSpec;
+import software.amazon.awssdk.codegen.poet.client.specs.SmithyJavaSerdeSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.QueryProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.XmlProtocolSpec;
 import software.amazon.awssdk.codegen.poet.model.ServiceClientConfigurationUtils;
@@ -76,7 +77,6 @@ import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.Logger;
 
 public class SyncClientClass extends SyncClientInterface {
-
 
     private final IntermediateModel model;
     private final PoetExtension poetExtensions;
@@ -124,11 +124,8 @@ public class SyncClientClass extends SyncClientInterface {
             .addField(SyncClientHandler.class, "clientHandler", PRIVATE, FINAL)
             .addField(protocolSpec.protocolFactory(model))
             .addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
-
-        if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
-            // One smithy-java client owns the whole pipeline: protocol, transport, endpoints, auth,
-            // signing, retries, and interceptors. Operations delegate to it and do nothing else.
-            type.addField(FieldSpec.builder(ClientClassUtils.SMITHY_BRIDGE_CLIENT, "smithyClient", PRIVATE, FINAL).build());
+        if (SmithyJavaSerdeSpec.isEnabled(model)) {
+            type.addField(SmithyJavaSerdeSpec.field(model));
         }
     }
 
@@ -210,6 +207,9 @@ public class SyncClientClass extends SyncClientInterface {
         } else {
             builder.addStatement("this.$N = init()", protocolFactoryField.name);
         }
+        if (SmithyJavaSerdeSpec.isEnabled(model)) {
+            builder.addCode(SmithyJavaSerdeSpec.initialization(model));
+        }
 
         if (model.getEndpointOperation().isPresent()) {
             builder.beginControlFlow("if (clientConfiguration.option(SdkClientOption.ENDPOINT_DISCOVERY_ENABLED))");
@@ -229,10 +229,6 @@ public class SyncClientClass extends SyncClientInterface {
             }
 
             builder.endControlFlow();
-        }
-
-        if (model.getCustomizationConfig() != null && model.getCustomizationConfig().isGenerateSmithyJavaSerde()) {
-            ClientClassUtils.addSmithyClientConstruction(builder, model, poetExtensions);
         }
 
         return builder.build();
@@ -257,19 +253,12 @@ public class SyncClientClass extends SyncClientInterface {
         MethodSpec.Builder method = SyncClientInterface.operationMethodSignature(model, opModel)
                                                        .addAnnotation(Override.class);
 
-        // On the smithy-java path the response and error handlers, the per-request configuration copy,
-        // and endpoint discovery are all dead weight: smithy-java deserializes responses and errors
-        // itself, and it reads only the client configuration captured at construction time. Emitting
-        // them anyway would cost a handler pair and a configuration copy on every single call.
-        boolean smithyPipeline = ClientClassUtils.usesSmithyPipeline(model, opModel);
-
         addRequestModifierCode(opModel, model).ifPresent(method::addCode);
-        if (!smithyPipeline) {
-            method.addCode(protocolSpec.responseHandler(model, opModel));
-            protocolSpec.errorResponseHandler(opModel).ifPresent(method::addCode);
-        }
+        method.addCode(protocolSpec.responseHandler(model, opModel));
 
-        if (opModel.getEndpointDiscovery() != null && !smithyPipeline) {
+        protocolSpec.errorResponseHandler(opModel).ifPresent(method::addCode);
+
+        if (opModel.getEndpointDiscovery() != null) {
             method.addStatement("boolean endpointDiscoveryEnabled = "
                                 + "clientConfiguration.option(SdkClientOption.ENDPOINT_DISCOVERY_ENABLED)");
             method.addStatement("boolean endpointOverridden = "
@@ -328,15 +317,12 @@ public class SyncClientClass extends SyncClientInterface {
             method.endControlFlow();
         }
 
-        if (!smithyPipeline) {
-            method.addStatement("$T clientConfiguration = updateSdkClientConfiguration($L, this.clientConfiguration)",
-                                SdkClientConfiguration.class, opModel.getInput().getVariableName());
-        }
+        method.addStatement("$T clientConfiguration = updateSdkClientConfiguration($L, this.clientConfiguration)",
+                            SdkClientConfiguration.class, opModel.getInput().getVariableName());
         method.addStatement("$T<$T> metricPublishers = "
-                            + "resolveMetricPublishers($L, $N.overrideConfiguration().orElse(null))",
+                            + "resolveMetricPublishers(clientConfiguration, $N.overrideConfiguration().orElse(null))",
                             List.class,
                             MetricPublisher.class,
-                            smithyPipeline ? "this.clientConfiguration" : "clientConfiguration",
                             opModel.getInput().getVariableName())
               .addStatement("$1T apiCallMetricCollector = metricPublishers.isEmpty() ? $2T.create() : $1T.create($3S)",
                             MetricCollector.class, NoOpMetricCollector.class, "ApiCall");

@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.function.Function;
 import software.amazon.awssdk.benchmark.serde.BenchmarkTestCaseLoader;
-import software.amazon.awssdk.bridge.smithyjava.serde.BridgeStruct;
+import software.amazon.awssdk.protocols.smithyjava.BridgeStruct;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.awssdk.protocol.reflect.ShapeModelReflector;

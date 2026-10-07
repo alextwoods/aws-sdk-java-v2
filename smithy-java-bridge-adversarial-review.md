@@ -625,7 +625,50 @@ implies:
 | 11 | Sealed upstream + two-master cadence (§12) | v2's ability to ship fixes and features at its own pace |
 | 12 | The fidelity-performance exchange rate (§11) | the motivation itself: each restored behavior re-buys v2's cost |
 
-## 14. A note on what this review says about auditability
+## 14. Installed artifact size
+
+Measured 2026-10-01: the runtime dependency closure of a minimal install — one dependency on the
+service artifact, `mvn dependency:copy-dependencies -DincludeScope=runtime`, so it includes the
+default Apache and Netty HTTP clients. Stock is published 2.46.10. Bridge is this branch's
+2.46.11-SNAPSHOT, rebuilt from HEAD. Sizes are on-disk jar bytes.
+
+| Service | Total, all deps (KB) | SDK libraries only, `software.amazon.awssdk` (KB) | Service jar alone (KB) | Jars |
+|---|---:|---:|---:|---:|
+| S3 stock | 14,750 | 8,552 | 4,043 | 46 |
+| **S3 bridge** | **19,721 (+34%)** | **9,449 (+10%)** | **4,917 (+22%)** | **81** |
+| DynamoDB stock | 13,506 | 7,308 | 2,855 | 43 |
+| **DynamoDB bridge** | **17,907 (+33%)** | **7,635 (+4%)** | **3,151 (+10%)** | **78** |
+| EC2 stock | 34,977 | 28,779 | 24,405 | 43 |
+| EC2 bridge (estimate) | ~41,900–45,500 (+20–30%) | ~31,600–35,200 (+10–22%) | ~27,100–30,700 | ~78 |
+
+**[14.1][Medium] Every bridged service adds a fixed ~4.2 MB and 35 jars.** The added set is the
+same for both services, because `smithy-java-bridge` depends on both protocols. DynamoDB carries
+`xml-codec`/`aws-client-restxml`, and S3 carries `json-codec`/`aws-client-awsjson`. The rest:
+- Smithy-java runtime: 4,075 KB.
+- The bridge jar: 169 KB.
+- The largest single additions are build-time model libraries:
+  - `smithy-model`: 1,410 KB.
+  - `smithy-aws-traits`: 194 KB.
+  - `smithy-diff`: 121 KB, a model-diffing tool.
+  - `smithy-utils`, `smithy-protocol-traits` and `smithy-validation-model`.
+- Together these are ~1.85 MB, nearly half the added runtime, and none of it should ship in a client. This is the dependency-surface half of 10.7's 114 `smithy.model` classes loaded at runtime.
+
+The fixed cost is paid once per application, not per service. It is a +33% install for a
+single-service Lambda, the segment already losing on cold start (§1.3).
+
+**[14.2][Medium] Service jars grow because the bridge adds code and removes none.**
+- The S3 jar grows 874 KB and DynamoDB 296 KB. That is roughly 0.7–1.6 KB per model class, from `$SCHEMA` constants, `serializeMembers`/`deserialize` and one generated `ApiOperation` per operation.
+- The stock v2 marshallers are still shipped: S3 `transform/` is 508 KB uncompressed and DynamoDB 257 KB. The ledger (10.6) calls them dead code on smithy-path operations. They can't be removed while event-stream operations and the S3 presigner (§7.3) still use them.
+- So every bridged service carries both serializers for the same shapes, on top of the two pipelines.
+
+**EC2 is an extrapolation, not a measurement.** EC2 can't be bridged: smithy-java 1.6.1 has no
+ec2Query protocol (§10.1). The estimate applies the per-model-class and per-operation growth
+measured on S3 and DynamoDB to EC2's 3,653 model classes and 769 operations. That gives +2.7 to
++6.3 MB of service jar, plus the fixed ~4.2 MB runtime. It excludes the ec2Query protocol module
+that would have to be written. For the largest service, the generated-code growth rivals or
+exceeds the whole fixed smithy runtime.
+
+## 15. A note on what this review says about auditability
 
 The strongest single argument may be epistemic. The ledger is the most rigorous compatibility
 audit this prototype could realistically get — months of byte-diffing, fault sweeps, paired

@@ -34,7 +34,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import software.amazon.awssdk.benchmark.serde.BenchmarkTestCaseLoader;
-import software.amazon.awssdk.bridge.smithyjava.serde.BridgeOutputOperation;
+import software.amazon.awssdk.protocols.smithyjava.BridgeOutputOperation;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.smithy.java.aws.client.restjson.RestJsonClientProtocol;
 import software.amazon.smithy.java.context.Context;
@@ -137,7 +137,7 @@ public class RestJsonBridgeUnmarshallBenchmark {
             }
         });
 
-        this.generatedOperation = new software.amazon.awssdk.bridge.smithyjava.serde.GeneratedOutputOperation(
+        this.generatedOperation = new software.amazon.awssdk.protocols.smithyjava.GeneratedOutputOperation(
                 realOp, () -> {
                     try {
                         return (software.amazon.smithy.java.core.schema.ShapeBuilder<? extends SerializableStruct>)
