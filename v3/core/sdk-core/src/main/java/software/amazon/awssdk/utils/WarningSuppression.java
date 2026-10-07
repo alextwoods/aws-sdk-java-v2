@@ -38,6 +38,8 @@ public final class WarningSuppression {
 
     private final String name;
     private final Set<String> emitted = ConcurrentHashMap.newKeySet();
+    /** Serializes the admission of new keys, so that the scope never holds more than {@link #MAX_KEYS}. */
+    private final Object newKeyLock = new Object();
 
     private WarningSuppression(String name) {
         this.name = name;
@@ -87,10 +89,16 @@ public final class WarningSuppression {
     }
 
     private boolean claim(String category, String operation) {
-        if (emitted.size() >= MAX_KEYS) {
+        String key = key(category, operation);
+        if (emitted.contains(key)) {
             return false;
         }
-        return emitted.add(key(category, operation));
+        // A new key: the bound check and the insertion must be one step, or concurrent new keys could all pass the
+        // check and grow the scope past MAX_KEYS. New keys are rare (at most MAX_KEYS per scope), repeats stay
+        // lock free.
+        synchronized (newKeyLock) {
+            return emitted.size() < MAX_KEYS && emitted.add(key);
+        }
     }
 
     private static String key(String category, String operation) {
