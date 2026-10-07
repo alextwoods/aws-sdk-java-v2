@@ -99,6 +99,10 @@
     "13.7 Write the property test for declared preserved API descriptors": {
       "status": "passed",
       "lastRunTimestamp": 1791160105104
+    },
+    "15.8 Write the property test for modern exclusion diagnostics": {
+      "status": "passed",
+      "lastRunTimestamp": 1791332942474
     }
   },
   "executionHistory": {
@@ -2257,6 +2261,16 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756249
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791332088356
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791335705654
       }
     ],
     "15.7 Write the property test for non-destructive unsafe migration": [
@@ -2264,6 +2278,16 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756282
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791332089912
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791335705718
       }
     ],
     "15.8 Write the property test for modern exclusion diagnostics": [
@@ -2271,6 +2295,16 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756321
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791332090515
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791335707006
       }
     ],
     "16.1 Implement response/exception metadata propagation": [
@@ -2607,6 +2641,13 @@
         "executionId": "17ae0a8f-58ec-4c68-a195-fcfff4ef47d6",
         "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
         "timestamp": 1791239369065
+      }
+    ],
+    "15. Implement Maven-delivered V2 migration recipes, diagnostics, and corpus validation": [
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791335707047
       }
     ]
   }

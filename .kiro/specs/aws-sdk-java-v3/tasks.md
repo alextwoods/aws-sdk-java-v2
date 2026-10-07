@@ -439,7 +439,7 @@ All tasks are required for general availability. No task is marked optional beca
     - Generate manifest-driven test matrices across DynamoDB Enhanced, Transfer Manager, IAM, S3 notifications, and SNS; assert preserved/adapted behavior, cancellation, cleanup, and source/binary claims.
     - _Requirements: 16.6, 16.7, 16.8, 16.12, 16.14, 16.15, 19.7, 19.8, 19.9, 19.12_
 
-- [ ] 15. Implement Maven-delivered V2 migration recipes, diagnostics, and corpus validation
+- [x] 15. Implement Maven-delivered V2 migration recipes, diagnostics, and corpus validation
   - [x] 15.1 Implement the migration engine, Maven plugin, and manifest reader
     - Build `v3/tools/v2-migration` with source parsing, effective dependency/BOM inventory, manifest-backed dispositions, deterministic edits, source locations, and machine-readable reports.
     - _Requirements: 17.4, 17.5, 17.10, 17.11, 17.12_
@@ -457,13 +457,13 @@ All tasks are required for general availability. No task is marked optional beca
     - Add representative and synthetic V2 applications under `v3/test/v2-migration-tests`; test preserved-only dependency/JDK upgrades, adapted transformations, excluded diagnostics, transformed JDK 21 compilation, and behavioral suites.
     - Require every encountered item to have exactly one disposition and publish corpus results into the compatibility report.
     - _Requirements: 17.3, 17.7, 17.8, 17.9, 17.10, 17.11, 17.12_
-  - [ ] 15.6 Write the property test for total exclusive migration dispositions
+  - [x] 15.6 Write the property test for total exclusive migration dispositions
     - **Property 59: Migration dispositions are total and exclusive.** Generate source inventories across all required categories; compare reported preserved/transformed/unresolved partitions with manifest lookups.
     - **Validates: Requirements 17.4, 17.10, 17.11**
-  - [ ] 15.7 Write the property test for non-destructive unsafe migration
+  - [x] 15.7 Write the property test for non-destructive unsafe migration
     - **Property 60: Unsafe migration is non-destructive.** Generate unsupported AST constructs; compare pre/post source subtrees byte-for-byte and validate all required diagnostic fields.
     - **Validates: Requirements 17.9, 18.9**
-  - [ ] 15.8 Write the property test for modern exclusion diagnostics
+  - [x] 15.8 Write the property test for modern exclusion diagnostics
     - **Property 61: Excluded facilities receive modern diagnostics.** Generate excluded signer/retry usages and manifest replacements; assert exact Modern Auth/Retry replacement IDs and source locations.
     - **Validates: Requirements 18.7, 18.8**
 
