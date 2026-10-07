@@ -1,0 +1,15 @@
+{
+    "description": "Order service on the DynamoDB sync client: identity-provider credentials, region, endpoint override, conditional writes, consistent reads, modeled and service errors. Literal SDK versions, Java release 17.",
+    "kind": "REPRESENTATIVE",
+    "scenarios": ["PRESERVED_ONLY"],
+    "behavior": {
+        "entryPoint": "com.example.orders.OrdersApp",
+        "service": "dynamodb"
+    },
+    "expect": {
+        "cleanMigration": true,
+        "javaSourcesUnchanged": true,
+        "compiles": true,
+        "javaRelease": 21
+    }
+}

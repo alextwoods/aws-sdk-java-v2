@@ -1,0 +1,31 @@
+{
+    "description": "Client that overrides its signer with the deprecated V2 Aws4Signer through SdkAdvancedClientOption.SIGNER and its retries with the deprecated V2 RetryPolicy and legacy BackoffStrategy, facilities V3 excludes (Requirement 18).",
+    "kind": "REPRESENTATIVE",
+    "scenarios": ["EXCLUDED"],
+    "behavior": {
+        "entryPoint": "com.example.legacy.LegacyApp",
+        "service": "dynamodb"
+    },
+    "expect": {
+        "javaSourcesUnchanged": true,
+        "javaRelease": 21,
+        "unresolved": [
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.auth.signer.Aws4Signer",
+                "replacement": "api:software.amazon.awssdk.auth.api.HttpSigner"
+            },
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.core.client.config.SdkAdvancedClientOption#SIGNER",
+                "replacement": "api:software.amazon.awssdk.auth.aws.AwsAuthSchemeOptions"
+            },
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.core.client.config.ClientOverrideConfiguration$Builder#retryPolicy(",
+                "replacement": "api:software.amazon.awssdk.retries.RetryStrategy"
+            },
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.core.retry.RetryPolicy",
+                "replacement": "api:software.amazon.awssdk.retries.RetryStrategy"
+            }
+        ]
+    }
+}

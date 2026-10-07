@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  The V2 Migration Corpus (task 15.5; Requirements 17.3, 17.7-17.12). src/test/corpus holds standalone V2 Maven
+  projects (representative and synthetic applications), each with a corpus-project.json descriptor (scenario and
+  expectations) and the transcript its behavioral entry point must print (expected-behavior.txt). MigrationCorpusTest:
+    1. generates the real Parity Manifest of the V2 baseline (tools/parity-manifest's ParityManifestCli over this
+       repository and the released V2 API jars of v3.v2Baseline.version, candidate version ${project.version});
+    2. resolves each project's own POM with a forked offline-capable Maven (V2 class path and dependency graph),
+       compiles it and runs its behavioral suite on the V2 baseline against an in-JVM fake service;
+    3. migrates it with the v2-migration engine and every discovered recipe, exactly as the Maven plugin does, and
+       checks that every encountered item has exactly one disposition, that unresolved constructs are unchanged and
+       carry complete diagnostics, and the project's declared expectations;
+    4. compiles the transformed sources as Java 21 against the candidate artifacts their migrated POM selects
+       (resolved from this reactor through this module's test dependencies) and runs the same behavioral suite,
+       comparing transcripts and the requests the fake service received with the V2 run;
+    5. publishes target/v2-migration-corpus/compatibility-report.json (tools/release-evidence's CompatibilityReport)
+       with one migration report per project.
+  A transformed project that fails to compile only on manifest entries the candidate does not ship is reported as
+  BLOCKED_BY_CANDIDATE; that blocks the build only at a launch gate stage (-Dv3.launchGate=packaging or
+  general-availability), like tools/parity-manifest's launch gate. Every other failure blocks every build.
+  Every dependency is test scope; the V3 runtime artifacts below are what migrated corpus POMs select, and they are
+  never loaded by the test class loader (each corpus run gets its own class loader).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>v2-migration-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: V2 Migration Tests</name>
+    <description>The V2 Migration Corpus: V2 applications migrated with the real Parity Manifest, compiled and run on the V2 baseline and on the candidate, and the compatibility report they publish.</description>
+    <properties>
+        <!-- The released V2 version the corpus projects and the Parity Manifest's API inventory use; it must equal
+             tools/parity-manifest's v3.v2Baseline.version. -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+        <!-- The launch gate stage (packaging or general-availability); when set, BLOCKED_BY_CANDIDATE results fail. -->
+        <v3.launchGate></v3.launchGate>
+        <v3.corpus.output>${project.build.directory}/v2-migration-corpus</v3.corpus.output>
+        <v3.corpus.candidate>${project.build.directory}/v3-candidate</v3.corpus.candidate>
+        <!-- Set to true to run the forked V2 resolution with -o (for example when this build runs offline). Without it
+             the forks still resolve offline whenever the local repository already holds the released V2 artifacts. -->
+        <v3.corpus.offline>false</v3.corpus.offline>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <!-- The migration engine and its recipes (used as a library, as the Maven plugin uses it). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>v2-migration</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The real Parity Manifest generator and the candidate inventory scanner. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>parity-manifest</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The compatibility report the corpus publishes. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>release-evidence</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The candidate artifacts migrated corpus POMs select. CandidateArtifacts reads their resolved files and
+             dependency graph from target/v3-candidate; MigrationCorpusTest fails if a migrated POM selects a BOM
+             artifact that is not listed here. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>retries</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth-api</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>iam-policy-builder</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <!-- The resolved files and the full (verbose) dependency graph of the candidate artifacts above, from
+                     which each migrated corpus POM's own class path is computed. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>list-candidate-artifacts</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>list</goal>
+                        </goals>
+                        <configuration>
+                            <outputFile>${v3.corpus.candidate}/dependency-list.txt</outputFile>
+                            <outputAbsoluteArtifactFilename>true</outputAbsoluteArtifactFilename>
+                            <appendOutput>false</appendOutput>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>graph-candidate-artifacts</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>tree</goal>
+                        </goals>
+                        <configuration>
+                            <outputFile>${v3.corpus.candidate}/dependency-tree.txt</outputFile>
+                            <verbose>true</verbose>
+                            <appendOutput>false</appendOutput>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.root>${project.basedir}/../..</v3.root>
+                        <v3.corpus>${project.basedir}/src/test/corpus</v3.corpus>
+                        <v3.corpus.output>${v3.corpus.output}</v3.corpus.output>
+                        <v3.corpus.candidate>${v3.corpus.candidate}</v3.corpus.candidate>
+                        <v3.candidateVersion>${project.version}</v3.candidateVersion>
+                        <v3.v2Baseline.version>${v3.v2Baseline.version}</v3.v2Baseline.version>
+                        <v3.launchGate>${v3.launchGate}</v3.launchGate>
+                        <maven.home>${maven.home}</maven.home>
+                        <v3.localRepository>${settings.localRepository}</v3.localRepository>
+                        <v3.offline>${v3.corpus.offline}</v3.offline>
+                        <v3.dependencyPluginVersion>${maven-dependency-plugin.version}</v3.dependencyPluginVersion>
+                        <!-- The behavioral suites of V2 and V3 read no profile files of the machine running the build
+                             (both SDKs honor these properties): their results depend only on the corpus. -->
+                        <aws.configFile>${project.build.directory}/no-aws-config</aws.configFile>
+                        <aws.sharedCredentialsFile>${project.build.directory}/no-aws-credentials</aws.sharedCredentialsFile>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -42,5 +42,6 @@
         <module>protocol-property-tests</module>
         <module>release-reactor-tests</module>
         <module>sdk-benchmarks</module>
+        <module>v2-migration-tests</module>
     </modules>
 </project>

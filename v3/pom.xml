@@ -70,7 +70,9 @@
                                      (services/, one module per V2 baseline service module) and the fleet gate
                                      (tools/service-fleet)
         -Dv3.aggregate=high-level    v3-high-level: services plus high-level libraries (services-custom)
-        -Dv3.aggregate=migration     v3-migration: high-level libraries plus the V2 migration tooling
+        -Dv3.aggregate=migration     v3-migration: high-level libraries plus the V2 migration tooling and the V2
+                                     Migration Corpus (test/v2-migration-tests, with the parity-manifest and
+                                     release-evidence tooling it generates the manifest with and reports to)
         -Dv3.aggregate=tests         v3-tests: every automated verification module and what it verifies
         -Dv3.aggregate=benchmarks    v3-benchmarks: the performance harness and what it measures
         -Dv3.aggregate=release-evidence
@@ -84,7 +86,9 @@
       reactor stops before release packaging, on any missing PRESERVED capability, missing replacement, unbuilt
       release artifact or missing evidence hook. Run it after the release artifacts are compiled, for example
         mvn -f v3/pom.xml verify -Dv3.launchGate=packaging
-      (tools/ builds after every production module in the sequential v3-all reactor).
+      (tools/ builds after every production module in the sequential v3-all reactor). With -Dv3.launchGate set, the V2
+      Migration Corpus (test/v2-migration-tests) also fails when a transformed corpus project needs a Parity Manifest
+      entry the candidate does not ship.
 
       Every subset profile lists the upstream V3 modules it needs, so each one builds from a clean checkout without
       previously installed V3 artifacts. Activation is property-based (not activeByDefault) so that adding unrelated
@@ -131,7 +135,8 @@
                               failure modes), codegen-lifecycle-tests, codegen-tests, protocol-property-tests
               architecture-tests inspects the compiled classes of every release module, so the profile builds every
               production module (including modules that are still skeletons) before test/. It excludes benchmarks
-              (test/sdk-benchmarks) and release-evidence tooling (tools/parity-manifest, tools/release-evidence).
+              (test/sdk-benchmarks), release-evidence tooling (tools/parity-manifest, tools/release-evidence) and the
+              V2 Migration Corpus that depends on it (test/v2-migration-tests, built by v3-migration and v3-tests).
             -->
             <id>v3-foundation</id>
             <activation>
@@ -314,6 +319,12 @@
                 <module>services</module>
                 <module>services-custom</module>
                 <module>tools/v2-migration</module>
+                <!-- The V2 Migration Corpus (task 15.5): the real Parity Manifest (tools/parity-manifest), the corpus
+                     transformation, compile and behavior suites, and the compatibility report it publishes
+                     (tools/release-evidence). -->
+                <module>tools/parity-manifest</module>
+                <module>tools/release-evidence</module>
+                <module>test/v2-migration-tests</module>
             </modules>
         </profile>
         <profile>
@@ -336,6 +347,9 @@
                 <module>services</module>
                 <module>services-custom</module>
                 <module>tools/v2-migration</module>
+                <!-- test/v2-migration-tests generates the Parity Manifest and publishes the compatibility report. -->
+                <module>tools/parity-manifest</module>
+                <module>tools/release-evidence</module>
                 <module>test</module>
             </modules>
         </profile>

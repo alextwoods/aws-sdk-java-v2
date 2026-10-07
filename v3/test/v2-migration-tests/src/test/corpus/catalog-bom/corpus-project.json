@@ -1,0 +1,15 @@
+{
+    "description": "Product catalog on the DynamoDB sync client with consumer-builder overloads and the scan paginator. The SDK BOM is imported at a version property, the SDK dependencies are unversioned and the Java level is the Java 8 source/target pair.",
+    "kind": "SYNTHETIC",
+    "scenarios": ["PRESERVED_ONLY"],
+    "behavior": {
+        "entryPoint": "com.example.catalog.CatalogApp",
+        "service": "dynamodb"
+    },
+    "expect": {
+        "cleanMigration": true,
+        "javaSourcesUnchanged": true,
+        "compiles": true,
+        "javaRelease": 21
+    }
+}

@@ -1,0 +1,5 @@
+json: {"Version":"2012-10-17","Id":"reports-access","Statement":[{"Sid":"ReadReports","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::reports/*","Condition":{"StringEquals":{"aws:PrincipalOrgID":"o-corpus"}}},{"Sid":"DenyDelete","Effect":"Deny","Principal":"*","Action":"s3:DeleteObject","Resource":"arn:aws:s3:::reports/*"}]}
+round trip equal: true
+statements: 2
+first effect: Allow
+pretty lines: 22

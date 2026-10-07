@@ -1,0 +1,22 @@
+{
+    "description": "Auditing ExecutionInterceptor (modifyHttpRequest adds a header, afterExecution records the operation name from the execution attributes) registered through the client override configuration, and a URL-connection HTTP client configured through its builder.",
+    "kind": "REPRESENTATIVE",
+    "scenarios": ["ADAPTED"],
+    "behavior": {
+        "entryPoint": "com.example.audit.AuditApp",
+        "service": "dynamodb"
+    },
+    "expect": {
+        "javaRelease": 21,
+        "unresolved": [
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.core.interceptor.ExecutionInterceptor#modifyHttpRequest(",
+                "replacement": "api:software.amazon.awssdk.pipeline.ExecutionInterceptor"
+            },
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.core.interceptor.ExecutionInterceptor#afterExecution(",
+                "replacement": "api:software.amazon.awssdk.pipeline.ExecutionInterceptor"
+            }
+        ]
+    }
+}

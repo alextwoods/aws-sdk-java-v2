@@ -42,6 +42,10 @@ import software.amazon.awssdk.test.reactor.RequiredArtifacts.Category;
 class ReactorInventoryTest {
     private static final Path V3_ROOT = Path.of(System.getProperty("v3.root")).toAbsolutePath().normalize();
     private static final String CORE_RUNTIME_PROFILE = "v3-core-runtime";
+    /** The V2 Migration Corpus (test/v2-migration-tests), which depends on the release-evidence tooling. */
+    private static final String MIGRATION_CORPUS = "v2-migration-tests";
+    /** Verification modules the foundation gate does not build: the benchmarks and the migration corpus. */
+    private static final Set<String> NOT_FOUNDATION_VERIFICATION = Set.of("sdk-benchmarks", MIGRATION_CORPUS);
     /** Simple class names matched by surefire's default includes (Test*, *Test, *Tests, *TestCase). */
     private static final Pattern SUREFIRE_DEFAULT_INCLUDES = Pattern.compile("Test.*|.*Test|.*Tests|.*TestCase");
 
@@ -125,13 +129,14 @@ class ReactorInventoryTest {
     }
 
     /**
-     * The foundation gate runs every verification module except the benchmarks, and architecture-tests inspects the
-     * compiled classes of every release module. The profile therefore builds every production and generated-code
-     * module first, so it passes from a clean checkout rather than only against previously compiled modules, and it
-     * excludes the benchmark harness and the release-evidence tooling.
+     * The foundation gate runs every verification module except the benchmarks and the V2 Migration Corpus, and
+     * architecture-tests inspects the compiled classes of every release module. The profile therefore builds every
+     * production and generated-code module first, so it passes from a clean checkout rather than only against
+     * previously compiled modules, and it excludes the benchmark harness, the release-evidence tooling and the corpus,
+     * which generates the real Parity Manifest with that tooling and publishes the compatibility report into it.
      */
     @Test
-    void foundationProfileBuildsEveryProductionModuleAndEveryVerificationModuleButTheBenchmarks() {
+    void foundationProfileBuildsEveryProductionModuleAndEveryVerificationModuleButTheBenchmarksAndTheCorpus() {
         ReactorInventory full = ReactorInventory.load(V3_ROOT);
         for (Category category : List.of(Category.RUNTIME, Category.HTTP, Category.CODE_GENERATION,
                                           Category.HIGH_LEVEL_LIBRARY, Category.MIGRATION)) {
@@ -139,13 +144,21 @@ class ReactorInventoryTest {
         }
         assertBuilds("v3-foundation", artifactIds(RequiredArtifacts.members(full, Category.SERVICE)));
         Set<String> verification = new TreeSet<>(artifactIds(RequiredArtifacts.members(full, Category.TEST)));
-        verification.remove("sdk-benchmarks");
+        verification.removeAll(NOT_FOUNDATION_VERIFICATION);
         assertBuilds("v3-foundation", verification);
 
         Set<String> excluded = new TreeSet<>(RequiredArtifacts.named(Category.RELEASE_TOOLING));
-        excluded.add("sdk-benchmarks");
+        excluded.addAll(NOT_FOUNDATION_VERIFICATION);
         excluded.retainAll(ReactorInventory.load(V3_ROOT, "v3-foundation").artifactIds());
-        assertEquals(Set.of(), excluded, "v3-foundation must not build benchmarks or release-evidence tooling");
+        assertEquals(Set.of(), excluded,
+                     "v3-foundation must not build benchmarks, release-evidence tooling or the migration corpus");
+    }
+
+    /** The V2 Migration Corpus runs with the migration tooling it measures and the release tooling it reports to. */
+    @Test
+    void migrationProfileRunsTheMigrationCorpus() {
+        assertBuilds("v3-migration", Set.of(MIGRATION_CORPUS));
+        assertBuilds("v3-migration", RequiredArtifacts.named(Category.RELEASE_TOOLING));
     }
 
     /** The core-runtime gate extends the foundation gate, so it builds (and tests) every v3-foundation module. */

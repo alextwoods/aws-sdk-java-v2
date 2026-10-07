@@ -16,8 +16,11 @@
 /**
  * Root package of the {@code software.amazon.awssdk:release-evidence} V3 artifact.
  *
- * <p>Owns: Release evidence collection and validation.
+ * <p>Owns: Release evidence collection and validation, starting with the machine-readable V2
+ * {@link software.amazon.awssdk.tools.releaseevidence.CompatibilityReport} that the Migration Corpus
+ * ({@code test/v2-migration-tests}) publishes for a release candidate.
  *
- * <p>Allowed V3 module dependencies: none yet. Forbidden dependencies: production dependency trees.
+ * <p>Allowed V3 module dependencies: none yet. Allowed third-party dependencies: {@code smithy-model} (JSON only).
+ * Forbidden dependencies: production dependency trees.
  */
 package software.amazon.awssdk.tools.releaseevidence;

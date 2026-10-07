@@ -1,0 +1,15 @@
+{
+    "description": "IAM policies built with the V2 IAM policy builder high-level library (statements, principals, actions, resources, conditions), written compact and pretty-printed and read back.",
+    "kind": "REPRESENTATIVE",
+    "scenarios": ["PRESERVED_ONLY"],
+    "behavior": {
+        "entryPoint": "com.example.policy.PolicyApp",
+        "service": "none"
+    },
+    "expect": {
+        "cleanMigration": true,
+        "javaSourcesUnchanged": true,
+        "compiles": true,
+        "javaRelease": 21
+    }
+}

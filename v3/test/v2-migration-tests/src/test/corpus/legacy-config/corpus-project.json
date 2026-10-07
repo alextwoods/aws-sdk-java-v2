@@ -1,0 +1,13 @@
+{
+    "description": "DynamoDB client configured as most V2 applications configure one: StaticCredentialsProvider with AwsBasicCredentials, a Region constant, a ClientOverrideConfiguration with an API call timeout and a header, and the scan paginator's item view. Every API it uses is classified PRESERVED; the candidate's coverage of them is what this project measures.",
+    "kind": "REPRESENTATIVE",
+    "scenarios": ["PRESERVED_ONLY"],
+    "behavior": {
+        "entryPoint": "com.example.config.SessionsApp",
+        "service": "dynamodb"
+    },
+    "expect": {
+        "javaSourcesUnchanged": true,
+        "javaRelease": 21
+    }
+}

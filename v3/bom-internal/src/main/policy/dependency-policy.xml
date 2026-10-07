@@ -1007,7 +1007,9 @@
             <forbids class="logging-implementation"/>
         </module>
         <module artifactId="release-evidence" path="tools/release-evidence" kind="release-tooling" release="false">
-            <owns>Release gates and release evidence.</owns>
+            <owns>Release gates and release evidence, including the machine-readable V2 compatibility report.</owns>
+            <!-- smithy-model only, for Smithy Node JSON writing of the evidence. -->
+            <allowsClass class="smithy-model-toolchain"/>
             <forbids class="logging-implementation"/>
         </module>
         <module artifactId="architecture-tests" path="test/architecture-tests" kind="test" release="false">
@@ -1058,6 +1060,10 @@
         </module>
         <module artifactId="release-reactor-tests" path="test/release-reactor-tests" kind="test" release="false">
             <owns>Clean-checkout release reactor and aggregate-profile inventory tests.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
+        <module artifactId="v2-migration-tests" path="test/v2-migration-tests" kind="test" release="false">
+            <owns>The V2 Migration Corpus: representative and synthetic V2 applications migrated with the real Parity Manifest, their compile and behavioral suites on the V2 baseline and on the candidate, and the compatibility report they publish. Every dependency is test scope.</owns>
             <forbids class="logging-implementation"/>
         </module>
         <module artifactId="sdk-benchmarks" path="test/sdk-benchmarks" kind="test" release="false">

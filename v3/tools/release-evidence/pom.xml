@@ -28,4 +28,19 @@
     <artifactId>release-evidence</artifactId>
     <name>AWS Java SDK V3 :: Tools :: Release Evidence</name>
     <description>Release evidence collection and validation.</description>
+    <dependencies>
+        <!-- JSON writing (Smithy Node) of the machine-readable evidence, the JSON library the V3 tooling already uses
+             (tools/parity-manifest, tools/v2-migration). -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

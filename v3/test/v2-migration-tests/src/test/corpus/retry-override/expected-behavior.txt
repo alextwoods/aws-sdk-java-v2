@@ -1,0 +1,2 @@
+max attempts: 4
+written after a transient failure: r-1

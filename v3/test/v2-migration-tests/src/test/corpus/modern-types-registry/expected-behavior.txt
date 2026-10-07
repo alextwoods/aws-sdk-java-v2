@@ -1,0 +1,9 @@
+register standard: true
+register adaptive: true
+register standard again: false
+register sigv4: true
+standard is shared: true
+sigv4 is a signer: true
+missing: false
+names: [adaptive, sigv4, standard]
+describe standard: RetryStrategy(standard)

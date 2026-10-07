@@ -1,0 +1,2 @@
+pages: 3
+products: [anvil, bolt, crate, drill, easel]

@@ -445,6 +445,28 @@
             "supportEvidence": "The V2 baseline marks ClientOverrideConfiguration.Builder#retryPolicy @Deprecated in favor of retryStrategy."
         },
         {
+            "name": "client-override-retry-strategy",
+            "comment": "Task 15.5 (Migration Corpus, retry-override): the non-deprecated V2 retry-strategy members of the client override configuration (the retryStrategy setters and getters and retryStrategyConfigurator). The V3 ClientOverrideConfiguration has no retry settings; every V3 client builder takes the Modern Retry strategy itself (retryStrategy(software.amazon.awssdk.retries.RetryStrategy)), so these members are not preserved and the move is a manual one.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.client.config.ClientOverrideConfiguration*#retryStrategy*",
+                "deprecated": false
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 configures the Modern Retry strategy on the client builder, not on the client override configuration.",
+            "differences": [
+                "The V3 ClientOverrideConfiguration and its builder have no retryStrategy members; the V3 client builder's retryStrategy(RetryStrategy) takes a software.amazon.awssdk.retries.RetryStrategy (the V3 package of the Modern Retry SPI).",
+                "V3 has no RetryMode or Consumer<RetryStrategy.Builder> overload on the client builder: build StandardRetryStrategy or AdaptiveRetryStrategy explicitly."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "api:software.amazon.awssdk.retries.RetryStrategy",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Call retryStrategy(strategy) on the client builder instead of the override configuration, with a software.amazon.awssdk.retries.RetryStrategy (for retry mode standard or adaptive, StandardRetryStrategy or AdaptiveRetryStrategy).",
+            "evidenceIds": [
+                "StandardRetryStrategyTest",
+                "GeneratedAsyncBehaviorTest"
+            ]
+        },
+        {
             "name": "legacy-retry-backoff",
             "comment": "Deprecated V2 legacy backoff strategies (Requirement 18.4); the Modern Retry replacement is its backoff contract (Requirement 18.8).",
             "match": {
@@ -511,6 +533,151 @@
             "migrationKind": "DIAGNOSTIC",
             "migration": "Replace AwsRetryPolicy with a Modern Retry strategy configured on the client builder.",
             "supportEvidence": "The V2 baseline marks AwsRetryPolicy @Deprecated in favor of software.amazon.awssdk.retries.api.RetryStrategy."
+        },
+        {
+            "name": "modern-retry-spi-artifact",
+            "comment": "Task 15.5 (Migration Corpus, modern-types-registry): the V2 Modern Retry SPI artifact. Its types (software.amazon.awssdk.retries.api) are the modern-retry-* entries, whose V3 types ship in the V3 retries artifact; V3 builds no retries-spi artifact, so a dependency on it moves to retries, which the dependency recipes rewrite.",
+            "match": {
+                "id": "artifact:software.amazon.awssdk:retries-spi"
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 ships the Modern Retry SPI in its retries module, under the V3 package software.amazon.awssdk.retries.",
+            "differences": [
+                "V3 has no retries-spi artifact: the Modern Retry SPI types move from software.amazon.awssdk.retries.api in retries-spi to software.amazon.awssdk.retries in retries (see the modern-retry-* entries)."
+            ],
+            "v3Artifact": "software.amazon.awssdk:retries",
+            "replacement": "artifact:software.amazon.awssdk:retries",
+            "migrationKind": "RECIPE",
+            "migration": "Depend on software.amazon.awssdk:retries instead; the migration tool rewrites the dependency coordinates.",
+            "evidenceIds": [
+                "StandardRetryStrategyTest",
+                "BackoffStrategyTest"
+            ]
+        },
+        {
+            "name": "modern-auth-spi-artifact",
+            "comment": "Task 15.5 (Migration Corpus, modern-types-registry): the V2 Modern Auth SPI artifact. Its types (software.amazon.awssdk.http.auth.spi) are the modern-auth-* entries, whose V3 types ship in the V3 auth-api artifact; V3 builds no http-auth-spi artifact, so a dependency on it moves to auth-api, which the dependency recipes rewrite.",
+            "match": {
+                "id": "artifact:software.amazon.awssdk:http-auth-spi"
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 ships the Modern Auth SPI in its auth-api module, under the V3 package software.amazon.awssdk.auth.api.",
+            "differences": [
+                "V3 has no http-auth-spi artifact: the Modern Auth SPI types move from software.amazon.awssdk.http.auth.spi in http-auth-spi to software.amazon.awssdk.auth.api in auth-api (see the modern-auth-* entries)."
+            ],
+            "v3Artifact": "software.amazon.awssdk:auth-api",
+            "replacement": "artifact:software.amazon.awssdk:auth-api",
+            "migrationKind": "RECIPE",
+            "migration": "Depend on software.amazon.awssdk:auth-api instead; the migration tool rewrites the dependency coordinates.",
+            "evidenceIds": [
+                "ModeledAuthSelectionTest"
+            ]
+        },
+        {
+            "name": "interceptor-execution-interceptor",
+            "comment": "Task 15.5 (Migration Corpus, audit-interceptor): the non-deprecated V2 ExecutionInterceptor and its hooks. V3 does not ship software.amazon.awssdk.core.interceptor; its interceptor contract is software.amazon.awssdk.pipeline.ExecutionInterceptor, whose hooks take one typed HookContext and follow the V3 lifecycle (design \"Interceptor migration rules\"). Hook conversions need the lifecycle review that design describes, so the migration is a located diagnostic.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.interceptor.ExecutionInterceptor",
+                "deprecated": false
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 replaces the V2 interceptor contract with the V3 pipeline interceptor: same role, typed hook contexts, V3 lifecycle.",
+            "differences": [
+                "V3 hooks take a single software.amazon.awssdk.pipeline.HookContext subtype and no ExecutionAttributes; execution attributes become typed ContextKey values of the execution context.",
+                "modifyHttpRequest maps to modifyBeforeSigning, which runs once per attempt with the resolved endpoint visible; modifyRequest returns a SerializableStruct; modifyException keeps the terminal execution scope and per-attempt exceptions have modifyAttemptException.",
+                "Interceptors are registered with addExecutionInterceptor on the V3 client builder, not on the client override configuration."
+            ],
+            "v3Artifact": "software.amazon.awssdk:aws-pipeline",
+            "replacement": "api:software.amazon.awssdk.pipeline.ExecutionInterceptor",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Implement software.amazon.awssdk.pipeline.ExecutionInterceptor: move each hook to its V3 hook (modifyHttpRequest to modifyBeforeSigning), read its values from the HookContext and the typed execution context, check that it is safe at the V3 hook's lifecycle point and frequency, and register it with addExecutionInterceptor on the client builder.",
+            "evidenceIds": [
+                "InterceptorDispatchTest",
+                "InterceptorOrderPropertyTest"
+            ]
+        },
+        {
+            "name": "interceptor-execution-interceptor-hooks",
+            "comment": "The hooks and other members of the V2 ExecutionInterceptor (see interceptor-execution-interceptor).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.interceptor.ExecutionInterceptor#*",
+                "deprecated": false
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 replaces the V2 interceptor contract with the V3 pipeline interceptor: same role, typed hook contexts, V3 lifecycle.",
+            "differences": [
+                "V3 hooks take a single software.amazon.awssdk.pipeline.HookContext subtype and no ExecutionAttributes; execution attributes become typed ContextKey values of the execution context.",
+                "modifyHttpRequest maps to modifyBeforeSigning, which runs once per attempt with the resolved endpoint visible; modifyRequest returns a SerializableStruct; modifyException keeps the terminal execution scope and per-attempt exceptions have modifyAttemptException.",
+                "Interceptors are registered with addExecutionInterceptor on the V3 client builder, not on the client override configuration."
+            ],
+            "v3Artifact": "software.amazon.awssdk:aws-pipeline",
+            "replacement": "api:software.amazon.awssdk.pipeline.ExecutionInterceptor",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Implement software.amazon.awssdk.pipeline.ExecutionInterceptor: move each hook to its V3 hook (modifyHttpRequest to modifyBeforeSigning), read its values from the HookContext and the typed execution context, check that it is safe at the V3 hook's lifecycle point and frequency, and register it with addExecutionInterceptor on the client builder.",
+            "evidenceIds": [
+                "InterceptorDispatchTest",
+                "InterceptorOrderPropertyTest"
+            ]
+        },
+        {
+            "name": "interceptor-context",
+            "comment": "Task 15.5: the non-deprecated V2 interceptor hook contexts (software.amazon.awssdk.core.interceptor.Context and its nested Context.* types). V3 replaces them with the sealed software.amazon.awssdk.pipeline.HookContext hierarchy.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.interceptor.Context*",
+                "deprecated": false
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 replaces the V2 interceptor contexts with typed V3 hook contexts.",
+            "differences": [
+                "The V3 HookContext subtypes follow the V3 hooks (for example ModifyBeforeSigning instead of ModifyHttpRequest), expose the request as a SerializableStruct and the operation, options and execution context, and add attempt contexts for per-attempt hooks."
+            ],
+            "v3Artifact": "software.amazon.awssdk:aws-pipeline",
+            "replacement": "api:software.amazon.awssdk.pipeline.HookContext",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Use the HookContext subtype of the V3 hook the interceptor moves to and read the request, HTTP request or response from it.",
+            "evidenceIds": [
+                "InterceptorDispatchTest"
+            ]
+        },
+        {
+            "name": "interceptor-execution-attributes",
+            "comment": "Task 15.5: the non-deprecated V2 execution attribute types (ExecutionAttribute, ExecutionAttributes and their builders) and their members. V3 replaces untyped execution attributes with typed ContextKey values of the execution and attempt contexts (design \"Interceptor migration rules\").",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.interceptor.ExecutionAttribute*",
+                "deprecated": false
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 replaces execution attributes with typed context keys.",
+            "differences": [
+                "V3 stores per-call and per-attempt values under typed software.amazon.awssdk.core.context.ContextKey keys of the execution and attempt contexts; the SDK's own values (operation, endpoint, auth scheme, identity, attempt number) are HookContext accessors and PipelineKeys keys. Unknown V2 keys have no automatic mapping."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.core.context.ContextKey",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Declare a ContextKey for each application attribute and read the SDK's values from the HookContext (for example operation()) or PipelineKeys.",
+            "evidenceIds": [
+                "InterceptorDispatchTest"
+            ]
+        },
+        {
+            "name": "interceptor-sdk-execution-attributes",
+            "comment": "Task 15.5: the non-deprecated execution attribute keys of the V2 SDK (SdkExecutionAttribute; see interceptor-execution-attributes). The V3 values they carried are HookContext accessors and PipelineKeys keys.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.interceptor.SdkExecutionAttribute*",
+                "deprecated": false
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 replaces execution attributes with typed context keys.",
+            "differences": [
+                "V3 stores per-call and per-attempt values under typed software.amazon.awssdk.core.context.ContextKey keys of the execution and attempt contexts; the SDK's own values (operation, endpoint, auth scheme, identity, attempt number) are HookContext accessors and PipelineKeys keys. Unknown V2 keys have no automatic mapping."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.core.context.ContextKey",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Declare a ContextKey for each application attribute and read the SDK's values from the HookContext (for example operation()) or PipelineKeys.",
+            "evidenceIds": [
+                "InterceptorDispatchTest"
+            ]
         },
         {
             "name": "modern-retry-retry-strategy",

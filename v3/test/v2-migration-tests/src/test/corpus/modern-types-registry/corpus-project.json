@@ -1,0 +1,20 @@
+{
+    "description": "Application-wide registry of shared retry strategies and signers. It refers to the V2 Modern Retry (retries-spi) and Modern Auth (http-auth-spi) SPI types only by type: fields, parameters, generic arguments, class literals and dynamic proxies.",
+    "kind": "SYNTHETIC",
+    "scenarios": ["ADAPTED"],
+    "behavior": {
+        "entryPoint": "com.example.registry.RegistryApp",
+        "service": "none"
+    },
+    "expect": {
+        "cleanMigration": true,
+        "compiles": true,
+        "javaRelease": 21,
+        "transformed": [
+            "artifact:software.amazon.awssdk:retries-spi",
+            "artifact:software.amazon.awssdk:http-auth-spi",
+            "api:software.amazon.awssdk.retries.api.RetryStrategy",
+            "api:software.amazon.awssdk.http.auth.spi.signer.HttpSigner"
+        ]
+    }
+}

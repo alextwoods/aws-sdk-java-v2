@@ -453,7 +453,7 @@ All tasks are required for general availability. No task is marked optional beca
     - Transform safe modern APIs, diagnose excluded legacy signer/presigner/retry/deprecated APIs, preserve unsafe source unchanged, and include rationale/replacement/documentation IDs.
     - Add public API scans proving excluded contracts are absent from V3.
     - _Requirements: 18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 18.7, 18.8, 18.9_
-  - [ ] 15.5 Build and execute the V2 migration corpus
+  - [x] 15.5 Build and execute the V2 migration corpus
     - Add representative and synthetic V2 applications under `v3/test/v2-migration-tests`; test preserved-only dependency/JDK upgrades, adapted transformations, excluded diagnostics, transformed JDK 21 compilation, and behavioral suites.
     - Require every encountered item to have exactly one disposition and publish corpus results into the compatibility report.
     - _Requirements: 17.3, 17.7, 17.8, 17.9, 17.10, 17.11, 17.12_

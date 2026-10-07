@@ -1,0 +1,13 @@
+{
+    "description": "Sync request bodies built from text, bytes and nothing, read twice through their content stream providers, with their content lengths and content types.",
+    "kind": "SYNTHETIC",
+    "scenarios": ["PRESERVED_ONLY"],
+    "behavior": {
+        "entryPoint": "com.example.bodies.BodiesApp",
+        "service": "none"
+    },
+    "expect": {
+        "javaSourcesUnchanged": true,
+        "javaRelease": 21
+    }
+}

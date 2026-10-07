@@ -1,0 +1,25 @@
+{
+    "description": "Client whose Modern Retry strategy is built with the V2 StandardRetryStrategy builder (retries artifact) and set through ClientOverrideConfiguration.Builder#retryStrategy. The SDK versions come from one property.",
+    "kind": "REPRESENTATIVE",
+    "scenarios": ["ADAPTED"],
+    "behavior": {
+        "entryPoint": "com.example.retry.RetryApp",
+        "service": "dynamodb"
+    },
+    "expect": {
+        "javaRelease": 21,
+        "transformed": [
+            "api:software.amazon.awssdk.retries.api.RetryStrategy"
+        ],
+        "unresolved": [
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.retries.api.RetryStrategy$Builder#maxAttempts(",
+                "replacement": "api:software.amazon.awssdk.retries.RetryStrategy$Builder"
+            },
+            {
+                "entryIdPrefix": "api:software.amazon.awssdk.core.client.config.ClientOverrideConfiguration$Builder#retryStrategy(",
+                "replacement": "api:software.amazon.awssdk.retries.RetryStrategy"
+            }
+        ]
+    }
+}

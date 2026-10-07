@@ -1,0 +1,6 @@
+create order-1: true
+create order-2: true
+create order-1 again: false
+find order-1: Order[id=order-1, customer=alice, quantity=3]
+find order-3: absent
+missing table: 400 ResourceNotFoundException

@@ -115,6 +115,9 @@ SnsMessageManagerSafeDiagnosticsTest
 # auth-api and auth-aws modules that verify the V3 types the ADAPTED modern-retry-* and modern-auth-* entries of
 # classification-rules.json move V2 callers to. Their api: entries name them through classification-rules.json.
 BackoffStrategyTest
+# The generated client builder's retryStrategy, which the ADAPTED client-override-retry-strategy entries move V2
+# override-configuration retry strategies to (task 15.5).
+GeneratedAsyncBehaviorTest
 AwsV4HttpSignerTest
 AwsV4aHttpSignerTest
 ModeledAuthSelectionTest

@@ -1,0 +1,174 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:software.amazon.awssdk:v3:compatibility-report:1",
+    "title": "AWS SDK for Java V3 Compatibility Report",
+    "description": "The V2 compatibility of one release candidate (Requirement 17.12): the Compatibility Classification counts of its Parity Manifest, every migration recipe, and per Migration Corpus project its dispositions, unresolved diagnostics, transformed compile result and behavioral result. Written by CompatibilityReport: fixed member order, UTF-8, trailing newline, no timestamps.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schemaVersion", "candidate", "baseline", "manifest", "summary", "recipes", "corpus"],
+    "properties": {
+        "schemaVersion": { "const": 1 },
+        "candidate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["version", "gitRevision"],
+            "properties": {
+                "version": { "type": "string", "minLength": 1 },
+                "gitRevision": { "$ref": "#/$defs/nullableString" }
+            }
+        },
+        "baseline": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["v2Version", "apiVersion", "gitRevision", "scannerVersion"],
+            "properties": {
+                "v2Version": { "type": "string", "minLength": 1, "description": "The V2 source tree version the manifest was generated from." },
+                "apiVersion": { "type": "string", "minLength": 1, "description": "The released V2 version whose API jars the manifest inventories and the corpus builds against." },
+                "gitRevision": { "$ref": "#/$defs/nullableString" },
+                "scannerVersion": { "$ref": "#/$defs/nullableString" }
+            }
+        },
+        "manifest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["entries", "classifications"],
+            "properties": {
+                "entries": { "type": "integer", "minimum": 0 },
+                "classifications": { "$ref": "#/$defs/classificationCounts" }
+            }
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projects", "dispositions", "compile", "behavior", "unresolvedByClassification", "unresolvedByRecipe", "unresolvedByEntry"],
+            "properties": {
+                "projects": { "type": "integer", "minimum": 1 },
+                "dispositions": { "$ref": "#/$defs/dispositionCounts" },
+                "compile": { "$ref": "#/$defs/statusCounts" },
+                "behavior": { "$ref": "#/$defs/statusCounts" },
+                "unresolvedByClassification": { "$ref": "#/$defs/counts" },
+                "unresolvedByRecipe": { "$ref": "#/$defs/counts", "description": "By declining recipe; 'manifest' when the manifest classification decided." },
+                "unresolvedByEntry": { "$ref": "#/$defs/counts" }
+            }
+        },
+        "recipes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "description", "preserved", "transformed", "unresolved"],
+                "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "description": { "type": "string" },
+                    "preserved": { "type": "integer", "minimum": 0 },
+                    "transformed": { "type": "integer", "minimum": 0 },
+                    "unresolved": { "type": "integer", "minimum": 0 }
+                }
+            }
+        },
+        "corpus": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/project" } }
+    },
+    "$defs": {
+        "nullableString": { "type": ["string", "null"] },
+        "counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "classificationCounts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["PRESERVED", "ADAPTED", "EXCLUDED"],
+            "properties": {
+                "PRESERVED": { "type": "integer", "minimum": 0 },
+                "ADAPTED": { "type": "integer", "minimum": 0 },
+                "EXCLUDED": { "type": "integer", "minimum": 0 }
+            }
+        },
+        "dispositionCounts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["PRESERVED", "TRANSFORMED", "UNRESOLVED"],
+            "properties": {
+                "PRESERVED": { "type": "integer", "minimum": 0 },
+                "TRANSFORMED": { "type": "integer", "minimum": 0 },
+                "UNRESOLVED": { "type": "integer", "minimum": 0 }
+            }
+        },
+        "status": { "enum": ["PASSED", "FAILED", "BLOCKED_BY_CANDIDATE", "NOT_RUN"] },
+        "statusCounts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["PASSED", "FAILED", "BLOCKED_BY_CANDIDATE", "NOT_RUN"],
+            "properties": {
+                "PASSED": { "type": "integer", "minimum": 0 },
+                "FAILED": { "type": "integer", "minimum": 0 },
+                "BLOCKED_BY_CANDIDATE": { "type": "integer", "minimum": 0 },
+                "NOT_RUN": { "type": "integer", "minimum": 0 }
+            }
+        },
+        "step": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "detail", "blockedBy", "failures"],
+            "properties": {
+                "status": { "$ref": "#/$defs/status" },
+                "detail": { "type": "string" },
+                "blockedBy": { "type": "array", "items": { "type": "string" }, "description": "Manifest entry IDs the candidate does not ship (BLOCKED_BY_CANDIDATE only)." },
+                "failures": { "type": "array", "items": { "type": "string" } }
+            }
+        },
+        "diagnostic": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "line", "column", "construct", "category", "entryId", "classification", "replacement", "documentationId", "recipe", "reason"],
+            "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "line": { "type": "integer", "minimum": 1 },
+                "column": { "type": "integer", "minimum": 1 },
+                "construct": { "type": "string", "minLength": 1 },
+                "category": { "type": "string", "minLength": 1 },
+                "entryId": { "$ref": "#/$defs/nullableString" },
+                "classification": { "enum": ["PRESERVED", "ADAPTED", "EXCLUDED", null] },
+                "replacement": { "$ref": "#/$defs/nullableString" },
+                "documentationId": { "$ref": "#/$defs/nullableString" },
+                "recipe": { "$ref": "#/$defs/nullableString" },
+                "reason": { "type": "string", "minLength": 1 }
+            }
+        },
+        "project": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "kind", "scenarios", "description", "migration", "baseline", "compile", "behavior", "migrationReport"],
+            "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "kind": { "enum": ["REPRESENTATIVE", "SYNTHETIC"] },
+                "scenarios": { "type": "array", "items": { "enum": ["PRESERVED_ONLY", "ADAPTED", "EXCLUDED"] } },
+                "description": { "$ref": "#/$defs/nullableString" },
+                "migration": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["items", "dispositions", "categories", "itemClassifications", "changedFiles", "unresolved"],
+                    "properties": {
+                        "items": { "type": "integer", "minimum": 0 },
+                        "dispositions": { "$ref": "#/$defs/dispositionCounts" },
+                        "categories": { "type": "object", "additionalProperties": { "$ref": "#/$defs/dispositionCounts" } },
+                        "itemClassifications": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["PRESERVED", "ADAPTED", "EXCLUDED", "UNCLASSIFIED"],
+                            "properties": {
+                                "PRESERVED": { "type": "integer", "minimum": 0 },
+                                "ADAPTED": { "type": "integer", "minimum": 0 },
+                                "EXCLUDED": { "type": "integer", "minimum": 0 },
+                                "UNCLASSIFIED": { "type": "integer", "minimum": 0 }
+                            }
+                        },
+                        "changedFiles": { "type": "array", "items": { "type": "string" } },
+                        "unresolved": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+                    }
+                },
+                "baseline": { "$ref": "#/$defs/step", "description": "The unmigrated project compiled and run against the V2 baseline." },
+                "compile": { "$ref": "#/$defs/step", "description": "The transformed project compiled as Java 21 against the candidate (Requirement 17.7)." },
+                "behavior": { "$ref": "#/$defs/step", "description": "The transformed project's behavioral suite (Requirement 17.8)." },
+                "migrationReport": { "$ref": "#/$defs/nullableString", "description": "The project's v2-migration-report-1 report, relative to this report." }
+            }
+        }
+    }
+}
