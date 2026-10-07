@@ -72,6 +72,13 @@
             <version>${v3.junit5.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Property-based tests (design "Testing Strategy"; Properties 59-61). Test scope only. -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>${v3.jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
