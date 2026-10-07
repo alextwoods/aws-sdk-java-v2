@@ -32,6 +32,7 @@ import software.amazon.awssdk.protocols.core.AwsQueryErrorCode;
 import software.amazon.awssdk.protocols.core.ProtocolContext;
 import software.amazon.awssdk.smithy.runtime.registry.SchemaTypeRegistry;
 import software.amazon.awssdk.smithy.runtime.schema.OperationSchemas;
+import software.amazon.awssdk.utils.Redaction;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.schema.TraitKey;
@@ -154,7 +155,9 @@ public final class ModeledErrors {
     }
 
     /**
-     * Completes a deserialized modeled error builder with the response metadata and builds it.
+     * Completes a deserialized modeled error builder with the response metadata and builds it. If the error's
+     * {@code message} member is {@code @sensitive}, the exception message and {@link AwsErrorDetails#errorMessage()}
+     * are redacted (Requirement 21.10).
      *
      * @throws IllegalStateException if the registered type is not an {@link AwsServiceException}
      */
@@ -163,6 +166,17 @@ public final class ModeledErrors {
             throw new IllegalStateException("The registered builder of " + builder.schema().id()
                                             + " does not build an AwsServiceException");
         }
+        if (hasSensitiveMessage(builder.schema())) {
+            // Requirement 21.10: a @sensitive message is neither the exception message nor the error details'
+            // message (both are rendered by getMessage and toString); the raw response keeps the wire value.
+            if (error.message() != null) {
+                error.message(Redaction.REDACTED);
+            }
+            AwsErrorDetails details = response.details();
+            response = new ErrorResponse(details.toBuilder().errorMessage(Redaction.secret(details.errorMessage()))
+                                                .build(),
+                                         response.requestId(), response.extendedRequestId(), response.statusCode());
+        }
         response.applyTo(error);
         Object built = builder.errorCorrection().build();
         if (!(built instanceof AwsServiceException exception)) {
@@ -170,6 +184,21 @@ public final class ModeledErrors {
                                             + " is not an AwsServiceException");
         }
         return exception;
+    }
+
+    /**
+     * Whether the error's message, the string member named {@code message} in any case (the member generated error
+     * types hold as their exception message), is {@code @sensitive}.
+     */
+    private static boolean hasSensitiveMessage(Schema error) {
+        for (Schema member : error.members()) {
+            boolean sensitive = member.hasTrait(TraitKey.SENSITIVE_TRAIT)
+                                || member.memberTarget().hasTrait(TraitKey.SENSITIVE_TRAIT);
+            if (sensitive && member.memberName().equalsIgnoreCase("message")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The generic exception of an error response that identifies no modeled error. */

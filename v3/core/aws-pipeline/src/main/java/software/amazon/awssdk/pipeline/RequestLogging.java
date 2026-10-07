@@ -15,17 +15,26 @@
 
 package software.amazon.awssdk.pipeline;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.StringJoiner;
 import software.amazon.awssdk.http.HttpHeaders;
 import software.amazon.awssdk.http.SdkHttpRequest;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.utils.Logger;
 import software.amazon.awssdk.utils.Redaction;
+import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.TraitKey;
 
 /**
  * The per-attempt request log of the pipeline at DEBUG under {@value #LOGGER_NAME}, the V2 request logger name
  * (Requirements 21.8-21.11): the request line, header names and redacted query of every transmitted request, and the
  * status and request IDs of every response. Header values, bodies and query values of sensitive parameters are never
- * rendered. Nothing is logged at INFO, WARN or ERROR (a failed response reaches the caller as an exception), and no
+ * rendered: a query parameter is sensitive by {@linkplain Redaction#isSensitiveName name} or when it is bound from a
+ * {@code @sensitive} input member, and the path is redacted whole when a {@code @sensitive} member is bound to one of
+ * its labels. Nothing is logged at INFO, WARN or ERROR (a failed response reaches the caller as an exception), and no
  * message is built while DEBUG is disabled.
  */
 final class RequestLogging {
@@ -44,10 +53,13 @@ final class RequestLogging {
         if (!REQUEST_LOGGER.isDebugEnabled()) {
             return;
         }
-        REQUEST_LOGGER.debug(() -> "Sending Request: " + request.method() + " " + request.scheme() + "://"
-                                   + request.authority() + request.encodedPath() + query(request) + " [operation="
-                                   + call.plan().operation().id() + ", attempt=" + attempt.number() + ", headers="
-                                   + headerNames(request.headers()) + "]");
+        REQUEST_LOGGER.debug(() -> {
+            SensitiveBindings sensitive = SensitiveBindings.of(call.request().schema());
+            return "Sending Request: " + request.method() + " " + request.scheme() + "://" + request.authority()
+                   + (sensitive.label ? "/" + Redaction.REDACTED : request.encodedPath()) + query(request, sensitive)
+                   + " [operation=" + call.plan().operation().id() + ", attempt=" + attempt.number() + ", headers="
+                   + headerNames(request.headers()) + "]";
+        });
     }
 
     /** Logs the response an attempt received, successful or not. */
@@ -65,9 +77,72 @@ final class RequestLogging {
         });
     }
 
-    private static String query(SdkHttpRequest request) {
+    private static String query(SdkHttpRequest request, SensitiveBindings sensitive) {
         String encoded = request.encodedQuery();
-        return encoded == null || encoded.isEmpty() ? "" : "?" + Redaction.query(encoded);
+        if (encoded == null || encoded.isEmpty()) {
+            return "";
+        }
+        if (!sensitive.allQuery() && sensitive.queryNames().isEmpty()) {
+            return "?" + Redaction.query(encoded);
+        }
+        StringJoiner out = new StringJoiner("&", "?", "");
+        for (String pair : encoded.split("&", -1)) {
+            int equals = pair.indexOf('=');
+            boolean bound = equals >= 0
+                            && (sensitive.allQuery() || sensitive.queryNames().contains(decode(pair.substring(0, equals))));
+            if (bound) {
+                out.add(pair.substring(0, equals + 1) + Redaction.REDACTED);
+            } else {
+                out.add(Redaction.query(pair));
+            }
+        }
+        return out.toString();
+    }
+
+    private static String decode(String encodedName) {
+        try {
+            return URLDecoder.decode(encodedName, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return encodedName;
+        }
+    }
+
+    /**
+     * Where an input's {@code @sensitive} members are bound in the request target: whether one is a path label, the
+     * names of the query parameters bound from them, and whether a sensitive {@code httpQueryParams} map may supply
+     * any parameter. Members of protocols that ignore HTTP binding traits carry none of these traits.
+     */
+    private record SensitiveBindings(boolean label, boolean allQuery, Set<String> queryNames) {
+        static SensitiveBindings of(Schema input) {
+            boolean label = false;
+            boolean allQuery = false;
+            Set<String> queryNames = new HashSet<>();
+            for (Schema member : input.members()) {
+                if (!revealsSensitive(member)) {
+                    continue;
+                }
+                label |= member.hasTrait(TraitKey.HTTP_LABEL_TRAIT);
+                allQuery |= member.hasTrait(TraitKey.HTTP_QUERY_PARAMS_TRAIT);
+                if (member.hasTrait(TraitKey.HTTP_QUERY_TRAIT)) {
+                    queryNames.add(member.getTrait(TraitKey.HTTP_QUERY_TRAIT).getValue());
+                }
+            }
+            return new SensitiveBindings(label, allQuery, queryNames);
+        }
+
+        /** Whether the value of {@code schema} is, or contains as a list element or map key or value, sensitive. */
+        private static boolean revealsSensitive(Schema schema) {
+            if (schema.hasTrait(TraitKey.SENSITIVE_TRAIT)
+                || schema.isMember() && schema.memberTarget().hasTrait(TraitKey.SENSITIVE_TRAIT)) {
+                return true;
+            }
+            Schema target = schema.isMember() ? schema.memberTarget() : schema;
+            return switch (target.type()) {
+                case LIST, SET -> revealsSensitive(target.listMember());
+                case MAP -> revealsSensitive(target.mapKeyMember()) || revealsSensitive(target.mapValueMember());
+                default -> false;
+            };
+        }
     }
 
     private static String requestId(HttpHeaders headers) {

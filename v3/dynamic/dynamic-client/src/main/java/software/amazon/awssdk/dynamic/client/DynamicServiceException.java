@@ -18,9 +18,11 @@ package software.amazon.awssdk.dynamic.client;
 import java.util.Objects;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import software.amazon.awssdk.utils.Redaction;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
+import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.document.Document;
@@ -260,13 +262,18 @@ public final class DynamicServiceException extends AwsServiceException implement
             return new DynamicServiceException(this, error);
         }
 
-        /** The string {@code message} member (in any case) of the error, as generated exceptions hold it. */
+        /**
+         * The string {@code message} member (in any case) of the error, as generated exceptions hold it; redacted if
+         * it is {@code @sensitive} (Requirement 21.10), as the member document still holds the value.
+         */
         private String modeledMessage(StructDocument document) {
             for (Schema member : schema.members()) {
                 if (member.memberName().equalsIgnoreCase("message") && member.type() == ShapeType.STRING) {
                     Document value = document.getMember(member.memberName());
                     if (value != null) {
-                        return value.asString();
+                        boolean sensitive = member.hasTrait(TraitKey.SENSITIVE_TRAIT)
+                                            || member.memberTarget().hasTrait(TraitKey.SENSITIVE_TRAIT);
+                        return sensitive ? Redaction.REDACTED : value.asString();
                     }
                 }
             }

@@ -94,7 +94,8 @@ import software.amazon.smithy.utils.StringUtils;
  * {@code Integer} variants for intEnums); list members have varargs setters and structure members
  * {@code Consumer<Builder>} setters. {@code equals}/{@code hashCode} compare every modeled member value (absent and
  * empty collections differ, as {@code hasXxx()} does in V2), and {@code toString} renders modeled member names with
- * {@code @sensitive} values (or collections of them) redacted.
+ * {@code @sensitive} values (or collections of them), and every member value of a {@code @sensitive} structure or
+ * union, redacted.
  *
  * <p><b>Requiredness.</b> A member is required at build time if it is {@code @required} and not client optional
  * (Smithy's client-mode nullability: not in an {@code @input} structure and not {@code @clientOptional}); a
@@ -257,7 +258,9 @@ final class ModelTypePlanner {
                                                  .code(indent(serialize(target, schemaField, field, "serializer", 0)))
                                                  .text("\n}").build()
                                        : ModelTypePlan.Code.NONE;
-        ModelTypePlan.Code stringValue = sensitive(target)
+        // Every member value of a @sensitive structure or union is sensitive too, so its own toString (reached through
+        // an accessor of the containing value, which redacts it) renders no member value either.
+        ModelTypePlan.Code stringValue = sensitive(target) || container.hasTrait(SensitiveTrait.class)
                                          ? Fragment.of(field + " == null ? null : ").string(REDACTED).build()
                                          : Fragment.of(field).build();
         return new ModelTypePlan.Member(

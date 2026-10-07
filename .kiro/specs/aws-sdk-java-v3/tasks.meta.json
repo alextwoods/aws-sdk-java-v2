@@ -103,6 +103,14 @@
     "15.8 Write the property test for modern exclusion diagnostics": {
       "status": "passed",
       "lastRunTimestamp": 1791332942474
+    },
+    "16.5 Write the property test for telemetry/lifecycle correspondence": {
+      "status": "passed",
+      "lastRunTimestamp": 1791402470529
+    },
+    "16.7 Write the property test for diagnostic redaction": {
+      "status": "passed",
+      "lastRunTimestamp": 1791404540057
     }
   },
   "executionHistory": {
@@ -2363,6 +2371,16 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756456
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791400799110
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791404777580
       }
     ],
     "16.5 Write the property test for telemetry/lifecycle correspondence": [
@@ -2370,6 +2388,16 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756494
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791400799494
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791404783239
       }
     ],
     "16.6 Write the property test for exact user-agent contribution": [
@@ -2377,6 +2405,16 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756529
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791400800303
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791404788994
       }
     ],
     "16.7 Write the property test for diagnostic redaction": [
@@ -2384,6 +2422,16 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756565
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791400801145
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791404793002
       }
     ],
     "16.8 Write the property test for nonduplicative logging": [
@@ -2391,6 +2439,11 @@
         "executionId": "ed35f5cd-c209-4c6d-b2e4-eeeec7e18d61",
         "chatSessionId": "sess_f7c4d2d9-e3e6-46ba-837b-8337bca50eb1",
         "timestamp": 1790351756600
+      },
+      {
+        "executionId": "25b6946f-6d23-495e-8967-b7d3be43701b",
+        "chatSessionId": "sess_2090378d-dc83-4cc4-8510-ca182f866e05",
+        "timestamp": 1791400801953
       }
     ],
     "16.9 Write the property test for isolated telemetry failures": [

@@ -477,19 +477,19 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 16.3 Implement logging facade, redaction, user-agent contribution, and warning suppression
     - Route runtime logs through a facade, prohibit runtime INFO, avoid duplicate caller-visible WARN/ERROR logs, lazily redact credentials/auth/tokens/cookies/sensitive members, and include exactly contributing user-agent feature IDs.
     - _Requirements: 15.8, 21.6, 21.7, 21.8, 21.9, 21.10, 21.11, 21.12_
-  - [ ] 16.4 Write the property test for response metadata presence
+  - [x] 16.4 Write the property test for response metadata presence
     - **Property 66: Response metadata preserves supplied presence.** Generate every metadata-field subset; compare response/exception accessors and absent representations with the input presence map.
     - **Validates: Requirements 21.1, 21.13**
-  - [ ] 16.5 Write the property test for telemetry/lifecycle correspondence
+  - [x] 16.5 Write the property test for telemetry/lifecycle correspondence
     - **Property 67: Telemetry records correspond to lifecycle.** Generate calls with arbitrary positive attempt counts/outcomes; compare terminal record counts and dimensions to lifecycle traces.
     - **Validates: Requirements 21.2, 21.3, 21.4**
-  - [ ] 16.6 Write the property test for exact user-agent contribution
+  - [x] 16.6 Write the property test for exact user-agent contribution
     - **Property 68: User-agent contribution is exact.** Generate contributing component sets; compare parsed user-agent tokens to required base dimensions plus exactly that set.
     - **Validates: Requirements 21.6, 21.7**
-  - [ ] 16.7 Write the property test for diagnostic redaction
+  - [x] 16.7 Write the property test for diagnostic redaction
     - **Property 69: Sensitive data is absent from diagnostics.** Generate nested sensitive values, headers, credentials, logs, exceptions, telemetry, and diagnostics with unique canaries; assert no canary appears in rendered output.
     - **Validates: Requirements 21.10**
-  - [ ] 16.8 Write the property test for nonduplicative logging
+  - [-] 16.8 Write the property test for nonduplicative logging
     - **Property 70: Logging does not duplicate caller-visible failures.** Generate returned failures and repeated benign warning keys; compare captured log counts to zero/semaphore suppression rules.
     - **Validates: Requirements 21.11, 21.12**
   - [ ] 16.9 Write the property test for isolated telemetry failures
