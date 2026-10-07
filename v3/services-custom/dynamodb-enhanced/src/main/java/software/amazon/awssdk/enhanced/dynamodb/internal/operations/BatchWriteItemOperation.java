@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClientExtension;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.internal.util.CollectionUtils;
 import software.amazon.awssdk.enhanced.dynamodb.model.BatchWriteItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.BatchWriteResult;
@@ -82,14 +83,14 @@ public class BatchWriteItemOperation
 
     @Override
     public Function<BatchWriteItemRequest, BatchWriteItemResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::batchWriteItem;
+        return request -> dynamoDbClient.batchWriteItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<BatchWriteItemRequest, CompletableFuture<BatchWriteItemResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::batchWriteItem;
+        return request -> dynamoDbAsyncClient.batchWriteItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
 }

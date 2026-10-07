@@ -29,8 +29,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.transfer.s3.internal.TransferScope;
 import software.amazon.awssdk.transfer.s3.internal.util.Futures;
-import software.amazon.awssdk.transfer.s3.internal.util.Log;
 import software.amazon.awssdk.transfer.s3.internal.util.SerialActor;
+import software.amazon.awssdk.utils.Logger;
 
 /**
  * Uploads one object from a {@link PartSource}: a single {@code PutObject} when the source's first part is its last
@@ -48,7 +48,7 @@ import software.amazon.awssdk.transfer.s3.internal.util.SerialActor;
  * {@code resumeUploadFile}. Abort failures are added to the cause as suppressed exceptions.
  */
 public final class MultipartUploader {
-    private static final Log log = Log.loggerFor(MultipartUploader.class);
+    private static final Logger log = Logger.loggerFor(MultipartUploader.class);
 
     private final S3AsyncClient s3;
     private final TransferScope scope;

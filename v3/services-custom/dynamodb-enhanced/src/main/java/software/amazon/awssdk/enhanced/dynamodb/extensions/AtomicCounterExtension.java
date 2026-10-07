@@ -32,13 +32,13 @@ import software.amazon.awssdk.enhanced.dynamodb.extensions.annotations.DynamoDbA
 import software.amazon.awssdk.enhanced.dynamodb.internal.extensions.AtomicCounterTag;
 import software.amazon.awssdk.enhanced.dynamodb.internal.mapper.AtomicCounter;
 import software.amazon.awssdk.enhanced.dynamodb.internal.util.CollectionUtils;
-import software.amazon.awssdk.enhanced.dynamodb.internal.util.Logger;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.BeanTableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticAttributeTags;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticTableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.update.SetAction;
 import software.amazon.awssdk.enhanced.dynamodb.update.UpdateExpression;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.utils.Logger;
 
 /**
  * This extension enables atomic counter attributes to be changed in DynamoDb by creating instructions for modifying

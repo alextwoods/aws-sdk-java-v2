@@ -18,22 +18,26 @@ package software.amazon.awssdk.transfer.s3.internal.progress;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import software.amazon.awssdk.transfer.s3.internal.util.Log;
 import software.amazon.awssdk.transfer.s3.internal.util.Validate;
 import software.amazon.awssdk.transfer.s3.progress.TransferListener;
+import software.amazon.awssdk.utils.Logger;
+import software.amazon.awssdk.utils.WarningSuppression;
 
 /**
  * Composes the provided {@link TransferListener}s into a single logical chain (as in V2). Invocations are delegated to
- * every listener in order while suppressing (and logging at WARNING) any exception a listener throws, so a faulty
- * listener cannot fail or stall a transfer. {@code transferInitiated} is delivered at most once, and exactly one of
+ * every listener in order while suppressing any exception a listener throws, so a faulty listener cannot fail or
+ * stall a transfer. The ignored failure is logged at WARN at most once per listener class and callback for the
+ * transfer (Requirement 21.12), not once per progress event. {@code transferInitiated} is delivered at most once, and exactly one of
  * {@code transferComplete} or {@code transferFailed} at most once.
  */
 public final class TransferListenerInvoker implements TransferListener {
-    private static final Log log = Log.loggerFor(TransferListener.class);
+    private static final Logger log = Logger.loggerFor(TransferListener.class);
+    private static final String IGNORED_LISTENER_FAILURE = "ignored-transfer-listener-failure";
 
     private final List<TransferListener> listeners;
     private final AtomicBoolean initiated = new AtomicBoolean();
     private final AtomicBoolean complete = new AtomicBoolean();
+    private final WarningSuppression warnings = WarningSuppression.create();
 
     public TransferListenerInvoker(List<TransferListener> listeners) {
         this.listeners = List.copyOf(Validate.paramNotNull(listeners, "listeners"));
@@ -42,26 +46,26 @@ public final class TransferListenerInvoker implements TransferListener {
     @Override
     public void transferInitiated(Context.TransferInitiated context) {
         if (!initiated.getAndSet(true)) {
-            forEach(listener -> listener.transferInitiated(context));
+            forEach("transferInitiated", listener -> listener.transferInitiated(context));
         }
     }
 
     @Override
     public void bytesTransferred(Context.BytesTransferred context) {
-        forEach(listener -> listener.bytesTransferred(context));
+        forEach("bytesTransferred", listener -> listener.bytesTransferred(context));
     }
 
     @Override
     public void transferComplete(Context.TransferComplete context) {
         if (!complete.getAndSet(true)) {
-            forEach(listener -> listener.transferComplete(context));
+            forEach("transferComplete", listener -> listener.transferComplete(context));
         }
     }
 
     @Override
     public void transferFailed(Context.TransferFailed context) {
         if (!complete.getAndSet(true)) {
-            forEach(listener -> listener.transferFailed(context));
+            forEach("transferFailed", listener -> listener.transferFailed(context));
         }
     }
 
@@ -70,7 +74,7 @@ public final class TransferListenerInvoker implements TransferListener {
         return listeners.isEmpty();
     }
 
-    private void forEach(Consumer<TransferListener> action) {
+    private void forEach(String callback, Consumer<TransferListener> action) {
         for (TransferListener listener : listeners) {
             try {
                 action.accept(listener);
@@ -78,7 +82,9 @@ public final class TransferListenerInvoker implements TransferListener {
                 if (e instanceof VirtualMachineError) {
                     throw e;
                 }
-                log.warn(() -> "Exception thrown in TransferListener " + listener + ", ignoring", e);
+                warnings.warn(log, IGNORED_LISTENER_FAILURE, listener.getClass().getName() + "#" + callback,
+                              () -> "Exception thrown in TransferListener " + listener + " " + callback
+                                    + ", ignoring; further failures of this callback are not logged", e);
             }
         }
     }

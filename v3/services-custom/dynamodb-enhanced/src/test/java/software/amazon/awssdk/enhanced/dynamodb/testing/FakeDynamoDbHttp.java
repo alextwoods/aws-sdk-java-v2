@@ -89,6 +89,7 @@ public final class FakeDynamoDbHttp implements SdkSyncHttpClient, SdkAsyncHttpCl
     private final HttpTransportMode mode;
     private final Queue<Fault> faults = new ConcurrentLinkedQueue<>();
     private final List<Recorded> requests = new CopyOnWriteArrayList<>();
+    private final List<String> userAgents = new CopyOnWriteArrayList<>();
     private final List<CancellationReason> cancellations = new CopyOnWriteArrayList<>();
     private final AtomicInteger aborts = new AtomicInteger();
     private final AtomicInteger openExchanges = new AtomicInteger();
@@ -138,6 +139,11 @@ public final class FakeDynamoDbHttp implements SdkSyncHttpClient, SdkAsyncHttpCl
         return List.copyOf(requests);
     }
 
+    /** The User-Agent header of each received request, in order ({@code "<none>"} without one). */
+    public List<String> userAgents() {
+        return List.copyOf(userAgents);
+    }
+
     /** Operations of the received requests, in order. */
     public List<String> operations() {
         return requests.stream().map(Recorded::operation).toList();
@@ -169,6 +175,7 @@ public final class FakeDynamoDbHttp implements SdkSyncHttpClient, SdkAsyncHttpCl
         Recorded recorded = new Recorded(target.substring(target.indexOf('.') + 1),
                                          new String(bytes, StandardCharsets.UTF_8), System.nanoTime());
         requests.add(recorded);
+        userAgents.add(request.headers().firstValue("User-Agent").orElse("<none>"));
         return recorded;
     }
 

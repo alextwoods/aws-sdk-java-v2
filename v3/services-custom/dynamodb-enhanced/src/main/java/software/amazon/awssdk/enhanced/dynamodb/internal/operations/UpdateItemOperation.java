@@ -33,6 +33,7 @@ import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.extensions.WriteModification;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.internal.extensions.DefaultDynamoDbExtensionContext;
 import software.amazon.awssdk.enhanced.dynamodb.internal.update.UpdateExpressionConverter;
 import software.amazon.awssdk.enhanced.dynamodb.internal.util.CollectionUtils;
@@ -236,14 +237,14 @@ public class UpdateItemOperation<T>
 
     @Override
     public Function<UpdateItemRequest, UpdateItemResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::updateItem;
+        return request -> dynamoDbClient.updateItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<UpdateItemRequest, CompletableFuture<UpdateItemResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::updateItem;
+        return request -> dynamoDbAsyncClient.updateItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

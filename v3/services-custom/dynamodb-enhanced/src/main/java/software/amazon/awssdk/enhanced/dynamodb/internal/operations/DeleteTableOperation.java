@@ -22,6 +22,7 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClientExtension;
 import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.DeleteTableRequest;
@@ -54,14 +55,14 @@ public class DeleteTableOperation<T> implements TableOperation<T, DeleteTableReq
 
     @Override
     public Function<DeleteTableRequest, DeleteTableResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::deleteTable;
+        return request -> dynamoDbClient.deleteTable(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<DeleteTableRequest, CompletableFuture<DeleteTableResponse>> asyncServiceCall(
             DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::deleteTable;
+        return request -> dynamoDbAsyncClient.deleteTable(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

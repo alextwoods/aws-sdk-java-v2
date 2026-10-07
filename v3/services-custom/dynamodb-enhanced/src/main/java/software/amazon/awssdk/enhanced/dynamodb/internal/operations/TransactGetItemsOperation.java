@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 import software.amazon.awssdk.enhanced.dynamodb.Document;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClientExtension;
 import software.amazon.awssdk.enhanced.dynamodb.internal.DefaultDocument;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactGetItemsEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -55,14 +56,14 @@ public class TransactGetItemsOperation
 
     @Override
     public Function<TransactGetItemsRequest, TransactGetItemsResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::transactGetItems;
+        return request -> dynamoDbClient.transactGetItems(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<TransactGetItemsRequest, CompletableFuture<TransactGetItemsResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::transactGetItems;
+        return request -> dynamoDbAsyncClient.transactGetItems(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

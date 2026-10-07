@@ -21,6 +21,7 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClientExtension;
 import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.model.DescribeTableEnhancedResponse;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -54,14 +55,14 @@ public class DescribeTableOperation<T> implements TableOperation<T, DescribeTabl
 
     @Override
     public Function<DescribeTableRequest, DescribeTableResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::describeTable;
+        return request -> dynamoDbClient.describeTable(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<DescribeTableRequest, CompletableFuture<DescribeTableResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::describeTable;
+        return request -> dynamoDbAsyncClient.describeTable(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

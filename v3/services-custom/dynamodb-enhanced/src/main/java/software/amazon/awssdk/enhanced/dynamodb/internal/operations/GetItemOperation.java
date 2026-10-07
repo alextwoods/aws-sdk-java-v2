@@ -22,6 +22,7 @@ import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUtils;
 import software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.GetItemEnhancedResponse;
@@ -91,14 +92,14 @@ public class GetItemOperation<T> implements TableOperation<T, GetItemRequest, Ge
 
     @Override
     public Function<GetItemRequest, GetItemResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::getItem;
+        return request -> dynamoDbClient.getItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<GetItemRequest, CompletableFuture<GetItemResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::getItem;
+        return request -> dynamoDbAsyncClient.getItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

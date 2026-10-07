@@ -52,12 +52,6 @@
             "knownGaps": [
                 {
                     "entries": [
-                        "behavior:dynamodb-enhanced.user-agent-feature"
-                    ],
-                    "reason": "The V3 enhanced clients add no user-agent API name or feature to their requests (V2: hll/ddb-enh)."
-                },
-                {
-                    "entries": [
                         "api:software.amazon.awssdk.core.async.SdkPublisher#*"
                     ],
                     "reason": "The V3 sdk-core SdkPublisher declares none of the V2 operators (map, filter, limit, flatMapIterable, buffer, subscribe(Consumer), doAfterOn*, addTrailingData, adapt, fromIterable), so V2 code that applies them to PagePublisher or its items() does not compile or link."

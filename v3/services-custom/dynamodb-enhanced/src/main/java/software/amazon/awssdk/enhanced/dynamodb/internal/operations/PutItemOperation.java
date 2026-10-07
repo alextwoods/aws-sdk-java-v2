@@ -25,6 +25,7 @@ import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.extensions.WriteModification;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUtils;
 import software.amazon.awssdk.enhanced.dynamodb.internal.extensions.DefaultDynamoDbExtensionContext;
 import software.amazon.awssdk.enhanced.dynamodb.internal.util.Either;
@@ -135,14 +136,14 @@ public class PutItemOperation<T>
 
     @Override
     public Function<PutItemRequest, PutItemResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::putItem;
+        return request -> dynamoDbClient.putItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<PutItemRequest, CompletableFuture<PutItemResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::putItem;
+        return request -> dynamoDbAsyncClient.putItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

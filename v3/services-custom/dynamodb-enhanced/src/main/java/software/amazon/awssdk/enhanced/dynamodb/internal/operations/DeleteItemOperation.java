@@ -25,6 +25,7 @@ import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUtils;
 import software.amazon.awssdk.enhanced.dynamodb.internal.util.Either;
 import software.amazon.awssdk.enhanced.dynamodb.model.DeleteItemEnhancedRequest;
@@ -111,14 +112,14 @@ public class DeleteItemOperation<T>
 
     @Override
     public Function<DeleteItemRequest, DeleteItemResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::deleteItem;
+        return request -> dynamoDbClient.deleteItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<DeleteItemRequest, CompletableFuture<DeleteItemResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::deleteItem;
+        return request -> dynamoDbAsyncClient.deleteItem(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

@@ -31,6 +31,7 @@ import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.document.EnhancedDocument;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.internal.VectorIndexUtils;
 import software.amazon.awssdk.enhanced.dynamodb.model.CreateTableEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
@@ -106,14 +107,14 @@ public class CreateTableOperation<T> implements TableOperation<T, CreateTableReq
 
     @Override
     public Function<CreateTableRequest, CreateTableResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::createTable;
+        return request -> dynamoDbClient.createTable(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<CreateTableRequest, CompletableFuture<CreateTableResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::createTable;
+        return request -> dynamoDbAsyncClient.createTable(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override

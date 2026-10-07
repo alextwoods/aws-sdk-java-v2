@@ -65,7 +65,6 @@ import software.amazon.awssdk.transfer.s3.internal.upload.FilePartSource;
 import software.amazon.awssdk.transfer.s3.internal.upload.MultipartUploader;
 import software.amazon.awssdk.transfer.s3.internal.upload.S3Requests;
 import software.amazon.awssdk.transfer.s3.internal.util.Futures;
-import software.amazon.awssdk.transfer.s3.internal.util.Log;
 import software.amazon.awssdk.transfer.s3.internal.util.Pages;
 import software.amazon.awssdk.transfer.s3.internal.util.Shapes;
 import software.amazon.awssdk.transfer.s3.internal.util.Validate;
@@ -92,6 +91,7 @@ import software.amazon.awssdk.transfer.s3.model.Upload;
 import software.amazon.awssdk.transfer.s3.model.UploadDirectoryRequest;
 import software.amazon.awssdk.transfer.s3.model.UploadFileRequest;
 import software.amazon.awssdk.transfer.s3.model.UploadRequest;
+import software.amazon.awssdk.utils.Logger;
 
 /**
  * The V3 {@link S3TransferManager}: every transfer runs over the public {@link S3AsyncClient} API, in its own
@@ -103,7 +103,7 @@ import software.amazon.awssdk.transfer.s3.model.UploadRequest;
  * {@link TransferScope.Reason#CANCELLED}, which cancels the transfer's requests and applies its cleanup policy.
  */
 public final class DefaultS3TransferManager implements S3TransferManager {
-    private static final Log log = Log.loggerFor(S3TransferManager.class);
+    private static final Logger log = Logger.loggerFor(S3TransferManager.class);
 
     private final TransferManagerConfiguration config;
     private final S3AsyncClient s3;

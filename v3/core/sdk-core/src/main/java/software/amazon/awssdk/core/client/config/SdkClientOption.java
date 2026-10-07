@@ -16,6 +16,9 @@
 package software.amazon.awssdk.core.client.config;
 
 import java.net.URI;
+import java.util.List;
+import software.amazon.awssdk.core.ApiName;
+import software.amazon.awssdk.core.override.SdkCallOption;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
@@ -34,6 +37,15 @@ public final class SdkClientOption {
 
     /** Shape ID of the protocol the client was built with, for example {@code aws.protocols#restXml}. */
     public static final ClientOption<ShapeId> PROTOCOL_ID = ClientOption.create("ProtocolId", ShapeId.class);
+
+    /**
+     * The {@link ApiName}s of the libraries that contribute to a call's user agent (Requirement 21.6), an immutable
+     * list. Clients set none; calls add theirs through {@link SdkCallOption#API_NAMES}
+     * ({@code RequestOverrideConfiguration.Builder#addApiName}).
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static final ClientOption<List<ApiName>> API_NAMES =
+        (ClientOption<List<ApiName>>) (ClientOption) ClientOption.create("ApiNames", List.class);
 
     private SdkClientOption() {
     }

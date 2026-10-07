@@ -32,12 +32,12 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.transfer.s3.internal.TransferScope;
 import software.amazon.awssdk.transfer.s3.internal.util.Futures;
-import software.amazon.awssdk.transfer.s3.internal.util.Log;
 import software.amazon.awssdk.transfer.s3.model.CompletedDirectoryUpload;
 import software.amazon.awssdk.transfer.s3.model.CompletedFileUpload;
 import software.amazon.awssdk.transfer.s3.model.FailedFileUpload;
 import software.amazon.awssdk.transfer.s3.model.UploadDirectoryRequest;
 import software.amazon.awssdk.transfer.s3.model.UploadFileRequest;
+import software.amazon.awssdk.utils.Logger;
 
 /**
  * {@code uploadDirectory}: walks the source tree on the I/O executor (lazily, one entry per free slot) and uploads
@@ -47,7 +47,7 @@ import software.amazon.awssdk.transfer.s3.model.UploadFileRequest;
  * whole transfer.
  */
 public final class DirectoryUploader {
-    private static final Log log = Log.loggerFor(DirectoryUploader.class);
+    private static final Logger log = Logger.loggerFor(DirectoryUploader.class);
     private static final String DEFAULT_DELIMITER = "/";
 
     private final Executor executor;

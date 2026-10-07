@@ -31,12 +31,12 @@ import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.transfer.s3.internal.TransferScope;
 import software.amazon.awssdk.transfer.s3.internal.util.Futures;
-import software.amazon.awssdk.transfer.s3.internal.util.Log;
 import software.amazon.awssdk.transfer.s3.model.CompletedDirectoryDownload;
 import software.amazon.awssdk.transfer.s3.model.CompletedFileDownload;
 import software.amazon.awssdk.transfer.s3.model.DownloadDirectoryRequest;
 import software.amazon.awssdk.transfer.s3.model.DownloadFileRequest;
 import software.amazon.awssdk.transfer.s3.model.FailedFileDownload;
+import software.amazon.awssdk.utils.Logger;
 
 /**
  * {@code downloadDirectory}: lists the bucket one page at a time and downloads each object to the path its key maps
@@ -47,7 +47,7 @@ import software.amazon.awssdk.transfer.s3.model.FailedFileDownload;
  * transfer.
  */
 public final class DirectoryDownloader {
-    private static final Log log = Log.loggerFor(DirectoryDownloader.class);
+    private static final Logger log = Logger.loggerFor(DirectoryDownloader.class);
     private static final String DEFAULT_DELIMITER = "/";
 
     private final S3AsyncClient s3;

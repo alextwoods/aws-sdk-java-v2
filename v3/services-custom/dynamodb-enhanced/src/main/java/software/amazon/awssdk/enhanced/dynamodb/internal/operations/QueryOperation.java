@@ -26,6 +26,7 @@ import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUtils;
 import software.amazon.awssdk.enhanced.dynamodb.internal.ProjectionExpression;
+import software.amazon.awssdk.enhanced.dynamodb.internal.async.KeyPages;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
@@ -98,12 +99,12 @@ public class QueryOperation<T> implements PaginatedTableOperation<T, QueryReques
 
     @Override
     public Function<QueryRequest, SdkIterable<QueryResponse>> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::queryPaginator;
+        return request -> KeyPages.query(dynamoDbClient, request);
     }
 
     @Override
     public Function<QueryRequest, SdkPublisher<QueryResponse>> asyncServiceCall(DynamoDbAsyncClient dynamoDbAsyncClient) {
-        return dynamoDbAsyncClient::queryPaginator;
+        return request -> KeyPages.query(dynamoDbAsyncClient, request);
     }
 
     @Override

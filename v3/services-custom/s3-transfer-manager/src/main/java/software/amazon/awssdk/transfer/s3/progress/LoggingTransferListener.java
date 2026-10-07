@@ -19,16 +19,19 @@ package software.amazon.awssdk.transfer.s3.progress;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.concurrent.atomic.AtomicInteger;
-import software.amazon.awssdk.transfer.s3.internal.util.Log;
+import software.amazon.awssdk.utils.Logger;
 
 /**
- * An example implementation of {@link TransferListener} that logs a progress bar at the {@code INFO} level of the JDK
- * {@link System.Logger} named after this class (ADAPTED from V2, which logs through SLF4J). This implementation
+ * An example implementation of {@link TransferListener} that logs a progress bar at the {@code DEBUG} level of the SDK
+ * logger ({@link Logger}, JDK platform logging) named after this class. ADAPTED from V2, which logs through SLF4J at
+ * {@code INFO} and logs a failed transfer at {@code WARN}: V3 runtime artifacts log nothing at {@code INFO}, and the
+ * failure, which the transfer's completion future reports to the caller, is logged at {@code DEBUG}
+ * (Requirements 21.9, 21.11). This implementation
  * effectively rate-limits how frequently updates are logged by only logging when a new "tick" advances in the progress bar. By
  * default, the progress bar has {@value #DEFAULT_MAX_TICKS} ticks, meaning an update is only logged, at most, once every 5%.
  */
 public final class LoggingTransferListener implements TransferListener {
-    private static final Log log = Log.loggerFor(LoggingTransferListener.class);
+    private static final Logger log = Logger.loggerFor(LoggingTransferListener.class);
     private static final int DEFAULT_MAX_TICKS = 20;
     private final ProgressBar progressBar;
 
@@ -54,7 +57,7 @@ public final class LoggingTransferListener implements TransferListener {
 
     @Override
     public void transferInitiated(Context.TransferInitiated context) {
-        log.info(() -> "Transfer initiated...");
+        log.debug(() -> "Transfer initiated...");
         context.progressSnapshot().ratioTransferred().ifPresent(progressBar::update);
     }
 
@@ -66,12 +69,12 @@ public final class LoggingTransferListener implements TransferListener {
     @Override
     public void transferComplete(Context.TransferComplete context) {
         context.progressSnapshot().ratioTransferred().ifPresent(progressBar::update);
-        log.info(() -> "Transfer complete!");
+        log.debug(() -> "Transfer complete!");
     }
 
     @Override
     public void transferFailed(Context.TransferFailed context) {
-        log.warn(() -> "Transfer failed.", context.exception());
+        log.debug(() -> "Transfer failed.", context.exception());
     }
 
     private static class ProgressBar {
@@ -85,7 +88,7 @@ public final class LoggingTransferListener implements TransferListener {
         void update(double ratio) {
             int ticks = (int) Math.floor(ratio * maxTicks);
             if (prevTicks.getAndSet(ticks) != ticks) {
-                log.info(() -> String.format("|%s%s| %s",
+                log.debug(() -> String.format("|%s%s| %s",
                                              "=".repeat(ticks),
                                              " ".repeat(maxTicks - ticks),
                                              round(ratio * 100, 1) + "%"));

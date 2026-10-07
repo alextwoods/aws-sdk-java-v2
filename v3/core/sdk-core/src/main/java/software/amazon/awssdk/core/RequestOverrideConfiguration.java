@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.client.config.TimeoutConfiguration;
 import software.amazon.awssdk.core.context.ContextKey;
@@ -115,6 +116,14 @@ public abstract class RequestOverrideConfiguration {
     public <T> Optional<T> callOption(CallOption<T> option) {
         Objects.requireNonNull(option, "option");
         return Optional.ofNullable(option.clientOption().cast(callOptions.get(option)));
+    }
+
+    /**
+     * The names of the libraries that built the request, in the order they were added (the
+     * {@link SdkCallOption#API_NAMES} delta); empty when none was added. Immutable.
+     */
+    public List<ApiName> apiNames() {
+        return callOption(SdkCallOption.API_NAMES).orElse(List.of());
     }
 
     /** Whether this override sets nothing, so a call using it behaves as if it had none. */
@@ -240,6 +249,18 @@ public abstract class RequestOverrideConfiguration {
 
         /** Every delta set, including timeouts, in insertion order. */
         Map<CallOption<?>, Object> callOptions();
+
+        /** The names of the libraries that built the request, in the order they were added. Immutable. */
+        List<ApiName> apiNames();
+
+        /**
+         * Adds the name of a library that built the request; the call's user agent carries it (Requirement 21.6).
+         * The same as {@code addCallOptionElement(SdkCallOption.API_NAMES, apiName)}.
+         */
+        B addApiName(ApiName apiName);
+
+        /** Adds the API name built by {@code apiNameConsumer}, as {@link #addApiName(ApiName)}. */
+        B addApiName(Consumer<ApiName.Builder> apiNameConsumer);
 
         RequestOverrideConfiguration build();
     }
@@ -431,6 +452,24 @@ public abstract class RequestOverrideConfiguration {
         @Override
         public Map<CallOption<?>, Object> callOptions() {
             return callOptionsWithTimeouts(timeouts.build());
+        }
+
+        @Override
+        public List<ApiName> apiNames() {
+            List<ApiName> apiNames = callOption(SdkCallOption.API_NAMES);
+            return apiNames == null ? List.of() : apiNames;
+        }
+
+        @Override
+        public B addApiName(ApiName apiName) {
+            return addCallOptionElement(SdkCallOption.API_NAMES, Objects.requireNonNull(apiName, "apiName"));
+        }
+
+        @Override
+        public B addApiName(Consumer<ApiName.Builder> apiNameConsumer) {
+            ApiName.Builder builder = ApiName.builder();
+            Objects.requireNonNull(apiNameConsumer, "apiNameConsumer").accept(builder);
+            return addApiName(builder.build());
         }
     }
 }

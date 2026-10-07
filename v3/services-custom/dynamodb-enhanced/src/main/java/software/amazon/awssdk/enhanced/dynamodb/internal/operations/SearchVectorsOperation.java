@@ -26,6 +26,7 @@ import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.enhanced.dynamodb.OperationContext;
 import software.amazon.awssdk.enhanced.dynamodb.TableMetadata;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUtils;
 import software.amazon.awssdk.enhanced.dynamodb.internal.ProjectionExpression;
 import software.amazon.awssdk.enhanced.dynamodb.internal.SearchVectorUtils;
@@ -156,12 +157,12 @@ public class SearchVectorsOperation<T> implements VectorIndexOperation<T, Search
 
     @Override
     public Function<SearchVectorsRequest, SearchVectorsResponse> serviceCall(DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::searchVectors;
+        return request -> dynamoDbClient.searchVectors(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<SearchVectorsRequest, CompletableFuture<SearchVectorsResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
-        return dynamoDbAsyncClient::searchVectors;
+        return request -> dynamoDbAsyncClient.searchVectors(request, EnhancedClientUserAgent.OVERRIDE);
     }
 }

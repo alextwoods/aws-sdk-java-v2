@@ -15,9 +15,9 @@
 
 package software.amazon.awssdk.enhanced.dynamodb.internal;
 
-import software.amazon.awssdk.enhanced.dynamodb.internal.util.Logger;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.BeanTableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.ImmutableTableSchema;
+import software.amazon.awssdk.utils.Logger;
 
 public class DynamoDbEnhancedLogger {
     /**

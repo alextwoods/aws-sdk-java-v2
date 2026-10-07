@@ -18,6 +18,7 @@ package software.amazon.awssdk.enhanced.dynamodb.internal.operations;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClientExtension;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedResponse;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
@@ -65,14 +66,14 @@ public class TransactWriteItemsOperation
     @Override
     public Function<TransactWriteItemsRequest, TransactWriteItemsResponse> serviceCall(
         DynamoDbClient dynamoDbClient) {
-        return dynamoDbClient::transactWriteItems;
+        return request -> dynamoDbClient.transactWriteItems(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
     @Override
     public Function<TransactWriteItemsRequest, CompletableFuture<TransactWriteItemsResponse>> asyncServiceCall(
         DynamoDbAsyncClient dynamoDbAsyncClient) {
 
-        return dynamoDbAsyncClient::transactWriteItems;
+        return request -> dynamoDbAsyncClient.transactWriteItems(request, EnhancedClientUserAgent.OVERRIDE);
     }
 
 }

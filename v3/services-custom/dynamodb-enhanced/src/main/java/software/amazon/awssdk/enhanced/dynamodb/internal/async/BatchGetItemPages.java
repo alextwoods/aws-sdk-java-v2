@@ -23,6 +23,7 @@ import software.amazon.awssdk.core.pagination.async.AsyncPageFetcher;
 import software.amazon.awssdk.core.pagination.async.PagePublisher;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.core.pagination.sync.SyncPageFetcher;
+import software.amazon.awssdk.enhanced.dynamodb.internal.EnhancedClientUserAgent;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.BatchGetItemRequest;
@@ -52,7 +53,7 @@ public final class BatchGetItemPages {
 
             @Override
             public BatchGetItemResponse nextPage(BatchGetItemResponse previousPage) {
-                return client.batchGetItem(nextRequest(firstRequest, previousPage));
+                return client.batchGetItem(nextRequest(firstRequest, previousPage), EnhancedClientUserAgent.OVERRIDE);
             }
         }).iterator();
     }
@@ -69,7 +70,7 @@ public final class BatchGetItemPages {
 
             @Override
             public CompletableFuture<BatchGetItemResponse> nextPage(BatchGetItemResponse previousPage) {
-                return client.batchGetItem(nextRequest(firstRequest, previousPage));
+                return client.batchGetItem(nextRequest(firstRequest, previousPage), EnhancedClientUserAgent.OVERRIDE);
             }
         }).subscribe(subscriber);
     }

@@ -68,8 +68,8 @@ import software.amazon.awssdk.enhanced.dynamodb.internal.converter.attribute.Uui
 import software.amazon.awssdk.enhanced.dynamodb.internal.converter.attribute.ZoneIdAttributeConverter;
 import software.amazon.awssdk.enhanced.dynamodb.internal.converter.attribute.ZoneOffsetAttributeConverter;
 import software.amazon.awssdk.enhanced.dynamodb.internal.converter.attribute.ZonedDateTimeAsStringAttributeConverter;
-import software.amazon.awssdk.enhanced.dynamodb.internal.util.Logger;
 import software.amazon.awssdk.enhanced.dynamodb.internal.util.Validate;
+import software.amazon.awssdk.utils.Logger;
 
 /**
  * This class is the default attribute converter provider in the DDB Enhanced library. When instantiated
