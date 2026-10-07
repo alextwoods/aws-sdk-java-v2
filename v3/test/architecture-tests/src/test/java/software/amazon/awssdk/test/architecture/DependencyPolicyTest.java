@@ -177,11 +177,14 @@ class DependencyPolicyTest {
 
     @Test
     void minimalServiceTreeIsTheDocumentedRequiredRuntimeSet() {
-        // Requirement 15.9: the documented service-and-required-runtime set for a restXml service such as S3.
+        // Requirement 15.9: the documented service-and-required-runtime set for a restXml service such as S3. It
+        // includes the Telemetry SPI contract (task 16.2: the pipeline's telemetry stage and the generated builders'
+        // telemetry settings), never an exporter (Requirement 15.7).
         Set<String> minimal = policy.requiredClosure(policy.serviceTemplate(), Set.of("rest-xml-protocol"));
         assertEquals(new TreeSet<>(Set.of("aws-core", "aws-pipeline", "auth-api", "checksums", "endpoints",
                                           "http-spi", "identity-spi", "protocol-core", "regions",
-                                          "rest-xml-protocol", "retries", "sdk-core", "smithy-runtime")),
+                                          "rest-xml-protocol", "retries", "sdk-core", "smithy-runtime",
+                                          "telemetry-spi")),
                      minimal);
         assertThrows(IllegalArgumentException.class,
                      () -> policy.requiredClosure(policy.serviceTemplate(), Set.of()));

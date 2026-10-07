@@ -43,20 +43,25 @@ import software.amazon.awssdk.http.provider.ResolvedHttpClient;
 import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.IdentityProviders;
+import software.amazon.awssdk.metrics.MetricPublisher;
 import software.amazon.awssdk.pipeline.AuthOptionsResolver;
 import software.amazon.awssdk.pipeline.AwsCallEngine;
 import software.amazon.awssdk.pipeline.AwsFeaturePlugin;
 import software.amazon.awssdk.pipeline.ClientRuntime;
 import software.amazon.awssdk.pipeline.ExecutionInterceptor;
+import software.amazon.awssdk.pipeline.UserAgent;
 import software.amazon.awssdk.protocols.core.InstalledProtocols;
 import software.amazon.awssdk.protocols.core.ProtocolProvider;
 import software.amazon.awssdk.protocols.core.ProtocolSelector;
 import software.amazon.awssdk.protocols.core.SelectedProtocol;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.retries.DefaultRetryScheduler;
+import software.amazon.awssdk.retries.RetryMode;
 import software.amazon.awssdk.retries.RetryScheduler;
 import software.amazon.awssdk.retries.RetryStrategy;
 import software.amazon.awssdk.retries.StandardRetryStrategy;
+import software.amazon.awssdk.telemetry.spi.TelemetryConfiguration;
+import software.amazon.awssdk.telemetry.spi.TelemetryOptions;
 
 /**
  * The mutable option state behind every generated {@code <Service>ClientBuilder} and
@@ -90,6 +95,7 @@ public final class AwsClientBuildState {
     private AuthSchemeSelector authSchemeSelector;
     private AuthOptionsResolver authOptions = AuthOptionsResolver.modeled();
     private ConfigurationSources sources = ConfigurationSources.system();
+    private TelemetryConfiguration.Builder telemetry;
     private final List<ExecutionInterceptor> interceptors = new ArrayList<>();
     private final List<AwsFeaturePlugin> plugins = new ArrayList<>();
 
@@ -159,6 +165,24 @@ public final class AwsClientBuildState {
     }
 
     /**
+     * The client's telemetry (Requirements 15.7, 21.2-21.5): replaces the publishers and failure channel set so far;
+     * caller-owned publishers the client never closes. Without one, or with no publisher, the client has no
+     * telemetry.
+     */
+    public void telemetry(TelemetryConfiguration telemetry) {
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry").toBuilder();
+    }
+
+    /** Appends a V2-compatible metric publisher to the client's telemetry. */
+    public void addMetricPublisher(MetricPublisher publisher) {
+        Objects.requireNonNull(publisher, "publisher");
+        if (telemetry == null) {
+            telemetry = TelemetryConfiguration.builder();
+        }
+        telemetry.addMetricPublisher(publisher);
+    }
+
+    /**
      * Appends a feature plugin of every plan of the client ({@link ClientRuntime.Builder#addPlugin}); plugins configure
      * plans in registration order, and a second plugin with the same ID fails the build.
      */
@@ -204,6 +228,9 @@ public final class AwsClientBuildState {
             }
             if (endpointOverride != null) {
                 values.option(SdkClientOption.CLIENT_ENDPOINT, endpointOverride);
+            }
+            if (telemetry != null) {
+                values.option(TelemetryOptions.TELEMETRY, telemetry.build());
             }
 
             SdkSyncHttpClient sync = null;
@@ -280,6 +307,17 @@ public final class AwsClientBuildState {
                    .authSchemeSelector(authSchemeSelector);
             service.rules().ifPresent(runtime::endpointRules);
             runtime.endpointClientValues(endpointValues(configuration));
+            runtime.telemetryDimensions(service.serviceName(), sync != null ? sync.clientName()
+                                                               : async != null ? async.clientName() : "none");
+            if (!signingOnly) {
+                // Presigned requests carry no SDK user agent; calls of clients send one (Requirement 21.6).
+                runtime.userAgent(UserAgent.builder()
+                                           .serviceName(service.serviceName())
+                                           .httpImplementation(sync != null ? sync.clientName() : async.clientName())
+                                           .retryMode(retryStrategy != null ? UserAgent.retryMode(retryStrategy)
+                                                                            : RetryMode.STANDARD.value())
+                                           .build());
+            }
             interceptors.forEach(runtime::addInterceptor);
             plugins.forEach(runtime::addPlugin);
             ClientRuntime built = runtime.build();

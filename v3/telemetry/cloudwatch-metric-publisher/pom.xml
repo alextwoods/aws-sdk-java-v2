@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-telemetry</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+
+    <!-- The V2 coordinates (Parity Manifest artifact:software.amazon.awssdk:cloudwatch-metric-publisher). -->
+    <artifactId>cloudwatch-metric-publisher</artifactId>
+    <name>AWS Java SDK V3 :: Telemetry :: CloudWatch Metric Publisher</name>
+    <description>Opt-in telemetry exporter that uploads SDK metrics to Amazon CloudWatch through the generated V3
+        CloudWatch client.</description>
+
+    <properties>
+        <!-- The V2 release the Parity Manifest baselines (tools/parity-manifest v3.v2Baseline.version). Its
+             cloudwatch-metric-publisher jar is copied into target/v2-baseline for
+             CloudWatchV2ApiDescriptorParityTest and never put on any class path. -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>telemetry-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The logging facade (software.amazon.awssdk.utils.Logger, WarningSuppression). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The public API of the generated V3 CloudWatch client and model only. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cloudwatch</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${v3.assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>v2-baseline</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-baseline</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>cloudwatch-metric-publisher</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.v2Baseline.dir>${project.build.directory}/v2-baseline</v3.v2Baseline.dir>
+                        <v3.v2Baseline.version>${v3.v2Baseline.version}</v3.v2Baseline.version>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -65,6 +65,13 @@
             <artifactId>http-spi</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- The Telemetry SPI contract only (records, publisher, configuration); never an exporter. Its records are
+             emitted only when a client configures a publisher (Requirements 15.7, 21.5). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>telemetry-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

@@ -69,7 +69,8 @@
         -Dv3.aggregate=services      v3-services: the fleet build: code generator, every generated service artifact
                                      (services/, one module per V2 baseline service module) and the fleet gate
                                      (tools/service-fleet)
-        -Dv3.aggregate=high-level    v3-high-level: services plus high-level libraries (services-custom)
+        -Dv3.aggregate=high-level    v3-high-level: services plus high-level libraries (services-custom) and the
+                                     opt-in telemetry exporters (telemetry/cloudwatch-metric-publisher)
         -Dv3.aggregate=migration     v3-migration: high-level libraries plus the V2 migration tooling and the V2
                                      Migration Corpus (test/v2-migration-tests, with the parity-manifest and
                                      release-evidence tooling it generates the manifest with and reports to)
@@ -238,7 +239,9 @@
                 <module>http-client-spi</module>
                 <!-- core/identity-providers tests run the providers over this transport (test scope). -->
                 <module>http-clients/url-connection-client</module>
-                <module>telemetry</module>
+                <!-- aws-pipeline requires the Telemetry SPI contract (task 16.2); the opt-in exporters under
+                     telemetry/ need generated services and build in the profiles with services. -->
+                <module>telemetry/telemetry-spi</module>
                 <module>dynamic</module>
             </modules>
         </profile>
@@ -255,6 +258,8 @@
                 <module>core</module>
                 <module>protocols</module>
                 <module>http-client-spi</module>
+                <!-- aws-pipeline requires the Telemetry SPI contract (task 16.2). -->
+                <module>telemetry/telemetry-spi</module>
                 <module>http-clients</module>
             </modules>
         </profile>
@@ -271,6 +276,8 @@
                 <module>core</module>
                 <module>protocols</module>
                 <module>http-client-spi</module>
+                <!-- aws-pipeline requires the Telemetry SPI contract (task 16.2). -->
+                <module>telemetry/telemetry-spi</module>
                 <!-- core/identity-providers tests run the providers over this transport (test scope). -->
                 <module>http-clients/url-connection-client</module>
                 <module>codegen</module>
@@ -293,11 +300,15 @@
                 <module>core</module>
                 <module>protocols</module>
                 <module>http-client-spi</module>
+                <!-- aws-pipeline requires the Telemetry SPI contract (task 16.2). -->
+                <module>telemetry/telemetry-spi</module>
                 <!-- core/identity-providers tests run the providers over this transport (test scope). -->
                 <module>http-clients/url-connection-client</module>
                 <module>codegen</module>
                 <module>services</module>
                 <module>services-custom</module>
+                <!-- Opt-in telemetry exporters over generated service clients (task 16.2). -->
+                <module>telemetry/cloudwatch-metric-publisher</module>
             </modules>
         </profile>
         <profile>
@@ -313,6 +324,8 @@
                 <module>core</module>
                 <module>protocols</module>
                 <module>http-client-spi</module>
+                <!-- aws-pipeline requires the Telemetry SPI contract (task 16.2). -->
+                <module>telemetry/telemetry-spi</module>
                 <!-- core/identity-providers tests run the providers over this transport (test scope). -->
                 <module>http-clients/url-connection-client</module>
                 <module>codegen</module>
@@ -366,6 +379,8 @@
                 <module>core</module>
                 <module>protocols</module>
                 <module>http-client-spi</module>
+                <!-- aws-pipeline requires the Telemetry SPI contract (task 16.2). -->
+                <module>telemetry/telemetry-spi</module>
                 <module>http-clients</module>
                 <module>codegen</module>
                 <module>services</module>

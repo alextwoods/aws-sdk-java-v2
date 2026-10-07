@@ -92,8 +92,9 @@ EnhancedClientSyncAsyncParityTest artifact:software.amazon.awssdk:dynamodb-enhan
 EnhancedClientFaultInjectionTest behavior:dynamodb-enhanced.mapping
 EnhancedClientConcurrencyTest behavior:dynamodb-enhanced.mapping
 # The lifecycle behaviors of the enhanced clients (task 14.6), one entry per aspect; their test methods are listed in
-# high-level-library-matrix.json. behavior:dynamodb-enhanced.user-agent-feature and behavior:errors.unmodeled-error-code
-# are known gaps: no V3 artifact declares them and no hook verifies them, so the launch gate blocks them.
+# high-level-library-matrix.json. behavior:errors.unmodeled-error-code is a known gap: no V3 artifact declares it and
+# no hook verifies it, so the launch gate blocks it. behavior:dynamodb-enhanced.user-agent-feature is bound with the
+# task 16.3 suites below.
 EnhancedClientFaultInjectionTest behavior:dynamodb-enhanced.async-cancellation behavior:dynamodb-enhanced.failure-cleanup behavior:dynamodb-enhanced.fault-handling
 EnhancedClientConcurrencyTest behavior:dynamodb-enhanced.concurrency
 # Source claim of api:software.amazon.awssdk.enhanced.dynamodb.* (classification-rules.json dynamodb-enhanced-api):
@@ -125,3 +126,37 @@ AwsAuthSchemeOptionsTest
 # The public API scan of tools/parity-manifest (task 15.4; Requirements 18.1-18.6): no EXCLUDED contract ships in the
 # V3 release artifacts, and every deprecated PRESERVED api: entry (the deprecated-*-shipped rules) ships exactly.
 ExcludedContractsAbsentTest
+# Telemetry (task 16.2; Requirements 15.7, 16.10, 21.2-21.5, 21.14, 21.15): the V2 metrics API in telemetry-spi
+# (descriptor parity against the V2 metrics-spi and sdk-core baseline jars, and its V2 behavior), the pipeline's
+# terminal call and attempt records over both drivers with isolated callback failures, the V2 MetricPublisher bridge,
+# and the separate opt-in cloudwatch-metric-publisher exporter over the generated V3 CloudWatch client. Their api: and
+# behavior: entries name them through classification-rules.json (metrics-spi-api, metrics-spi-artifact,
+# metrics-logging-publisher-*, core-metric-api, cloudwatch-metric-publisher-api,
+# telemetry-metrics-publishing-behavior).
+MetricsV2ApiDescriptorParityTest
+MetricsApiTest
+LoggingMetricPublisherTest
+PipelineTelemetryTest
+TelemetrySpiTest
+CloudWatchV2ApiDescriptorParityTest
+CloudWatchMetricPublisherTest artifact:software.amazon.awssdk:cloudwatch-metric-publisher
+# Response and exception metadata (task 16.1; Requirements 21.1, 21.13): aws-core's response, metadata-view and error
+# metadata types, and the pipeline's propagation of request IDs, status, error code, attempt count and transport
+# facts to responses and surfaced exceptions on both drivers. Their api: entries name them through
+# classification-rules.json (sdk-response-*-sdk-http-response-*).
+AwsResponseTest
+ResponseMetadataPropagationTest
+# Logging, redaction and user agent (task 16.3; Requirements 15.8, 21.6-21.12): the sdk-core logging facade,
+# redaction and warning-suppression suites, the ApiName/addApiName suite, the pipeline's user-agent and request-log
+# suites over both drivers, the runtime-bytecode logging architecture check, and the DynamoDB Enhanced Client's
+# user-agent feature over its sync and async clients. Their api: and behavior: entries name them through
+# classification-rules.json (logging-facade-*, logging-behavior, api-name-user-agent-api, request-override-*-api-name*,
+# dynamodb-enhanced-user-agent-feature-behavior).
+LoggerTest
+RedactionTest
+WarningSuppressionTest
+ApiNameTest
+UserAgentTest
+RequestLoggingTest
+RuntimeLoggingArchitectureTest
+EnhancedClientUserAgentTest behavior:dynamodb-enhanced.user-agent-feature

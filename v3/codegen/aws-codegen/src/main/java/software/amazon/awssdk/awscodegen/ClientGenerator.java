@@ -79,6 +79,8 @@ final class ClientGenerator {
     private static final Symbol SYNC_HTTP = jdk("software.amazon.awssdk.http", "SdkSyncHttpClient");
     private static final Symbol ASYNC_HTTP = jdk("software.amazon.awssdk.http", "SdkAsyncHttpClient");
     private static final Symbol INTERCEPTOR = jdk("software.amazon.awssdk.pipeline", "ExecutionInterceptor");
+    private static final Symbol TELEMETRY = jdk("software.amazon.awssdk.telemetry.spi", "TelemetryConfiguration");
+    private static final Symbol METRIC_PUBLISHER = jdk("software.amazon.awssdk.metrics", "MetricPublisher");
     private static final Symbol ENGINE = jdk("software.amazon.awssdk.pipeline", "AwsCallEngine");
     private static final Symbol RUNTIME = jdk("software.amazon.awssdk.pipeline", "ClientRuntime");
     private static final Symbol PLAN = jdk("software.amazon.awssdk.pipeline", "PipelinePlan");
@@ -489,6 +491,17 @@ final class ClientGenerator {
                 writer.write("/** Appends an interceptor of every call of the client. */");
                 writer.write("$L addExecutionInterceptor($T interceptor);", type.getName(), INTERCEPTOR);
                 writer.write("");
+                writer.write("/**");
+                writer.write(" * The client's telemetry: its publishers of terminal call and attempt records and its");
+                writer.write(" * telemetry failure channel. Opt-in: without a publisher the client does no");
+                writer.write(" * telemetry work.");
+                writer.write(" */");
+                writer.write("$L telemetry($T telemetry);", type.getName(), TELEMETRY);
+                writer.write("");
+                writer.write("/** Appends a V2-style metric publisher: one {@code ApiCall} collection per call. */");
+                writer.write("$L addMetricPublisher($T metricPublisher);", type.getName(),
+                             METRIC_PUBLISHER);
+                writer.write("");
                 writer.write("/** Resolves the configuration once and builds the client. */");
                 writer.write("$T build();", client);
             });
@@ -521,6 +534,9 @@ final class ClientGenerator {
                 }
                 setter(writer, builder, "addExecutionInterceptor", writer.format("$T", INTERCEPTOR),
                        "addInterceptor");
+                setter(writer, builder, "telemetry", writer.format("$T", TELEMETRY), "telemetry");
+                setter(writer, builder, "addMetricPublisher", writer.format("$T", METRIC_PUBLISHER),
+                       "addMetricPublisher");
                 writer.write("@Override");
                 writer.openBlock("public $T build() {", "}", client,
                                  () -> writer.write("return new $T(state.$L(definition()));", defaultClient,

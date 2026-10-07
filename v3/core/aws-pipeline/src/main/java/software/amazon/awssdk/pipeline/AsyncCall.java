@@ -502,6 +502,8 @@ final class AsyncCall<I extends SerializableStruct, O extends SerializableStruct
             attempt.complete();
             attempt = null;
         }
+        // A call cancelled by its caller ends here, after its attempt: its terminal telemetry record, if not emitted.
+        stages.telemetryEnded(call);
         boolean succeeded = terminal.status() == TerminalState.Status.SUCCEEDED;
         if (transforming && !transformerDone && !succeeded) {
             // The call failed or was cancelled while the transformer consumed the payload: it releases its output.

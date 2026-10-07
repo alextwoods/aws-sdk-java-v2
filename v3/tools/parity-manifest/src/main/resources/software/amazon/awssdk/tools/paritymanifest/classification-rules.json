@@ -302,6 +302,153 @@
             ]
         },
         {
+            "name": "metrics-spi-api",
+            "comment": "Task 16.2. The V3 telemetry-spi artifact ships the whole V2 metrics-spi public API (MetricPublisher, MetricCollection, MetricCollector, SdkMetric, MetricCategory, MetricLevel, MetricRecord, NoOpMetricCollector, LoggingMetricPublisher) under the V2 names, so V2 publishers compile against V3. Source claim: MetricsV2ApiDescriptorParityTest compares every public and protected member of every non-internal type of the V2 baseline metrics-spi jar with V3 by name and JVM descriptor; MetricsApiTest and LoggingMetricPublisherTest verify the V2 behavior of the ported types. The more specific metrics-logging-publisher-* rules are its ADAPTED members, and cloudwatch-metric-publisher-api covers the publishers.cloudwatch package.",
+            "match": {
+                "id": "api:software.amazon.awssdk.metrics.*",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "The V3 metrics API types keep the V2 fully qualified names, members, overloads and JVM descriptors, so V2 source that implements or uses them compiles unchanged.",
+            "v3Artifact": "software.amazon.awssdk:telemetry-spi",
+            "evidenceIds": [
+                "MetricsV2ApiDescriptorParityTest",
+                "MetricsApiTest"
+            ]
+        },
+        {
+            "name": "metrics-logging-publisher-slf4j-level",
+            "comment": "Task 16.2. V3 declares no logging dependency and exposes no logging type (Requirement 15.8), and its runtime artifacts emit no INFO-level events (Requirement 21.9), so the SLF4J Level overload is replaced by an overload taking the V3 LoggingMetricPublisher.LogLevel (DEBUG or TRACE). MetricsV2ApiDescriptorParityTest checks that this is the only V2 member it does not ship and that the replacement exists; LoggingMetricPublisherTest checks the levels; RuntimeLoggingArchitectureTest checks that the publisher logs only through the sdk-core facade.",
+            "match": {
+                "id": "api:software.amazon.awssdk.metrics.LoggingMetricPublisher#create(Lorg/slf4j/event/Level;Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher$Format;)Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher;"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "LoggingMetricPublisher logs through the SDK logging facade (software.amazon.awssdk.utils.Logger) instead of SLF4J, at DEBUG or TRACE, so its level parameter is the V3 LoggingMetricPublisher.LogLevel.",
+            "differences": [
+                "The level parameter is software.amazon.awssdk.metrics.LoggingMetricPublisher.LogLevel (DEBUG or TRACE) instead of org.slf4j.event.Level; V2's INFO, WARN and ERROR levels are not available because V3 runtime artifacts emit no INFO-level events and metric dumps are not warnings.",
+                "Collections are logged through the SDK logging facade over JDK platform logging (java.util.logging unless the application installs a platform-logging bridge such as org.slf4j:slf4j-jdk-platform-logging) under the V2 logger name software.amazon.awssdk.metrics.LoggingMetricPublisher, instead of the SLF4J logger of that name."
+            ],
+            "v3Artifact": "software.amazon.awssdk:telemetry-spi",
+            "replacement": "api:software.amazon.awssdk.metrics.LoggingMetricPublisher#create(Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher$LogLevel;Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher$Format;)Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Pass LoggingMetricPublisher.LogLevel.TRACE for SLF4J TRACE and LoggingMetricPublisher.LogLevel.DEBUG for any other level, and enable that level for the software.amazon.awssdk.metrics.LoggingMetricPublisher logger.",
+            "evidenceIds": [
+                "MetricsV2ApiDescriptorParityTest",
+                "LoggingMetricPublisherTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "metrics-logging-publisher-default-level",
+            "comment": "Task 16.2. Same signature; V3 runtime artifacts emit no INFO-level events (Requirement 21.9), so the default level is DEBUG where V2's is INFO. LoggingMetricPublisherTest checks that create() logs at DEBUG (java.util.logging FINE) under the V2 logger name and that no publisher level is INFO or above.",
+            "match": {
+                "id": "api:software.amazon.awssdk.metrics.LoggingMetricPublisher#create()Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher;"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "LoggingMetricPublisher.create() keeps its V2 signature and PLAIN format; it logs at DEBUG instead of INFO, through the SDK logging facade.",
+            "differences": [
+                "The default publisher logs at DEBUG instead of V2's INFO: V3 runtime artifacts emit no INFO-level events (Requirement 21.9).",
+                "Collections are logged through the SDK logging facade (software.amazon.awssdk.utils.Logger, over JDK platform logging) under the V2 logger name instead of through SLF4J."
+            ],
+            "v3Artifact": "software.amazon.awssdk:telemetry-spi",
+            "replacement": "api:software.amazon.awssdk.metrics.LoggingMetricPublisher#create(Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher$LogLevel;Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher$Format;)Lsoftware/amazon/awssdk/metrics/LoggingMetricPublisher;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Enable DEBUG for the software.amazon.awssdk.metrics.LoggingMetricPublisher logger to see the collections V2 logged at INFO.",
+            "evidenceIds": [
+                "LoggingMetricPublisherTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "core-metric-api",
+            "comment": "Task 16.2. V2 sdk-core's CoreMetric constants ship in V3 telemetry-spi (V3 sdk-core cannot depend on the metrics API) with V2's names, value types, levels and category; MetricsV2ApiDescriptorParityTest compares every V2 member by name and JVM descriptor. Source claim only: the V3 pipeline reports the service ID, operation name, success, call duration, retry count, error type and attempt duration (PipelineTelemetryTest, TelemetrySpiTest), not the finer-grained V2 stage timings, so no behavior dimension is claimed for the constants.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.metrics.*",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "CoreMetric keeps its V2 fully qualified name and every V2 constant with its V2 JVM descriptor, so V2 source that reads these metrics compiles unchanged.",
+            "v3Artifact": "software.amazon.awssdk:telemetry-spi",
+            "evidenceIds": [
+                "MetricsV2ApiDescriptorParityTest"
+            ]
+        },
+        {
+            "name": "cloudwatch-metric-publisher-api",
+            "comment": "Task 16.2. The separate opt-in V3 cloudwatch-metric-publisher artifact (Requirement 15.7) keeps the V2 CloudWatchMetricPublisher API over the generated V3 CloudWatchAsyncClient. Source claim: CloudWatchV2ApiDescriptorParityTest compares every public member of the V2 baseline jar by name and JVM descriptor; CloudWatchMetricPublisherTest verifies V2's aggregation, dimensions, category and level filtering, detailed metrics, request limits, upload schedule and client ownership over the records the V3 pipeline emits.",
+            "match": {
+                "id": "api:software.amazon.awssdk.metrics.publishers.cloudwatch.*",
+                "deprecated": false
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "CloudWatchMetricPublisher and its Builder keep the V2 fully qualified names, members and JVM descriptors, so V2 source that configures the publisher compiles unchanged.",
+            "v3Artifact": "software.amazon.awssdk:cloudwatch-metric-publisher",
+            "evidenceIds": [
+                "CloudWatchV2ApiDescriptorParityTest",
+                "CloudWatchMetricPublisherTest"
+            ]
+        },
+        {
+            "name": "metrics-spi-artifact",
+            "comment": "Task 16.2. The V2 metrics-spi artifact. Its public API (the metrics-spi-api entries) ships unchanged in the V3 telemetry-spi artifact, which also holds the V3 Telemetry SPI (the design's telemetry-spi module); V3 builds no metrics-spi artifact, so a dependency on it moves to telemetry-spi, which the dependency recipes rewrite from this entry's replacement.",
+            "match": {
+                "id": "artifact:software.amazon.awssdk:metrics-spi"
+            },
+            "classification": "ADAPTED",
+            "rationale": "V3 ships the V2 metrics API (software.amazon.awssdk.metrics) with its V2 names and descriptors in its telemetry-spi module.",
+            "differences": [
+                "V3 has no metrics-spi artifact: the software.amazon.awssdk.metrics types, and V2 sdk-core's software.amazon.awssdk.core.metrics.CoreMetric, ship in software.amazon.awssdk:telemetry-spi (see the metrics-spi-api and core-metric-api entries)."
+            ],
+            "v3Artifact": "software.amazon.awssdk:telemetry-spi",
+            "replacement": "artifact:software.amazon.awssdk:telemetry-spi",
+            "migrationKind": "RECIPE",
+            "migration": "Depend on software.amazon.awssdk:telemetry-spi instead; the migration tool rewrites the dependency coordinates.",
+            "evidenceIds": [
+                "MetricsV2ApiDescriptorParityTest",
+                "MetricsApiTest"
+            ]
+        },
+        {
+            "name": "telemetry-metrics-publishing-behavior",
+            "comment": "Task 16.2. The V3 pipeline emits one terminal record per attempt and per call to every configured publisher (Requirements 21.2-21.4), isolates callback failures in the telemetry failure channel (21.14, 21.15) and does no telemetry work without a publisher (21.5); a configured MetricPublisher receives one V2-shaped ApiCall collection with ApiCallAttempt children per call.",
+            "match": {
+                "id": "behavior:telemetry.metrics-publishing"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "behavior"
+            ],
+            "rationale": "Per-call and per-attempt core metrics are collected and delivered to configured MetricPublishers, once per call, as in V2, through the V3 Telemetry SPI.",
+            "differences": [
+                "Each ApiCall collection reports ServiceId, OperationName, ApiCallSuccessful, ApiCallDuration, RetryCount, ErrorType (failed calls) and RetryMode, and each ApiCallAttempt child ServiceCallDuration (the whole attempt), HttpClientName, HttpStatusCode and ErrorType (failed attempts); V2's per-stage timings (marshalling, signing, credentials, endpoint, backoff, time to first/last byte, throughput), request IDs, service endpoint and HTTP client pool metrics are not reported.",
+                "Publishers are configured with the client builders' addMetricPublisher or telemetry(TelemetryConfiguration) instead of ClientOverrideConfiguration, and per-request publishers are not supported.",
+                "A publisher that throws does not fail the call; its failure goes to the configured TelemetryFailureListener (by default, through the SDK logging facade under the software.amazon.awssdk.telemetry logger, one WARN per publisher and callback, then DEBUG)."
+            ],
+            "v3Artifact": "software.amazon.awssdk:telemetry-spi",
+            "replacement": "api:software.amazon.awssdk.telemetry.spi.TelemetryPublisher",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Register MetricPublishers with the client builder's addMetricPublisher (or implement TelemetryPublisher for the V3 call and attempt records); move per-request publishers to the client.",
+            "evidenceIds": [
+                "PipelineTelemetryTest",
+                "TelemetrySpiTest"
+            ]
+        },
+        {
             "name": "legacy-retry-policy",
             "comment": "V2 RetryPolicy and its builder are deprecated in favor of Modern Retry (Requirement 18).",
             "match": {
@@ -1286,6 +1433,239 @@
             ]
         },
         {
+            "name": "logging-facade-api",
+            "comment": "Task 16.3; Requirements 15.8, 21.8, 21.9. The sdk-core logging facade keeps the V2 utils Logger name and its loggerFor, trace, debug, warn, error and isLoggingLevelEnabled(String) members with their V2 descriptors, over JDK platform logging instead of SLF4J. The INFO and SLF4J-typed members are the ADAPTED logging-facade-* rules below.",
+            "match": {
+                "id": "api:software.amazon.awssdk.utils.Logger*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "V2 source that obtains a Logger with loggerFor and logs lazily through Supplier messages at TRACE, DEBUG, WARN or ERROR, or asks isLoggingLevelEnabled(String), compiles unchanged against V3.",
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "evidenceIds": [
+                "LoggerTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "logging-facade-no-info",
+            "comment": "Task 16.3; Requirements 15.8, 21.9. A V2 Logger member the V3 facade does not declare.",
+            "match": {
+                "id": "api:software.amazon.awssdk.utils.Logger#info(Ljava/util/function/Supplier;)V"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "The V3 facade has no INFO level: runtime artifacts emit no INFO events (Requirement 21.9).",
+            "differences": [
+                "The V3 facade has no INFO level: runtime artifacts emit no INFO events (Requirement 21.9)."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.utils.Logger#debug(Ljava/util/function/Supplier;)V",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Log the message with debug(Supplier) instead of info(Supplier).",
+            "evidenceIds": [
+                "LoggerTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "logging-facade-no-info-throwable",
+            "comment": "Task 16.3; Requirements 15.8, 21.9. A V2 Logger member the V3 facade does not declare.",
+            "match": {
+                "id": "api:software.amazon.awssdk.utils.Logger#info(Ljava/util/function/Supplier;Ljava/lang/Throwable;)V"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "The V3 facade has no INFO level: runtime artifacts emit no INFO events (Requirement 21.9).",
+            "differences": [
+                "The V3 facade has no INFO level: runtime artifacts emit no INFO events (Requirement 21.9)."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.utils.Logger#debug(Ljava/util/function/Supplier;Ljava/lang/Throwable;)V",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Log the message with debug(Supplier, Throwable) instead of info(Supplier, Throwable).",
+            "evidenceIds": [
+                "LoggerTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "logging-facade-no-slf4j-logger",
+            "comment": "Task 16.3; Requirements 15.8, 21.9. A V2 Logger member the V3 facade does not declare.",
+            "match": {
+                "id": "api:software.amazon.awssdk.utils.Logger#logger()Lorg/slf4j/Logger;"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "The V3 facade exposes no SLF4J type (Requirement 15.8), so it has no logger() accessor of the SLF4J logger.",
+            "differences": [
+                "The V3 facade exposes no SLF4J type (Requirement 15.8), so it has no logger() accessor of the SLF4J logger."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.utils.Logger#name()Ljava/lang/String;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Obtain the backend logger from the logging framework by the facade's name(), for example LoggerFactory.getLogger(logger.name()).",
+            "evidenceIds": [
+                "LoggerTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "logging-facade-no-slf4j-level-query",
+            "comment": "Task 16.3; Requirements 15.8, 21.9. A V2 Logger member the V3 facade does not declare.",
+            "match": {
+                "id": "api:software.amazon.awssdk.utils.Logger#isLoggingLevelEnabled(Lorg/slf4j/event/Level;)Z"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "The V3 facade exposes no SLF4J type (Requirement 15.8), so levels are queried by name.",
+            "differences": [
+                "The V3 facade exposes no SLF4J type (Requirement 15.8), so levels are queried by name."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.utils.Logger#isLoggingLevelEnabled(Ljava/lang/String;)Z",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Call isLoggingLevelEnabled with the level name (\"trace\", \"debug\", \"info\", \"warn\" or \"error\").",
+            "evidenceIds": [
+                "LoggerTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "logging-facade-no-slf4j-level-log",
+            "comment": "Task 16.3; Requirements 15.8, 21.9. A V2 Logger member the V3 facade does not declare.",
+            "match": {
+                "id": "api:software.amazon.awssdk.utils.Logger#log(Lorg/slf4j/event/Level;Ljava/util/function/Supplier;)V"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "The V3 facade exposes no SLF4J type (Requirement 15.8) and has no INFO level, so it has no log(Level, Supplier).",
+            "differences": [
+                "The V3 facade exposes no SLF4J type (Requirement 15.8) and has no INFO level, so it has no log(Level, Supplier)."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.utils.Logger#debug(Ljava/util/function/Supplier;)V",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Call the method of the level (trace, debug, warn or error) instead of log(Level, Supplier).",
+            "evidenceIds": [
+                "LoggerTest",
+                "RuntimeLoggingArchitectureTest"
+            ]
+        },
+        {
+            "name": "logging-behavior",
+            "comment": "Task 16.3; Requirements 15.8, 21.8-21.12. V3 runtime modules log only through the sdk-core facade software.amazon.awssdk.utils.Logger (RuntimeLoggingArchitectureTest), which requires no application logging implementation; the pipeline logs every request and response, with request IDs, at DEBUG under the V2 software.amazon.awssdk.request logger (RequestLoggingTest).",
+            "match": {
+                "id": "behavior:logging.slf4j"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "behavior"
+            ],
+            "rationale": "SDK logging with request IDs under the V2 logger names and with sensitive data redacted is kept, through JDK platform logging instead of SLF4J.",
+            "differences": [
+                "SDK logs go to JDK platform logging (System.Logger; java.util.logging unless the application installs a bridge) instead of SLF4J; an application routes them to SLF4J 2 with org.slf4j:slf4j-jdk-platform-logging, or to Log4j 2 with org.apache.logging.log4j:log4j-jpl. Logger names are unchanged.",
+                "Runtime artifacts log nothing at INFO; a failure the caller receives as an exception is not also logged at WARN or ERROR; a repeated benign warning (for example an ignored listener failure) is logged once per category, operation and suppression scope.",
+                "The software.amazon.awssdk.request logger logs each transmitted request (method, host, path, header names, the query with sensitive parameter values redacted, operation and attempt) and each response's status, request ID and extended request ID at DEBUG; header values and message bodies are never logged."
+            ],
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "replacement": "api:software.amazon.awssdk.utils.Logger",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Add the platform-logging bridge of the application's logging framework (org.slf4j:slf4j-jdk-platform-logging for SLF4J 2) and keep the existing logger configuration; expect DEBUG instead of INFO for SDK operational messages.",
+            "evidenceIds": [
+                "LoggerTest",
+                "RequestLoggingTest",
+                "RuntimeLoggingArchitectureTest",
+                "RedactionTest",
+                "WarningSuppressionTest"
+            ]
+        },
+        {
+            "name": "api-name-user-agent-api",
+            "comment": "Task 16.3; Requirement 21.6. The V2 ApiName type that libraries add to a request's override configuration to identify themselves in its user agent.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.ApiName*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "ApiName and its Builder keep the V2 names, members and descriptors; name and version stay required.",
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "evidenceIds": [
+                "ApiNameTest",
+                "UserAgentTest"
+            ]
+        },
+        {
+            "name": "request-override-add-api-name",
+            "comment": "Task 16.3; Requirement 21.6. RequestOverrideConfiguration.Builder.addApiName (both overloads, on Builder and BuilderImpl).",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.RequestOverrideConfiguration*#addApiName(*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "addApiName keeps its V2 overloads and descriptors; the added API names appear in the call's user agent and in no other call's.",
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "evidenceIds": [
+                "ApiNameTest",
+                "UserAgentTest"
+            ]
+        },
+        {
+            "name": "request-override-api-names",
+            "comment": "Task 16.3; Requirement 21.6. RequestOverrideConfiguration.apiNames and Builder.apiNames.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.RequestOverrideConfiguration*#apiNames()*"
+            },
+            "classification": "PRESERVED",
+            "dimensions": [
+                "source"
+            ],
+            "rationale": "apiNames keeps its V2 descriptor and returns the added API names in insertion order.",
+            "v3Artifact": "software.amazon.awssdk:sdk-core",
+            "evidenceIds": [
+                "ApiNameTest"
+            ]
+        },
+        {
+            "name": "dynamodb-enhanced-user-agent-feature-behavior",
+            "comment": "Task 16.3; Requirements 16.6, 21.6, 21.7. Declared by the V3 artifact in META-INF/aws-sdk-java-v3/parity/capabilities.txt; every request the enhanced clients send passes the internal EnhancedClientUserAgent override.",
+            "match": {
+                "id": "behavior:dynamodb-enhanced.user-agent-feature"
+            },
+            "classification": "ADAPTED",
+            "dimensions": [
+                "behavior"
+            ],
+            "rationale": "Every request the enhanced sync and async clients send, including every page request of queries, scans and batch gets, identifies the DynamoDB Enhanced Client in its user agent.",
+            "differences": [
+                "The client is identified by the V2 BusinessMetricFeatureId.DDB_MAPPER feature identifier d in the user agent's m/ feature list, which the V2 baseline's ApplyUserAgentInterceptor sends as sdk-metrics/d, not by the older hll/ddb-enh API name.",
+                "Only requests the enhanced clients send carry it: V2's class-path-registered interceptor also tagged requests the application sent itself through any DynamoDB client of a JVM with the enhanced client on its class path."
+            ],
+            "v3Artifact": "software.amazon.awssdk:dynamodb-enhanced",
+            "replacement": "behavior:dynamodb-enhanced.user-agent-feature",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "No application change; user-agent analytics that matched hll/ddb-enh match the d feature identifier of m/ instead.",
+            "evidenceIds": [
+                "EnhancedClientUserAgentTest"
+            ]
+        },
+        {
             "name": "deprecated-runtime-core",
             "comment": "Remaining deprecated sdk-core APIs under software.amazon.awssdk.core not covered by a more specific legacy-* rule. Deprecated entries do not gate GA (Requirement 16.15); reclassify an entry as PRESERVED when candidate evidence shows V3 keeps it.",
             "match": {
@@ -1526,6 +1906,113 @@
             "v3Artifact": "software.amazon.awssdk:s3-transfer-manager",
             "evidenceIds": [
                 "S3TransferManagerCompatibilityTest"
+            ]
+        },
+        {
+            "name": "sdk-response-sdk-http-response",
+            "comment": "Task 16.1 (Requirements 21.1, 21.13). V3's sdk-core cannot reference the HTTP SPI's SdkHttpResponse (http-spi depends on sdk-core), so the V2 sdkHttpResponse view of SdkResponse is declared one level down, on aws-core's AwsResponse, which every generated response extends.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.SdkResponse#sdkHttpResponse()Lsoftware/amazon/awssdk/http/SdkHttpResponse;"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The V2 SdkResponse.sdkHttpResponse accessor keeps its name, parameters and meaning on the AWS response base type that every generated V3 response and builder extends.",
+            "differences": [
+                "Declared by software.amazon.awssdk.awscore.AwsResponse instead of software.amazon.awssdk.core.SdkResponse: calls through a generated response, a <Service>Response or an AwsResponse compile unchanged, calls through a variable typed as SdkResponse do not.",
+                "The retained SdkHttpResponse is the V3 HTTP SPI type and holds the status code and headers only (its body is empty), so a response never retains or keeps open the payload."
+            ],
+            "replacement": "api:software.amazon.awssdk.awscore.AwsResponse#sdkHttpResponse()Lsoftware/amazon/awssdk/http/SdkHttpResponse;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Type the response (or builder) as the generated response, its <Service>Response, or software.amazon.awssdk.awscore.AwsResponse (AwsResponse.Builder) to call sdkHttpResponse; use sdkResponseMetadata() for the V3 metadata API.",
+            "v3Artifact": "software.amazon.awssdk:aws-core",
+            "evidenceIds": [
+                "AwsResponseTest",
+                "ResponseMetadataPropagationTest"
+            ]
+        },
+        {
+            "name": "sdk-response-builder-sdk-http-response-getter",
+            "comment": "Task 16.1 (Requirements 21.1, 21.13). V3's sdk-core cannot reference the HTTP SPI's SdkHttpResponse (http-spi depends on sdk-core), so the V2 sdkHttpResponse view of SdkResponse is declared one level down, on aws-core's AwsResponse, which every generated response extends.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.SdkResponse$Builder#sdkHttpResponse()Lsoftware/amazon/awssdk/http/SdkHttpResponse;"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The V2 SdkResponse.Builder.sdkHttpResponse accessor keeps its name, parameters and meaning on the AWS response base type that every generated V3 response and builder extends.",
+            "differences": [
+                "Declared by software.amazon.awssdk.awscore.AwsResponse.Builder instead of software.amazon.awssdk.core.SdkResponse.Builder: calls through a generated response, a <Service>Response or an AwsResponse compile unchanged, calls through a variable typed as SdkResponse do not.",
+                "The retained SdkHttpResponse is the V3 HTTP SPI type and holds the status code and headers only (its body is empty), so a response never retains or keeps open the payload."
+            ],
+            "replacement": "api:software.amazon.awssdk.awscore.AwsResponse$Builder#sdkHttpResponse()Lsoftware/amazon/awssdk/http/SdkHttpResponse;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Type the response (or builder) as the generated response, its <Service>Response, or software.amazon.awssdk.awscore.AwsResponse (AwsResponse.Builder) to call sdkHttpResponse; use sdkResponseMetadata() for the V3 metadata API.",
+            "v3Artifact": "software.amazon.awssdk:aws-core",
+            "evidenceIds": [
+                "AwsResponseTest",
+                "ResponseMetadataPropagationTest"
+            ]
+        },
+        {
+            "name": "sdk-response-builder-sdk-http-response-setter",
+            "comment": "Task 16.1 (Requirements 21.1, 21.13). V3's sdk-core cannot reference the HTTP SPI's SdkHttpResponse (http-spi depends on sdk-core), so the V2 sdkHttpResponse view of SdkResponse is declared one level down, on aws-core's AwsResponse, which every generated response extends.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.SdkResponse$Builder#sdkHttpResponse(Lsoftware/amazon/awssdk/http/SdkHttpResponse;)Lsoftware/amazon/awssdk/core/SdkResponse$Builder;"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The V2 SdkResponse.Builder.sdkHttpResponse setter keeps its name, parameters and meaning on the AWS response base type that every generated V3 response and builder extends.",
+            "differences": [
+                "Declared by software.amazon.awssdk.awscore.AwsResponse.Builder instead of software.amazon.awssdk.core.SdkResponse.Builder: calls through a generated response, a <Service>Response or an AwsResponse compile unchanged, calls through a variable typed as SdkResponse do not.",
+                "The retained SdkHttpResponse is the V3 HTTP SPI type and holds the status code and headers only (its body is empty), so a response never retains or keeps open the payload.",
+                "The setter returns AwsResponse.Builder instead of SdkResponse.Builder."
+            ],
+            "replacement": "api:software.amazon.awssdk.awscore.AwsResponse$Builder#sdkHttpResponse(Lsoftware/amazon/awssdk/http/SdkHttpResponse;)Lsoftware/amazon/awssdk/awscore/AwsResponse$Builder;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Type the response (or builder) as the generated response, its <Service>Response, or software.amazon.awssdk.awscore.AwsResponse (AwsResponse.Builder) to call sdkHttpResponse; use sdkResponseMetadata() for the V3 metadata API.",
+            "v3Artifact": "software.amazon.awssdk:aws-core",
+            "evidenceIds": [
+                "AwsResponseTest",
+                "ResponseMetadataPropagationTest"
+            ]
+        },
+        {
+            "name": "sdk-response-builder-impl-sdk-http-response-getter",
+            "comment": "Task 16.1 (Requirements 21.1, 21.13). V3's sdk-core cannot reference the HTTP SPI's SdkHttpResponse (http-spi depends on sdk-core), so the V2 sdkHttpResponse view of SdkResponse is declared one level down, on aws-core's AwsResponse, which every generated response extends.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.SdkResponse$BuilderImpl#sdkHttpResponse()Lsoftware/amazon/awssdk/http/SdkHttpResponse;"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The V2 SdkResponse.BuilderImpl.sdkHttpResponse accessor keeps its name, parameters and meaning on the AWS response base type that every generated V3 response and builder extends.",
+            "differences": [
+                "Declared by software.amazon.awssdk.awscore.AwsResponse.BuilderImpl instead of software.amazon.awssdk.core.SdkResponse.BuilderImpl: calls through a generated response, a <Service>Response or an AwsResponse compile unchanged, calls through a variable typed as SdkResponse do not.",
+                "The retained SdkHttpResponse is the V3 HTTP SPI type and holds the status code and headers only (its body is empty), so a response never retains or keeps open the payload."
+            ],
+            "replacement": "api:software.amazon.awssdk.awscore.AwsResponse$BuilderImpl#sdkHttpResponse()Lsoftware/amazon/awssdk/http/SdkHttpResponse;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Type the response (or builder) as the generated response, its <Service>Response, or software.amazon.awssdk.awscore.AwsResponse (AwsResponse.Builder) to call sdkHttpResponse; use sdkResponseMetadata() for the V3 metadata API.",
+            "v3Artifact": "software.amazon.awssdk:aws-core",
+            "evidenceIds": [
+                "AwsResponseTest",
+                "ResponseMetadataPropagationTest"
+            ]
+        },
+        {
+            "name": "sdk-response-builder-impl-sdk-http-response-setter",
+            "comment": "Task 16.1 (Requirements 21.1, 21.13). V3's sdk-core cannot reference the HTTP SPI's SdkHttpResponse (http-spi depends on sdk-core), so the V2 sdkHttpResponse view of SdkResponse is declared one level down, on aws-core's AwsResponse, which every generated response extends.",
+            "match": {
+                "id": "api:software.amazon.awssdk.core.SdkResponse$BuilderImpl#sdkHttpResponse(Lsoftware/amazon/awssdk/http/SdkHttpResponse;)Lsoftware/amazon/awssdk/core/SdkResponse$Builder;"
+            },
+            "classification": "ADAPTED",
+            "rationale": "The V2 SdkResponse.BuilderImpl.sdkHttpResponse setter keeps its name, parameters and meaning on the AWS response base type that every generated V3 response and builder extends.",
+            "differences": [
+                "Declared by software.amazon.awssdk.awscore.AwsResponse.BuilderImpl instead of software.amazon.awssdk.core.SdkResponse.BuilderImpl: calls through a generated response, a <Service>Response or an AwsResponse compile unchanged, calls through a variable typed as SdkResponse do not.",
+                "The retained SdkHttpResponse is the V3 HTTP SPI type and holds the status code and headers only (its body is empty), so a response never retains or keeps open the payload.",
+                "The setter returns AwsResponse.Builder instead of SdkResponse.Builder."
+            ],
+            "replacement": "api:software.amazon.awssdk.awscore.AwsResponse$BuilderImpl#sdkHttpResponse(Lsoftware/amazon/awssdk/http/SdkHttpResponse;)Lsoftware/amazon/awssdk/awscore/AwsResponse$Builder;",
+            "migrationKind": "DIAGNOSTIC",
+            "migration": "Type the response (or builder) as the generated response, its <Service>Response, or software.amazon.awssdk.awscore.AwsResponse (AwsResponse.Builder) to call sdkHttpResponse; use sdkResponseMetadata() for the V3 metadata API.",
+            "v3Artifact": "software.amazon.awssdk:aws-core",
+            "evidenceIds": [
+                "AwsResponseTest",
+                "ResponseMetadataPropagationTest"
             ]
         }
     ],

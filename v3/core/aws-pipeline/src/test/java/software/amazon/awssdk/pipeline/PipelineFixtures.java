@@ -441,6 +441,12 @@ final class PipelineFixtures {
             return this;
         }
 
+        /** Responds with {@code response}, headers included; its body must be empty or buffered. */
+        ScriptedHttp respond(SdkHttpResponse response) {
+            outcomes.add(response);
+            return this;
+        }
+
         private Object next() {
             transmissions++;
             Object outcome = outcomes.remove();

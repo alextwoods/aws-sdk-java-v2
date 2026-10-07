@@ -32,6 +32,7 @@ import software.amazon.awssdk.auth.api.PayloadSigningMode;
 import software.amazon.awssdk.auth.api.SelectedAuthScheme;
 import software.amazon.awssdk.auth.api.SignedRequest;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
+import software.amazon.awssdk.awscore.AwsResponse;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.checksums.ChecksumOptions;
 import software.amazon.awssdk.checksums.PayloadSigning;
@@ -42,21 +43,25 @@ import software.amazon.awssdk.checksums.ResponseChecksumFeature;
 import software.amazon.awssdk.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.checksums.SdkChecksum;
 import software.amazon.awssdk.checksums.compression.CompressionSettings;
+import software.amazon.awssdk.core.SdkResponseMetadata;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.core.internal.exception.SdkExceptionCallMetadata;
 import software.amazon.awssdk.core.override.CallOptions;
 import software.amazon.awssdk.endpoints.Endpoint;
 import software.amazon.awssdk.endpoints.EndpointPlan;
 import software.amazon.awssdk.endpoints.EndpointResolutionException;
 import software.amazon.awssdk.http.CancellationReason;
 import software.amazon.awssdk.http.HttpBody;
+import software.amazon.awssdk.http.HttpHeaders;
 import software.amazon.awssdk.http.SdkHttpRequest;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.identity.spi.Identity;
 import software.amazon.awssdk.identity.spi.IdentityProviders;
 import software.amazon.awssdk.pipeline.feature.IdempotencyTokenFeature;
 import software.amazon.awssdk.protocols.core.OperationProtocol;
+import software.amazon.awssdk.protocols.core.error.ErrorCodes;
 import software.amazon.awssdk.protocols.core.eventstream.EventStreamRequestBody;
 import software.amazon.awssdk.protocols.core.eventstream.OutputEventStream;
 import software.amazon.awssdk.retries.AcquireInitialTokenResponse;
@@ -64,6 +69,7 @@ import software.amazon.awssdk.retries.AttemptFailure;
 import software.amazon.awssdk.retries.RetryDecision;
 import software.amazon.awssdk.retries.RetryToken;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
@@ -94,13 +100,24 @@ final class CallStages {
     private final IdentityProviders identityProviders;
     private final AuthOptionsResolver authOptions;
     private final StageObserver observer;
+    /** The engine-constant transport facts of every response and surfaced exception, held by one immutable value. */
+    private final SdkResponseMetadata transport;
 
+    /**
+     * @param httpClientName the {@link SdkResponseMetadata#HTTP_CLIENT} transport fact of the engine's transport, or
+     *     {@code null} for an engine without one
+     */
     CallStages(ClientRuntime runtime, IdentityProviders identityProviders, AuthOptionsResolver authOptions,
-               StageObserver observer) {
+               StageObserver observer, String httpClientName) {
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.identityProviders = Objects.requireNonNull(identityProviders, "identityProviders");
         this.authOptions = Objects.requireNonNull(authOptions, "authOptions");
         this.observer = observer;
+        this.transport = httpClientName == null
+                         ? SdkResponseMetadata.empty()
+                         : SdkResponseMetadata.builder()
+                                              .putTransportMetadata(SdkResponseMetadata.HTTP_CLIENT, httpClientName)
+                                              .build();
     }
 
     /**
@@ -321,8 +338,8 @@ final class CallStages {
 
     /**
      * {@link PipelineStage#SERIALIZE}: Schema-serializes the call's request against the attempt's endpoint, then
-     * applies the endpoint headers, the call's override headers and query parameters, and the explicit streaming
-     * body, if any.
+     * applies the endpoint headers, the call's override headers and query parameters, the SDK user agent (when the
+     * client sends one and no override sets it) and the explicit streaming body, if any.
      *
      * @param body the operation's explicit input body, or {@code null}
      */
@@ -334,10 +351,15 @@ final class CallStages {
         CallOptions options = call.options();
         Map<String, List<String>> headers = options.headers();
         Map<String, List<String>> query = options.rawQueryParameters();
-        if (body != null || !endpointHeaders.isEmpty() || !headers.isEmpty() || !query.isEmpty()) {
+        String userAgent = UserAgent.headerValue(call.plan(), options);
+        if (body != null || !endpointHeaders.isEmpty() || !headers.isEmpty() || !query.isEmpty() || userAgent != null) {
             SdkHttpRequest.Builder builder = request.toBuilder();
             putHeaders(builder, endpointHeaders);
             putHeaders(builder, headers);
+            if (userAgent != null && !builder.hasHeader(UserAgent.HEADER)) {
+                // The SDK user agent, unless the call's override (or the endpoint) sets one (Requirement 21.6).
+                builder.putHeader(UserAgent.HEADER, userAgent);
+            }
             query.forEach((name, values) -> values.forEach(value -> builder.addRawQueryParameter(name, value)));
             if (body != null) {
                 builder.body(body);
@@ -555,6 +577,7 @@ final class CallStages {
         enter(call, attempt, PipelineStage.BEFORE_TRANSMISSION);
         call.plan().dispatch().beforeTransmission(call, attempt, attempt.signedRequest().orElseThrow());
         enter(call, attempt, PipelineStage.TRANSMIT);
+        RequestLogging.sending(call, attempt, attempt.signedRequest().orElseThrow().request());
     }
 
     /**
@@ -576,7 +599,7 @@ final class CallStages {
         if (!call.presigned()) {
             throw terminalFailure(call);
         }
-        enter(call, null, PipelineStage.TELEMETRY);
+        telemetry(call);
         return new PresignedHttpRequest(request, expiration);
     }
 
@@ -596,6 +619,7 @@ final class CallStages {
     SdkHttpResponse responseReceived(CallState<?, ?> call, AttemptState attempt, SdkHttpResponse response) {
         InterceptorDispatch dispatch = call.plan().dispatch();
         attempt.response(response);
+        RequestLogging.received(call, attempt, response);
         enter(call, attempt, PipelineStage.AFTER_TRANSMISSION);
         dispatch.afterTransmission(call, attempt, response);
         enter(call, attempt, PipelineStage.MODIFY_HTTP_RESPONSE);
@@ -629,9 +653,11 @@ final class CallStages {
     }
 
     /**
-     * {@link PipelineStage#DESERIALIZE}: the modeled output of a successful response, then the
-     * {@link PipelineStage#RESPONSE_METADATA} point (no metadata feature attaches anything yet; the protocol's error
-     * decoder records the service's request IDs and status on a decoded error).
+     * {@link PipelineStage#DESERIALIZE}: the modeled output of a successful response, carrying the attempt's response
+     * metadata when {@link PipelineStage#RESPONSE_METADATA} is active (see {@link #outputBuilder}), then the
+     * {@link PipelineStage#RESPONSE_METADATA} point. The protocol's error decoder records the service's request IDs,
+     * status, error code and HTTP response on a decoded error; {@link #fail} records the attempt count and transport
+     * facts on the exception the call surfaces.
      *
      * @throws AwsServiceException the decoded error of an error response
      */
@@ -644,7 +670,7 @@ final class CallStages {
             enter(call, attempt, PipelineStage.RESPONSE_METADATA);
             throw error;
         }
-        O output = protocol.deserializeResponse(response, call.plan().operation().outputBuilder().get());
+        O output = protocol.deserializeResponse(response, outputBuilder(call, attempt, response));
         enter(call, attempt, PipelineStage.RESPONSE_METADATA);
         return output;
     }
@@ -666,7 +692,7 @@ final class CallStages {
             enter(call, attempt, PipelineStage.RESPONSE_METADATA);
             throw error;
         }
-        O output = protocol.deserializeStreamingOutput(response, call.plan().operation().outputBuilder().get());
+        O output = protocol.deserializeStreamingOutput(response, outputBuilder(call, attempt, response));
         enter(call, attempt, PipelineStage.RESPONSE_METADATA);
         return output;
     }
@@ -694,7 +720,7 @@ final class CallStages {
         if (events.initialResponse()) {
             return null;
         }
-        O output = protocol.deserializeStreamingOutput(response, call.plan().operation().outputBuilder().get());
+        O output = protocol.deserializeStreamingOutput(response, outputBuilder(call, attempt, response));
         enter(call, attempt, PipelineStage.RESPONSE_METADATA);
         return output;
     }
@@ -708,9 +734,38 @@ final class CallStages {
      */
     <O extends SerializableStruct> O readInitialResponse(CallState<?, O> call, AttemptState attempt,
                                                          OutputEventStream.InitialResponse message) {
-        O output = message.read(call.plan().operation().outputBuilder().get());
+        O output = message.read(outputBuilder(call, attempt, attempt.response().orElse(null)));
         enter(call, attempt, PipelineStage.RESPONSE_METADATA);
         return output;
+    }
+
+    /**
+     * A new output builder of the call's operation. When the plan has the {@link PipelineStage#RESPONSE_METADATA}
+     * feature (the output is a generated AWS response, so its builder is an {@link AwsResponse.Builder}), the builder
+     * already carries the attempt's metadata (Requirement 21.1): the response's status code and headers, and its
+     * {@link SdkResponseMetadata} with the request ID, extended request ID, status code, attempt number (the call's
+     * attempt count so far, which is final once this output succeeds) and the engine's transport facts; a field the
+     * response does not supply stays absent (Requirement 21.13). Setting it before the protocol builds the output
+     * attaches it without copying the output; only the metadata value itself is allocated, and nothing at all
+     * without the feature.
+     */
+    private <O extends SerializableStruct> ShapeBuilder<O> outputBuilder(CallState<?, O> call, AttemptState attempt,
+                                                                       SdkHttpResponse response) {
+        ShapeBuilder<O> builder = call.plan().operation().outputBuilder().get();
+        if (response != null && call.plan().stages().isActive(PipelineStage.RESPONSE_METADATA)
+            && builder instanceof AwsResponse.Builder awsResponse) {
+            HttpHeaders headers = response.headers();
+            awsResponse.sdkHttpResponse(response)
+                       .sdkResponseMetadata(SdkResponseMetadata.builder()
+                                                               .requestId(ErrorCodes.requestId(headers).orElse(null))
+                                                               .extendedRequestId(ErrorCodes.extendedRequestId(headers)
+                                                                                            .orElse(null))
+                                                               .statusCode(response.statusCode())
+                                                               .attemptCount(attempt.number())
+                                                               .transportMetadataOf(transport)
+                                                               .build());
+        }
+        return builder;
     }
 
     /**
@@ -817,7 +872,7 @@ final class CallStages {
         if (!call.succeed(result)) {
             throw terminalFailure(call);
         }
-        enter(call, null, PipelineStage.TELEMETRY);
+        telemetry(call);
         return result;
     }
 
@@ -882,6 +937,10 @@ final class CallStages {
         if (!interrupted && surfaced instanceof RuntimeException mapped) {
             surfaced = dispatch.modifyException(call, mapped);
         }
+        if (surfaced instanceof SdkException sdk) {
+            // The call's terminal metadata, so the afterExecution hooks and the caller observe it (Requirement 21.1).
+            SdkExceptionCallMetadata.record(sdk, call.attemptsStarted(), transport.transportMetadata());
+        }
         if (afterExecution) {
             enter(call, null, PipelineStage.AFTER_EXECUTION);
             if (!(surfaced instanceof Error)) {
@@ -893,11 +952,33 @@ final class CallStages {
         if (!ended) {
             return terminalFailure(call);
         }
-        enter(call, null, PipelineStage.TELEMETRY);
+        telemetry(call);
         if (surfaced instanceof Error error) {
             throw error;
         }
         return (RuntimeException) surfaced;
+    }
+
+    /**
+     * The {@link PipelineStage#TELEMETRY} point after the call's terminal transition and the end of its last attempt:
+     * with telemetry, the call's terminal record (Requirement 21.2). Without telemetry in the plan, one null check.
+     */
+    private void telemetry(CallState<?, ?> call) {
+        enter(call, null, PipelineStage.TELEMETRY);
+        telemetryEnded(call);
+    }
+
+    /**
+     * The call's terminal telemetry record, if its plan has telemetry and it was not emitted yet: the driver's
+     * catch-all for a call that ended without reaching its {@link PipelineStage#TELEMETRY} point (cancelled by its
+     * caller on another thread), called once the driver has ended the call's attempt. Never throws for a failing
+     * publisher.
+     */
+    void telemetryEnded(CallState<?, ?> call) {
+        CallTelemetry telemetry = call.telemetry();
+        if (telemetry != null) {
+            telemetry.callEnded(call.terminal());
+        }
     }
 
     /**

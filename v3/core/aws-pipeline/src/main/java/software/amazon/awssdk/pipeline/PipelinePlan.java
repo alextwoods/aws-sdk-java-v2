@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import software.amazon.awssdk.auth.api.ModeledAuth;
+import software.amazon.awssdk.awscore.AwsResponse;
 import software.amazon.awssdk.checksums.ChecksumValidationResult;
 import software.amazon.awssdk.checksums.RequestChecksumFeature;
 import software.amazon.awssdk.checksums.ResponseChecksumFeature;
@@ -74,6 +75,10 @@ public final class PipelinePlan<I extends SerializableStruct, O extends Serializ
     private final List<ShapeId> plugins;
     private final PlanAttribute<?>[] attributeKeys;
     private final Object[] attributeValues;
+    /** The operation's user agent, resolved once; null when the client sends no SDK user agent. */
+    private final UserAgent.Operation userAgent;
+    /** The operation's telemetry plan; null unless the client enables telemetry. */
+    private final PipelineTelemetry telemetry;
 
     private PipelinePlan(Builder<I, O> builder, InterceptorDispatch interceptors) {
         this.runtime = builder.runtime;
@@ -94,6 +99,10 @@ public final class PipelinePlan<I extends SerializableStruct, O extends Serializ
         this.plugins = List.copyOf(builder.plugins);
         this.attributeKeys = builder.attributeKeys.toArray(new PlanAttribute<?>[0]);
         this.attributeValues = builder.attributeValues.toArray();
+        this.userAgent = runtime.userAgent()
+                                .map(ua -> ua.forOperation(operation.id().getName(), builder.userAgentFeatures))
+                                .orElse(null);
+        this.telemetry = builder.telemetry;
     }
 
     /**
@@ -200,6 +209,24 @@ public final class PipelinePlan<I extends SerializableStruct, O extends Serializ
         return interceptors;
     }
 
+    /** The operation's telemetry plan, or {@code null} when the client does not enable telemetry. */
+    PipelineTelemetry telemetry() {
+        return telemetry;
+    }
+
+    /**
+     * The operation's user agent (Requirements 21.6, 21.7): the client's dimensions, the operation and the feature
+     * identifiers the plan's plugins contributed, resolved once; empty when the client sends no SDK user agent.
+     */
+    public Optional<UserAgent.Operation> userAgent() {
+        return Optional.ofNullable(userAgent);
+    }
+
+    /** {@link #userAgent()} without the {@code Optional}, for the per-attempt serialize stage. */
+    UserAgent.Operation userAgentOrNull() {
+        return userAgent;
+    }
+
     /** The IDs of the plugins that contributed to this plan, in contribution order. Immutable. */
     public List<ShapeId> plugins() {
         return plugins;
@@ -253,6 +280,8 @@ public final class PipelinePlan<I extends SerializableStruct, O extends Serializ
         private final List<Object> attributeValues = new ArrayList<>();
         private ContextSlot<String> idempotencyTokenSlot;
         private ContextSlot<ChecksumValidationResult> checksumValidationSlot;
+        private final PipelineTelemetry telemetry;
+        private final List<String> userAgentFeatures = new ArrayList<>();
         private boolean built;
 
         private Builder(ClientRuntime runtime, AwsOperation<I, O> operation) {
@@ -288,6 +317,16 @@ public final class PipelinePlan<I extends SerializableStruct, O extends Serializ
             }
             if (requestCompression != null) {
                 activated.add(PipelineStage.REQUEST_COMPRESSION);
+            }
+            // Response metadata applies to every operation whose output is a generated AWS response (task 16.1).
+            if (operation.outputBuilder().get() instanceof AwsResponse.Builder) {
+                activated.add(PipelineStage.RESPONSE_METADATA);
+            }
+            // Telemetry is a feature of the client: active in every plan of a client with a publisher, else absent.
+            PipelineTelemetry clientTelemetry = runtime.telemetry();
+            this.telemetry = clientTelemetry == null ? null : clientTelemetry.forOperation(operation.id().getName());
+            if (telemetry != null) {
+                activated.add(PipelineStage.TELEMETRY);
             }
         }
 
@@ -340,6 +379,18 @@ public final class PipelinePlan<I extends SerializableStruct, O extends Serializ
         public Builder<I, O> addInterceptor(ExecutionInterceptor interceptor) {
             requireBuilding();
             interceptors.add(Objects.requireNonNull(interceptor, "interceptor"));
+            return this;
+        }
+
+        /**
+         * Contributes a feature identifier to the user agent of every call of the plan (Requirement 21.6), for a
+         * plugin that takes part in every call of the operation; a feature that takes part in only some calls adds
+         * it per call instead ({@code RequestOverrideConfiguration.Builder#addApiName}). Identifiers are listed
+         * once, in contribution order.
+         */
+        public Builder<I, O> addUserAgentFeature(String featureId) {
+            requireBuilding();
+            userAgentFeatures.add(Objects.requireNonNull(featureId, "featureId"));
             return this;
         }
 

@@ -231,6 +231,7 @@
         <concern id="telemetry">
             <description>Telemetry contract; exporters are separate opt-in artifacts.</description>
             <owner module="telemetry-spi"/>
+            <owner module="cloudwatch-metric-publisher"/>
         </concern>
         <concern id="http-spi">
             <description>HTTP SPI: immutable HTTP messages, sync/async SPIs, streaming and cancellation.</description>
@@ -373,6 +374,8 @@
             <!-- AwsClientConfiguration exposes Region and IdentityProvider<? extends AwsCredentialsIdentity>. -->
             <requires module="identity-spi"/>
             <requires module="regions"/>
+            <!-- AwsResponse#sdkHttpResponse() and AwsErrorDetails#sdkHttpResponse() expose SdkHttpResponse (task 16.1). -->
+            <requires module="http-spi"/>
             <allows module="annotations"/>
             <allowsClass class="smithy-java"/>
             <forbids class="v2-runtime"/>
@@ -392,12 +395,14 @@
             <requires module="retries"/>
             <requires module="checksums"/>
             <requires module="http-spi"/>
+            <!-- The telemetry stage emits the Telemetry SPI's terminal records to configured publishers (task 16.2;
+                 Requirements 21.2-21.5); exporters stay forbidden below. -->
+            <requires module="telemetry-spi"/>
             <allows module="annotations"/>
             <allows module="sdk-core"/>
             <allows module="smithy-runtime"/>
             <allows module="identity-spi"/>
             <allows module="regions"/>
-            <allows module="telemetry-spi"/>
             <!-- Optional: the sign stage chain-signs input event stream frames with EventStreamSigner. -->
             <allows module="eventstream"/>
             <allowsClass class="smithy-java"/>
@@ -809,6 +814,21 @@
             <forbids class="smithy-model-parser"/>
             <forbids class="concrete-http"/>
             <forbids class="telemetry-exporter"/>
+            <forbids class="logging-implementation"/>
+            <forbids class="non-production"/>
+        </module>
+        <module artifactId="cloudwatch-metric-publisher" path="telemetry/cloudwatch-metric-publisher"
+                kind="telemetry-exporter" release="true">
+            <owns>Opt-in CloudWatch telemetry exporter: the V2-compatible CloudWatchMetricPublisher, which aggregates SDK metrics and uploads them with the generated V3 CloudWatch client (task 16.2; Requirement 15.7).</owns>
+            <requires module="telemetry-spi"/>
+            <allows module="annotations"/>
+            <allows module="sdk-core"/>
+            <!-- Built on the public API of the generated CloudWatch client and model only. -->
+            <requiresService module="cloudwatch"/>
+            <forbids class="v2-runtime"/>
+            <forbids class="codegen"/>
+            <forbids class="smithy-model-parser"/>
+            <forbids class="concrete-http"/>
             <forbids class="logging-implementation"/>
             <forbids class="non-production"/>
         </module>

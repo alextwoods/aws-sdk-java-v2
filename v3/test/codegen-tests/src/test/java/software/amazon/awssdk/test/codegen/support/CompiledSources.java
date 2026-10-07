@@ -55,6 +55,7 @@ import software.amazon.awssdk.protocols.core.ServiceProtocols;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.retries.RetryStrategy;
 import software.amazon.awssdk.smithy.runtime.schema.ServiceSchemaIndex;
+import software.amazon.awssdk.telemetry.spi.TelemetryConfiguration;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.utils.SmithyBuilder;
@@ -88,7 +89,9 @@ public final class CompiledSources {
         // bindings.
         AwsCallEngine.class, ModeledAuth.class, AwsAuthSchemeOptions.class, IdentityProvider.class,
         DefaultCredentialsProvider.class, RetryStrategy.class, SdkSyncHttpClient.class, Publisher.class,
-        HttpChecksumMetadata.class));
+        HttpChecksumMetadata.class,
+        // The client builders' telemetry settings (TelemetryConfiguration, MetricPublisher): telemetry-spi.
+        TelemetryConfiguration.class));
 
     private final Path classes;
 

@@ -67,6 +67,8 @@ public final class CallState<I extends SerializableStruct, O extends Serializabl
     private final ExecutionContext executionContext;
     private final CancellationScope cancellation = CancellationScope.root();
     private final TerminalState<O> terminal = new TerminalState<>();
+    /** The call's telemetry state; null (no telemetry work) unless the plan has telemetry. */
+    private final CallTelemetry telemetry;
     private I request;
     private volatile RetryToken retryToken;
     /** The recorded active token no stage has claimed yet, or null; accessed through {@link #UNCONSUMED_TOKEN}. */
@@ -80,6 +82,8 @@ public final class CallState<I extends SerializableStruct, O extends Serializabl
         this.request = Objects.requireNonNull(request, "request");
         this.options = Objects.requireNonNull(options, "options");
         this.executionContext = new ExecutionContext(plan.contextLayout(), options.executionAttributes());
+        PipelineTelemetry planTelemetry = plan.telemetry();
+        this.telemetry = planTelemetry == null ? null : planTelemetry.newCall();
     }
 
     /** The plan this call executes. */
@@ -115,6 +119,11 @@ public final class CallState<I extends SerializableStruct, O extends Serializabl
     /** The number of attempts started so far. */
     public int attemptsStarted() {
         return attemptsStarted;
+    }
+
+    /** The call's telemetry state, or {@code null} when its plan has no telemetry. */
+    CallTelemetry telemetry() {
+        return telemetry;
     }
 
     /** The token of the current or last attempt, as last recorded. */
@@ -196,7 +205,7 @@ public final class CallState<I extends SerializableStruct, O extends Serializabl
             throw new IllegalArgumentException("The retry token authorizes attempt " + token.attempt() + ", but the "
                                                + "next attempt is " + (attemptsStarted + 1));
         }
-        AttemptState attempt = new AttemptState(token, executionContext, cancellation.child());
+        AttemptState attempt = new AttemptState(token, executionContext, cancellation.child(), telemetry, terminal);
         attemptsStarted++;
         retryToken = token;
         currentAttempt = attempt;

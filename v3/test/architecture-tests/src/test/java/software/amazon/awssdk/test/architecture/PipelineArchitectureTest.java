@@ -54,8 +54,9 @@ import software.amazon.awssdk.test.architecture.GenerationPathInspector.Violatio
  *       none of which the call path can reach: a call-graph walk from {@code executeSync}/{@code executeAsync} reaches
  *       no reflective, class-loading or model-parsing site and no plan construction;</li>
  *   <li>no operation lookup by name or ID in the pipeline;</li>
- *   <li>hook contexts created only by the interceptor dispatch, and no clocks, timers, counters or telemetry types:
- *       the only waits are retry delays (the sync driver's sleep, the async driver's retry scheduler);</li>
+ *   <li>hook contexts created only by the interceptor dispatch, and no timers or counters: the only waits are retry
+ *       delays (the sync driver's sleep, the async driver's retry scheduler); the Telemetry SPI and clock reads only in
+ *       the telemetry stage's classes, which the rest of the pipeline uses only at null-checked sites (task 16.2);</li>
  *   <li>one pipeline for every client projection (task 12.4; Requirements 10.4, 14.14): the dynamic client builds,
  *       plans and calls through the same {@code AwsClientBuildState}, {@code ClientRuntime} and
  *       {@code AwsCallEngine} entry points as generated clients, no projection assembles its own engine or performs
@@ -153,7 +154,40 @@ class PipelineArchitectureTest {
         new MemberRef("java.lang.System", "nanoTime", "()J"),
         new MemberRef("java.lang.System", "currentTimeMillis", "()J"),
         new MemberRef("java.time.Instant", "now", "()Ljava/time/Instant;"));
-    private static final String TELEMETRY_PACKAGE = "software.amazon.awssdk.telemetry.";
+    /** The Telemetry SPI: the V3 contract and the V2-compatible metrics API telemetry-spi ships. */
+    private static final List<String> TELEMETRY_PACKAGES = List.of(
+        "software.amazon.awssdk.telemetry.", "software.amazon.awssdk.metrics.", "software.amazon.awssdk.core.metrics.");
+    private static final String PIPELINE_TELEMETRY = PKG + "PipelineTelemetry";
+    private static final String CALL_TELEMETRY = PKG + "CallTelemetry";
+
+    /**
+     * The pipeline classes that may reference the Telemetry SPI (task 16.2), with why. Only the two telemetry classes
+     * run per call, and they exist only for a client that configures a publisher.
+     */
+    private static final Map<String, String> TELEMETRY_CLASSES = Map.of(
+        PIPELINE_TELEMETRY, "The client and operation telemetry plan, built only when a publisher is configured.",
+        CALL_TELEMETRY, "The per-call telemetry state, created only by a plan that has a PipelineTelemetry.",
+        PKG + "ClientRuntime", "Reads TelemetryOptions.TELEMETRY once, when the client runtime is built.",
+        PKG + "client.AwsClientBuildState", "The client builders' telemetry and addMetricPublisher settings.");
+
+    /** The only clock reads of the pipeline: telemetry timing, inside the telemetry classes. */
+    private static final Set<String> CLOCK_SITES = Set.of(
+        PIPELINE_TELEMETRY + "#newCall", CALL_TELEMETRY + "#attemptStarted", CALL_TELEMETRY + "#attemptEnded",
+        CALL_TELEMETRY + "#callEnded");
+
+    /**
+     * Every use of the telemetry classes elsewhere in the pipeline, as {@code caller -> callee}. Each caller holds
+     * the telemetry plan or call state in a field that is null without a configured publisher and calls it behind
+     * that null check, so a client without telemetry creates no telemetry object, reads no clock and makes no
+     * callback ({@code PipelineTelemetryTest}, {@code InactiveExtensionPropertyTest}; Requirement 21.5).
+     */
+    private static final Set<String> TELEMETRY_USE_SITES = Set.of(
+        PKG + "ClientRuntime#<init> -> " + PIPELINE_TELEMETRY + "#forClient",
+        PKG + "PipelinePlan$Builder#<init> -> " + PIPELINE_TELEMETRY + "#forOperation",
+        PKG + "CallState#<init> -> " + PIPELINE_TELEMETRY + "#newCall",
+        PKG + "AttemptState#<init> -> " + CALL_TELEMETRY + "#attemptStarted",
+        PKG + "AttemptState#complete -> " + CALL_TELEMETRY + "#attemptEnded",
+        CALL_STAGES + "#telemetryEnded -> " + CALL_TELEMETRY + "#callEnded");
 
     /** The only waits of a call, both retry delays: method to the use it may make. */
     private static final Map<String, String> WAIT_SITES = Map.of(
@@ -410,16 +444,26 @@ class PipelineArchitectureTest {
     void thePipelineUsesNoClocksTimersCountersOrTelemetryAndWaitsOnlyForRetryDelays() {
         Set<String> problems = new TreeSet<>();
         Map<String, Set<String>> waits = new TreeMap<>();
+        Set<String> telemetryUses = new TreeSet<>();
+        Set<String> clockReads = new TreeSet<>();
         for (ClassFile type : pipeline.values()) {
+            boolean telemetryClass = TELEMETRY_CLASSES.keySet().stream().anyMatch(t -> nestedIn(type.name(), t));
+            boolean runsTelemetry = nestedIn(type.name(), PIPELINE_TELEMETRY) || nestedIn(type.name(), CALL_TELEMETRY);
             for (String reference : type.referencedClasses()) {
-                if (CLOCK_AND_COUNTER_TYPES.contains(reference) || reference.startsWith(TELEMETRY_PACKAGE)) {
+                if (CLOCK_AND_COUNTER_TYPES.contains(reference)
+                    || (!telemetryClass && startsWithAny(reference, TELEMETRY_PACKAGES))) {
                     problems.add(type.name() + " references " + reference);
                 }
             }
             for (Member method : type.methods()) {
                 for (MemberRef ref : method.memberReferences()) {
                     if (CLOCK_METHODS.contains(ref)) {
-                        problems.add(type.name() + "#" + method.name() + " reads the clock: " + ref);
+                        clockReads.add(type.name() + "#" + method.name());
+                    }
+                    boolean telemetryCallee = ref.owner().equals(PIPELINE_TELEMETRY)
+                                              || ref.owner().equals(CALL_TELEMETRY);
+                    if (telemetryCallee && !runsTelemetry && !ref.name().equals("<init>")) {
+                        telemetryUses.add(type.name() + "#" + method.name() + " -> " + ref.owner() + "#" + ref.name());
                     }
                     boolean sleep = ref.owner().equals("java.lang.Thread") && ref.name().equals("sleep");
                     boolean schedule = ref.owner().equals("software.amazon.awssdk.retries.RetryScheduler");
@@ -431,8 +475,18 @@ class PipelineArchitectureTest {
             }
         }
         assertEquals(Set.of(), problems,
-                     "No timers, counters or telemetry in the pipeline until a telemetry stage gated by plan "
-                     + "activation is added, with a zero-work test (Requirements 10.10, 21.5)");
+                     "No timers or counters in the pipeline, and the Telemetry SPI only in TELEMETRY_CLASSES "
+                     + "(Requirements 10.10, 21.5)");
+        assertEquals(new TreeSet<>(CLOCK_SITES), clockReads,
+                     "The pipeline reads the clock only for telemetry, in PipelineTelemetry and CallTelemetry, which "
+                     + "exist only when a publisher is configured (Requirement 21.5)");
+        assertEquals(new TreeSet<>(TELEMETRY_USE_SITES), telemetryUses,
+                     "The telemetry plan and call state are used only at the null-checked TELEMETRY_USE_SITES, so an "
+                     + "inactive telemetry stage does no work (Requirements 10.10, 21.5)");
+        TELEMETRY_CLASSES.forEach((name, reason) -> {
+            assertTrue(pipeline.containsKey(name), name);
+            assertFalse(reason.isBlank(), name);
+        });
         Map<String, Set<String>> expected = new TreeMap<>();
         WAIT_SITES.forEach((site, use) -> expected.put(site, Set.of(use)));
         assertEquals(expected, waits, "The only waits of a call are its retry delays");

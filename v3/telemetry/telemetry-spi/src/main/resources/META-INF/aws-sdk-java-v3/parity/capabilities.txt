@@ -1,0 +1,6 @@
+# Parity Manifest behaviors this artifact implements (CandidateInventoryScanner; Requirements 16.10, 21.2-21.5).
+# Per-call and per-attempt metrics delivered to configured MetricPublishers: the Telemetry SPI records the AWS
+# pipeline emits (TelemetryPublisher, CallRecord, AttemptRecord) and the V2-shaped MetricCollection bridge
+# (TelemetryPublisher.fromMetricPublisher). ADAPTED: see telemetry-metrics-publishing-behavior in
+# classification-rules.json.
+behavior:telemetry.metrics-publishing

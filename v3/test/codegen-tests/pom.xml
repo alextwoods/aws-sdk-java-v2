@@ -87,6 +87,13 @@
             <artifactId>http-spi</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Generated client builders declare telemetry(TelemetryConfiguration) and addMetricPublisher(MetricPublisher)
+             (task 16.2), so CompiledSources compiles them against telemetry-spi. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>telemetry-spi</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-json-protocol</artifactId>

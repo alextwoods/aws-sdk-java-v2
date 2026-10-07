@@ -33,5 +33,7 @@
 
     <modules>
         <module>telemetry-spi</module>
+        <!-- Opt-in exporters: separate artifacts no core or service module depends on (Requirement 15.7). -->
+        <module>cloudwatch-metric-publisher</module>
     </modules>
 </project>

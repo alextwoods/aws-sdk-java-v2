@@ -52,12 +52,21 @@ public final class AttemptState {
     private Throwable failure;
     private boolean afterAttemptReached;
     private volatile boolean completed;
+    /** The call's telemetry state, which records this attempt's end; null when the plan has no telemetry. */
+    private final CallTelemetry telemetry;
+    private final TerminalState<?> callTerminal;
 
-    AttemptState(RetryToken token, ExecutionContext execution, CancellationScope cancellation) {
+    AttemptState(RetryToken token, ExecutionContext execution, CancellationScope cancellation,
+                 CallTelemetry telemetry, TerminalState<?> callTerminal) {
         this.number = token.attempt();
         this.token = token;
         this.context = new AttemptContext(execution, number);
         this.cancellation = cancellation;
+        this.telemetry = telemetry;
+        this.callTerminal = callTerminal;
+        if (telemetry != null) {
+            telemetry.attemptStarted();
+        }
     }
 
     /** The one-based attempt number. */
@@ -177,7 +186,8 @@ public final class AttemptState {
     }
 
     /**
-     * Ends the attempt: closes its context and releases its cancellation scope. Idempotent.
+     * Ends the attempt: closes its context, releases its cancellation scope and, with telemetry, emits its terminal
+     * record exactly once (Requirement 21.3). Idempotent.
      *
      * @return true if this call ended the attempt
      */
@@ -188,6 +198,9 @@ public final class AttemptState {
         completed = true;
         context.close();
         cancellation.close();
+        if (telemetry != null) {
+            telemetry.attemptEnded(this, callTerminal);
+        }
         return true;
     }
 

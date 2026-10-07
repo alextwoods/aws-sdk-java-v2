@@ -35,6 +35,7 @@ import software.amazon.awssdk.protocols.core.ClientProtocol;
 import software.amazon.awssdk.protocols.core.ProtocolTransportRequirements;
 import software.amazon.awssdk.retries.RetryScheduler;
 import software.amazon.awssdk.retries.RetryStrategy;
+import software.amazon.awssdk.telemetry.spi.TelemetryOptions;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.model.shapes.ShapeId;
 
@@ -68,6 +69,10 @@ public final class ClientRuntime implements AutoCloseable {
     private final RetryScheduler retryScheduler;
     private final List<AwsFeaturePlugin> plugins;
     private final List<ExecutionInterceptor> interceptors;
+    /** The client-constant user-agent dimensions; null when the client sends no SDK user agent. */
+    private final UserAgent userAgent;
+    /** The client's telemetry plan; null (no telemetry work at all) unless a publisher is configured. */
+    private final PipelineTelemetry telemetry;
     private final ResourceScope resources;
     private final ConcurrentHashMap<AwsOperation<?, ?>, PipelinePlan<?, ?>> plans = new ConcurrentHashMap<>();
 
@@ -90,6 +95,13 @@ public final class ClientRuntime implements AutoCloseable {
         this.retryScheduler = builder.retryScheduler;
         this.plugins = List.copyOf(builder.plugins);
         this.interceptors = List.copyOf(builder.interceptors);
+        this.userAgent = builder.userAgent;
+        this.telemetry = PipelineTelemetry.forClient(
+            configuration.get(TelemetryOptions.TELEMETRY).orElse(null),
+            builder.telemetryService != null ? builder.telemetryService : retryScope,
+            builder.telemetryHttpImplementation != null ? builder.telemetryHttpImplementation
+                                                        : PipelineTelemetry.NO_HTTP_IMPLEMENTATION,
+            retryStrategy);
         this.defaultCallOptions = CallOptions.of(configuration);
         this.resources = ResourceScope.of(configuration.resources());
     }
@@ -217,6 +229,27 @@ public final class ClientRuntime implements AutoCloseable {
     }
 
     /**
+     * The client-constant user-agent dimensions (Requirement 21.6), if the client sends the SDK user agent; each plan
+     * resolves its operation's user agent from them once.
+     */
+    public Optional<UserAgent> userAgent() {
+        return Optional.ofNullable(userAgent);
+    }
+
+    /**
+     * Whether the client's calls emit telemetry: its configuration has a {@link TelemetryOptions#TELEMETRY} value
+     * with at least one publisher. When false, no plan activates {@link PipelineStage#TELEMETRY}.
+     */
+    public boolean telemetryEnabled() {
+        return telemetry != null;
+    }
+
+    /** The client's telemetry plan, or {@code null} when telemetry is not enabled. */
+    PipelineTelemetry telemetry() {
+        return telemetry;
+    }
+
+    /**
      * Closes every SDK-owned resource exactly once; idempotent.
      *
      * @throws software.amazon.awssdk.core.exception.SdkCloseException from the first call, if any close failed
@@ -252,6 +285,9 @@ public final class ClientRuntime implements AutoCloseable {
         private final List<AwsFeaturePlugin> plugins = new ArrayList<>();
         private final Set<ShapeId> pluginIds = new HashSet<>();
         private final List<ExecutionInterceptor> interceptors = new ArrayList<>();
+        private UserAgent userAgent;
+        private String telemetryService;
+        private String telemetryHttpImplementation;
 
         private Builder() {
         }
@@ -345,6 +381,26 @@ public final class ClientRuntime implements AutoCloseable {
          */
         public Builder addInterceptor(ExecutionInterceptor interceptor) {
             interceptors.add(Objects.requireNonNull(interceptor, "interceptor"));
+            return this;
+        }
+
+        /**
+         * The client-constant user-agent dimensions; with them every call sets the {@value UserAgent#HEADER} header
+         * unless its override configuration sets one. {@code null} (the default) sends no SDK user agent.
+         */
+        public Builder userAgent(UserAgent userAgent) {
+            this.userAgent = userAgent;
+            return this;
+        }
+
+        /**
+         * The client-constant dimensions of the telemetry records, used only when the configuration enables telemetry
+         * ({@link TelemetryOptions#TELEMETRY}): the service ID (default: the retry scope) and the client name of the
+         * HTTP implementation (default: {@code none}, for a client without a transport).
+         */
+        public Builder telemetryDimensions(String service, String httpImplementation) {
+            this.telemetryService = Objects.requireNonNull(service, "service");
+            this.telemetryHttpImplementation = Objects.requireNonNull(httpImplementation, "httpImplementation");
             return this;
         }
 

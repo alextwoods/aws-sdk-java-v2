@@ -121,6 +121,8 @@ class ReactorInventoryTest {
                                                                  .filter(m -> m.path().startsWith("services/"))
                                                                  .toList()));
         assertBuilds("v3-high-level", RequiredArtifacts.named(Category.HIGH_LEVEL_LIBRARY));
+        // The opt-in telemetry exporters are built on generated service clients (task 16.2).
+        assertBuilds("v3-high-level", Set.of("cloudwatch-metric-publisher"));
         assertBuilds("v3-migration", RequiredArtifacts.named(Category.MIGRATION));
         assertBuilds("v3-tests", artifactIds(RequiredArtifacts.members(full, Category.TEST)));
         assertBuilds("v3-benchmarks", Set.of("sdk-benchmarks"));

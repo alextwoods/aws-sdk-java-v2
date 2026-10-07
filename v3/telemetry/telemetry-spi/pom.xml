@@ -27,7 +27,14 @@
 
     <artifactId>telemetry-spi</artifactId>
     <name>AWS Java SDK V3 :: Telemetry :: Telemetry SPI</name>
-    <description>The optional telemetry contract.</description>
+    <description>The optional telemetry contract and the V2-compatible metrics API.</description>
+
+    <properties>
+        <!-- The V2 release the Parity Manifest baselines (tools/parity-manifest v3.v2Baseline.version). Its metrics-spi
+             and sdk-core jars are copied into target/v2-baseline for MetricsV2ApiDescriptorParityTest and never put on
+             any class path, because they declare the same class names as this module. -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -35,5 +42,61 @@
             <artifactId>sdk-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${v3.assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>v2-baseline</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/v2-baseline</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>metrics-spi</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>sdk-core</artifactId>
+                                    <version>${v3.v2Baseline.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <v3.v2Baseline.dir>${project.build.directory}/v2-baseline</v3.v2Baseline.dir>
+                        <v3.v2Baseline.version>${v3.v2Baseline.version}</v3.v2Baseline.version>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
