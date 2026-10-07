@@ -155,9 +155,9 @@ class GenerationManifestTest {
                                                                 "digest", member(n, "digest")))
                                                .toList();
         assertEquals(expected, actual);
-        assertEquals(19, actual.size(), "provenance plus identity type, service metadata, descriptor, operation "
-                                    + "table, request, response, service exception, schemas, type registry and "
-                                    + "the nine client sources");
+        assertEquals(21, actual.size(), "provenance plus identity type, service metadata, descriptor, operation "
+                                    + "table, request, response, service exception, service response and its "
+                                    + "metadata, schemas, type registry and the nine client sources");
     }
 
     @Test

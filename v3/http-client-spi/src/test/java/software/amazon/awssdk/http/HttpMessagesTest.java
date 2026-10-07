@@ -18,6 +18,7 @@ package software.amazon.awssdk.http;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -172,5 +173,17 @@ class HttpMessagesTest {
         String text = request + " " + response + " " + request.queryParameters();
         assertTrue(text.contains("Authorization"));
         assertFalse(text.contains("secret"), text);
+    }
+
+    @Test
+    void responseWithoutBodySharesStatusAndHeaders() {
+        SdkHttpResponse response = SdkHttpResponse.builder().statusCode(503).addHeader("x-amzn-RequestId", "r")
+                                                  .body(HttpBody.fromUtf8("payload")).build();
+        SdkHttpResponse withoutBody = response.withoutBody();
+        assertEquals(503, withoutBody.statusCode());
+        assertSame(response.headers(), withoutBody.headers());
+        assertEquals(HttpBody.Kind.EMPTY, withoutBody.body().kind());
+        assertEquals("payload", response.body().asUtf8String(), "the original keeps its body");
+        assertSame(withoutBody, withoutBody.withoutBody());
     }
 }

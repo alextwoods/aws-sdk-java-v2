@@ -17,6 +17,8 @@ package software.amazon.awssdk.awscodegen.model;
 
 import static software.amazon.awssdk.awscodegen.model.ModelSymbols.ARRAY_LIST;
 import static software.amazon.awssdk.awscodegen.model.ModelSymbols.AWS_ERROR_DETAILS;
+import static software.amazon.awssdk.awscodegen.model.ModelSymbols.AWS_RESPONSE;
+import static software.amazon.awssdk.awscodegen.model.ModelSymbols.AWS_RESPONSE_METADATA;
 import static software.amazon.awssdk.awscodegen.model.ModelSymbols.AWS_SERVICE_EXCEPTION;
 import static software.amazon.awssdk.awscodegen.model.ModelSymbols.COPYABLE_BUILDER;
 import static software.amazon.awssdk.awscodegen.model.ModelSymbols.ENUM_SET;
@@ -46,6 +48,8 @@ import static software.amazon.awssdk.awscodegen.model.ModelSymbols.UNSUPPORTED_O
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import software.amazon.awssdk.awscodegen.AwsCodegenContext;
 import software.amazon.awssdk.awscodegen.AwsJavaWriter;
 import software.amazon.smithy.codegen.core.Symbol;
@@ -53,10 +57,13 @@ import software.amazon.smithy.codegen.core.WriterDelegator;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.Shape;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
  * Emits the generated model types of a service (phase 5 of generation): one immutable class per structure, union and
- * modeled error, one Java enum per enum and intEnum, and the service's base exception {@code <Service>Exception}.
+ * modeled error, one Java enum per enum and intEnum, the service's base exception {@code <Service>Exception}, and
+ * the service's base response {@code <Service>Response} with its metadata view {@code <Service>ResponseMetadata}.
+ * Operation outputs extend the base response, so they carry the response metadata (Requirement 21.1), as in V2.
  * See {@link ModelTypePlanner} for the rules; each file is rendered from its own plan.
  *
  * <p>Generated types implement Smithy Java's {@code SerializableStruct} (enums expose their schema), keep V2's
@@ -72,6 +79,19 @@ public final class ModelTypeGenerator {
     private static final String TYPE = "Type";
     private static final String VALUE_MAP = "ValueMap";
 
+    /**
+     * V2's {@code customResponseMetadata} customizations: per service, the metadata key constants of its
+     * {@code <Service>ResponseMetadata} and the response header each reads, in V2's (case-insensitive key) order.
+     */
+    private static final Map<ShapeId, List<String>> CUSTOM_RESPONSE_METADATA = Map.of(
+        ShapeId.from("com.amazonaws.s3#AmazonS3"),
+        List.of("CLOUD_FRONT_ID", "X-Amz-Cf-Id", "EXTENDED_REQUEST_ID", "x-amz-id-2", "REQUEST_ID",
+                "x-amz-request-id"),
+        ShapeId.from("com.amazonaws.s3control#AWSS3ControlServiceV20180820"),
+        List.of("EXTENDED_REQUEST_ID", "x-amz-id-2", "REQUEST_ID", "x-amz-request-id"),
+        ShapeId.from("com.amazonaws.kinesis#Kinesis_20131202"),
+        List.of("EXTENDED_REQUEST_ID", "x-amz-id-2"));
+
     private ModelTypeGenerator() {
     }
 
@@ -81,17 +101,17 @@ public final class ModelTypeGenerator {
      * generate nothing.
      */
     public static void generate(AwsCodegenContext context, Symbol schemaHolder, Symbol serviceException,
-                                Shape shape) {
+                                Symbol serviceResponse, Shape shape) {
         if (context.symbolProvider().toSymbol(shape).getDefinitionFile().isEmpty()) {
             return;
         }
-        ModelTypePlan plan = planner(context, schemaHolder, serviceException).plan(shape);
+        ModelTypePlan plan = planner(context, schemaHolder, serviceException, serviceResponse).plan(shape);
         render(plan, context.writerDelegator());
     }
 
     /** Emits the Java enum of an enum or intEnum shape of the context's service. */
     public static void generateEnum(AwsCodegenContext context, Symbol schemaHolder, Shape shape) {
-        EnumTypePlan plan = planner(context, schemaHolder, null).planEnum(shape);
+        EnumTypePlan plan = planner(context, schemaHolder, null, null).planEnum(shape);
         renderEnum(plan, context.writerDelegator());
     }
 
@@ -99,6 +119,25 @@ public final class ModelTypeGenerator {
     public static void generateServiceException(AwsCodegenContext context, Symbol serviceException) {
         renderServiceException(new ServiceExceptionPlan(serviceException, context.service().getId()),
                                context.writerDelegator());
+    }
+
+    /**
+     * Emits the service's base response {@code serviceResponse} and its metadata view {@code serviceResponseMetadata},
+     * with the service's V2 custom metadata accessors, if any.
+     */
+    public static void generateServiceResponse(AwsCodegenContext context, Symbol serviceResponse,
+                                               Symbol serviceResponseMetadata) {
+        ShapeId service = context.service().getId();
+        renderServiceResponse(new ServiceResponsePlan(serviceResponse, serviceResponseMetadata, service),
+                              context.writerDelegator());
+        List<String> custom = CUSTOM_RESPONSE_METADATA.getOrDefault(service, List.of());
+        List<ServiceResponseMetadataPlan.Accessor> accessors = new ArrayList<>();
+        for (int i = 0; i < custom.size(); i += 2) {
+            accessors.add(new ServiceResponseMetadataPlan.Accessor(custom.get(i), custom.get(i + 1),
+                                                                   metadataMethod(custom.get(i))));
+        }
+        renderServiceResponseMetadata(new ServiceResponseMetadataPlan(serviceResponseMetadata, service, accessors),
+                                      context.writerDelegator());
     }
 
     /**
@@ -110,10 +149,12 @@ public final class ModelTypeGenerator {
         return ModelTypePlanner.isErrorMessage(model, member);
     }
 
-    private static ModelTypePlanner planner(AwsCodegenContext context, Symbol holder, Symbol serviceException) {
+    private static ModelTypePlanner planner(AwsCodegenContext context, Symbol holder, Symbol serviceException,
+                                            Symbol serviceResponse) {
         return new ModelTypePlanner(context.model(), context.service(), context.symbolProvider(), holder,
-                                    serviceException);
+                                    serviceException, serviceResponse);
     }
+
 
     // ---------------------------------------------------------------------------------------------------------------
     // Structures, unions and errors.
@@ -135,6 +176,11 @@ public final class ModelTypeGenerator {
         if (plan.isError()) {
             writer.openBlock("public final class $L extends $T implements $T, $T<$L.Builder, $L> {", "}",
                              new Object[] {name, plan.serviceException(), SERIALIZABLE_STRUCT, TO_COPYABLE_BUILDER,
+                                           name, name},
+                             () -> renderTypeBody(writer, plan));
+        } else if (plan.isResponse()) {
+            writer.openBlock("public final class $L extends $T implements $T, $T<$L.Builder, $L> {", "}",
+                             new Object[] {name, plan.serviceResponse(), SERIALIZABLE_STRUCT, TO_COPYABLE_BUILDER,
                                            name, name},
                              () -> renderTypeBody(writer, plan));
         } else {
@@ -257,7 +303,7 @@ public final class ModelTypeGenerator {
     private static void renderConstructor(AwsJavaWriter writer, ModelTypePlan plan) {
         String name = plan.type().getName();
         writer.openBlock("private $L(BuilderImpl builder) {", "}", name, () -> {
-            if (plan.isError()) {
+            if (plan.isError() || plan.isResponse()) {
                 writer.write("super(builder);");
             }
             List<ModelTypePlan.Member> required = new ArrayList<>();
@@ -384,9 +430,10 @@ public final class ModelTypeGenerator {
     private static void renderBuilderInterface(AwsJavaWriter writer, ModelTypePlan plan) {
         String name = plan.type().getName();
         writer.write("/** Mutable builder of {@link $L}; not thread safe. */", name);
-        String extended = plan.isError() ? "$T.Builder, $T<Builder, $L>, $T<$L>" : "$T<Builder, $L>, $T<$L>";
-        Object[] args = plan.isError()
-                        ? new Object[] {plan.serviceException(), COPYABLE_BUILDER, name, SHAPE_BUILDER, name}
+        Symbol base = plan.isError() ? plan.serviceException() : plan.serviceResponse();
+        String extended = base != null ? "$T.Builder, $T<Builder, $L>, $T<$L>" : "$T<Builder, $L>, $T<$L>";
+        Object[] args = base != null
+                        ? new Object[] {base, COPYABLE_BUILDER, name, SHAPE_BUILDER, name}
                         : new Object[] {COPYABLE_BUILDER, name, SHAPE_BUILDER, name};
         writer.openBlock("public interface Builder extends " + extended + " {", "}", args, () -> {
             for (ModelTypePlan.Member member : plan.members()) {
@@ -457,9 +504,10 @@ public final class ModelTypeGenerator {
 
     private static void renderBuilderImpl(AwsJavaWriter writer, ModelTypePlan plan) {
         String name = plan.type().getName();
-        String header = plan.isError() ? "static final class BuilderImpl extends $T.BuilderImpl implements Builder {"
-                                       : "static final class BuilderImpl implements Builder {";
-        Object[] headerArgs = plan.isError() ? new Object[] {plan.serviceException()} : new Object[0];
+        Symbol base = plan.isError() ? plan.serviceException() : plan.serviceResponse();
+        String header = base != null ? "static final class BuilderImpl extends $T.BuilderImpl implements Builder {"
+                                     : "static final class BuilderImpl implements Builder {";
+        Object[] headerArgs = base != null ? new Object[] {base} : new Object[0];
         writer.openBlock(header, "}", headerArgs, () -> {
             boolean fields = false;
             for (ModelTypePlan.Member member : plan.members()) {
@@ -485,7 +533,7 @@ public final class ModelTypeGenerator {
             });
             writer.write("");
             writer.openBlock("private BuilderImpl($L model) {", "}", name, () -> {
-                if (plan.isError()) {
+                if (plan.isError() || plan.isResponse()) {
                     writer.write("super(model);");
                 }
                 for (ModelTypePlan.Member member : plan.members()) {
@@ -745,6 +793,109 @@ public final class ModelTypeGenerator {
                     });
             });
         });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Service response and response metadata.
+
+    static void renderServiceResponse(ServiceResponsePlan plan, WriterDelegator<AwsJavaWriter> writers) {
+        Symbol type = plan.type();
+        Symbol metadata = plan.metadata();
+        String name = type.getName();
+        writers.useFileWriter(type.getDefinitionFile(), type.getNamespace(), writer -> {
+            writer.reserveTypeNames(type, BUILDER, BUILDER_IMPL);
+            writer.write("/**");
+            writer.write(" * Base of every operation output of the {@code $L} service.", plan.service());
+            writer.write(" * Its {@link #responseMetadata()} is the service's {@link $T} view.", metadata);
+            writer.write(" */");
+            writer.openBlock("public abstract class $L extends $T {", "}", name, AWS_RESPONSE, () -> {
+                writer.openBlock("protected $L(Builder builder) {", "}", name, () -> writer.write("super(builder);"));
+                writer.write("");
+                writer.write("@$T", OVERRIDE);
+                writer.openBlock("public $T responseMetadata() {", "}", metadata,
+                                 () -> writer.write("return $T.create(super.responseMetadata());", metadata));
+                writer.write("");
+                writer.write("@$T", OVERRIDE);
+                writer.write("public abstract Builder toBuilder();");
+                writer.write("");
+                writer.write("/** Builder of a {@link $L}. */", name);
+                writer.openBlock("public interface Builder extends $T.Builder {", "}", AWS_RESPONSE, () -> {
+                    writer.write("@$T", OVERRIDE);
+                    writer.write("$L build();", name);
+                    writer.write("");
+                    writer.write("@$T", OVERRIDE);
+                    writer.write("$T responseMetadata();", metadata);
+                    writer.write("");
+                    writer.write("@$T", OVERRIDE);
+                    writer.write("Builder responseMetadata($T metadata);", AWS_RESPONSE_METADATA);
+                });
+                writer.write("");
+                writer.openBlock("protected abstract static class BuilderImpl extends $T.BuilderImpl implements "
+                                 + "Builder {", "}", AWS_RESPONSE, () -> {
+                        writer.openBlock("protected BuilderImpl() {", "}", () -> {
+                        });
+                        writer.write("");
+                        writer.openBlock("protected BuilderImpl($L response) {", "}", name,
+                                         () -> writer.write("super(response);"));
+                        writer.write("");
+                        writer.write("@$T", OVERRIDE);
+                        writer.openBlock("public $T responseMetadata() {", "}", metadata,
+                                         () -> writer.write("return $T.create(super.responseMetadata());", metadata));
+                        writer.write("");
+                        writer.write("@$T", OVERRIDE);
+                        writer.openBlock("public Builder responseMetadata($T metadata) {", "}", AWS_RESPONSE_METADATA,
+                                         () -> {
+                                             writer.write("super.responseMetadata(metadata);");
+                                             writer.write("return this;");
+                                         });
+                    });
+            });
+        });
+    }
+
+    static void renderServiceResponseMetadata(ServiceResponseMetadataPlan plan,
+                                              WriterDelegator<AwsJavaWriter> writers) {
+        Symbol type = plan.type();
+        String name = type.getName();
+        writers.useFileWriter(type.getDefinitionFile(), type.getNamespace(), writer -> {
+            writer.write("/**");
+            writer.write(" * The V2-compatible response metadata view of the {@code $L} service.", plan.service());
+            writer.write(" * An absent value reads as {@code \"UNKNOWN\"}.");
+            writer.write(" */");
+            writer.openBlock("public final class $L extends $T {", "}", name, AWS_RESPONSE_METADATA, () -> {
+                for (ServiceResponseMetadataPlan.Accessor accessor : plan.accessors()) {
+                    writer.write("private static final $T $L = $S;", STRING, accessor.constant(), accessor.header());
+                }
+                if (!plan.accessors().isEmpty()) {
+                    writer.write("");
+                }
+                writer.openBlock("private $L($T responseMetadata) {", "}", name, AWS_RESPONSE_METADATA,
+                                 () -> writer.write("super(responseMetadata);"));
+                writer.write("");
+                writer.write("/** The view of the raw metadata of {@code responseMetadata}; none if it is null. */");
+                writer.openBlock("public static $L create($T responseMetadata) {", "}", name, AWS_RESPONSE_METADATA,
+                                 () -> writer.write("return new $L(responseMetadata);", name));
+                for (ServiceResponseMetadataPlan.Accessor accessor : plan.accessors()) {
+                    writer.write("");
+                    writer.write("/** The {@code $L} response header, or {@code \"UNKNOWN\"} if absent. */",
+                                 accessor.header());
+                    if (accessor.method().equals("requestId")) {
+                        writer.write("@$T", OVERRIDE);
+                    }
+                    writer.openBlock("public $T $L() {", "}", STRING, accessor.method(),
+                                     () -> writer.write("return getValue($L);", accessor.constant()));
+                }
+            });
+        });
+    }
+
+    /** V2's accessor name of a custom metadata key: {@code EXTENDED_REQUEST_ID} becomes {@code extendedRequestId}. */
+    private static String metadataMethod(String key) {
+        StringBuilder method = new StringBuilder();
+        for (String word : key.toLowerCase(Locale.ROOT).split("_")) {
+            method.append(method.isEmpty() ? word : Character.toUpperCase(word.charAt(0)) + word.substring(1));
+        }
+        return method.toString();
     }
 
     // ---------------------------------------------------------------------------------------------------------------

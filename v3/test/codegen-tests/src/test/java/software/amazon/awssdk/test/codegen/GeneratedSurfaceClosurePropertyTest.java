@@ -62,6 +62,8 @@ import net.jqwik.api.statistics.Statistics;
 import software.amazon.awssdk.awscodegen.AwsCodegen;
 import software.amazon.awssdk.awscodegen.AwsCodegenRequest;
 import software.amazon.awssdk.awscodegen.AwsCodegenResult;
+import software.amazon.awssdk.awscore.AwsResponse;
+import software.amazon.awssdk.awscore.AwsResponseMetadata;
 import software.amazon.awssdk.awscore.operation.AwsOperationDescriptor;
 import software.amazon.awssdk.pipeline.AwsOperation;
 import software.amazon.awssdk.test.codegen.support.CompiledSources;
@@ -70,10 +72,11 @@ import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
- * Property 7 (Requirements 3.8, 7.1, 7.4, 7.5, 7.6, 8.1, 8.3, 16.5): for any client-supported service, the generated
- * model, operation, sync-client, async-client, overload, paginator, waiter, presigner and utility surfaces equal the
- * canonical model closure plus the entries the Parity Manifest requires as {@code PRESERVED} or {@code ADAPTED}, and
- * every generated operation method holds a static descriptor reference.
+ * Property 7 (Requirements 3.8, 7.1, 7.4, 7.5, 7.6, 8.1, 8.3, 16.5, 21.1): for any client-supported service, the
+ * generated model, response, operation, sync-client, async-client, overload, paginator, waiter, presigner and utility
+ * surfaces equal the canonical model closure plus the entries the Parity Manifest requires as {@code PRESERVED} or
+ * {@code ADAPTED}, every operation output extends the service's base response, and every generated operation method
+ * holds a static descriptor reference.
  *
  * <p><b>Services.</b> Each try draws a {@link Service}: a parity {@link Profile} (a plain service, or a service with
  * the shape ID of S3, RDS, Aurora DSQL or CloudFront, the services whose V2 presigner or utilities the baseline
@@ -98,17 +101,29 @@ import software.amazon.smithy.model.shapes.ShapeId;
  *
  * <p><b>Oracle.</b> Set-based and independent of {@code aws-codegen}: computed from the {@link Service} description
  * that the model files are rendered from, with V2's naming rules ({@code <Operation>Request}/{@code Response},
- * {@code <Error>Exception}, {@code <Service>Client}, lower-camel operation methods). The model closure is a
- * breadth-first walk from every operation's input and output members, operation errors and service errors through
- * structure, union, list, map, event-stream and error members. The expected surfaces are:
+ * {@code <Error>Exception}, {@code <Service>Client}, {@code <Service>Response}/{@code ResponseMetadata}, lower-camel
+ * operation methods). The drawn shape names never take a generated type's name, so no name collision is rejected.
+ * The model closure is a breadth-first walk from every operation's input and output members, operation errors and
+ * service errors through structure, union, list, map, event-stream and error members. The expected surfaces are:
  * <ul>
  *   <li><em>Public types</em>: exactly the model types of the closure (structures, unions, enums and int enums;
  *       {@code <Operation>Request}/{@code Response} of non-unit inputs and outputs; the exceptions of reached errors;
- *       the service base exception; the {@code <Operation>ResponseHandler} of output event streams), the sync and async
- *       client interfaces and builders, the service metadata, operation table, schema holder and type registry, the
- *       endpoint parameters, provider and rules of a service with rules, one {@code Iterable} and {@code Publisher} per
- *       paginated operation, the sync and async waiter of a service with waiters, and the presigner, its request types
- *       and the utilities (with their support types) of the parity entries. Nothing else is public.</li>
+ *       the service base exception; the {@code <Operation>ResponseHandler} of output event streams), one service base
+ *       response {@code <Service>Response} and one response metadata view {@code <Service>ResponseMetadata} in the
+ *       model package, the sync and async client interfaces and builders, the service metadata, operation table,
+ *       schema holder and type registry, the endpoint parameters, provider and rules of a service with rules, one
+ *       {@code Iterable} and {@code Publisher} per paginated operation, the sync and async waiter of a service with
+ *       waiters, and the presigner, its request types and the utilities (with their support types) of the parity
+ *       entries. Nothing else is public.</li>
+ *   <li><em>Response hierarchy</em>: the direct superclass of every public {@code AwsResponse} and
+ *       {@code AwsResponseMetadata} type, as in V2: {@code <Service>Response} extends {@code AwsResponse},
+ *       {@code <Service>ResponseMetadata} extends {@code AwsResponseMetadata}, and the {@code <Operation>Response} of
+ *       every non-unit output (plain, streaming or event stream) extends {@code <Service>Response}. A unit output has
+ *       no response type, so nothing else extends either base.</li>
+ *   <li><em>Response metadata</em>: the declared methods of {@code <Service>ResponseMetadata}: its
+ *       {@code create(AwsResponseMetadata)} factory and V2's custom accessors of the service, which for the S3 profile
+ *       are {@code cloudFrontId()}, {@code extendedRequestId()} and {@code requestId()}; the other profiles have
+ *       none.</li>
  *   <li><em>Client methods</em>: the exact signatures (name, parameter erasures, return erasure) of the sync and async
  *       client interfaces: the typed request method and explicit-override method of every operation available to
  *       their callers (event stream operations are async only, as in V2), streaming request-body and
@@ -171,8 +186,9 @@ class GeneratedSurfaceClosurePropertyTest {
 
     /**
      * The checks are not vacuous: each defect planted in otherwise correct generated sources is reported, and the
-     * unmodified sources pass. The defects are a stray public model type, a missing waiter accessor, an extra client
-     * overload, and an operation binding that holds another operation's descriptor.
+     * unmodified sources pass. The defects are a stray public model type, a stray response metadata subtype, an extra
+     * response metadata accessor, a missing waiter accessor, an extra client overload, and an operation binding that
+     * holds another operation's descriptor.
      */
     @Example
     void plantedDefectsAreReported() throws IOException {
@@ -188,6 +204,8 @@ class GeneratedSurfaceClosurePropertyTest {
             Path client = root.resolve(type + "Client.java");
             Path bindings = root.resolve(type + "OperationBindings.java");
             Path stray = root.resolve("model/StrayShape.java");
+            Path strayMetadata = root.resolve("model/StrayMetadata.java");
+            Path metadata = root.resolve("model/" + type + "ResponseMetadata.java");
             String bindingsText = Files.readString(bindings);
             Matcher constants = Pattern.compile("(\\w+Operations)\\.(\\w+), ").matcher(bindingsText);
             assertTrue(constants.find(), bindingsText);
@@ -201,6 +219,16 @@ class GeneratedSurfaceClosurePropertyTest {
                 new Mutant("stray public type", stray, Pattern.compile("\\A\\z"),
                            "package " + ROOT + ".model;\n\npublic final class StrayShape {\n}\n",
                            "unexpected public type " + ROOT + ".model.StrayShape"),
+                new Mutant("stray response metadata subtype", strayMetadata, Pattern.compile("\\A\\z"),
+                           "package " + ROOT + ".model;\n\npublic final class StrayMetadata extends "
+                           + AwsResponseMetadata.class.getName() + " {\n    StrayMetadata() {\n"
+                           + "        super(java.util.Map.of());\n    }\n}\n",
+                           "unexpected response type hierarchy " + extendsClause(
+                               ROOT + ".model.StrayMetadata", AwsResponseMetadata.class.getName())),
+                new Mutant("extra response metadata accessor", metadata,
+                           Pattern.compile("(?m)^    /\\*\\* The view of the raw metadata "),
+                           "    public String strayId() {\n        return getValue(\"x-stray\");\n    }\n\n$0",
+                           "unexpected response metadata method strayId():String"),
                 new Mutant("missing waiter accessor", client,
                            Pattern.compile("(?m)^    default \\w+ waiter\\(\\) \\{\\n[^\\n]*\\n    \\}\\n"), "",
                            "missing sync client method waiter():" + type + "Waiter"),
@@ -282,6 +310,9 @@ class GeneratedSurfaceClosurePropertyTest {
         try (URLClassLoader loader = generated.compiled().loader()) {
             Surface surface = Surface.read(service, generated, loader);
             compare(differences, "public type", oracle.publicTypes(), surface.publicTypes());
+            compare(differences, "response type hierarchy", oracle.responseHierarchy(), surface.responseHierarchy());
+            compare(differences, "response metadata method", oracle.responseMetadataMethods(),
+                    surface.responseMetadataMethods());
             compare(differences, "sync client method", oracle.syncMethods(), surface.syncMethods());
             compare(differences, "async client method", oracle.asyncMethods(), surface.asyncMethods());
             compare(differences, "sync waiter method", oracle.syncWaiterMethods(), surface.syncWaiterMethods());
@@ -507,6 +538,9 @@ class GeneratedSurfaceClosurePropertyTest {
      * The observed generated surface, read reflectively from the compiled classes.
      *
      * @param publicTypes the public top-level types
+     * @param responseHierarchy {@code <type> extends <direct superclass>} of every public top-level type that is an
+     *     {@code AwsResponse} or an {@code AwsResponseMetadata}
+     * @param responseMetadataMethods the signatures of the {@code <Service>ResponseMetadata} view's declared methods
      * @param syncMethods the signatures of the sync client interface's declared methods
      * @param asyncMethods the signatures of the async client interface's declared methods
      * @param syncWaiterMethods the {@code waitUntil*} signatures of the sync waiter
@@ -514,22 +548,30 @@ class GeneratedSurfaceClosurePropertyTest {
      * @param presignerMethods the {@code presign*} signatures of the presigner
      * @param utilitiesMethods the names of the utilities' instance methods
      */
-    record Surface(SortedSet<String> publicTypes, SortedSet<String> syncMethods, SortedSet<String> asyncMethods,
-                   SortedSet<String> syncWaiterMethods, SortedSet<String> asyncWaiterMethods,
-                   SortedSet<String> presignerMethods, SortedSet<String> utilitiesMethods) {
+    record Surface(SortedSet<String> publicTypes, SortedSet<String> responseHierarchy,
+                   SortedSet<String> responseMetadataMethods, SortedSet<String> syncMethods,
+                   SortedSet<String> asyncMethods, SortedSet<String> syncWaiterMethods,
+                   SortedSet<String> asyncWaiterMethods, SortedSet<String> presignerMethods,
+                   SortedSet<String> utilitiesMethods) {
 
         static Surface read(Service service, Generated generated, ClassLoader loader) throws IOException {
             SortedSet<String> publicTypes = new TreeSet<>();
+            SortedSet<String> responseHierarchy = new TreeSet<>();
             for (String name : generated.topLevelClasses()) {
                 Class<?> type = load(loader, name);
                 if (type != null && Modifier.isPublic(type.getModifiers())) {
                     publicTypes.add(name);
+                    if (AwsResponse.class.isAssignableFrom(type) || AwsResponseMetadata.class.isAssignableFrom(type)) {
+                        responseHierarchy.add(extendsClause(name, type.getSuperclass().getName()));
+                    }
                 }
             }
             String type = service.typeName();
             Profile profile = service.profile();
             return new Surface(
                 publicTypes,
+                responseHierarchy,
+                signatures(loader, ROOT + ".model." + type + "ResponseMetadata", name -> true),
                 signatures(loader, ROOT + "." + type + "Client", name -> true),
                 signatures(loader, ROOT + "." + type + "AsyncClient", name -> true),
                 signatures(loader, ROOT + ".waiters." + type + "Waiter", name -> name.startsWith("waitUntil")),
@@ -579,6 +621,11 @@ class GeneratedSurfaceClosurePropertyTest {
         return name + "(" + String.join(",", parameters) + "):" + returnType;
     }
 
+    /** {@code type extends superclass}, by binary names. */
+    static String extendsClause(String type, String superclass) {
+        return type + " extends " + superclass;
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // The oracle
     // ---------------------------------------------------------------------------------------------------------------
@@ -598,6 +645,9 @@ class GeneratedSurfaceClosurePropertyTest {
      * The expected surface of a service.
      *
      * @param publicTypes every public top-level type
+     * @param responseHierarchy {@code <type> extends <direct superclass>} of every public response and response
+     *     metadata type
+     * @param responseMetadataMethods the {@code <Service>ResponseMetadata} view's method signatures
      * @param syncMethods the sync client interface's method signatures
      * @param asyncMethods the async client interface's method signatures
      * @param syncWaiterMethods the sync waiter's {@code waitUntil*} signatures
@@ -609,17 +659,20 @@ class GeneratedSurfaceClosurePropertyTest {
      * @param presigned the presigned operations
      * @param unreached the names of data shapes and errors outside the closure
      */
-    record Oracle(SortedSet<String> publicTypes, SortedSet<String> syncMethods, SortedSet<String> asyncMethods,
-                  SortedSet<String> syncWaiterMethods, SortedSet<String> asyncWaiterMethods,
-                  SortedSet<String> presignerMethods, SortedSet<String> utilitiesMethods,
-                  SortedMap<String, DescriptorShape> descriptors, SortedSet<String> syncOperationIds,
-                  List<String> presigned, SortedSet<String> unreached) {
+    record Oracle(SortedSet<String> publicTypes, SortedSet<String> responseHierarchy,
+                  SortedSet<String> responseMetadataMethods, SortedSet<String> syncMethods,
+                  SortedSet<String> asyncMethods, SortedSet<String> syncWaiterMethods,
+                  SortedSet<String> asyncWaiterMethods, SortedSet<String> presignerMethods,
+                  SortedSet<String> utilitiesMethods, SortedMap<String, DescriptorShape> descriptors,
+                  SortedSet<String> syncOperationIds, List<String> presigned, SortedSet<String> unreached) {
 
         static Oracle of(Service service) {
             String type = service.typeName();
             String ns = service.namespace();
             List<ParityEntry> parity = service.parityEntries();
             SortedSet<String> types = new TreeSet<>();
+            SortedSet<String> hierarchy = new TreeSet<>();
+            SortedSet<String> metadataMethods = new TreeSet<>();
             SortedSet<String> sync = new TreeSet<>();
             SortedSet<String> async = new TreeSet<>();
             SortedSet<String> syncWaiter = new TreeSet<>();
@@ -647,6 +700,16 @@ class GeneratedSurfaceClosurePropertyTest {
                 }
             }
             types.add(ROOT + ".model." + type + "Exception");
+
+            // The service's base response and its V2-compatible metadata view, with V2's custom accessors.
+            String baseResponse = ROOT + ".model." + type + "Response";
+            String metadata = ROOT + ".model." + type + "ResponseMetadata";
+            types.add(baseResponse);
+            types.add(metadata);
+            hierarchy.add(extendsClause(baseResponse, AwsResponse.class.getName()));
+            hierarchy.add(extendsClause(metadata, AwsResponseMetadata.class.getName()));
+            metadataMethods.add(signature("create", type + "ResponseMetadata", List.of("AwsResponseMetadata")));
+            service.profile().responseMetadata().forEach(m -> metadataMethods.add(signature(m, "String", List.of())));
 
             // The service's fixed public types.
             boolean asyncClient = preserved(parity, "async client");
@@ -679,7 +742,10 @@ class GeneratedSurfaceClosurePropertyTest {
                     types.add(ROOT + ".model." + request);
                 }
                 if (operation.output() != OutputKind.UNIT) {
+                    // Every modeled output (plain, streaming or event stream) extends the service's base response;
+                    // a unit output has no response type.
                     types.add(ROOT + ".model." + response);
+                    hierarchy.add(extendsClause(ROOT + ".model." + response, baseResponse));
                 }
                 SortedSet<String> errors = new TreeSet<>(serviceErrors);
                 operation.errors().forEach(e -> errors.add(ns + "#" + e));
@@ -781,8 +847,8 @@ class GeneratedSurfaceClosurePropertyTest {
                 utilities.addAll(utilitiesEntry.methods());
                 sync.add(signature("utilities", utilitiesEntry.type(), List.of()));
             }
-            return new Oracle(types, sync, async, syncWaiter, asyncWaiter, presigner, utilities, descriptors, syncIds,
-                              presigned, unreached);
+            return new Oracle(types, hierarchy, metadataMethods, sync, async, syncWaiter, asyncWaiter, presigner,
+                              utilities, descriptors, syncIds, presigned, unreached);
         }
 
         /** The request methods of a non-event-stream operation (V2's shape, with the explicit-override form). */
@@ -902,28 +968,35 @@ class GeneratedSurfaceClosurePropertyTest {
     record UtilitiesEntry(String type, List<String> methods, List<String> supportTypes) {
     }
 
-    /** The service identities whose parity entries differ: the V2 presigners and utilities. */
+    /**
+     * The service identities whose parity entries or response metadata differ: the V2 presigners and utilities, and
+     * V2's custom response metadata accessors ({@code customResponseMetadata}; of the profiles, only S3 has them).
+     */
     enum Profile {
-        PLAIN(null, null, null, null, null, null),
+        PLAIN(null, null, null, null, null, null, List.of()),
         S3("com.amazonaws.s3", "AmazonS3", "S3", "S3",
            new PresignerEntry("S3Presigner", List.of("GetObject", "HeadObject", "HeadBucket", "PutObject",
                                                      "DeleteObject", "CreateMultipartUpload", "UploadPart",
                                                      "CompleteMultipartUpload", "AbortMultipartUpload")),
-           new UtilitiesEntry("S3Utilities", List.of("getUrl", "parseUri"), List.of("S3Uri", "model.GetUrlRequest"))),
+           new UtilitiesEntry("S3Utilities", List.of("getUrl", "parseUri"), List.of("S3Uri", "model.GetUrlRequest")),
+           List.of("cloudFrontId", "extendedRequestId", "requestId")),
         RDS("com.amazonaws.rds", "AmazonRDSv19", "RDS", "Rds", null,
             new UtilitiesEntry("RdsUtilities", List.of("generateAuthenticationToken"),
-                               List.of("model.GenerateAuthenticationTokenRequest"))),
+                               List.of("model.GenerateAuthenticationTokenRequest")),
+            List.of()),
         DSQL("com.amazonaws.dsql", "DSQL", "DSQL", "Dsql", null,
              new UtilitiesEntry("DsqlUtilities", List.of("generateDbConnectAuthToken",
                                                          "generateDbConnectAdminAuthToken"),
-                                List.of("model.GenerateAuthTokenRequest"))),
+                                List.of("model.GenerateAuthTokenRequest")),
+             List.of()),
         CLOUDFRONT("com.amazonaws.cloudfront", "Cloudfront2020_05_31", "CloudFront", "CloudFront", null,
                    new UtilitiesEntry("CloudFrontUtilities",
                                       List.of("getSignedUrlWithCannedPolicy", "getSignedUrlWithCustomPolicy",
                                               "getCookiesForCannedPolicy", "getCookiesForCustomPolicy"),
                                       List.of("model.CannedSignerRequest", "model.CustomSignerRequest",
                                               "url.SignedUrl", "cookie.CookiesForCannedPolicy",
-                                              "cookie.CookiesForCustomPolicy", "utils.SigningHashAlgorithm")));
+                                              "cookie.CookiesForCustomPolicy", "utils.SigningHashAlgorithm")),
+                   List.of());
 
         private final String namespace;
         private final String shapeName;
@@ -931,15 +1004,17 @@ class GeneratedSurfaceClosurePropertyTest {
         private final String typeName;
         private final PresignerEntry presigner;
         private final UtilitiesEntry utilities;
+        private final List<String> responseMetadata;
 
         Profile(String namespace, String shapeName, String sdkId, String typeName, PresignerEntry presigner,
-                UtilitiesEntry utilities) {
+                UtilitiesEntry utilities, List<String> responseMetadata) {
             this.namespace = namespace;
             this.shapeName = shapeName;
             this.sdkId = sdkId;
             this.typeName = typeName;
             this.presigner = presigner;
             this.utilities = utilities;
+            this.responseMetadata = responseMetadata;
         }
 
         PresignerEntry presigner() {
@@ -948,6 +1023,11 @@ class GeneratedSurfaceClosurePropertyTest {
 
         UtilitiesEntry utilities() {
             return utilities;
+        }
+
+        /** V2's custom {@code String} accessors of {@code <Service>ResponseMetadata}, beyond the inherited ones. */
+        List<String> responseMetadata() {
+            return responseMetadata;
         }
     }
 

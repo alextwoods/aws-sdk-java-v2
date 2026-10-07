@@ -69,7 +69,9 @@ class ModelTypeGenerationTest {
                          Arguments.of("Day.java", "union"),
                          Arguments.of("TemperatureUnit.java", "enum"),
                          Arguments.of("ThrottledException.java", "error"),
-                         Arguments.of("WeatherException.java", "service exception"));
+                         Arguments.of("WeatherException.java", "service exception"),
+                         Arguments.of("WeatherResponse.java", "service response"),
+                         Arguments.of("WeatherResponseMetadata.java", "service response metadata"));
     }
 
     @ParameterizedTest(name = "{1} {0}")
@@ -94,7 +96,8 @@ class ModelTypeGenerationTest {
                                      .toList();
         assertEquals(List.of("Day.java", "Forecast.java", "GetForecastRequest.java", "GetForecastResponse.java",
                              "Level.java", "NoSuchCityException.java", "RainDetail.java", "TemperatureUnit.java",
-                             "ThrottledException.java", "WeatherException.java"),
+                             "ThrottledException.java", "WeatherException.java", "WeatherResponse.java",
+                             "WeatherResponseMetadata.java"),
                      types);
     }
 
@@ -111,6 +114,26 @@ class ModelTypeGenerationTest {
             if (source.contains(" implements SerializableStruct")) {
                 assertTrue(source.contains("switch (member.memberIndex())"), file.toString());
             }
+        }
+    }
+
+    /**
+     * Task 16.1 (Requirement 21.1): an operation output extends the service's base response, so it carries the
+     * response metadata, and its builders extend the base response's builders; other structures do not.
+     */
+    @Test
+    void operationOutputsExtendTheServiceResponse() throws IOException {
+        String output = Files.readString(result().sourceRoot().resolve(MODEL.resolve("GetForecastResponse.java")));
+        assertTrue(output.contains("public final class GetForecastResponse extends WeatherResponse implements "
+                                   + "SerializableStruct, ToCopyableBuilder<GetForecastResponse.Builder, "
+                                   + "GetForecastResponse> {"), output);
+        assertTrue(output.contains("public interface Builder extends WeatherResponse.Builder, CopyableBuilder<Builder, "
+                                   + "GetForecastResponse>, ShapeBuilder<GetForecastResponse> {"), output);
+        assertTrue(output.contains("static final class BuilderImpl extends WeatherResponse.BuilderImpl implements "
+                                   + "Builder {"), output);
+        for (String type : List.of("GetForecastRequest.java", "Forecast.java")) {
+            String source = Files.readString(result().sourceRoot().resolve(MODEL.resolve(type)));
+            assertFalse(source.contains("WeatherResponse"), type);
         }
     }
 

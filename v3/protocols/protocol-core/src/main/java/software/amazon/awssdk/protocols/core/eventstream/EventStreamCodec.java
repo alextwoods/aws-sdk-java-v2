@@ -325,6 +325,7 @@ public final class EventStreamCodec {
                                                  .errorCode(code)
                                                  .errorMessage(message)
                                                  .serviceName(errors != null ? errors.serviceName() : null)
+                                                 .sdkHttpResponse(response)
                                                  .build();
         if (response == null) {
             return new ModeledErrors.ErrorResponse(details, null, null, 200);

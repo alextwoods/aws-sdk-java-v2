@@ -18,12 +18,16 @@ package software.amazon.awssdk.awscore.exception;
 import java.io.Serializable;
 import java.util.Objects;
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.utils.ToString;
 
 /**
  * Details of an AWS service error response, source compatible with the V2 {@code AwsErrorDetails} for the error
- * message, error code, service name and raw response. (The V2 {@code sdkHttpResponse()} view is added with the V3 HTTP
- * SPI.)
+ * message, error code, service name, raw response and {@link #sdkHttpResponse()} (the status code and headers of the
+ * error response, without its body).
+ *
+ * <p>The HTTP response is transport metadata, not error content: it is not serialized (it is {@code null} after
+ * deserialization) and takes no part in equality, hashing or {@code toString}.
  */
 public final class AwsErrorDetails implements Serializable {
 
@@ -33,12 +37,14 @@ public final class AwsErrorDetails implements Serializable {
     private final String errorCode;
     private final String serviceName;
     private final SdkBytes rawResponse;
+    private final transient SdkHttpResponse sdkHttpResponse;
 
     private AwsErrorDetails(Builder builder) {
         this.errorMessage = builder.errorMessage;
         this.errorCode = builder.errorCode;
         this.serviceName = builder.serviceName;
         this.rawResponse = builder.rawResponse;
+        this.sdkHttpResponse = builder.sdkHttpResponse == null ? null : builder.sdkHttpResponse.withoutBody();
     }
 
     public static Builder builder() {
@@ -69,6 +75,14 @@ public final class AwsErrorDetails implements Serializable {
         return rawResponse;
     }
 
+    /**
+     * The status code and headers of the error response, without its body, or {@code null} if unknown (built
+     * details, or details after deserialization).
+     */
+    public SdkHttpResponse sdkHttpResponse() {
+        return sdkHttpResponse;
+    }
+
     @Override
     public boolean equals(Object o) {
         return this == o || o instanceof AwsErrorDetails other
@@ -97,6 +111,7 @@ public final class AwsErrorDetails implements Serializable {
         private String errorCode;
         private String serviceName;
         private SdkBytes rawResponse;
+        private SdkHttpResponse sdkHttpResponse;
 
         private Builder() {
         }
@@ -106,6 +121,7 @@ public final class AwsErrorDetails implements Serializable {
             this.errorCode = details.errorCode;
             this.serviceName = details.serviceName;
             this.rawResponse = details.rawResponse;
+            this.sdkHttpResponse = details.sdkHttpResponse;
         }
 
         public Builder errorMessage(String errorMessage) {
@@ -142,6 +158,16 @@ public final class AwsErrorDetails implements Serializable {
 
         public SdkBytes rawResponse() {
             return rawResponse;
+        }
+
+        /** Sets the error's HTTP response; only its status code and headers are retained. */
+        public Builder sdkHttpResponse(SdkHttpResponse sdkHttpResponse) {
+            this.sdkHttpResponse = sdkHttpResponse;
+            return this;
+        }
+
+        public SdkHttpResponse sdkHttpResponse() {
+            return sdkHttpResponse;
         }
 
         public AwsErrorDetails build() {

@@ -59,6 +59,8 @@ class AwsCodegenTest {
         MODEL_FILES.resolve("GetForecastRequest.java"),
         MODEL_FILES.resolve("GetForecastResponse.java"),
         MODEL_FILES.resolve("WeatherException.java"),
+        MODEL_FILES.resolve("WeatherResponse.java"),
+        MODEL_FILES.resolve("WeatherResponseMetadata.java"),
         SCHEMAS_FILE,
         MODEL_FILES.resolve("internal/WeatherTypeRegistry.java"));
 

@@ -53,7 +53,8 @@ import software.amazon.smithy.model.shapes.Shape;
  *   <li>The operation directive emits one static descriptor per operation ({@link OperationDescriptorGenerator}),
  *       linked to the operation's schemas.</li>
  *   <li>The structure, error, union, enum and intEnum directives emit the immutable model types and builders
- *       ({@link ModelTypeGenerator}); the service directive also emits the service's base exception.</li>
+ *       ({@link ModelTypeGenerator}); the service directive also emits the service's base exception, and its base
+ *       response and response metadata view.</li>
  * </ul>
  * The service directive also emits the sync and async clients, their builders and default implementations
  * ({@link ClientGenerator}). Before publication,
@@ -155,6 +156,10 @@ final class AwsDirectedCodegen
             ModelTypeGenerator.generateServiceException(
                 directive.context(), AwsSymbolProvider.serviceException(directive.context().service(),
                                                                         directive.settings()));
+            ModelTypeGenerator.generateServiceResponse(
+                directive.context(),
+                AwsSymbolProvider.serviceResponse(directive.context().service(), directive.settings()),
+                AwsSymbolProvider.serviceResponseMetadata(directive.context().service(), directive.settings()));
         });
     }
 
@@ -218,7 +223,8 @@ final class AwsDirectedCodegen
     private static void generateModelType(AwsCodegenContext context, Shape shape) {
         attributed(context, shape, () -> ModelTypeGenerator.generate(
             context, AwsSymbolProvider.schemaHolder(context.service(), context.settings()),
-            AwsSymbolProvider.serviceException(context.service(), context.settings()), shape));
+            AwsSymbolProvider.serviceException(context.service(), context.settings()),
+            AwsSymbolProvider.serviceResponse(context.service(), context.settings()), shape));
     }
 
     private static void generateEnumType(AwsCodegenContext context, Shape shape) {

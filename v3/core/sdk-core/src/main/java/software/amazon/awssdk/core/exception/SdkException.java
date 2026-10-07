@@ -15,22 +15,63 @@
 
 package software.amazon.awssdk.core.exception;
 
+import java.util.Map;
+import software.amazon.awssdk.core.SdkResponseMetadata;
+import software.amazon.awssdk.core.internal.exception.SdkExceptionCallMetadata;
 import software.amazon.awssdk.utils.builder.Buildable;
 
 /**
  * Base class of every exception the SDK throws, source compatible with the V2 {@code SdkException}: the same builder
  * contract, {@link #rawMessage()}, {@link #numAttempts()} and {@link #retryable()}.
+ *
+ * <p>When a call surfaces an exception, the AWS pipeline records the call's attempt count and safe transport facts
+ * on it once, so {@link #numAttempts()} and {@link #sdkResponseMetadata()} report them (Requirement 21.1).
  */
 public class SdkException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
-    private final Integer attempts;
+    static {
+        SdkExceptionCallMetadata.install(SdkException::recordCallMetadata);
+    }
+
+    // Written at most once after construction, by the pipeline's exception mapping, before the caller sees it.
+    private volatile Integer attempts;
+    private volatile Map<String, String> transportMetadata = Map.of();
+    private volatile boolean callMetadataRecorded;
 
     protected SdkException(Builder builder) {
         super(messageFromBuilder(builder), builder.cause(), true, builder.writableStackTrace() == null
                                                                  || builder.writableStackTrace());
         this.attempts = builder.numAttempts();
+    }
+
+    /** The installed {@link SdkExceptionCallMetadata.Recorder}: the first recording wins. */
+    private static void recordCallMetadata(SdkException exception, int attempts, Map<String, String> transport) {
+        synchronized (exception) {
+            if (exception.callMetadataRecorded) {
+                return;
+            }
+            exception.callMetadataRecorded = true;
+            if (attempts >= 1) {
+                exception.attempts = attempts;
+            }
+            exception.transportMetadata = transport;
+        }
+    }
+
+    /**
+     * The response metadata of this failure (Requirement 21.1): the attempt count and transport facts the call
+     * recorded, plus, for a service error, its request IDs, HTTP status and error code. Absent fields are empty
+     * (Requirement 21.13); an exception that no call surfaced has only what its builder supplied. A new value on each
+     * call; never null.
+     */
+    public SdkResponseMetadata sdkResponseMetadata() {
+        Integer count = attempts;
+        return SdkResponseMetadata.builder()
+                                  .attemptCount(count == null || count < 1 ? null : count)
+                                  .transportMetadata(transportMetadata)
+                                  .build();
     }
 
     /** A new exception with {@code message} and {@code cause}. */

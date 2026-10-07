@@ -15,6 +15,8 @@
 
 package software.amazon.awssdk.core.exception;
 
+import software.amazon.awssdk.core.SdkResponseMetadata;
+
 /**
  * A service returned an error response. Source compatible with the V2 {@code SdkServiceException}: request IDs, the
  * HTTP status code and the clock-skew, throttling and retryable classifications, which subclasses (for example
@@ -57,9 +59,23 @@ public class SdkServiceException extends SdkException {
         return extendedRequestId;
     }
 
-    /** HTTP status code of the response. */
+    /** HTTP status code of the response; {@code 0} if unknown, as in V2. */
     public int statusCode() {
         return statusCode;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Adds the request ID, extended request ID and HTTP status code (absent for the V2 absent value {@code 0}).
+     */
+    @Override
+    public SdkResponseMetadata sdkResponseMetadata() {
+        return super.sdkResponseMetadata().toBuilder()
+                    .requestId(requestId)
+                    .extendedRequestId(extendedRequestId)
+                    .statusCode(statusCode == 0 ? null : statusCode)
+                    .build();
     }
 
     /** Whether the error indicates client clock skew. */

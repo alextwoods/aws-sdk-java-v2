@@ -67,6 +67,8 @@ final class ModelSymbols {
     static final Symbol AWS_ERROR_DETAILS = type("software.amazon.awssdk.awscore.exception", "AwsErrorDetails");
     static final Symbol AWS_SERVICE_EXCEPTION = type("software.amazon.awssdk.awscore.exception",
                                                      "AwsServiceException");
+    static final Symbol AWS_RESPONSE = type("software.amazon.awssdk.awscore", "AwsResponse");
+    static final Symbol AWS_RESPONSE_METADATA = type("software.amazon.awssdk.awscore", "AwsResponseMetadata");
     static final Symbol TO_STRING = type("software.amazon.awssdk.utils", "ToString");
     static final Symbol COPYABLE_BUILDER = type("software.amazon.awssdk.utils.builder", "CopyableBuilder");
     static final Symbol TO_COPYABLE_BUILDER = type("software.amazon.awssdk.utils.builder", "ToCopyableBuilder");

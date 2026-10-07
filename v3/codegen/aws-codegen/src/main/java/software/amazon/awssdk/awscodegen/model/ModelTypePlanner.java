@@ -51,6 +51,7 @@ import software.amazon.smithy.codegen.core.Symbol;
 import software.amazon.smithy.codegen.core.SymbolProvider;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.NullableIndex;
+import software.amazon.smithy.model.knowledge.TopDownIndex;
 import software.amazon.smithy.model.node.ArrayNode;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.NumberNode;
@@ -59,6 +60,7 @@ import software.amazon.smithy.model.node.StringNode;
 import software.amazon.smithy.model.shapes.CollectionShape;
 import software.amazon.smithy.model.shapes.MapShape;
 import software.amazon.smithy.model.shapes.MemberShape;
+import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
@@ -121,15 +123,17 @@ final class ModelTypePlanner {
     private final SymbolProvider symbols;
     private final Symbol holder;
     private final Symbol serviceException;
+    private final Symbol serviceResponse;
     private final NullableIndex nullable;
 
     ModelTypePlanner(Model model, ServiceShape service, SymbolProvider symbols, Symbol holder,
-                     Symbol serviceException) {
+                     Symbol serviceException, Symbol serviceResponse) {
         this.model = model;
         this.service = service;
         this.symbols = symbols;
         this.holder = holder;
         this.serviceException = serviceException;
+        this.serviceResponse = serviceResponse;
         this.nullable = NullableIndex.of(model);
     }
 
@@ -156,7 +160,24 @@ final class ModelTypePlanner {
         RetryableTrait retryable = shape.getTrait(RetryableTrait.class).orElse(null);
         return new ModelTypePlan(type, shape.getId(), kind, holder, schemaConstant(shape),
                                  kind.equals(ModelTypePlan.ERROR) ? serviceException : type,
+                                 kind.equals(ModelTypePlan.STRUCTURE) && isOutput(shape) ? serviceResponse : null,
                                  retryable != null, retryable != null && retryable.getThrottling(), plans);
+    }
+
+    /**
+     * Whether {@code shape} is the output of an operation of the service (including resource operations): its type
+     * extends the service's base response and carries the response metadata, as in V2.
+     */
+    private boolean isOutput(Shape shape) {
+        if (serviceResponse == null) {
+            return false;
+        }
+        for (OperationShape operation : TopDownIndex.of(model).getContainedOperations(service)) {
+            if (operation.getOutputShape().equals(shape.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The plan of an enum or intEnum shape. */

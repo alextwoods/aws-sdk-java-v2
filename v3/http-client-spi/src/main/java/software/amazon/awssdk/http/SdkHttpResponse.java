@@ -36,6 +36,12 @@ public final class SdkHttpResponse {
         this.body = builder.body;
     }
 
+    private SdkHttpResponse(int statusCode, HttpHeaders headers, HttpBody body) {
+        this.statusCode = statusCode;
+        this.headers = headers;
+        this.body = body;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -58,6 +64,15 @@ public final class SdkHttpResponse {
     /** The body. */
     public HttpBody body() {
         return body;
+    }
+
+    /**
+     * This response's status code and headers with an {@link HttpBody#empty() empty} body: the view a modeled response
+     * or error retains, so it never holds (or keeps open) the payload. Returns this response if its body is already
+     * empty; otherwise a new response sharing these immutable headers, without copying them.
+     */
+    public SdkHttpResponse withoutBody() {
+        return body.kind() == HttpBody.Kind.EMPTY ? this : new SdkHttpResponse(statusCode, headers, HttpBody.empty());
     }
 
     public Builder toBuilder() {

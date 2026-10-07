@@ -70,6 +70,22 @@ class SdkResponseMetadataTest {
     }
 
     @Test
+    void transportMetadataIsSharedUntilChanged() {
+        SdkResponseMetadata template = SdkResponseMetadata.builder()
+                                                          .putTransportMetadata(SdkResponseMetadata.HTTP_CLIENT, "c")
+                                                          .build();
+        SdkResponseMetadata shared = SdkResponseMetadata.builder().requestId("r").transportMetadataOf(template).build();
+        assertSame(template.transportMetadata(), shared.transportMetadata());
+        assertSame(template.transportMetadata(), template.toBuilder().statusCode(200).build().transportMetadata());
+
+        SdkResponseMetadata changed = template.toBuilder().putTransportMetadata("k", "v").build();
+        assertEquals(List.of(SdkResponseMetadata.HTTP_CLIENT, "k"),
+                     List.copyOf(changed.transportMetadata().keySet()));
+        assertEquals(Map.of(SdkResponseMetadata.HTTP_CLIENT, "c"), template.transportMetadata(),
+                     "the shared map is unchanged");
+    }
+
+    @Test
     void attemptCountMustBePositive() {
         assertThrows(IllegalArgumentException.class, () -> SdkResponseMetadata.builder().attemptCount(0));
         assertThrows(NullPointerException.class, () -> SdkResponseMetadata.builder().putTransportMetadata("k", null));

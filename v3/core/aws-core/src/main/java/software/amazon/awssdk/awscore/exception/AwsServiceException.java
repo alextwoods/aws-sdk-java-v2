@@ -16,6 +16,7 @@
 package software.amazon.awssdk.awscore.exception;
 
 import java.util.StringJoiner;
+import software.amazon.awssdk.core.SdkResponseMetadata;
 import software.amazon.awssdk.core.exception.SdkServiceException;
 
 /**
@@ -50,6 +51,18 @@ public class AwsServiceException extends SdkServiceException {
     /** Details of the error response, if known. */
     public AwsErrorDetails awsErrorDetails() {
         return awsErrorDetails;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Adds the service error code of {@link #awsErrorDetails()}, if any.
+     */
+    @Override
+    public SdkResponseMetadata sdkResponseMetadata() {
+        SdkResponseMetadata metadata = super.sdkResponseMetadata();
+        String errorCode = awsErrorDetails == null ? null : awsErrorDetails.errorCode();
+        return errorCode == null ? metadata : metadata.toBuilder().errorCode(errorCode).build();
     }
 
     @Override

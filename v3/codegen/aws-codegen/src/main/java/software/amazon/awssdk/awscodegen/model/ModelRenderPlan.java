@@ -21,5 +21,6 @@ package software.amazon.awssdk.awscodegen.model;
  * primitives and pre-rendered Java code, and discarded after rendering. {@code RenderPlanRulesTest} enforces this for
  * every permitted plan.
  */
-sealed interface ModelRenderPlan permits ModelTypePlan, EnumTypePlan, ServiceExceptionPlan {
+sealed interface ModelRenderPlan permits ModelTypePlan, EnumTypePlan, ServiceExceptionPlan,
+    ServiceResponsePlan, ServiceResponseMetadataPlan {
 }

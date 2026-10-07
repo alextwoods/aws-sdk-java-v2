@@ -88,9 +88,10 @@ public enum PipelineStage {
     /** Schema-deserialize the output or decode the error. */
     DESERIALIZE(ContextKey.Scope.ATTEMPT, Kind.CORE),
     /**
-     * Attach the attempt's response metadata (request IDs, status, attempt count) to the deserialized output or the
-     * decoded error, so the classifier and every later hook observe it; active once a plan carries the metadata
-     * feature.
+     * Attach the attempt's response metadata (request IDs, status, attempt count, transport facts) to the deserialized
+     * output, so every later hook observes it; active in the plan of every operation whose output is a generated AWS
+     * response ({@code AwsResponse}). The protocol's error decoder records a decoded error's IDs, status and code, and
+     * the exception-mapping path records the call's attempt count and transport facts on the surfaced exception.
      */
     RESPONSE_METADATA(ContextKey.Scope.ATTEMPT, Kind.FEATURE),
     /** {@code modifyAttemptException} hooks, before classification. */

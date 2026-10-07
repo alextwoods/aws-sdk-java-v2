@@ -18,13 +18,19 @@ package software.amazon.awssdk.core.exception;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.SdkResponseMetadata;
+import software.amazon.awssdk.core.internal.exception.SdkExceptionCallMetadata;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 class SdkExceptionTest {
@@ -65,6 +71,36 @@ class SdkExceptionTest {
         assertEquals("r", copy.requestId());
         assertEquals("x", copy.extendedRequestId());
         assertEquals(429, copy.statusCode());
+    }
+
+    @Test
+    void recordedCallMetadataIsWrittenOnceAndExposed() {
+        SdkServiceException exception = SdkServiceException.builder().message("m").requestId("r").statusCode(503)
+                                                            .build();
+        Map<String, String> transport = Map.of(SdkResponseMetadata.HTTP_CLIENT, "c");
+        SdkExceptionCallMetadata.record(exception, 3, transport);
+        SdkExceptionCallMetadata.record(exception, 7, Map.of());
+
+        assertEquals(3, exception.numAttempts());
+        SdkResponseMetadata metadata = exception.sdkResponseMetadata();
+        assertEquals(Optional.of("r"), metadata.requestId());
+        assertEquals(Optional.empty(), metadata.extendedRequestId());
+        assertEquals(OptionalInt.of(503), metadata.statusCode());
+        assertEquals(OptionalInt.of(3), metadata.attemptCount());
+        assertEquals(transport, metadata.transportMetadata());
+        assertEquals(3, exception.toBuilder().build().numAttempts(), "the recorded count is copied by toBuilder");
+    }
+
+    @Test
+    void unrecordedOrPreAttemptMetadataIsAbsent() {
+        SdkServiceException unknownStatus = SdkServiceException.builder().message("m").build();
+        assertEquals(SdkResponseMetadata.empty(), unknownStatus.sdkResponseMetadata(),
+                     "status 0 (V2's unknown value) and missing IDs are absent");
+
+        SdkClientException beforeAnyAttempt = SdkClientException.create("m");
+        SdkExceptionCallMetadata.record(beforeAnyAttempt, 0, Map.of());
+        assertNull(beforeAnyAttempt.numAttempts());
+        assertEquals(OptionalInt.empty(), beforeAnyAttempt.sdkResponseMetadata().attemptCount());
     }
 
     @Test

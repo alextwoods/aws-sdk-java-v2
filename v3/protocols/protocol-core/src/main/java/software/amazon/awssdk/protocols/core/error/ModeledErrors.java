@@ -196,6 +196,7 @@ public final class ModeledErrors {
                                                  .rawResponse(SdkBytes.fromByteArrayUnsafe(
                                                      response.body().kind() == HttpBody.Kind.STREAMING
                                                      ? new byte[0] : response.body().asByteArray()))
+                                                 .sdkHttpResponse(response)
                                                  .build();
         return new ErrorResponse(details, ErrorCodes.requestId(response.headers()).orElse(null),
                                  ErrorCodes.extendedRequestId(response.headers()).orElse(null),

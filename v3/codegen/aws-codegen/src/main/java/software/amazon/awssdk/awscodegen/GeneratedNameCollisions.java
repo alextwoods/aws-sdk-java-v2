@@ -157,6 +157,10 @@ final class GeneratedNameCollisions {
         ShapeId id = service.getId();
         entries.add(fixed(id, "the base exception of service " + id,
                           AwsSymbolProvider.serviceException(service, settings)));
+        entries.add(fixed(id, "the base response of service " + id,
+                          AwsSymbolProvider.serviceResponse(service, settings)));
+        entries.add(fixed(id, "the response metadata of service " + id,
+                          AwsSymbolProvider.serviceResponseMetadata(service, settings)));
         entries.add(fixed(id, "the schema holder of service " + id, AwsSymbolProvider.schemaHolder(service, settings)));
         entries.add(fixed(id, "the operation table of service " + id,
                           AwsSymbolProvider.operationTable(service, settings)));

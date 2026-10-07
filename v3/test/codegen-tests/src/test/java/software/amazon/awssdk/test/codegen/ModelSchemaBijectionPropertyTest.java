@@ -62,6 +62,8 @@ import software.amazon.awssdk.awscodegen.AwsCodegenException;
 import software.amazon.awssdk.awscodegen.AwsCodegenRequest;
 import software.amazon.awssdk.awscodegen.AwsCodegenResult;
 import software.amazon.awssdk.awscodegen.validation.DiagnosticCode;
+import software.amazon.awssdk.awscore.AwsResponse;
+import software.amazon.awssdk.awscore.AwsResponseMetadata;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.awscore.operation.AwsOperationDescriptor;
 import software.amazon.awssdk.smithy.runtime.registry.RegisteredType;
@@ -1002,6 +1004,7 @@ class ModelSchemaBijectionPropertyTest {
                 throw new UncheckedIOException(e);
             }
             int serviceExceptions = 0;
+            int serviceResponses = 0;
             for (String className : classNames) {
                 Class<?> type = load(className);
                 Field schemaField = declaredField(type, "SCHEMA");
@@ -1009,6 +1012,12 @@ class ModelSchemaBijectionPropertyTest {
                     if (type.getSimpleName().equals(serviceName + "Exception")
                         && type.getSuperclass() == AwsServiceException.class) {
                         serviceExceptions++;
+                    } else if (type.getSimpleName().equals(serviceName + "Response")
+                               && type.getSuperclass() == AwsResponse.class
+                               || type.getSimpleName().equals(serviceName + "ResponseMetadata")
+                                  && type.getSuperclass() == AwsResponseMetadata.class) {
+                        // The service's base response and its metadata view (task 16.1) are not modeled types.
+                        serviceResponses++;
                     } else {
                         problems.add("model class " + className + " has no SCHEMA and is not the service exception");
                     }
@@ -1030,6 +1039,9 @@ class ModelSchemaBijectionPropertyTest {
             same("model type classes", oracle.ids(Kind.TYPE), types.keySet());
             if (serviceExceptions != 1) {
                 problems.add(serviceExceptions + " service base exceptions, expected 1");
+            }
+            if (serviceResponses != 2) {
+                problems.add(serviceResponses + " service base response and metadata classes, expected 2");
             }
         }
 

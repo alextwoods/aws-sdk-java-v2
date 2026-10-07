@@ -117,7 +117,11 @@ public final class AwsCallEngine {
             this.retryScheduler = runtime.retryScheduler().orElseThrow(
                 () -> new NullPointerException("An async client runtime requires a retryScheduler"));
         }
-        this.stages = new CallStages(runtime, builder.identityProviders, builder.authOptions, builder.stageObserver);
+        // The transport's name is the engine-constant transport fact of every response and surfaced exception.
+        String httpClientName = syncHttpClient != null ? syncHttpClient.clientName()
+                                : asyncHttpClient != null ? asyncHttpClient.clientName() : null;
+        this.stages = new CallStages(runtime, builder.identityProviders, builder.authOptions, builder.stageObserver,
+                                     httpClientName);
     }
 
     /**

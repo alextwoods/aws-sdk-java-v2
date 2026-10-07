@@ -116,6 +116,8 @@ class OperationDescriptorGenerationTest {
                              MODEL.resolve("NoSuchCityException.java"),
                              MODEL.resolve("ThrottledException.java"),
                              MODEL.resolve("WeatherException.java"),
+                             MODEL.resolve("WeatherResponse.java"),
+                             MODEL.resolve("WeatherResponseMetadata.java"),
                              MODEL.resolve("internal/WeatherSchemas.java"),
                              MODEL.resolve("internal/WeatherTypeRegistry.java")),
                      ClientSources.withoutClients(result.generatedFiles()));
@@ -290,6 +292,8 @@ class OperationDescriptorGenerationTest {
         assertEquals(List.of(Path.of("software/amazon/awssdk/services/empty/EmptyServiceMetadata.java"),
                              Path.of("software/amazon/awssdk/services/empty/GeneratedServiceInfo.java"), table,
                              Path.of("software/amazon/awssdk/services/empty/model/EmptyException.java"),
+                             Path.of("software/amazon/awssdk/services/empty/model/EmptyResponse.java"),
+                             Path.of("software/amazon/awssdk/services/empty/model/EmptyResponseMetadata.java"),
                              Path.of("software/amazon/awssdk/services/empty/model/internal/EmptySchemas.java"),
                              Path.of("software/amazon/awssdk/services/empty/model/internal/EmptyTypeRegistry.java")),
                      ClientSources.withoutClients(result.generatedFiles()));

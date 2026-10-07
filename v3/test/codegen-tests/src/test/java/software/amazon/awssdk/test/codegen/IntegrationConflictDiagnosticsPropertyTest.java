@@ -138,6 +138,9 @@ class IntegrationConflictDiagnosticsPropertyTest {
     private static final String TYPE_REGISTRY = MODEL_DIRECTORY + "/internal/WeatherTypeRegistry.java";
     /** The service's base exception, which no shape defines: the service directive renders it. */
     private static final String SERVICE_EXCEPTION = MODEL_DIRECTORY + "/WeatherException.java";
+    /** The service's base response and its metadata view (task 16.1), which the service directive renders. */
+    private static final String SERVICE_RESPONSE = MODEL_DIRECTORY + "/WeatherResponse.java";
+    private static final String SERVICE_RESPONSE_METADATA = MODEL_DIRECTORY + "/WeatherResponseMetadata.java";
 
     /**
      * Source files the core generator emits for the fixture whatever the symbol renames, with the shape whose
@@ -149,6 +152,8 @@ class IntegrationConflictDiagnosticsPropertyTest {
         SCHEMA_HOLDER, SERVICE,
         OPERATION_TABLE, SERVICE,
         SERVICE_EXCEPTION, SERVICE,
+        SERVICE_RESPONSE, SERVICE,
+        SERVICE_RESPONSE_METADATA, SERVICE,
         SERVICE_METADATA, SERVICE,
         TYPE_REGISTRY, SERVICE,
         GET_FORECAST_DESCRIPTOR, GET_FORECAST,
@@ -669,7 +674,8 @@ class IntegrationConflictDiagnosticsPropertyTest {
 
         /**
          * Predicts the generated-name collisions of the final type names: the generated model types (a renamed list
-         * is not one) and the service's base exception, which share the model package, grouped case-insensitively.
+         * is not one) and the service's base exception, base response and response metadata, which share the model
+         * package, grouped case-insensitively.
          * Each set is one diagnostic for its lowest shape ID, contributed by the integration that renamed each
          * colliding type, or the core generator for a type it named itself.
          */
@@ -678,6 +684,9 @@ class IntegrationConflictDiagnosticsPropertyTest {
             MODEL_TYPES.keySet().forEach(shape -> byName.computeIfAbsent(
                 typeNames.get(shape).toLowerCase(Locale.ROOT), k -> new TreeMap<>()).put(shape, typeNames.get(shape)));
             byName.computeIfAbsent("weatherexception", k -> new TreeMap<>()).put(SERVICE, "WeatherException");
+            byName.computeIfAbsent("weatherresponse", k -> new TreeMap<>()).put(SERVICE, "WeatherResponse");
+            byName.computeIfAbsent("weatherresponsemetadata", k -> new TreeMap<>())
+                  .put(SERVICE, "WeatherResponseMetadata");
             byName.values().stream().filter(group -> group.size() > 1).forEach(group -> {
                 SortedSet<String> contributors = new TreeSet<>();
                 group.keySet().forEach(shape -> contributors.addAll(

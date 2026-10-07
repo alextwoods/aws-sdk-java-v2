@@ -71,13 +71,14 @@ final class AwsSymbolProvider implements SymbolProvider {
     /**
      * Accessor names every generated type declares or inherits: V2's reserved structure names ({@code Object}
      * methods, {@code builder}, {@code toBuilder}, {@code sdkFields}, {@code overrideConfiguration},
-     * {@code sdkHttpResponse}) plus the {@code SerializableStruct} methods. A member with one of these names gets a
-     * {@code Value} suffix, as in V2.
+     * {@code sdkHttpResponse}) plus the {@code SerializableStruct} methods and the response metadata accessors
+     * ({@code responseMetadata}, {@code sdkResponseMetadata}). A member with one of these names gets a {@code Value}
+     * suffix, as in V2.
      */
     private static final Set<String> RESERVED_NAMES = Set.of(
         "equals", "finalize", "getClass", "hashCode", "notify", "notifyAll", "toString", "wait", "builder",
         "sdkFields", "toBuilder", "overrideConfiguration", "sdkHttpResponse", "copy", "schema", "serialize",
-        "serializeMembers", "getMemberValue");
+        "serializeMembers", "getMemberValue", "responseMetadata", "sdkResponseMetadata");
 
     /** Accessor names of generated errors: V2's reserved exception names plus the {@code SerializableStruct} ones. */
     private static final Set<String> RESERVED_EXCEPTION_NAMES = Set.of(
@@ -86,7 +87,8 @@ final class AwsSymbolProvider implements SymbolProvider {
         "getLocalizedMessage", "getMessage", "getStackTrace", "getSuppressed", "isClockSkewException",
         "isThrottlingException", "isRetryableException", "printStackTrace", "requestId", "extendedRequestId",
         "retryable", "serializableBuilderClass", "statusCode", "numAttempts", "rawMessage", "addSuppressed",
-        "initCause", "setStackTrace", "schema", "serialize", "serializeMembers", "getMemberValue");
+        "initCause", "setStackTrace", "schema", "serialize", "serializeMembers", "getMemberValue",
+        "sdkResponseMetadata");
 
     private final Model model;
     private final ServiceShape service;
@@ -188,6 +190,19 @@ final class AwsSymbolProvider implements SymbolProvider {
      */
     static Symbol serviceException(ServiceShape service, AwsCodegenSettings settings) {
         return generatedType(settings.packageName() + ".model", serviceTypeName(service) + EXCEPTION_SUFFIX);
+    }
+
+    /**
+     * The generated base {@code <root>.model.<Service>Response} of the service's operation outputs, as in V2: an
+     * {@code AwsResponse} whose {@code responseMetadata()} is the service's {@link #serviceResponseMetadata}.
+     */
+    static Symbol serviceResponse(ServiceShape service, AwsCodegenSettings settings) {
+        return generatedType(settings.packageName() + ".model", serviceTypeName(service) + "Response");
+    }
+
+    /** The generated {@code <root>.model.<Service>ResponseMetadata} V2-compatible metadata view, as in V2. */
+    static Symbol serviceResponseMetadata(ServiceShape service, AwsCodegenSettings settings) {
+        return generatedType(settings.packageName() + ".model", serviceTypeName(service) + "ResponseMetadata");
     }
 
     @Override

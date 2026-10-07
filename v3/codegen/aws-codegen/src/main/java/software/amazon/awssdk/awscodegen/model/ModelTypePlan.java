@@ -28,12 +28,14 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * @param schemaHolder the service's schema holder
  * @param schemaConstant name of the type's exported schema constant in {@code schemaHolder}
  * @param serviceException the service's base exception, which an error extends; the type itself otherwise
+ * @param serviceResponse the service's base response {@code <Service>Response}, which an operation output extends;
+ *        {@code null} for any other type
  * @param retryable whether an error is modeled {@code @retryable}
  * @param throttling whether an error is modeled {@code @retryable(throttling: true)}
  * @param members every member in modeled order
  */
 record ModelTypePlan(Symbol type, ShapeId shape, String kind, Symbol schemaHolder, String schemaConstant,
-                     Symbol serviceException, boolean retryable, boolean throttling, List<Member> members)
+                     Symbol serviceException, Symbol serviceResponse, boolean retryable, boolean throttling, List<Member> members)
     implements ModelRenderPlan {
 
     static final String STRUCTURE = "structure";
@@ -50,6 +52,11 @@ record ModelTypePlan(Symbol type, ShapeId shape, String kind, Symbol schemaHolde
 
     boolean isUnion() {
         return kind.equals(UNION);
+    }
+
+    /** Whether the type is an operation output, which extends the service's base response. */
+    boolean isResponse() {
+        return serviceResponse != null;
     }
 
     /**

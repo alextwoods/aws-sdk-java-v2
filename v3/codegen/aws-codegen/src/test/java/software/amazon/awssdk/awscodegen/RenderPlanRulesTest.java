@@ -66,7 +66,8 @@ class RenderPlanRulesTest {
     void everyModelRenderPlanIsARecordOfFileLocalValues() throws ClassNotFoundException {
         Class<?> root = Class.forName("software.amazon.awssdk.awscodegen.model.ModelRenderPlan");
         Class<?>[] plans = root.getPermittedSubclasses();
-        assertEquals(Set.of("ModelTypePlan", "EnumTypePlan", "ServiceExceptionPlan"),
+        assertEquals(Set.of("ModelTypePlan", "EnumTypePlan", "ServiceExceptionPlan", "ServiceResponsePlan",
+                            "ServiceResponseMetadataPlan"),
                      Arrays.stream(plans).map(Class::getSimpleName).collect(toSet()));
         List<String> violations = new ArrayList<>();
         Arrays.stream(plans).forEach(plan -> check(root, plan, violations));

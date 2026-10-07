@@ -51,6 +51,12 @@
             <artifactId>regions</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- AwsResponse#sdkHttpResponse() and AwsErrorDetails#sdkHttpResponse() expose the HTTP SPI's SdkHttpResponse. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
