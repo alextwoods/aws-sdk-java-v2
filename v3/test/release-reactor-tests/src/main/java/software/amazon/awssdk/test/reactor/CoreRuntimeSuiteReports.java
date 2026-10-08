@@ -31,12 +31,15 @@ import java.util.regex.Pattern;
 import org.w3c.dom.Element;
 
 /**
- * The core-runtime suite gate (task 11.1): checks that every required suite produced a surefire report during the
- * current Maven session, executed at least one test, and recorded no failures or errors.
+ * The suite-report gate of the core-runtime (task 11.1) and product-parity (task 17.1) profiles: checks that every
+ * required suite produced a surefire report during the current Maven session, executed at least one test, and recorded
+ * no failures or errors.
  *
  * <p>A required suite is a {@code <module> <class>} pair, where {@code module} is the module directory relative to the
- * V3 root. Its report is {@code <module>/target/surefire-reports/TEST-<class>.xml}; no V3 module uses failsafe or a
- * custom reports directory.
+ * V3 root, optionally followed by the surefire {@code reportNameSuffix} of the execution that runs it (for a suite run
+ * by a dedicated surefire execution, such as one with its own heap). Its report is
+ * {@code <module>/target/surefire-reports/TEST-<class>[-<suffix>].xml}; no V3 module uses failsafe or a custom reports
+ * directory.
  *
  * <p><b>Freshness.</b> Surefire's XML carries no run timestamp and never deletes reports of suites that did not run, so
  * a report on disk proves nothing by itself: it may come from an earlier build, a build resumed with {@code -rf}, or a
@@ -51,6 +54,7 @@ public final class CoreRuntimeSuiteReports {
 
     private static final Pattern MODULE = Pattern.compile("[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*");
     private static final Pattern CLASS_NAME = Pattern.compile("([a-z_][A-Za-z0-9_]*\\.)+[A-Z][A-Za-z0-9_]*");
+    private static final Pattern REPORT_NAME_SUFFIX = Pattern.compile("[A-Za-z0-9._-]+");
 
     private CoreRuntimeSuiteReports() {
     }
@@ -60,11 +64,24 @@ public final class CoreRuntimeSuiteReports {
      *
      * @param module module directory relative to the V3 root, with {@code /} separators
      * @param className fully qualified name of the top-level test class
+     * @param reportNameSuffix the surefire {@code reportNameSuffix} of the execution that runs the suite, or null for
+     *     the default execution
      */
-    public record Suite(String module, String className) {
+    public record Suite(String module, String className, String reportNameSuffix) {
+        public Suite(String module, String className) {
+            this(module, className, null);
+        }
+
         /** The surefire XML report this suite writes, under {@code v3Root}. */
         public Path report(Path v3Root) {
-            return v3Root.resolve(module).resolve("target/surefire-reports").resolve("TEST-" + className + ".xml");
+            String suffix = reportNameSuffix == null ? "" : "-" + reportNameSuffix;
+            return v3Root.resolve(module).resolve("target/surefire-reports")
+                         .resolve("TEST-" + className + suffix + ".xml");
+        }
+
+        /** The {@code <testsuite name>} surefire writes for this suite: {@code <class>[(<suffix>)]}. */
+        public String reportedName() {
+            return reportNameSuffix == null ? className : className + "(" + reportNameSuffix + ")";
         }
 
         /** The test source file of this suite, under {@code v3Root}. */
@@ -78,11 +95,14 @@ public final class CoreRuntimeSuiteReports {
 
         @Override
         public String toString() {
-            return module + " " + className;
+            return module + " " + className + (reportNameSuffix == null ? "" : " " + reportNameSuffix);
         }
     }
 
-    /** Reads a suite list: one {@code <module> <class>} pair per line; blank lines and {@code #} comments ignored. */
+    /**
+     * Reads a suite list: one {@code <module> <class> [<reportNameSuffix>]} entry per line; blank lines and {@code #}
+     * comments ignored.
+     */
     public static List<Suite> parse(Path suiteList) {
         try {
             return parse(Files.readAllLines(suiteList), suiteList.toString());
@@ -104,14 +124,18 @@ public final class CoreRuntimeSuiteReports {
             }
             String[] fields = content.split("\\s+");
             String location = source + ":" + (i + 1);
-            if (fields.length != 2 || !MODULE.matcher(fields[0]).matches() || fields[0].contains("..")
-                || !CLASS_NAME.matcher(fields[1]).matches()) {
-                problems.add(location + ": expected '<module directory> <fully qualified class>', got '" + content
-                             + "'");
-            } else if (!seen.add(fields[1])) {
-                problems.add(location + ": duplicate suite " + fields[1]);
+            if (fields.length < 2 || fields.length > 3 || !MODULE.matcher(fields[0]).matches()
+                || fields[0].contains("..") || !CLASS_NAME.matcher(fields[1]).matches()
+                || (fields.length == 3 && !REPORT_NAME_SUFFIX.matcher(fields[2]).matches())) {
+                problems.add(location + ": expected '<module directory> <fully qualified class> [<report name "
+                             + "suffix>]', got '" + content + "'");
             } else {
-                suites.add(new Suite(fields[0], fields[1]));
+                Suite suite = new Suite(fields[0], fields[1], fields.length == 3 ? fields[2] : null);
+                if (!seen.add(suite.reportedName())) {
+                    problems.add(location + ": duplicate suite " + suite.reportedName());
+                } else {
+                    suites.add(suite);
+                }
             }
         }
         if (!problems.isEmpty()) {
@@ -130,7 +154,8 @@ public final class CoreRuntimeSuiteReports {
     public static Instant parseBuildStart(String value) {
         if (value == null || value.isBlank() || value.contains("${")) {
             throw new IllegalArgumentException("build start time is not set (got '" + value + "'); run the gate "
-                                               + "through the core-runtime-gate profile (-Dv3.aggregate=core-runtime)");
+                                               + "through its gate profile (-Dv3.aggregate=core-runtime or "
+                                               + "-Dv3.aggregate=product-parity)");
         }
         try {
             return OffsetDateTime.parse(value.strip()).toInstant();
@@ -183,7 +208,7 @@ public final class CoreRuntimeSuiteReports {
             return "surefire report " + report + " has root element <" + testsuite.getTagName()
                    + ">, expected <testsuite>";
         }
-        if (!suite.className().equals(testsuite.getAttribute("name"))) {
+        if (!suite.reportedName().equals(testsuite.getAttribute("name"))) {
             return "surefire report " + report + " is for '" + testsuite.getAttribute("name") + "'";
         }
         try {

@@ -150,6 +150,37 @@ class CoreRuntimeSuiteReportsCheckTest {
     }
 
     @Test
+    void suiteOfADedicatedExecutionIsReadFromItsSuffixedReport() throws IOException {
+        Suite bounded = new Suite("core/example", "software.amazon.awssdk.example.BoundedTest", "small-heap");
+        write(bounded, "<testsuite name=\"" + bounded.className() + "(small-heap)\" tests=\"2\" errors=\"0\" "
+                       + "skipped=\"0\" failures=\"0\"><testcase name=\"a\"/><testcase name=\"b\"/></testsuite>");
+        assertTrue(bounded.report(v3Root).endsWith("TEST-software.amazon.awssdk.example.BoundedTest-small-heap.xml"));
+        assertEquals(List.of(), CoreRuntimeSuiteReports.problems(v3Root, List.of(bounded), buildStart));
+
+        // The default execution's report is not evidence for the dedicated execution, and vice versa.
+        Suite unsuffixed = new Suite("core/example", bounded.className());
+        assertTrue(CoreRuntimeSuiteReports.problems(v3Root, List.of(unsuffixed), buildStart).get(0)
+                                          .contains("no surefire report"));
+        report(unsuffixed, 1, 0, 0, 0);
+        Files.delete(bounded.report(v3Root));
+        assertTrue(CoreRuntimeSuiteReports.problems(v3Root, List.of(bounded), buildStart).get(0)
+                                          .contains("no surefire report"));
+    }
+
+    @Test
+    void parsesAnOptionalReportNameSuffix() {
+        assertEquals(List.of(new Suite("core/example", "software.amazon.awssdk.example.SyncTest", "bounded-memory"),
+                             SYNC),
+                     CoreRuntimeSuiteReports.parse(List.of(
+                         "core/example software.amazon.awssdk.example.SyncTest bounded-memory",
+                         "core/example software.amazon.awssdk.example.SyncTest"), "suites.txt"));
+        assertThrows(IllegalArgumentException.class, () -> CoreRuntimeSuiteReports.parse(List.of(
+            "core/example software.amazon.awssdk.example.SyncTest a b"), "suites.txt"));
+        assertThrows(IllegalArgumentException.class, () -> CoreRuntimeSuiteReports.parse(List.of(
+            "core/example software.amazon.awssdk.example.SyncTest x/y"), "suites.txt"));
+    }
+
+    @Test
     void parsesTheSuiteListIgnoringCommentsAndBlankLines() {
         List<Suite> suites = CoreRuntimeSuiteReports.parse(List.of(
             "# Task 6",

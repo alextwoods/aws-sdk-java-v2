@@ -191,4 +191,21 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <!-- The product-parity verification profile (-Dv3.aggregate=product-parity, task 17.1) runs the corpus at the
+                 packaging launch gate stage, so BLOCKED_BY_CANDIDATE results fail it, like tools/parity-manifest's
+                 launch gate in the same profile. An explicit -Dv3.launchGate overrides the stage. -->
+            <id>product-parity-launch-gate</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>product-parity</value>
+                </property>
+            </activation>
+            <properties>
+                <v3.launchGate>packaging</v3.launchGate>
+            </properties>
+        </profile>
+    </profiles>
 </project>

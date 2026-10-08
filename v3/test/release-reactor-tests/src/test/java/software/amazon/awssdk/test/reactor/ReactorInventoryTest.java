@@ -42,6 +42,7 @@ import software.amazon.awssdk.test.reactor.RequiredArtifacts.Category;
 class ReactorInventoryTest {
     private static final Path V3_ROOT = Path.of(System.getProperty("v3.root")).toAbsolutePath().normalize();
     private static final String CORE_RUNTIME_PROFILE = "v3-core-runtime";
+    private static final String PRODUCT_PARITY_PROFILE = "v3-product-parity";
     /** The V2 Migration Corpus (test/v2-migration-tests), which depends on the release-evidence tooling. */
     private static final String MIGRATION_CORPUS = "v2-migration-tests";
     /** Verification modules the foundation gate does not build: the benchmarks and the migration corpus. */
@@ -49,17 +50,18 @@ class ReactorInventoryTest {
     /** Simple class names matched by surefire's default includes (Test*, *Test, *Tests, *TestCase). */
     private static final Pattern SUREFIRE_DEFAULT_INCLUDES = Pattern.compile("Test.*|.*Test|.*Tests|.*TestCase");
 
-    private static final Map<String, String> EXPECTED_AGGREGATE_PROFILES = Map.of(
-        "v3-foundation", "foundation",
-        "v3-core-runtime", "core-runtime",
-        "v3-runtime", "runtime",
-        "v3-http", "http",
-        "v3-services", "services",
-        "v3-high-level", "high-level",
-        "v3-migration", "migration",
-        "v3-tests", "tests",
-        "v3-benchmarks", "benchmarks",
-        "v3-release-evidence", "release-evidence");
+    private static final Map<String, String> EXPECTED_AGGREGATE_PROFILES = Map.ofEntries(
+        Map.entry("v3-foundation", "foundation"),
+        Map.entry("v3-core-runtime", "core-runtime"),
+        Map.entry("v3-product-parity", "product-parity"),
+        Map.entry("v3-runtime", "runtime"),
+        Map.entry("v3-http", "http"),
+        Map.entry("v3-services", "services"),
+        Map.entry("v3-high-level", "high-level"),
+        Map.entry("v3-migration", "migration"),
+        Map.entry("v3-tests", "tests"),
+        Map.entry("v3-benchmarks", "benchmarks"),
+        Map.entry("v3-release-evidence", "release-evidence"));
 
     @Test
     void releaseReactorContainsEveryRequiredArtifactCategory() {
@@ -170,18 +172,57 @@ class ReactorInventoryTest {
     }
 
     /**
-     * Every required core-runtime suite names a concrete test class, matched by surefire's default includes, in a
-     * module the core-runtime profile builds, so a renamed or moved suite fails here rather than only in the gate.
+     * The product-parity gate extends the core-runtime gate, so it builds (and tests) every v3-core-runtime module, plus
+     * the fleet gate, the Parity Manifest and release-evidence tooling, the opt-in telemetry exporters and the V2
+     * Migration Corpus. Like v3-foundation it leaves out only the benchmarks.
+     */
+    @Test
+    void productParityProfileBuildsEveryCoreRuntimeModuleAndTheParityTooling() {
+        assertBuilds(PRODUCT_PARITY_PROFILE, ReactorInventory.load(V3_ROOT, CORE_RUNTIME_PROFILE).artifactIds());
+        assertBuilds(PRODUCT_PARITY_PROFILE, RequiredArtifacts.named(Category.RELEASE_TOOLING));
+        assertBuilds(PRODUCT_PARITY_PROFILE, Set.of("service-fleet", "cloudwatch-metric-publisher", MIGRATION_CORPUS));
+        assertBuilds(PRODUCT_PARITY_PROFILE, ReactorInventory.load(V3_ROOT, "v3-high-level").artifactIds());
+        Set<String> verification = new TreeSet<>(artifactIds(RequiredArtifacts.members(ReactorInventory.load(V3_ROOT),
+                                                                                       Category.TEST)));
+        verification.remove("sdk-benchmarks");
+        assertBuilds(PRODUCT_PARITY_PROFILE, verification);
+    }
+
+    /**
+     * Every required gate suite names a concrete test class, matched by surefire's default includes, in a module the
+     * gate's profile builds, so a renamed or moved suite fails here rather than only in the gate. The product-parity
+     * profile enforces both suite lists.
      */
     @Test
     void everyCoreRuntimeSuiteIsAConcreteTestClassOfAModuleTheProfileBuilds() throws IOException {
-        ReactorInventory coreRuntime = ReactorInventory.load(V3_ROOT, CORE_RUNTIME_PROFILE);
+        assertEquals(List.of(), suiteProblems(CORE_RUNTIME_PROFILE, CoreRuntimeSuiteReportsTest.requiredSuites()));
+        assertEquals(List.of(), suiteProblems(PRODUCT_PARITY_PROFILE, CoreRuntimeSuiteReportsTest.requiredSuites()));
+    }
+
+    @Test
+    void everyProductParitySuiteIsAConcreteTestClassOfAModuleTheProfileBuilds() throws IOException {
+        assertEquals(List.of(), suiteProblems(PRODUCT_PARITY_PROFILE, ProductParitySuiteReportsTest.requiredSuites()));
+    }
+
+    /** The product-parity gate runs both lists, so a suite listed in both would only be checked twice. */
+    @Test
+    void productParitySuitesDoNotRepeatCoreRuntimeSuites() {
+        Set<String> coreRuntime = CoreRuntimeSuiteReportsTest.requiredSuites().stream().map(Suite::className)
+                                                             .collect(Collectors.toSet());
+        List<String> repeated = ProductParitySuiteReportsTest.requiredSuites().stream()
+                                                             .filter(suite -> coreRuntime.contains(suite.className()))
+                                                             .map(Suite::toString).toList();
+        assertEquals(List.of(), repeated);
+    }
+
+    private static List<String> suiteProblems(String profile, List<Suite> suites) throws IOException {
+        ReactorInventory inventory = ReactorInventory.load(V3_ROOT, profile);
         List<String> problems = new ArrayList<>();
-        for (Suite suite : CoreRuntimeSuiteReportsTest.requiredSuites()) {
-            Optional<ReactorModule> module = coreRuntime.moduleAt(suite.module());
+        for (Suite suite : suites) {
+            Optional<ReactorModule> module = inventory.moduleAt(suite.module());
             Path source = suite.source(V3_ROOT);
             if (module.isEmpty() || !module.get().producesJar()) {
-                problems.add(suite + ": " + CORE_RUNTIME_PROFILE + " builds no jar module in " + suite.module());
+                problems.add(suite + ": " + profile + " builds no jar module in " + suite.module());
             } else if (!Files.isRegularFile(source)) {
                 problems.add(suite + ": no test source " + V3_ROOT.relativize(source));
             } else if (!SUREFIRE_DEFAULT_INCLUDES.matcher(suite.simpleName()).matches()) {
@@ -191,7 +232,7 @@ class ReactorInventoryTest {
                 problems.add(suite + ": is abstract, so surefire writes no report for it");
             }
         }
-        assertEquals(List.of(), problems);
+        return problems;
     }
 
     /**
@@ -201,19 +242,61 @@ class ReactorInventoryTest {
      */
     @Test
     void coreRuntimeGateProfileOrdersEverySuiteModuleBeforeTheGate() {
+        assertGateProfile("core-runtime-gate", "core-runtime", Map.of("v3.coreRuntimeGate", "true"),
+                          CoreRuntimeSuiteReportsTest.requiredSuites());
+    }
+
+    /** The product-parity gate enables both suite gates and orders every module of both suite lists before itself. */
+    @Test
+    void productParityGateProfileOrdersEverySuiteModuleBeforeTheGate() {
+        List<Suite> suites = new ArrayList<>(CoreRuntimeSuiteReportsTest.requiredSuites());
+        suites.addAll(ProductParitySuiteReportsTest.requiredSuites());
+        assertGateProfile("product-parity-gate", "product-parity",
+                          Map.of("v3.coreRuntimeGate", "true", "v3.productParityGate", "true"), suites);
+    }
+
+    /**
+     * The product-parity profile runs the launch gate at its packaging stage, fail-closed: tools/parity-manifest
+     * (LaunchGateRepositoryTest) and the V2 Migration Corpus (BLOCKED_BY_CANDIDATE results) each set
+     * v3.launchGate=packaging in a profile activated by the product-parity aggregate property.
+     */
+    @Test
+    void productParityProfileEnablesThePackagingLaunchGate() {
+        for (String module : List.of("tools/parity-manifest", "test/v2-migration-tests")) {
+            Element project = Xml.read(V3_ROOT.resolve(module).resolve("pom.xml"));
+            Element profile = Xml.children(Xml.child(project, "profiles"), "profile").stream()
+                                 .filter(p -> Xml.text(p, "activation", "property", "value")
+                                                 .equals(Optional.of("product-parity")))
+                                 .findFirst()
+                                 .orElseThrow(() -> new AssertionError(module + " has no product-parity profile"));
+            assertEquals(Optional.of(ReactorInventory.AGGREGATE_PROPERTY),
+                         Xml.text(profile, "activation", "property", "name"), module);
+            assertEquals(Optional.of("packaging"), Xml.text(profile, "properties", "v3.launchGate"), module);
+        }
+    }
+
+    private static void assertGateProfile(String profileId, String aggregate, Map<String, String> properties,
+                                          List<Suite> suites) {
         ReactorInventory full = ReactorInventory.load(V3_ROOT);
         Set<String> suiteModules = new TreeSet<>();
-        for (Suite suite : CoreRuntimeSuiteReportsTest.requiredSuites()) {
+        for (Suite suite : suites) {
             full.moduleAt(suite.module()).ifPresent(m -> suiteModules.add(m.artifactId()));
         }
 
         Element project = Xml.read(V3_ROOT.resolve("test/release-reactor-tests/pom.xml"));
         Element gate = Xml.children(Xml.child(project, "profiles"), "profile").stream()
-                          .filter(p -> Xml.text(p, "id").orElse("").equals("core-runtime-gate"))
-                          .findFirst().orElseThrow(() -> new AssertionError("no core-runtime-gate profile"));
+                          .filter(p -> Xml.text(p, "id").orElse("").equals(profileId))
+                          .findFirst().orElseThrow(() -> new AssertionError("no " + profileId + " profile"));
         assertEquals(Optional.of(ReactorInventory.AGGREGATE_PROPERTY), Xml.text(gate, "activation", "property", "name"));
-        assertEquals(Optional.of("core-runtime"), Xml.text(gate, "activation", "property", "value"));
-        assertEquals(Optional.of("true"), Xml.text(gate, "properties", "v3.coreRuntimeGate"));
+        assertEquals(Optional.of(aggregate), Xml.text(gate, "activation", "property", "value"));
+        properties.forEach((name, value) -> assertEquals(Optional.of(value), Xml.text(gate, "properties", name),
+                                                         profileId + " must set " + name));
+        // The gate's own failure must fail the build, even under -Dmaven.test.failure.ignore=true.
+        Element surefire = Xml.children(Xml.path(gate, "build", "plugins"), "plugin").stream()
+                              .filter(p -> Xml.text(p, "artifactId").equals(Optional.of("maven-surefire-plugin")))
+                              .findFirst()
+                              .orElseThrow(() -> new AssertionError(profileId + " must configure surefire"));
+        assertEquals(Optional.of("false"), Xml.text(surefire, "configuration", "testFailureIgnore"), profileId);
 
         Set<String> ordered = new TreeSet<>();
         List<String> problems = new ArrayList<>();
@@ -234,7 +317,7 @@ class ReactorInventoryTest {
             }
         }
         assertEquals(List.of(), problems);
-        assertEquals(suiteModules, ordered, "core-runtime-gate dependencies must be exactly the suite modules");
+        assertEquals(suiteModules, ordered, profileId + " dependencies must be exactly the suite modules");
     }
 
     @Test

@@ -63,6 +63,11 @@
                                      (configuration/resources, every HTTP TCK mode, auth/endpoint/retry/integrity,
                                      pipeline/interceptor, generated sync/async clients), which fails unless every
                                      required core-runtime suite ran and passed in this build
+        -Dv3.aggregate=product-parity
+                                     v3-product-parity: core-runtime gate plus the dynamic, fleet, Parity Manifest,
+                                     packaging-stage launch, high-level-library, migration-corpus, excluded-API and
+                                     metadata/telemetry/logging/redaction gates, which fails unless every required
+                                     core-runtime and product-parity suite ran and passed in this build
         -Dv3.aggregate=runtime       v3-runtime: Smithy runtime, core, protocols, HTTP SPI, telemetry SPI, dynamic client
                                      (plus url-connection-client, which the core identity-provider tests use)
         -Dv3.aggregate=http          v3-http: HTTP SPI and every HTTP client implementation
@@ -221,6 +226,78 @@
                 <module>test/codegen-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
+                <module>test/release-reactor-tests</module>
+            </modules>
+        </profile>
+        <profile>
+            <!--
+              Product-parity verification gate (task 17.1): a superset of v3-core-runtime (ReactorInventoryTest
+              enforces that it builds every v3-core-runtime module) that adds the fleet, parity, migration and
+              observability tooling and their gates. Every module runs validate through verify in Maven dependency
+              order, and any failure fails the build:
+                core runtime  everything v3-core-runtime runs (see above), including its suite gate
+                dynamic       dynamic-model/dynamic-client parsing, selection, validation, streaming, pagination,
+                              waiter and cancellation suites, the parser-isolation architecture test
+                              (architecture-tests DynamicIsolationRuntimeTest) and the generated/dynamic lifecycle and
+                              wire-equivalence properties (test/codegen-tests)
+                fleet         every generated service module (services/, regenerated from the canonical models by this
+                              build) and the fleet gate (tools/service-fleet ServiceFleetRepositoryTest)
+                parity        the Parity Manifest scanners, classification, compatibility-fixture goldens,
+                              high-level-library parity matrix and excluded-contract scans (tools/parity-manifest),
+                              the generated compatibility fixtures (test/codegen-generated-classes-test), and the
+                              launch-surface and behavior inventory gate at its packaging stage: this profile sets
+                              v3.launchGate=packaging in tools/parity-manifest (LaunchGateRepositoryTest) and in the
+                              migration corpus (BLOCKED_BY_CANDIDATE results fail), so any non-deprecated PRESERVED or
+                              ADAPTED capability the candidate does not ship, missing replacement, unbuilt release
+                              artifact or missing evidence hook fails the profile. The general-availability stage,
+                              which also requires candidate evidence (tasks 20.x), is not enabled here; pass
+                              -Dv3.launchGate=general-availability -Dv3.launchGate.evidence=<file> to run it.
+                libraries     DynamoDB Enhanced, S3 Transfer Manager, IAM policy builder, S3 event notifications and
+                              SNS message manager parity, fault, concurrency and safe-diagnostics suites
+                              (services-custom/*) and their compatibility fixtures
+                migration     the v2-migration engine, recipes and Properties 59-61 (tools/v2-migration), the V2
+                              Migration Corpus transformation, compile and behavior suites (test/v2-migration-tests)
+                              and the compatibility report it publishes (tools/release-evidence)
+                observability response metadata, telemetry, user-agent, logging, warning-suppression and redaction
+                              suites (core/sdk-core, core/aws-core, core/aws-pipeline, telemetry/*, test/codegen-tests
+                              Property 69, architecture-tests RuntimeLoggingArchitectureTest)
+              The gate is release-reactor-tests' product-parity-gate profile: CoreRuntimeSuiteReportsTest and
+              ProductParitySuiteReportsTest fail unless every suite of core-runtime-suites.txt and
+              product-parity-suites.txt wrote a fresh surefire report with executed tests and no failures or errors
+              (see v3-core-runtime above); the gate's own failure is not ignored by -Dmaven.test.failure.ignore.
+              architecture-tests and the launch gate read the compiled output of every production module, so run this
+              profile sequentially (no -T), like v3-all.
+            -->
+            <id>v3-product-parity</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>product-parity</value>
+                </property>
+            </activation>
+            <modules>
+                <module>smithy-runtime</module>
+                <module>core</module>
+                <module>protocols</module>
+                <module>http-client-spi</module>
+                <module>http-clients</module>
+                <module>telemetry</module>
+                <module>dynamic</module>
+                <module>codegen</module>
+                <module>services</module>
+                <module>services-custom</module>
+                <module>tools/v2-migration</module>
+                <module>tools/service-fleet</module>
+                <module>test/architecture-tests</module>
+                <module>test/codegen-generated-classes-test</module>
+                <module>test/codegen-lifecycle-tests</module>
+                <module>test/codegen-tests</module>
+                <module>test/http-client-tests</module>
+                <module>test/protocol-property-tests</module>
+                <!-- After every production module: the launch gate scans their compiled output. -->
+                <module>tools/parity-manifest</module>
+                <module>tools/release-evidence</module>
+                <module>test/v2-migration-tests</module>
                 <module>test/release-reactor-tests</module>
             </modules>
         </profile>

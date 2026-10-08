@@ -496,8 +496,8 @@ All tasks are required for general availability. No task is marked optional beca
     - **Property 71: Telemetry failures are isolated.** Generate callback failures over successful and failed calls; assert terminal result identity and exact telemetry-failure-channel delivery.
     - **Validates: Requirements 21.14, 21.15**
 
-- [ ] 17. Add automated dynamic, parity, migration, and observability aggregate validation
-  - [ ] 17.1 Configure and execute the product-parity verification reactor profile
+- [x] 17. Add automated dynamic, parity, migration, and observability aggregate validation
+  - [x] 17.1 Configure and execute the product-parity verification reactor profile
     - Create or configure a Maven aggregate verification profile that extends the core-runtime profile with dynamic-model isolation and differential suites, fleet generation and Parity Manifest gates, high-level-library parity/fault/concurrency suites, migration corpus transformation/compile/behavior tests, excluded-API scans, and metadata/telemetry/logging/redaction suites completed in tasks 12–16.
     - Execute all included modules in Maven dependency order and fail the profile on any dependency-isolation, generated/dynamic equivalence, fleet completeness, parity, compatibility, migration, high-level-library, telemetry, logging, or safe-diagnostics gate failure.
     - _Requirements: 2.1–2.2, 2.10–2.11, 4.1–4.3, 6.8, 7.1–7.10, 8.1, 8.3, 9.9–9.10, 10.1, 10.4–10.5, 11.12, 12.10, 14.1–14.19, 15.5, 16.1–16.15, 17.1–17.12, 18.1–18.9, 19.6–19.12, 21.1–21.15_

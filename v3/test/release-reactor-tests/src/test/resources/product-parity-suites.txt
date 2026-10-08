@@ -1,0 +1,188 @@
+# Required suites of the product-parity verification gate (task 17.1, profile v3-product-parity).
+#
+# ProductParitySuiteReportsTest fails the -Dv3.aggregate=product-parity build unless every suite below wrote
+# <module>/target/surefire-reports/TEST-<class>.xml during this Maven session with at least one executed (non-skipped)
+# test and no failures or errors. The same profile also enforces core-runtime-suites.txt (CoreRuntimeSuiteReportsTest),
+# so a suite listed there is not repeated here. ReactorInventoryTest checks that every entry names an existing,
+# concrete test class in a module that v3-product-parity builds, and that release-reactor-tests' product-parity-gate
+# profile orders the build of every module of both lists before the gate.
+#
+# Format: <module directory relative to v3/> <fully qualified test class> [<surefire reportNameSuffix of the execution
+# that runs it>]. '#' starts a comment. Property tests are tagged with the spec task and property they verify.
+
+# Task 12.1 / 12.3: runtime model parsing, dynamic descriptors, service/operation selection, pagination and waiters
+# (12.6 P52 ServiceOperationSelection)
+dynamic/dynamic-model software.amazon.awssdk.dynamic.model.DynamicModelTest
+dynamic/dynamic-model software.amazon.awssdk.dynamic.model.DynamicPaginationWaiterTest
+dynamic/dynamic-model software.amazon.awssdk.dynamic.model.DynamicServiceTest
+dynamic/dynamic-model software.amazon.awssdk.dynamic.model.ServiceOperationSelectionPropertyTest
+
+# Task 12.2 / 12.3: sync/async Dynamic Client invocation, streaming, pagination, waiters, cancellation
+# (12.7 P53 DynamicInputValidation)
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DeclaredMemberOrderTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicAsyncClientTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicAsyncStreamingTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicClientTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicInputValidationPropertyTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicInputValidationTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicPaginatorTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicServiceBindingTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicStreamingTest
+dynamic/dynamic-client software.amazon.awssdk.dynamic.client.DynamicWaiterTest
+
+# Task 12.4: dynamic parser isolation and the shared pipeline; dependency isolation of every reactor module, including
+# the high-level-library service edges (14.1) and the migration tooling (15.1). The generated/dynamic lifecycle and
+# wire-equivalence properties (12.5 P30, 12.8 P54) are in core-runtime-suites.txt.
+test/architecture-tests software.amazon.awssdk.test.architecture.DynamicIsolationRuntimeTest
+test/architecture-tests software.amazon.awssdk.test.architecture.ReactorPolicyConformanceTest
+
+# Task 13.2: fleet generation gate (every V2 baseline service has a generated module pinned to the canonical models)
+tools/service-fleet software.amazon.awssdk.tools.servicefleet.ServiceFleetRepositoryTest
+tools/service-fleet software.amazon.awssdk.tools.servicefleet.ServiceFleetTest
+
+# Tasks 13.1 and 13.3-13.7: Parity Manifest inventory, classification, launch-surface gate, compatibility fixtures
+# (13.5 P56 ManifestClassificationPartition, 13.6 P57 AdaptedReplacementsExist, 13.7 P58 PreservedApiDescriptors).
+# LaunchGateRepositoryTest is the packaging-stage launch gate this profile enables (it is skipped, and therefore fails
+# this gate, when no launch gate stage is set).
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.AdaptedReplacementsExistPropertyTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.CandidateEvidenceTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.CandidateInventoryScannerTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.ClassificationRulesTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.CompatibilityFixturesGoldenTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.EvidenceHooksTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.InventorySourcesTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.LaunchCategoryTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.LaunchGateCliTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.LaunchGateRepositoryTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.LaunchGateTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.ManifestClassificationPartitionPropertyTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.ManifestGeneratorTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.ManifestJsonTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.ManifestValidatorTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.V2BaselineScanTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.V2CodegenSurfaceInventorySourceTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.compat.CompatibilityFixtureGeneratorTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.compat.PreservedApiDescriptorsPropertyTest
+
+# Task 13.8: generated surface closure (P7 GeneratedSurfaceClosure)
+test/codegen-tests software.amazon.awssdk.test.codegen.GeneratedSurfaceClosurePropertyTest
+
+# Task 14.6: high-level-library parity matrix
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.HighLevelLibraryMatrixTest
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.HighLevelLibraryParityMatrixTest
+
+# Tasks 14.3-14.6: high-level-library compatibility fixtures over the generated services
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.IamPolicyBuilderCompatibilityTest
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.S3TransferManagerCompatibilityTest
+test/codegen-generated-classes-test software.amazon.awssdk.test.generated.SnsMessageManagerCompatibilityTest
+
+# Task 14.1: DynamoDB Enhanced sync/async parity, concurrency, fault, extension and Document suites
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.EnhancedV2ApiDescriptorParityTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.PublicApiBoundaryTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.document.EnhancedDocumentTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.extensions.ExtensionSpiContractTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.functionaltests.EnhancedClientConcurrencyTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.functionaltests.EnhancedClientFaultInjectionTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.functionaltests.EnhancedClientSyncAsyncParityTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.functionaltests.EnhancedClientUserAgentTest
+services-custom/dynamodb-enhanced software.amazon.awssdk.enhanced.dynamodb.internal.async.SdkPublishersTckTest
+
+# Task 14.2: S3 Transfer Manager flows, bounded memory, concurrency, injected failures
+# (the bounded-memory suite runs in its own small-heap surefire execution, reportNameSuffix bounded-memory)
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.S3TransferManagerBoundedMemoryTest bounded-memory
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.S3TransferManagerConcurrencyTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.S3TransferManagerDirectoryAndCopyTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.S3TransferManagerDownloadTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.S3TransferManagerGeneratedClientTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.S3TransferManagerUploadTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.internal.body.FileRangeAsyncRequestBodyTckTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.internal.body.PartBodiesTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.internal.progress.TransferListenerLoggingTest
+services-custom/s3-transfer-manager software.amazon.awssdk.transfer.s3.model.ResumableTransferSerializationTest
+
+# Task 14.3: IAM policy builder
+services-custom/iam-policy-builder software.amazon.awssdk.policybuilder.iam.IamPolicyPropertyTest
+services-custom/iam-policy-builder software.amazon.awssdk.policybuilder.iam.IamPolicyReaderTest
+services-custom/iam-policy-builder software.amazon.awssdk.policybuilder.iam.IamPolicyTest
+services-custom/iam-policy-builder software.amazon.awssdk.policybuilder.iam.IamPolicyWriterTest
+
+# Task 14.4: S3 event-notification models and registry integration
+services-custom/s3-event-notifications software.amazon.awssdk.eventnotifications.s3.S3EventNotificationPropertyTest
+services-custom/s3-event-notifications software.amazon.awssdk.eventnotifications.s3.S3EventNotificationRegistryTest
+services-custom/s3-event-notifications software.amazon.awssdk.eventnotifications.s3.S3EventNotificationSchemaFidelityTest
+services-custom/s3-event-notifications software.amazon.awssdk.eventnotifications.s3.S3EventNotificationV2DifferentialTest
+
+# Task 14.5: SNS message manager, signature verification and safe diagnostics
+services-custom/sns-message-manager software.amazon.awssdk.messagemanager.sns.internal.DefaultSnsMessageManagerTest
+services-custom/sns-message-manager software.amazon.awssdk.messagemanager.sns.internal.SignatureValidatorTest
+services-custom/sns-message-manager software.amazon.awssdk.messagemanager.sns.internal.SnsMessageManagerSafeDiagnosticsTest
+services-custom/sns-message-manager software.amazon.awssdk.messagemanager.sns.internal.SnsMessageUnmarshallerTest
+
+# Tasks 15.1-15.4 and 15.6-15.8: migration engine, Maven plugin, manifest reader, recipes, exclusion diagnostics
+# (15.6 P59 MigrationDispositionsTotalExclusive, 15.7 P60 UnsafeMigrationNonDestructive, 15.8 P61
+# ModernExclusionDiagnostics)
+tools/v2-migration software.amazon.awssdk.v2migration.JavaInventoryTest
+tools/v2-migration software.amazon.awssdk.v2migration.MigrationDispositionsTotalExclusivePropertyTest
+tools/v2-migration software.amazon.awssdk.v2migration.MigrationEngineTest
+tools/v2-migration software.amazon.awssdk.v2migration.MigrationReportTest
+tools/v2-migration software.amazon.awssdk.v2migration.PomMigrationTest
+tools/v2-migration software.amazon.awssdk.v2migration.UnsafeMigrationNonDestructivePropertyTest
+tools/v2-migration software.amazon.awssdk.v2migration.manifest.MigrationManifestTest
+tools/v2-migration software.amazon.awssdk.v2migration.maven.MigrationMojoTest
+tools/v2-migration software.amazon.awssdk.v2migration.pom.PomDocumentTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipe.core.ConfigurationRecipesTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipe.core.DependencyRecipesTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipe.core.JavaReleaseRecipeTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipe.core.SourceRecipesTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipes.modern.ExcludedFacilityRecipeTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipes.modern.ModernExclusionDiagnosticsPropertyTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipes.modern.ModernTypeRecipeTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipes.runtime.ApiIdsTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipes.runtime.InterceptorRecipeTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipes.runtime.KnownGapsTest
+tools/v2-migration software.amazon.awssdk.v2migration.recipes.runtime.ReplacementRecipesTest
+
+# Task 15.4: excluded contracts are absent from the compiled V3 release artifacts
+tools/parity-manifest software.amazon.awssdk.tools.paritymanifest.ExcludedContractsAbsentTest
+
+# Task 15.5: the V2 Migration Corpus (transformation, JDK 21 compile and behavior suites; at the packaging launch gate
+# stage BLOCKED_BY_CANDIDATE results fail) and the compatibility report it publishes
+test/v2-migration-tests software.amazon.awssdk.test.v2migration.MigrationCorpusTest
+tools/release-evidence software.amazon.awssdk.tools.releaseevidence.CompatibilityReportTest
+
+# Task 16.1: response/exception metadata (16.4 P66 ResponseMetadataPresence)
+core/aws-core software.amazon.awssdk.awscore.AwsResponseTest
+core/aws-pipeline software.amazon.awssdk.pipeline.ResponseMetadataPresencePropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.ResponseMetadataPropagationTest
+
+# Task 16.2: telemetry SPI, terminal records, exporters (16.5 P67 TelemetryLifecycle, 16.9 P71
+# TelemetryFailureIsolation)
+core/aws-pipeline software.amazon.awssdk.pipeline.PipelineTelemetryTest
+core/aws-pipeline software.amazon.awssdk.pipeline.TelemetryFailureIsolationPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.TelemetryLifecyclePropertyTest
+telemetry/telemetry-spi software.amazon.awssdk.metrics.LoggingMetricPublisherTest
+telemetry/telemetry-spi software.amazon.awssdk.metrics.MetricsApiTest
+telemetry/telemetry-spi software.amazon.awssdk.metrics.MetricsV2ApiDescriptorParityTest
+telemetry/telemetry-spi software.amazon.awssdk.telemetry.spi.TelemetrySpiTest
+telemetry/cloudwatch-metric-publisher software.amazon.awssdk.metrics.publishers.cloudwatch.CloudWatchMetricPublisherTest
+telemetry/cloudwatch-metric-publisher software.amazon.awssdk.metrics.publishers.cloudwatch.CloudWatchV2ApiDescriptorParityTest
+
+# Task 16.3: logging facade, no runtime INFO, redaction, user agent, warning suppression (16.6 P68
+# UserAgentContribution, 16.7 P69 SensitiveDiagnosticsRedaction, 16.8 P70 NonDuplicativeLogging)
+core/sdk-core software.amazon.awssdk.core.ApiNameTest
+core/sdk-core software.amazon.awssdk.utils.LoggerTest
+core/sdk-core software.amazon.awssdk.utils.RedactionTest
+core/sdk-core software.amazon.awssdk.utils.WarningSuppressionTest
+core/aws-pipeline software.amazon.awssdk.pipeline.NonDuplicativeLoggingPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.RequestLoggingTest
+core/aws-pipeline software.amazon.awssdk.pipeline.UserAgentContributionPropertyTest
+core/aws-pipeline software.amazon.awssdk.pipeline.UserAgentTest
+test/codegen-tests software.amazon.awssdk.test.codegen.SensitiveDiagnosticsRedactionPropertyTest
+test/architecture-tests software.amazon.awssdk.test.architecture.RuntimeLoggingArchitectureTest
+
+# Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
+# require their reports):
+#   - test/codegen-tests FleetGenerationTest: a generation-only triage harness, skipped unless -Dv3.fleetGeneration=true;
+#     the authoritative fleet gate is this build's generation of every services/* module plus ServiceFleetRepositoryTest.
+#   - unit suites of high-level-library internals (converters, mappers, expressions, policy/notification model
+#     values, SNS certificate helpers) below the parity/fault/concurrency suites listed above.

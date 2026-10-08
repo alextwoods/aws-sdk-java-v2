@@ -298,6 +298,24 @@
     <profiles>
         <profile>
             <!--
+              The product-parity verification profile (-Dv3.aggregate=product-parity, task 17.1) runs the launch gate
+              below at its packaging stage, fail-closed, without a separate -Dv3.launchGate flag. An explicit
+              -Dv3.launchGate (for example general-availability) overrides the stage. The V2 API jars the gate scans are
+              resolved by the copy-v2-public-api execution above (the same artifact list as resolve-v2-launch-baseline).
+            -->
+            <id>product-parity-launch-gate</id>
+            <activation>
+                <property>
+                    <name>v3.aggregate</name>
+                    <value>product-parity</value>
+                </property>
+            </activation>
+            <properties>
+                <v3.launchGate>packaging</v3.launchGate>
+            </properties>
+        </profile>
+        <profile>
+            <!--
               The launch-surface and behavior inventory gate (task 13.3; Requirements 16.4, 16.5, 16.9, 16.10, 16.12,
               16.14, 16.15). Enable with -Dv3.launchGate=packaging (or general-availability, which also requires
               -Dv3.launchGate.evidence=<candidate-evidence.json>). LaunchGateRepositoryTest then generates the Parity

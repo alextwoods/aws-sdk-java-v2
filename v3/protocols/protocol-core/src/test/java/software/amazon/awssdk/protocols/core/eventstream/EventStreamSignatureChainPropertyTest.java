@@ -157,7 +157,9 @@ class EventStreamSignatureChainPropertyTest {
     }
 
     // Feature: aws-sdk-java-v3, Property 48: Event Stream signatures form the modeled chain
-    @Property(tries = 200)
+    // 1,000 tries, like the property above: the coverage checks in collectStatistics need them. At 200 tries the
+    // "1-3 messages" bucket (expected ~16%, required >= 10%) missed its threshold in about 1% of runs.
+    @Property(tries = 1_000)
     @Label("Property 48: Event Stream signatures form the modeled chain (sync and async request bodies)")
     void requestBodyViewsSendTheModeledChain(@ForAll("bodyStreams") BodyStream stream) throws Exception {
         SerializableStruct initial = stream.initialPayload() == null ? null : event(stream.initialPayload());
