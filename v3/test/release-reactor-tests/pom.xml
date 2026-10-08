@@ -876,6 +876,34 @@
                         </exclusion>
                     </exclusions>
                 </dependency>
+                <!-- Task 18.1: the pinned Smithy protocol conformance runner. -->
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>protocol-tests</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <!-- Task 18.1: the fleet endpoint conformance runner. -->
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>endpoint-tests</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
                 <dependency>
                     <groupId>software.amazon.awssdk</groupId>
                     <artifactId>service-fleet</artifactId>

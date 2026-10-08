@@ -298,8 +298,10 @@ public final class AwsClientBuildState {
                                                                               .build()
                                                                               .resolve(values.build());
 
+            // The smithy.api#endpoint host prefix is applied exactly once: by the operation's endpoint binding when
+            // the service has endpoint rules (EndpointPlan), otherwise by the protocol's request serialization.
             runtime.configuration(configuration)
-                   .protocol(protocol.createClientProtocol(service.typeRegistry(), true))
+                   .protocol(protocol.createClientProtocol(service.typeRegistry(), service.rules().isEmpty()))
                    .transportMode(mode)
                    .transportRequirements(protocol.transportRequirements(), false)
                    .retryStrategy(retryStrategy != null ? retryStrategy : StandardRetryStrategy.create(),

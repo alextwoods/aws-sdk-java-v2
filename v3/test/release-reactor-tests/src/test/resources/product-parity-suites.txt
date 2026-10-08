@@ -203,6 +203,11 @@ test/dynamic-differential-tests software.amazon.awssdk.test.differential.Generat
 # cancellation, release and exactly-once completion).
 test/fault-injection-tests software.amazon.awssdk.test.fault.PipelineFaultMatrixTest
 test/fault-injection-tests software.amazon.awssdk.test.fault.GeneratedClientFaultMatrixTest
+# Task 18.1: protocol and endpoint conformance (every applicable case of the pinned Smithy protocol test models through
+# generated clients of the seven launch protocols and the real pipeline, and every smithy.rules#endpointTests case of
+# every vendored fleet model through the V3 rule evaluator; unlisted failures, timeouts and stale omissions fail).
+test/protocol-tests software.amazon.awssdk.test.protocoltests.ProtocolConformanceTest
+test/endpoint-tests software.amazon.awssdk.test.endpointtests.EndpointConformanceTest
 
 # Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
 # require their reports):

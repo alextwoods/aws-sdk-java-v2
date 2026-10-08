@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  Protocol conformance runner (task 18.1, Requirements 19.1, 19.14, 19.15): every applicable case of the pinned Smithy
+  protocol test models (smithy-aws-protocol-tests and smithy-protocol-tests at ${v3.smithy.version}) runs through a
+  client generated from the test service by the single generator (AwsCodegen) and through the real V3 pipeline, with a
+  capturing transport. The pinned test model jars are copied into target/smithy-protocol-tests and deliberately kept
+  off the test class path: aws-codegen discovers every Smithy model on its class loader, so the harness hands it the
+  test services through a model directory instead. Test code only.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>protocol-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Protocol Tests</name>
+    <description>Smithy protocol conformance of generated clients over every launch protocol runtime.</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- The single generator: the protocol test services are generated with AwsCodegen.generate. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-codegen</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The generated-client runtime the generated sources are compiled against and run on. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-pipeline</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>telemetry-spi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- SigV4 test services sign with the AWS auth schemes; their builders default to the default chain. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth-aws</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-providers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>eventstream</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The seven launch protocol runtimes under test. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>protocol-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-json-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-xml-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-query-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ec2-query-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rpcv2-cbor-protocol</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The smithy.test trait classes (httpRequestTests, httpResponseTests, httpMalformedRequestTests,
+             eventStreamTests) the harness reads the cases with. Same pinned Smithy release as the test models. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-test-traits</artifactId>
+            <version>${v3.smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-traits</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-traits</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- smithy.framework#ValidationException, which the test models' operations bind (a dependency of the
+             pinned test model artifacts). -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-validation-model</artifactId>
+            <version>${v3.smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!-- The pinned Smithy protocol test models, copied next to (not onto) the test class path. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>copy-smithy-protocol-tests</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/smithy-protocol-tests</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-aws-protocol-tests</artifactId>
+                                    <version>${v3.smithy.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-protocol-tests</artifactId>
+                                    <version>${v3.smithy.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- A whole-suite bound on top of the per-case bound the runner enforces itself. -->
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                    <systemPropertyVariables>
+                        <v3.protocolTests.models>${project.build.directory}/smithy-protocol-tests</v3.protocolTests.models>
+                        <v3.protocolTests.smithyVersion>${v3.smithy.version}</v3.protocolTests.smithyVersion>
+                        <v3.protocolTests.work>${project.build.directory}/protocol-conformance</v3.protocolTests.work>
+                        <!-- The canonical S3 model, whose endpoint rules and bindings the AmazonS3 test service
+                             receives (see ProtocolTestModels). -->
+                        <v3.protocolTests.s3Model>${project.basedir}/../../services/s3/src/main/smithy/model.json</v3.protocolTests.s3Model>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

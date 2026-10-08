@@ -1,0 +1,99 @@
+# Approved omissions of the protocol conformance runner (ProtocolConformanceTest, Requirement 19.15).
+#
+# One applicable case of the pinned Smithy protocol test models per line, which is expected NOT to pass:
+#   <case key> | <reason> | <Parity Manifest entry or requirement reference>
+# The case key is '<kind> <service> <operation> [<error>] <case ID>' as printed in the report
+# (target/protocol-conformance/protocol-conformance-report.json). Approved cases still run: an approved case that
+# passes, an entry that names no applicable case, and a case that times out all fail the build. Cases that do not
+# apply to a client at all (server cases, malformed-request cases, non-launch protocols) are not listed here; the
+# report counts them with their reason.
+
+# Task 18.1: smithy.test#eventStreamTests cases. The runner executes the @httpRequestTests and @httpResponseTests
+# cases; it has no event-stream case runner yet (message framing, initial messages and per-event signing of a duplex
+# stream over the capturing transport), so every applicable event-stream case still runs and fails with "no
+# event-stream runner". Event Stream framing and signing are covered by core/eventstream and the codegen-tests
+# streaming suites; an event-stream case runner is a follow-up of Requirement 19.1.
+event-stream RestJson DuplexStream DuplexBlobHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexBlobHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexBlobPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexBlobPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexBooleanHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexBooleanHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexByteHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexByteHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexClientErrorInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexClientErrorOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexClientUnexpectedErrorOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexHeadersAndExplicitPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexHeadersAndExplicitPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexHeadersAndImplicitPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexHeadersAndImplicitPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexIntegerHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexIntegerHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexLongHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexLongHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexMalformedEventTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexMalformedMessageTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexMissingEventTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexMissingMessageTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexMultipleHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexMultipleHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexShortHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexShortHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexStringHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexStringHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexStringPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexStringPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexStructurePayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexStructurePayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexTimestampHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexTimestampHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexUnionPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStream DuplexUnionPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStreamWithInitialMessages DuplexInitialRequestInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStreamWithInitialMessages DuplexInitialResponseOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStreamWithInitialMessages DuplexMissingRequiredInitialResponseOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStreamWithInitialMessages DuplexModeledProtocolError | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson DuplexStreamWithInitialMessages DuplexUnmodeledProtocolError | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream BlobHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream BlobPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream BooleanHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream ByteHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream ClientErrorInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream HeadersAndExplicitPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream HeadersAndImplicitPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream IntegerHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream LongHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream MultipleHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream ShortHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream StringHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream StringPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream StructurePayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream TimestampHeaderInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStream UnionPayloadInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson InputStreamWithInitialRequest InitialRequestInput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream BlobHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream BlobPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream BooleanHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream ByteHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream ClientErrorOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream ClientUnexpectedErrorOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream HeadersAndExplicitPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream HeadersAndImplicitPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream IntegerHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream LongHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream MalformedEventTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream MalformedMessageTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream MissingEventTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream MissingMessageTypeOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream ModeledProtocolError | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream MultipleHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream ShortHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream StringHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream StringPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream StructurePayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream TimestampHeaderOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream UnionPayloadOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStream UnmodeledProtocolError | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStreamWithInitialResponse InitialResponseOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up
+event-stream RestJson OutputStreamWithInitialResponse MissingRequiredInitialResponseOutput | no event-stream case runner in the conformance harness yet (task 18.1 runs httpRequestTests/httpResponseTests) | Requirement 19.1 follow-up

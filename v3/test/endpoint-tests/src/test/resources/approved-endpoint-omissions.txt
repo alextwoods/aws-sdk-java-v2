@@ -1,0 +1,7 @@
+# Approved omissions of the endpoint conformance runner (EndpointConformanceTest, Requirement 19.15).
+#
+# One endpoint test case of a vendored fleet model per line, which is expected NOT to pass:
+#   <service name> <case index> | <reason> | <Parity Manifest entry or requirement reference>
+# <service name> is the 'name' of the service in services/service-fleet.json and <case index> the 0-based position of the case in
+# the service's smithy.rules#endpointTests. Approved cases still run: an approved case that passes, an entry that
+# names no case, and a case that times out all fail the build.

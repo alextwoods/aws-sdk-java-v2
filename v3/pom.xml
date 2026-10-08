@@ -172,6 +172,8 @@
                 <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
+                <module>test/protocol-tests</module>
+                <module>test/endpoint-tests</module>
                 <module>test/release-reactor-tests</module>
             </modules>
         </profile>
@@ -232,6 +234,8 @@
                 <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
+                <module>test/protocol-tests</module>
+                <module>test/endpoint-tests</module>
                 <module>test/release-reactor-tests</module>
             </modules>
         </profile>
@@ -303,6 +307,8 @@
                 <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
+                <module>test/protocol-tests</module>
+                <module>test/endpoint-tests</module>
                 <!-- After every production module: the launch gate scans their compiled output. -->
                 <module>tools/parity-manifest</module>
                 <module>tools/release-evidence</module>

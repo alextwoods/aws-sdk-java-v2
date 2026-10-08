@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  Endpoint conformance runner (task 18.1, Requirements 19.2, 19.14, 19.15): every endpoint test case
+  (smithy.rules#endpointTests) of every vendored fleet model (services/<module>/<modelDirectory>, as pinned by
+  services/service-fleet.json) runs through the V3 endpoint rule evaluator against the service's own
+  smithy.rules#endpointRuleSet, read from the same vendored model files. It reads the vendored models rather than
+  depending on 400+ generated service artifacts, so it does not need the fleet built. Test code only.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>endpoint-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Endpoint Tests</name>
+    <description>Canonical endpoint test cases of every vendored fleet model through the V3 endpoint rule evaluator.</description>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <!-- The V3 endpoint rule evaluator (task 8.2) and its canonical test-suite runner. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- A whole-suite bound on top of the per-case bound the runner enforces itself. -->
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                    <systemPropertyVariables>
+                        <!-- services/service-fleet.json and the vendored models it pins. -->
+                        <v3.endpointTests.services>${project.basedir}/../../services</v3.endpointTests.services>
+                        <v3.endpointTests.report>${project.build.directory}/endpoint-conformance</v3.endpointTests.report>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -40,9 +40,11 @@
         <module>codegen-tests</module>
         <module>concurrency-tests</module>
         <module>dynamic-differential-tests</module>
+        <module>endpoint-tests</module>
         <module>fault-injection-tests</module>
         <module>http-client-tests</module>
         <module>protocol-property-tests</module>
+        <module>protocol-tests</module>
         <module>release-reactor-tests</module>
         <module>sdk-benchmarks</module>
         <module>v2-migration-tests</module>

@@ -503,7 +503,7 @@ All tasks are required for general availability. No task is marked optional beca
     - _Requirements: 2.1–2.2, 2.10–2.11, 4.1–4.3, 6.8, 7.1–7.10, 8.1, 8.3, 9.9–9.10, 10.1, 10.4–10.5, 11.12, 12.10, 14.1–14.19, 15.5, 16.1–16.15, 17.1–17.12, 18.1–18.9, 19.6–19.12, 21.1–21.15_
 
 - [ ] 18. Implement cross-cutting conformance and release-gate test systems
-  - [-] 18.1 Implement protocol and endpoint conformance runners
+  - [x] 18.1 Implement protocol and endpoint conformance runners
     - Build `v3/test/protocol-tests` and endpoint test modules that discover and execute every applicable pinned Smithy protocol case and canonical endpoint case across all seven runtimes and generated services.
     - Fail on test timeouts, failures, or unapproved omissions.
     - _Requirements: 19.1, 19.2, 19.14, 19.15_
@@ -514,7 +514,7 @@ All tasks are required for general availability. No task is marked optional beca
   - [ ] 18.3 Write the property test for classified intentional wire differences
     - **Property 62: Intentional wire differences are classified.** Generate differential expectation records and manifests; assert every intentional delta resolves to an adapted/excluded entry.
     - **Validates: Requirements 19.5**
-  - [-] 18.4 Implement generated-versus-dynamic differential matrices
+  - [x] 18.4 Implement generated-versus-dynamic differential matrices
     - Execute equivalent generated/dynamic finite and streaming calls for every protocol; compare modeled results and normalized wire components with deterministic credentials/time.
     - _Requirements: 14.16, 19.6, 19.14_
   - [x] 18.5 Implement deterministic pipeline fault injection
