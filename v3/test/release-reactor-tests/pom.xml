@@ -848,6 +848,20 @@
                         </exclusion>
                     </exclusions>
                 </dependency>
+                <!-- Task 18.5: the deterministic pipeline fault matrix. -->
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>fault-injection-tests</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
                 <dependency>
                     <groupId>software.amazon.awssdk</groupId>
                     <artifactId>service-fleet</artifactId>

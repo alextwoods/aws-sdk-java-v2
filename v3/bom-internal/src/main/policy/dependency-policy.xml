@@ -1074,6 +1074,24 @@
             <owns>Barrier-controlled release concurrency suites of generated sync/async clients, identity resolvers, interceptors, retries, paginators, waiters and high-level libraries, and the dependency-free harness (src/main) they and the HTTP transport suite share. Every other dependency is test scope.</owns>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="fault-injection-tests" path="test/fault-injection-tests" kind="test" release="false">
+            <owns>The deterministic pipeline fault-injection kit (src/main: a generatable fault trace, controllable transport, identity, signer, endpoint, scheduler and body fakes, recorders and a harness over the client build state) and the release fault matrix through the real pipeline and generated sync/async clients. The generated services are test scope.</owns>
+            <!-- The kit fakes the pipeline's SPIs and builds a client runtime with AwsClientBuildState. -->
+            <allows module="aws-pipeline"/>
+            <allows module="aws-core"/>
+            <allows module="sdk-core"/>
+            <allows module="http-spi"/>
+            <allows module="retries"/>
+            <allows module="identity-spi"/>
+            <allows module="auth-api"/>
+            <allows module="endpoints"/>
+            <allows module="regions"/>
+            <allows module="telemetry-spi"/>
+            <!-- Operation and model types (SerializableStruct) and the async transport's request/response publishers. -->
+            <allowsClass class="smithy-java"/>
+            <allowsClass class="reactive-streams"/>
+            <forbids class="logging-implementation"/>
+        </module>
         <module artifactId="http-client-tests" path="test/http-client-tests" kind="test" release="false">
             <owns>HTTP SPI TCK: capability-driven sync and async conformance suites run against every HTTP implementation and mode.</owns>
             <forbids class="logging-implementation"/>

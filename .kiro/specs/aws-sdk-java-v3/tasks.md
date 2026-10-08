@@ -503,28 +503,28 @@ All tasks are required for general availability. No task is marked optional beca
     - _Requirements: 2.1–2.2, 2.10–2.11, 4.1–4.3, 6.8, 7.1–7.10, 8.1, 8.3, 9.9–9.10, 10.1, 10.4–10.5, 11.12, 12.10, 14.1–14.19, 15.5, 16.1–16.15, 17.1–17.12, 18.1–18.9, 19.6–19.12, 21.1–21.15_
 
 - [ ] 18. Implement cross-cutting conformance and release-gate test systems
-  - [ ] 18.1 Implement protocol and endpoint conformance runners
+  - [-] 18.1 Implement protocol and endpoint conformance runners
     - Build `v3/test/protocol-tests` and endpoint test modules that discover and execute every applicable pinned Smithy protocol case and canonical endpoint case across all seven runtimes and generated services.
     - Fail on test timeouts, failures, or unapproved omissions.
     - _Requirements: 19.1, 19.2, 19.14, 19.15_
-  - [ ] 18.2 Implement fleet schema-fidelity and wire-differential suites
+  - [-] 18.2 Implement fleet schema-fidelity and wire-differential suites
     - Compare every generated schema to canonical shapes and compare V3 requests/success/errors with canonical expectations and the frozen V2 baseline across every protocol/binding category.
     - Require intentional differences to carry an adapted/excluded manifest ID.
     - _Requirements: 19.3, 19.4, 19.5, 19.14, 19.15_
   - [ ] 18.3 Write the property test for classified intentional wire differences
     - **Property 62: Intentional wire differences are classified.** Generate differential expectation records and manifests; assert every intentional delta resolves to an adapted/excluded entry.
     - **Validates: Requirements 19.5**
-  - [ ] 18.4 Implement generated-versus-dynamic differential matrices
+  - [-] 18.4 Implement generated-versus-dynamic differential matrices
     - Execute equivalent generated/dynamic finite and streaming calls for every protocol; compare modeled results and normalized wire components with deterministic credentials/time.
     - _Requirements: 14.16, 19.6, 19.14_
-  - [ ] 18.5 Implement deterministic pipeline fault injection
+  - [x] 18.5 Implement deterministic pipeline fault injection
     - Build controllable endpoint, identity, signer, scheduler, body, and transport fakes for connection failure, partial request/response, timeout, throttling, retry hints, malformed success, modeled/unmodeled errors, cancellation, and resolution failures.
     - Assert terminal outcome, attempts, delays, cancellation, cleanup, metadata, and no duplicate completion.
     - _Requirements: 19.7, 19.8, 19.14_
   - [ ] 18.6 Write the property test for model-predicted fault outcomes
     - **Property 63: Fault outcomes follow pipeline state.** Generate bounded fault/retry/cancellation traces; compare execution results with an independent pipeline state-machine oracle.
     - **Validates: Requirements 19.7, 19.8**
-  - [ ] 18.7 Implement barrier-controlled concurrency suites
+  - [x] 18.7 Implement barrier-controlled concurrency suites
     - Test clients, identity resolvers, transports, interceptors, retries, paginators, waiters, and high-level libraries with documented simultaneous/total counts, overlap barriers, and bounded timeouts.
     - _Requirements: 7.12, 8.13, 19.9, 19.10, 19.14_
   - [ ] 18.8 Implement bounded-memory streaming and Reactive Streams suites

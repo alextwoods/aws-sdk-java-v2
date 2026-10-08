@@ -194,6 +194,11 @@ test/concurrency-tests software.amazon.awssdk.test.concurrency.PaginatorWaiterCo
 test/concurrency-tests software.amazon.awssdk.test.concurrency.RetryConcurrencyTest
 test/http-client-tests software.amazon.awssdk.http.tck.TransportConcurrencyTest
 services-custom/sns-message-manager software.amazon.awssdk.messagemanager.sns.internal.SnsMessageManagerConcurrencyTest
+# Task 18.5: the deterministic pipeline fault matrix (every Requirement 19.7 fault kind on both drivers through the real
+# AwsCallEngine, and through generated sync/async clients of four protocols; terminal outcome, attempts, delays,
+# cancellation, release and exactly-once completion).
+test/fault-injection-tests software.amazon.awssdk.test.fault.PipelineFaultMatrixTest
+test/fault-injection-tests software.amazon.awssdk.test.fault.GeneratedClientFaultMatrixTest
 
 # Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
 # require their reports):

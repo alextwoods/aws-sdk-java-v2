@@ -168,6 +168,7 @@
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
                 <module>test/concurrency-tests</module>
+                <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
                 <module>test/release-reactor-tests</module>
@@ -226,6 +227,7 @@
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
                 <module>test/concurrency-tests</module>
+                <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
                 <module>test/release-reactor-tests</module>
@@ -295,6 +297,7 @@
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
                 <module>test/concurrency-tests</module>
+                <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
                 <!-- After every production module: the launch gate scans their compiled output. -->
