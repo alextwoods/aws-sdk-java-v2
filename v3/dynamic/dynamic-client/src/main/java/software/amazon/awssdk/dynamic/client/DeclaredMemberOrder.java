@@ -31,7 +31,9 @@ import software.amazon.smithy.java.core.serde.MapSerializer;
 import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.core.serde.event.EventStream;
+import software.amazon.smithy.java.dynamicschemas.StructDocument;
 import software.amazon.smithy.java.io.datastream.DataStream;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
  * Serializes schema-guided documents with structure and union members in modeled declaration order, the order
@@ -47,13 +49,27 @@ import software.amazon.smithy.java.io.datastream.DataStream;
  * events of an input event stream are encoded by the protocol apart from the request, so the view of a request is an
  * {@link EventStreams.InputEventView} that views each event the same way.
  *
+ * <p>A {@linkplain #request request} and each of its input events are first {@linkplain DynamicDefaults#fill filled}
+ * with their absent {@code @default} members, which a generated builder starts at their defaults and so serializes.
+ *
  * <p>Stateless; each view is used by one serialization at a time.
  */
 final class DeclaredMemberOrder {
     private final ServiceSchemaIndex index;
+    private final ShapeId service;
 
-    DeclaredMemberOrder(ServiceSchemaIndex index) {
+    DeclaredMemberOrder(ServiceSchemaIndex index, ShapeId service) {
         this.index = Objects.requireNonNull(index, "index");
+        this.service = Objects.requireNonNull(service, "service");
+    }
+
+    /** The request view of {@code request}: its {@code @default}-filled document, {@linkplain #view viewed}. */
+    SerializableStruct request(SerializableStruct request) {
+        return view(filled(request));
+    }
+
+    private SerializableStruct filled(SerializableStruct struct) {
+        return struct instanceof StructDocument document ? DynamicDefaults.fill(document, service) : struct;
     }
 
     /** {@code struct} writing its members, and those of nested structures and unions, in declaration order. */
@@ -89,7 +105,7 @@ final class DeclaredMemberOrder {
 
         @Override
         public SerializableStruct viewInputEvent(SerializableStruct event) {
-            return view(event);
+            return view(filled(event));
         }
 
         @Override

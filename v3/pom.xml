@@ -168,6 +168,7 @@
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
                 <module>test/concurrency-tests</module>
+                <module>test/dynamic-differential-tests</module>
                 <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
@@ -227,6 +228,7 @@
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
                 <module>test/concurrency-tests</module>
+                <module>test/dynamic-differential-tests</module>
                 <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>
@@ -297,6 +299,7 @@
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
                 <module>test/concurrency-tests</module>
+                <module>test/dynamic-differential-tests</module>
                 <module>test/fault-injection-tests</module>
                 <module>test/http-client-tests</module>
                 <module>test/protocol-property-tests</module>

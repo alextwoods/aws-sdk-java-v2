@@ -194,6 +194,10 @@ test/concurrency-tests software.amazon.awssdk.test.concurrency.PaginatorWaiterCo
 test/concurrency-tests software.amazon.awssdk.test.concurrency.RetryConcurrencyTest
 test/http-client-tests software.amazon.awssdk.http.tck.TransportConcurrencyTest
 services-custom/sns-message-manager software.amazon.awssdk.messagemanager.sns.internal.SnsMessageManagerConcurrencyTest
+# Task 18.4: the generated-versus-dynamic differential matrix (every launch protocol x call shape x sync/async cell
+# through synthetic and fleet generated clients and the Dynamic Client; unsupported cells are explicit). The random
+# generated/dynamic properties (12.5 P30, 12.8 P54) are in core-runtime-suites.txt.
+test/dynamic-differential-tests software.amazon.awssdk.test.differential.GeneratedDynamicDifferentialMatrixTest
 # Task 18.5: the deterministic pipeline fault matrix (every Requirement 19.7 fault kind on both drivers through the real
 # AwsCallEngine, and through generated sync/async clients of four protocols; terminal outcome, attempts, delays,
 # cancellation, release and exactly-once completion).

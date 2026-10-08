@@ -174,7 +174,7 @@ public final class DynamicServiceException extends AwsServiceException implement
         }
 
         private StructDocument document() {
-            return copied != null ? copied : members().build();
+            return copied != null ? copied : DynamicDefaults.fill(members().build(), service);
         }
 
         @Override

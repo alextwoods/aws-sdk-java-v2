@@ -1074,6 +1074,21 @@
             <owns>Barrier-controlled release concurrency suites of generated sync/async clients, identity resolvers, interceptors, retries, paginators, waiters and high-level libraries, and the dependency-free harness (src/main) they and the HTTP transport suite share. Every other dependency is test scope.</owns>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="dynamic-differential-tests" path="test/dynamic-differential-tests" kind="test" release="false">
+            <owns>The generated-versus-dynamic differential release matrix: every launch protocol, call shape and sync/async mode through generated synthetic and fleet service clients and the Dynamic Client built from the same model AST, compared on the wire and on modeled results.</owns>
+            <!-- The synthetic services generated into src/main: operation descriptors, service metadata, endpoint
+                 bindings, clients, paginators and waiters on the AWS pipeline. The protocol runtimes, the Dynamic
+                 Client and the fleet service artifacts are test scope. -->
+            <allows module="aws-core"/>
+            <allows module="protocol-core"/>
+            <allows module="endpoints"/>
+            <allows module="aws-pipeline"/>
+            <allows module="http-spi"/>
+            <!-- SigV4 services sign with the AWS auth schemes and default to the default credentials chain. -->
+            <allows module="auth-aws"/>
+            <allows module="identity-providers"/>
+            <forbids class="logging-implementation"/>
+        </module>
         <module artifactId="fault-injection-tests" path="test/fault-injection-tests" kind="test" release="false">
             <owns>The deterministic pipeline fault-injection kit (src/main: a generatable fault trace, controllable transport, identity, signer, endpoint, scheduler and body fakes, recorders and a harness over the client build state) and the release fault matrix through the real pipeline and generated sync/async clients. The generated services are test scope.</owns>
             <!-- The kit fakes the pipeline's SPIs and builds a client runtime with AwsClientBuildState. -->

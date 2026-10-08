@@ -154,7 +154,7 @@ final class DynamicServiceBinding {
                                                      .build());
         }
         this.definition = defined;
-        this.memberOrder = new DeclaredMemberOrder(service.schemaIndex());
+        this.memberOrder = new DeclaredMemberOrder(service.schemaIndex(), service.id());
     }
 
     /** The binding of {@code service}. */
@@ -213,12 +213,13 @@ final class DynamicServiceBinding {
     private DynamicOperationBinding bind(DynamicAwsOperation operation) {
         OperationShape operationShape = model.expectShape(operation.id(), OperationShape.class);
         AwsOperation.Builder<StructDocument, StructDocument> builder =
-            AwsOperation.builder(operation.descriptor(), operation.inputBuilder(), operation.outputBuilder());
+            AwsOperation.builder(operation.descriptor(), operation.inputBuilder(),
+                                () -> DynamicDefaults.filling(operation.outputBuilder().get(), service.id()));
         if (rules != null) {
             builder.endpointBinding(endpointBinding(operation.name(), operationShape));
         }
         builder.auth(auth(operationShape));
-        builder.requestView(memberOrder::view);
+        builder.requestView(memberOrder::request);
         operationShape.findTrait(HttpChecksumMetadata.TRAIT_ID)
                       .ifPresent(trait -> builder.httpChecksum(HttpChecksumMetadata.fromNode(trait.toNode())));
         DynamicInputValidator inputEvents = operation.schemas().inputStreamMember()
@@ -332,7 +333,9 @@ final class DynamicServiceBinding {
                                                   () -> DynamicServiceException.builder(schema, serviceId)));
                 } else {
                     entries.add(RegisteredType.of(schema, StructDocument.class,
-                                                  () -> SchemaConverter.createDocumentBuilder(schema, serviceId)));
+                                                  () -> DynamicDefaults.filling(
+                                                      SchemaConverter.createDocumentBuilder(schema, serviceId),
+                                                      serviceId)));
                 }
             }
             return entries;
