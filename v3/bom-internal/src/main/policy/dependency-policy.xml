@@ -1070,6 +1070,10 @@
             <owns>Black-box aws-codegen tests: byte-identical generated trees and integration conflict diagnostics.</owns>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="concurrency-tests" path="test/concurrency-tests" kind="test" release="false">
+            <owns>Barrier-controlled release concurrency suites of generated sync/async clients, identity resolvers, interceptors, retries, paginators, waiters and high-level libraries, and the dependency-free harness (src/main) they and the HTTP transport suite share. Every other dependency is test scope.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
         <module artifactId="http-client-tests" path="test/http-client-tests" kind="test" release="false">
             <owns>HTTP SPI TCK: capability-driven sync and async conformance suites run against every HTTP implementation and mode.</owns>
             <forbids class="logging-implementation"/>

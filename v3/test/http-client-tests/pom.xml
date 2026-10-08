@@ -95,5 +95,12 @@
             <artifactId>jqwik</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- The barrier-controlled concurrency harness (task 18.7) of TransportConcurrencyTest; dependency-free. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>concurrency-tests</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

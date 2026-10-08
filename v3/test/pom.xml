@@ -38,6 +38,7 @@
         <module>codegen-generated-classes-test</module>
         <module>codegen-lifecycle-tests</module>
         <module>codegen-tests</module>
+        <module>concurrency-tests</module>
         <module>http-client-tests</module>
         <module>protocol-property-tests</module>
         <module>release-reactor-tests</module>

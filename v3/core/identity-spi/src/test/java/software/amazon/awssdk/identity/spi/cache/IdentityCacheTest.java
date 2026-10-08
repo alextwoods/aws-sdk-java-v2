@@ -29,6 +29,8 @@ import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
@@ -130,6 +132,82 @@ class IdentityCacheTest {
         assertEquals("v", first.get());
         assertEquals("v", second.get());
         assertEquals(1, calls.get());
+    }
+
+    /**
+     * Reproducer of a duplicate refresh found by the task 18.7 concurrency suites: a caller that read the stale value,
+     * then lost the CPU while another caller's load ran to completion, used to start a second load for the same expiry
+     * instead of returning the value that load had just cached.
+     */
+    @Test
+    void aCallerThatSawTheStaleValueBeforeAConcurrentLoadFinishedReusesThatLoadsValue() throws Exception {
+        GatedClock clock = new GatedClock(T0);
+        Loader loader = new Loader(() -> RefreshResult.of("v", clock.instant().plusSeconds(60), null));
+        IdentityCache<String> cache = cache(loader, clock, IdentityCache.StaleValueBehavior.STRICT);
+        assertEquals("v1", cache.get());
+        clock.now = T0.plusSeconds(120);
+
+        // A reads the stale v1, then stops at its first clock read, before it decides to refresh.
+        CompletableFuture<String> a = new CompletableFuture<>();
+        Thread caller = new Thread(() -> {
+            try {
+                a.complete(cache.get());
+            } catch (RuntimeException e) {
+                a.completeExceptionally(e);
+            }
+        });
+        clock.gate(caller);
+        caller.start();
+        assertTrue(clock.reached.await(10, TimeUnit.SECONDS), "the caller reached the clock");
+
+        // Meanwhile another caller refreshes the expired value to completion.
+        assertEquals("v2", cache.get());
+        clock.release.countDown();
+
+        assertEquals("v2", a.get(10, TimeUnit.SECONDS), "the caller returns the value the concurrent load cached");
+        assertEquals(2, loader.calls.get(), "exactly one load for the expiry");
+    }
+
+    /** A settable clock whose first read on one gated thread stops until {@link #release} opens. */
+    private static final class GatedClock extends Clock {
+        private final CountDownLatch reached = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final AtomicBoolean armed = new AtomicBoolean();
+        private volatile Thread gated;
+        private volatile Instant now;
+
+        GatedClock(Instant now) {
+            this.now = now;
+        }
+
+        void gate(Thread thread) {
+            gated = thread;
+            armed.set(true);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            Instant reading = now;
+            if (Thread.currentThread() == gated && armed.compareAndSet(true, false)) {
+                reached.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return reading;
+        }
     }
 
     private static IdentityCache<String> cache(Loader loader, Clock clock, IdentityCache.StaleValueBehavior behavior) {

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  Barrier-controlled release concurrency suites (task 18.7; Requirements 7.12, 8.13, 19.9, 19.10, 19.14).
+
+  src/main holds the dependency-free harness every suite uses (ConcurrencyPlan, ConcurrentRun, OverlapBarrier,
+  AsyncOverlapGate): a documented simultaneous-call count of at least two, a total-operation count greater than it,
+  a start barrier per round, an overlap barrier (or, for asynchronous components, a non-blocking overlap gate) that
+  proves the simultaneous callers are inside the component at the same time, and a bounded completion timeout after
+  which a suite fails instead of hanging. test/http-client-tests uses the same harness for the per-transport suite.
+
+  src/test runs the suites over generated DynamoDB sync and async clients (one shared instance per suite), caching
+  identity providers, interceptors, retry strategies, paginators, waiters and the DynamoDB Enhanced, IAM policy
+  builder and S3 event notification libraries, all against deterministic in-memory fakes (nothing leaves the JVM).
+  Every dependency except the harness's own (none) is test scope. Test code only; not released.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>concurrency-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Concurrency Tests</name>
+    <description>Barrier-controlled concurrency suites of clients, identity, interceptors, retries, paginators, waiters and high-level libraries, and the harness they share.</description>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <!-- The generated DynamoDB sync and async clients, paginators and waiters (awsJson1.0, SigV4). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-pipeline</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>retries</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-spi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The caching identity providers under simultaneous refresh. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-providers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- High-level libraries: their public APIs over shared instances. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb-enhanced</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>iam-policy-builder</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3-event-notifications</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.reactivestreams</groupId>
+            <artifactId>reactive-streams</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

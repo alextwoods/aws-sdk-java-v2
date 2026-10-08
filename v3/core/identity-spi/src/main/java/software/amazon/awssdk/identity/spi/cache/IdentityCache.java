@@ -87,11 +87,11 @@ public final class IdentityCache<T> {
         Instant now = clock.instant();
         if (current != null && !current.invalidated && !isStale(current.result, now)) {
             if (current.result.prefetchTime().map(p -> !now.isBefore(p)).orElse(false)) {
-                refresh();
+                refresh(current);
             }
             return CompletableFuture.completedFuture(current.result.value());
         }
-        return refresh().thenApply(RefreshResult::value);
+        return refresh(current).thenApply(RefreshResult::value);
     }
 
     /**
@@ -131,8 +131,12 @@ public final class IdentityCache<T> {
         return result.staleTime().map(stale -> !now.isBefore(stale)).orElse(false);
     }
 
-    /** Starts one load unless one is running, and returns the running load. */
-    private CompletableFuture<RefreshResult<T>> refresh() {
+    /**
+     * Starts one load unless one is running, and returns the running load. {@code observed} is the cached entry the
+     * caller decided on: if a load finished after the caller read it and cached a usable value, that value is
+     * returned instead of loading again, so one expiry (or prefetch window) causes one load.
+     */
+    private CompletableFuture<RefreshResult<T>> refresh(Cached<T> observed) {
         CompletableFuture<RefreshResult<T>> load;
         while (true) {
             CompletableFuture<RefreshResult<T>> running = inFlight.get();
@@ -145,6 +149,12 @@ public final class IdentityCache<T> {
             }
         }
         CompletableFuture<RefreshResult<T>> started = load;
+        Cached<T> latest = cached.get();
+        if (latest != observed && latest != null && !latest.invalidated && !isStale(latest.result, clock.instant())) {
+            inFlight.compareAndSet(started, null);
+            started.complete(latest.result);
+            return started;
+        }
         try {
             executor.execute(() -> runLoad(started));
         } catch (RuntimeException e) {

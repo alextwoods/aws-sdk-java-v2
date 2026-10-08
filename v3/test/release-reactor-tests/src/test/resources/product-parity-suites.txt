@@ -179,6 +179,21 @@ core/aws-pipeline software.amazon.awssdk.pipeline.UserAgentContributionPropertyT
 core/aws-pipeline software.amazon.awssdk.pipeline.UserAgentTest
 test/codegen-tests software.amazon.awssdk.test.codegen.SensitiveDiagnosticsRedactionPropertyTest
 test/architecture-tests software.amazon.awssdk.test.architecture.RuntimeLoggingArchitectureTest
+# Task 18.7: barrier-controlled concurrency suites (documented simultaneous/total counts, overlap barriers or gates,
+# bounded timeouts) of generated sync/async clients, identity resolvers, every HTTP transport, interceptors, retries,
+# paginators, waiters and the high-level libraries. The DynamoDB Enhanced and S3 Transfer Manager suites of task 14.x
+# (EnhancedClientConcurrencyTest, S3TransferManagerConcurrencyTest) are listed above; IdentityCacheTest holds the
+# deterministic reproducer of the duplicate identity refresh found while writing these suites.
+test/concurrency-tests software.amazon.awssdk.test.concurrency.ConcurrencyHarnessTest
+test/concurrency-tests software.amazon.awssdk.test.concurrency.GeneratedAsyncClientConcurrencyTest
+test/concurrency-tests software.amazon.awssdk.test.concurrency.GeneratedSyncClientConcurrencyTest
+test/concurrency-tests software.amazon.awssdk.test.concurrency.HighLevelLibraryConcurrencyTest
+test/concurrency-tests software.amazon.awssdk.test.concurrency.IdentityResolverConcurrencyTest
+test/concurrency-tests software.amazon.awssdk.test.concurrency.InterceptorConcurrencyTest
+test/concurrency-tests software.amazon.awssdk.test.concurrency.PaginatorWaiterConcurrencyTest
+test/concurrency-tests software.amazon.awssdk.test.concurrency.RetryConcurrencyTest
+test/http-client-tests software.amazon.awssdk.http.tck.TransportConcurrencyTest
+services-custom/sns-message-manager software.amazon.awssdk.messagemanager.sns.internal.SnsMessageManagerConcurrencyTest
 
 # Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
 # require their reports):
