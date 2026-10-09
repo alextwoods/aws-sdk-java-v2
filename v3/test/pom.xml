@@ -43,6 +43,7 @@
         <module>dynamic-differential-tests</module>
         <module>endpoint-tests</module>
         <module>fault-injection-tests</module>
+        <module>fleet-differential-tests</module>
         <module>http-client-tests</module>
         <module>protocol-property-tests</module>
         <module>protocol-tests</module>

@@ -218,6 +218,11 @@ test/bounded-memory-tests software.amazon.awssdk.test.boundedmemory.StreamingBou
 # every vendored fleet model through the V3 rule evaluator; unlisted failures, timeouts and stale omissions fail).
 test/protocol-tests software.amazon.awssdk.test.protocoltests.ProtocolConformanceTest
 test/endpoint-tests software.amazon.awssdk.test.endpointtests.EndpointConformanceTest
+# Task 18.2: fleet schema fidelity (every generated schema of every fleet service against its canonical Smithy shape)
+# and the wire differential (V3 requests, success and error responses against canonical expectations and the frozen V2
+# baseline per protocol and binding category; every V3/V2 delta names an ADAPTED or EXCLUDED Parity Manifest entry).
+test/fleet-differential-tests software.amazon.awssdk.test.fleet.FleetSchemaFidelityTest
+test/fleet-differential-tests software.amazon.awssdk.test.fleet.WireDifferentialTest
 
 # Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
 # require their reports):

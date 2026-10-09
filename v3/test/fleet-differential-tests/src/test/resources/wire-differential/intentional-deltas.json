@@ -1,0 +1,5 @@
+{
+    "formatVersion": 1,
+    "comment": "Intentional V3-versus-V2 wire deltas of WireDifferentialTest (format in README.md). Each record must name a Parity Manifest entry that a classification rule of tools/parity-manifest classification-rules.json classifies ADAPTED or EXCLUDED. Known gaps are not classifications: never record a defect here.",
+    "deltas": []
+}

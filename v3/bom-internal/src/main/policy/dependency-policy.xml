@@ -1093,6 +1093,10 @@
             <allows module="identity-providers"/>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="fleet-differential-tests" path="test/fleet-differential-tests" kind="test" release="false">
+            <owns>Fleet schema fidelity (every generated schema of every fleet service against its canonical Smithy shape) and the V3-versus-canonical-versus-V2 wire differential per protocol and binding category, whose intentional deltas name ADAPTED or EXCLUDED Parity Manifest entries. Every dependency is test scope; the released V2 jars are loaded from target/v2-baseline in an isolated class loader, never from the class path.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
         <module artifactId="fault-injection-tests" path="test/fault-injection-tests" kind="test" release="false">
             <owns>The deterministic pipeline fault-injection kit (src/main: a generatable fault trace, controllable transport, identity, signer, endpoint, scheduler and body fakes, recorders and a harness over the client build state) and the release fault matrix through the real pipeline and generated sync/async clients. The generated services are test scope.</owns>
             <!-- The kit fakes the pipeline's SPIs and builds a client runtime with AwsClientBuildState. -->
