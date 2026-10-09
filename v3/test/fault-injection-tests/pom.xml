@@ -25,7 +25,9 @@
 
   src/test is the release fault matrix: every required fault kind through the real AwsCallEngine on both drivers
   (PipelineFaultMatrixTest) and through generated sync and async clients of four protocols
-  (GeneratedClientFaultMatrixTest). Every service dependency is test scope.
+  (GeneratedClientFaultMatrixTest), and Property 63 (task 18.6; FaultOutcomeOraclePropertyTest): generated bounded
+  fault/retry/cancellation traces compared with an independent pipeline state-machine oracle (PipelineStateOracle).
+  Every service dependency is test scope.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -156,6 +158,12 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- FaultOutcomeOraclePropertyTest (Property 63). -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

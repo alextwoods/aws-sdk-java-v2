@@ -203,6 +203,10 @@ test/dynamic-differential-tests software.amazon.awssdk.test.differential.Generat
 # cancellation, release and exactly-once completion).
 test/fault-injection-tests software.amazon.awssdk.test.fault.PipelineFaultMatrixTest
 test/fault-injection-tests software.amazon.awssdk.test.fault.GeneratedClientFaultMatrixTest
+# Task 18.6 (P63): fault outcomes follow pipeline state (generated bounded fault/retry/cancellation traces through the
+# real AwsCallEngine on both drivers, compared with an independent pipeline state-machine oracle: terminal outcome,
+# attempts, delays, token ledger, cancellation propagation, release and exactly-once completion).
+test/fault-injection-tests software.amazon.awssdk.test.fault.FaultOutcomeOraclePropertyTest
 # Task 18.8: bounded-memory streaming and Reactive Streams (the TCK of the public AsyncRequestBody factories,
 # AsyncResponseTransformer subscribers and a generated async paginator publisher not verified in their own modules; a
 # 1 GiB payload upload and download, sync and async, through generated clients, the real pipeline and real transports
