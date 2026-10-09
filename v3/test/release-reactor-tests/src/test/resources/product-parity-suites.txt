@@ -223,6 +223,9 @@ test/endpoint-tests software.amazon.awssdk.test.endpointtests.EndpointConformanc
 # baseline per protocol and binding category; every V3/V2 delta names an ADAPTED or EXCLUDED Parity Manifest entry).
 test/fleet-differential-tests software.amazon.awssdk.test.fleet.FleetSchemaFidelityTest
 test/fleet-differential-tests software.amazon.awssdk.test.fleet.WireDifferentialTest
+# Task 18.3 (P62): intentional wire differences are classified (generated rule sets, known gaps, intentional-delta
+# records and observed deltas against an independent resolution of the Parity Manifest rule precedence).
+test/fleet-differential-tests software.amazon.awssdk.test.fleet.IntentionalDeltaClassificationPropertyTest
 
 # Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
 # require their reports):

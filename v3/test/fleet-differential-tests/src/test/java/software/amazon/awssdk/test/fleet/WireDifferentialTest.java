@@ -79,11 +79,13 @@ class WireDifferentialTest {
     private static final String OUTPUT_STRING = "fd-out";
     private static final List<Map<String, Object>> REPORT = new ArrayList<>();
     private static List<IntentionalDeltas.Delta> deltas;
+    private static IntentionalDeltas.Sources sources;
     private static Clients.V2Baseline baseline;
 
     @BeforeAll
     static void openBaseline() {
         deltas = IntentionalDeltas.load();
+        sources = IntentionalDeltas.Sources.checkedIn();
         baseline = Clients.V2Baseline.open(Path.of(System.getProperty("v3.v2Baseline.dir", "target/v2-baseline")));
     }
 
@@ -104,9 +106,9 @@ class WireDifferentialTest {
     /** Every checked-in intentional delta is valid against the Parity Manifest classification rules. */
     @Test
     void everyIntentionalDeltaNamesAnAdaptedOrExcludedManifestEntry() {
-        List<String> problems = new ArrayList<>();
+        List<IntentionalDeltas.Problem> problems = new ArrayList<>();
         for (IntentionalDeltas.Delta delta : deltas) {
-            problems.addAll(IntentionalDeltas.validate(delta));
+            problems.addAll(IntentionalDeltas.validate(delta, sources));
         }
         assertEquals(List.of(), problems);
     }
@@ -148,7 +150,7 @@ class WireDifferentialTest {
                 continue;
             }
             String delta = aspect + ": V3 " + a + ", V2 " + b;
-            Optional<IntentionalDeltas.Delta> record = deltas.stream().filter(d -> d.covers(c.id(), aspect)).findFirst();
+            Optional<IntentionalDeltas.Delta> record = IntentionalDeltas.classify(deltas, sources, c.id(), aspect);
             if (record.isPresent()) {
                 classified.add(delta + " [" + record.get().id() + " -> " + record.get().manifestEntry() + "]");
             } else {

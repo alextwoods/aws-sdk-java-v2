@@ -56,11 +56,16 @@ member, and for errors the exception class simple name, error code and status co
 
 A record is valid only if all of these hold:
 
-- the named rule exists in `classification-rules.json` and classifies `ADAPTED` or `EXCLUDED`
-- the rule's `match.id` glob matches `manifestEntry`
-- no more specific matching rule classifies the entry otherwise
+- the named rule exists in `classification-rules.json` (either tier) and classifies `ADAPTED` or `EXCLUDED`
+- the rule's match (`id` glob, `kind` from the entry ID prefix) matches `manifestEntry` and has no `deprecated`
+  constraint (a record cannot state the entry's V2 deprecation flag)
+- under the Parity Manifest precedence (`ClassificationRules`: `rules` over `defaults`, exact ID over glob over no ID,
+  more literal characters, kind, deprecation), no other matching rule is more specific or equally specific, whether
+  or not the entry is deprecated
+- `manifestEntry` is not a known gap of `high-level-library-matrix.json`
 - the rationale is not blank
 
-Any V3/V2 difference that no valid record covers is unclassified and fails its case. A Parity Manifest known gap
-(for example `behavior:s3.bucket-addressing`) is not a classification, so a defect must never be recorded here.
-Task 18.3 (Property 62) builds on this format.
+Only valid records classify a delta; any V3/V2 difference that no valid record covers is unclassified and fails its
+case. A Parity Manifest known gap (for example `behavior:s3.bucket-addressing`) is not a classification, so a defect
+must never be recorded here. `IntentionalDeltaClassificationPropertyTest` (task 18.3, Property 62) checks these rules
+against generated rule sets, known gaps, records and observed deltas.
