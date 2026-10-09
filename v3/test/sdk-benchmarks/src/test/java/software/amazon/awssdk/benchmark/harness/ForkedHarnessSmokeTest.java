@@ -184,8 +184,8 @@ class ForkedHarnessSmokeTest {
         assertEquals(verdict.toNode(), Node.parse(Files.readString(out.resolve("validity.json"))));
 
         // The report: schema-conformant, on disk as returned, every repetition's metrics published, and no reference
-        // comparison because no reference arm ran (none is fabricated); Racecar has no pinned build, so the references
-        // are not all ready.
+        // comparison because no reference arm ran (none is fabricated); Smithy Java has no reference client, so the
+        // references are not all ready.
         ObjectNode report = chain.report().report();
         assertEquals(List.of(), PerformanceReport.schemaProblems(report));
         assertEquals(report, Node.parse(Files.readString(out.resolve("report.json"))));
@@ -219,17 +219,20 @@ class ForkedHarnessSmokeTest {
         BenchmarkCell.parse("rpcv2Cbor/generated-sync/apache5-sync/finite/medium/success/c1"));
 
     /**
-     * V3 against the Launch Parity Baseline on the tiny awsJson1.0 cell and {@link #V2_OTHER_PROTOCOL_CELLS}: the V2
-     * 2.54.0 reference arm (built by test/sdk-benchmarks-v2-reference) runs on its own V2-only class path, interleaved
-     * with V3 and V3's null twin, 2 repetitions each at the smoke geometry. Checks that the reference is ready exactly
-     * for its cells, that its runs pass every operation rule (V2 sends the fixture's exact bytes, or on rpcv2Cbor its
-     * proven reference-specific bytes: wire-bytes and unmatched-request checks unchanged), that no V3 jar is on its
-     * class path, and that the exploratory report, on the operation-correct basis (a development host cannot pin CPUs,
-     * so no repetition is valid), carries {@code comparisons[]} and {@code best_reference[]} entries with finite,
-     * positive ratios for every cell. Exploratory numbers, never evidence.
+     * V3 against the Launch Parity Baseline on the tiny awsJson1.0 cell and {@link #V2_OTHER_PROTOCOL_CELLS}, and
+     * against the Racecar reference on the tiny awsJson1.0 cell: the V2 2.54.0 reference arm (built by
+     * test/sdk-benchmarks-v2-reference) and the Racecar arm (test/sdk-benchmarks-racecar-reference, over the pinned
+     * Racecar build) each run on their own SDK-only class path, interleaved with V3 and V3's null twin, 2 repetitions
+     * each at the smoke geometry. Checks that each reference is ready exactly for its cells, that its runs pass every
+     * operation rule (the reference sends the fixture's exact bytes, or on rpcv2Cbor V2's proven reference-specific
+     * bytes: wire-bytes and unmatched-request checks unchanged), that no V3 (or, for Racecar, released V2) jar is on
+     * its class path, and that the exploratory report, on the operation-correct basis (a development host cannot pin
+     * CPUs, so no repetition is valid), carries {@code comparisons[]} and {@code best_reference[]} entries with finite,
+     * positive ratios for every cell, {@code best_reference[]} choosing between V2 and Racecar on the awsJson1.0 cell.
+     * Exploratory numbers, never evidence.
      */
     @Test
-    void v3IsComparedWithTheV2BaselineReference(@TempDir Path out) throws Exception {
+    void v3IsComparedWithTheV2BaselineAndRacecarReferences(@TempDir Path out) throws Exception {
         List<PerformanceReferences.Reference> references = PerformanceReferences.resolveLocal();
         PerformanceReferences.Reference v2 = references.get(0);
         assertEquals("v2-baseline", v2.id());
@@ -250,7 +253,25 @@ class ForkedHarnessSmokeTest {
             assertFalse(entry.contains("3.0.0-SNAPSHOT") || entry.contains("/v3/core/")
                         || entry.contains("/v3/http-clients/"), "V3 entry on the V2 class path: " + entry);
         }
-        // Release collections stay fail-closed: Racecar and Smithy Java are not ready.
+        PerformanceReferences.Reference racecar = references.get(1);
+        assertEquals("racecar", racecar.id());
+        assertEquals(PerformanceReferences.Status.READY, racecar.status(),
+                     "run scripts/build-racecar-reference.sh and build test/sdk-benchmarks-racecar-reference first: "
+                     + racecar.reason());
+        assertTrue(racecar.appliesTo(CELL));
+        assertFalse(racecar.appliesTo(BenchmarkCell.parse(
+            "awsJson1_0/generated-async/apache5-async/finite/small/success/c1")));
+        assertTrue(racecar.provenance().contains(PerformanceReferences.RACECAR_COMMIT), racecar.provenance());
+        assertTrue(racecar.artifacts().stream().allMatch(a -> a.present() && a.sha256().length() == 64
+                                                              && a.coordinates().endsWith(
+                                                                  ":" + PerformanceReferences.RACECAR_VERSION)));
+        BenchmarkArm racecarArm = racecar.arm().orElseThrow();
+        for (String entry : racecarArm.classpath().split(java.io.File.pathSeparator)) {
+            assertFalse(entry.contains("3.0.0-SNAPSHOT") || entry.contains("/v3/core/")
+                        || entry.contains("/v3/http-clients/") || entry.contains("/2.54.0/"),
+                        "V3 or released V2 entry on the Racecar class path: " + entry);
+        }
+        // Release collections stay fail-closed: Smithy Java is not ready, and restXml is outside V2 and Racecar.
         org.junit.jupiter.api.Assertions.assertThrows(HarnessPolicyException.class,
             () -> PerformanceReferences.requireReady(HarnessMode.RELEASE, references, cells));
 
@@ -264,11 +285,15 @@ class ForkedHarnessSmokeTest {
         PerformanceReportSink.Chain chain = PerformanceReportSink.chain(
             out.resolve("validity.json"), out.resolve("report.json"), references, records::add,
             PerformanceReport.Basis.OPERATION_CORRECT);
+        // Racecar runs on the awsJson1.0 cell only (its other protocols are covered by its wire test), keeping the
+        // smoke short; every other cell runs V3, V2 and V3's null twin.
         new HarnessOrchestrator(config, SystemProbe.live())
-            .run(cells, RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3, v2Arm), 2),
+            .run(cells, RepetitionSchedule.interleaved(List.of(BenchmarkArm.V3, v2Arm, racecarArm,
+                                                               BenchmarkArm.V3.nullTwin()), 2,
+                                                       (arm, cell) -> !arm.equals(racecarArm) || cell.equals(CELL)),
                  chain.validity());
 
-        assertEquals(6 * cells.size(), records.size());
+        assertEquals(8 + 6 * (cells.size() - 1), records.size());
         for (ObjectNode run : records) {
             String json = Node.prettyPrintJson(run);
             assertEquals("completed", run.expectStringMember("status").getValue(), json);
@@ -279,7 +304,12 @@ class ForkedHarnessSmokeTest {
             }
             String arm = run.expectObjectMember("arm").expectStringMember("id").getValue();
             String sdk = run.expectObjectMember("result").expectStringMember("client_sdk").getValue();
-            assertEquals(arm.equals("v2-baseline") ? "aws-sdk-java-v2 2.54.0" : "aws-sdk-java-v3", sdk, json);
+            String expectedSdk = switch (arm) {
+                case "v2-baseline" -> "aws-sdk-java-v2 2.54.0";
+                case "racecar" -> "aws-sdk-java-v2-racecar " + PerformanceReferences.RACECAR_VERSION;
+                default -> "aws-sdk-java-v3";
+            };
+            assertEquals(expectedSdk, sdk, json);
             assertEquals(0, run.expectObjectMember("result").expectObjectMember("service")
                               .expectNumberMember("unmatched").getValue().longValue(), json);
         }
@@ -288,28 +318,55 @@ class ForkedHarnessSmokeTest {
         assertEquals(List.of(), PerformanceReport.schemaProblems(report));
         assertEquals("operation-correct-repetitions", report.expectStringMember("ratio_basis").getValue());
         assertFalse(report.expectBooleanMember("release_evidence").getValue());
-        assertEquals(List.of("v2-baseline"), report.expectArrayMember("reference_arms")
-            .getElementsAs(n -> n.expectStringNode().getValue()));
+        assertEquals(java.util.Set.of("v2-baseline", "racecar"), java.util.Set.copyOf(
+            report.expectArrayMember("reference_arms").getElementsAs(n -> n.expectStringNode().getValue())));
         List<ObjectNode> reportCells = report.expectArrayMember("cells").getElementsAs(Node::expectObjectNode);
         assertEquals(cells.stream().map(BenchmarkCell::id).sorted().toList(),
                      reportCells.stream().map(c -> c.expectStringMember("cell").getValue()).sorted().toList());
+        List<RepetitionMetrics.Metric> keyMetrics = List.of(RepetitionMetrics.Metric.CPU_PER_OP,
+                                                            RepetitionMetrics.Metric.ALLOC_PER_OP,
+                                                            RepetitionMetrics.Metric.THROUGHPUT);
         for (ObjectNode cell : reportCells) {
-            for (String member : List.of("comparisons", "best_reference")) {
-                List<ObjectNode> ratios = cell.expectArrayMember(member).getElementsAs(Node::expectObjectNode);
-                List<String> metrics = ratios.stream().map(r -> r.expectStringMember("metric").getValue()).toList();
-                for (RepetitionMetrics.Metric m : List.of(RepetitionMetrics.Metric.CPU_PER_OP,
-                                                          RepetitionMetrics.Metric.ALLOC_PER_OP,
-                                                          RepetitionMetrics.Metric.THROUGHPUT)) {
+            boolean withRacecar = cell.expectStringMember("cell").getValue().equals(CELL.id());
+            List<String> refs = withRacecar ? List.of("v2-baseline", "racecar") : List.of("v2-baseline");
+            List<ObjectNode> comparisons = cell.expectArrayMember("comparisons").getElementsAs(Node::expectObjectNode);
+            for (String ref : refs) {
+                List<String> metrics = comparisons.stream()
+                    .filter(r -> r.expectStringMember("reference").getValue().equals(ref))
+                    .map(r -> r.expectStringMember("metric").getValue()).toList();
+                for (RepetitionMetrics.Metric m : keyMetrics) {
                     assertTrue(metrics.contains(m.id()),
-                               member + " lacks " + m.id() + ": " + Node.prettyPrintJson(cell));
+                               "comparisons lack " + ref + " " + m.id() + ": " + Node.prettyPrintJson(cell));
                 }
-                for (ObjectNode r : ratios) {
-                    assertEquals("v2-baseline", r.expectStringMember("reference").getValue());
-                    BenchmarkStatistics.Ratio ratio = BenchmarkStatistics.Ratio.fromNode(r);
-                    assertTrue(Double.isFinite(ratio.ratio()) && ratio.ratio() > 0, Node.prettyPrintJson(r));
-                    assertTrue(ratio.ciLow() <= ratio.ratio() && ratio.ratio() <= ratio.ciHigh(),
-                               Node.prettyPrintJson(r));
-                }
+            }
+            List<ObjectNode> best = cell.expectArrayMember("best_reference").getElementsAs(Node::expectObjectNode);
+            List<String> bestMetrics = best.stream().map(r -> r.expectStringMember("metric").getValue()).toList();
+            for (RepetitionMetrics.Metric m : keyMetrics) {
+                assertTrue(bestMetrics.contains(m.id()),
+                           "best_reference lacks " + m.id() + ": " + Node.prettyPrintJson(cell));
+            }
+            for (ObjectNode r : best) {
+                // The best reference is, among the references compared on this cell (V2 and Racecar on the
+                // awsJson1.0 cell), the one with the best mean (lowest for lower-is-better metrics), and its entry is
+                // that reference's comparison.
+                String metric = r.expectStringMember("metric").getValue();
+                RepetitionMetrics.Metric m = java.util.Arrays.stream(RepetitionMetrics.Metric.values())
+                    .filter(x -> x.id().equals(metric)).findFirst().orElseThrow();
+                java.util.Comparator<String> byMean = java.util.Comparator.comparingDouble(ref -> mean(cell, ref, m));
+                String expected = comparisons.stream()
+                    .filter(c -> c.expectStringMember("metric").getValue().equals(metric))
+                    .map(c -> c.expectStringMember("reference").getValue())
+                    .min(m.lowerIsBetter() ? byMean : byMean.reversed()).orElseThrow();
+                assertEquals(expected, r.expectStringMember("reference").getValue(),
+                             metric + ": " + Node.prettyPrintJson(cell));
+                assertTrue(comparisons.contains(r), metric + ": " + Node.prettyPrintJson(cell));
+            }
+            for (ObjectNode r : concat(comparisons, best)) {
+                assertTrue(refs.contains(r.expectStringMember("reference").getValue()), Node.prettyPrintJson(r));
+                BenchmarkStatistics.Ratio ratio = BenchmarkStatistics.Ratio.fromNode(r);
+                assertTrue(Double.isFinite(ratio.ratio()) && ratio.ratio() > 0, Node.prettyPrintJson(r));
+                assertTrue(ratio.ciLow() <= ratio.ratio() && ratio.ratio() <= ratio.ciHigh(),
+                           Node.prettyPrintJson(r));
             }
         }
         // The aggregate over these generated non-streaming cells exists for the V2 reference.
@@ -317,5 +374,19 @@ class ForkedHarnessSmokeTest {
                          .anyMatch(a -> a.expectStringMember("reference").getValue().equals("v2-baseline")
                                         && a.expectStringMember("metric").getValue().equals("cpu_per_op_ns")
                                         && a.getObjectMember("geometric_mean").isPresent()));
+    }
+
+    /** The report's summary mean of {@code metric} for {@code arm} on {@code cell}. */
+    private static double mean(ObjectNode cell, String arm, RepetitionMetrics.Metric metric) {
+        return cell.expectArrayMember("arms").getElementsAs(Node::expectObjectNode).stream()
+                   .filter(a -> a.expectStringMember("arm").getValue().equals(arm)).findFirst().orElseThrow()
+                   .expectObjectMember("summaries").expectObjectMember(metric.id())
+                   .expectNumberMember("mean").getValue().doubleValue();
+    }
+
+    private static List<ObjectNode> concat(List<ObjectNode> a, List<ObjectNode> b) {
+        List<ObjectNode> out = new ArrayList<>(a);
+        out.addAll(b);
+        return out;
     }
 }

@@ -10,17 +10,20 @@
 #   2. Checks out that commit, detached, into a git worktree OUTSIDE the main tree (RACECAR_WORKTREE, default
 #      ~/.cache/v3-benchmarks/racecar-<commit>), so the main checkout and its v3/ reactor are untouched.
 #   3. Sets the worktree's reactor version from its 2.54.18-SNAPSHOT to RACECAR_VERSION (default
-#      2.54.18-RACECAR-<12-char commit>) with versions:set, offline.
-#   4. Installs, offline and without tests, the DynamoDB client and the transports the harness cells name, with their
-#      reactor dependencies (-am). The installed coordinates are software.amazon.awssdk:<artifact>:$RACECAR_VERSION.
+#      2.54.18-RACECAR-<12-char commit>) with versions:set, offline; skipped on a re-run whose POMs already carry
+#      exactly that version.
+#   4. Installs, offline and without tests, the clients of the harness's finite fixtures that the Racecar reference
+#      serves (DynamoDB, Kinesis, Lambda, SNS, EC2, CloudWatch), the transports the harness cells name and
+#      bom-internal, with their reactor dependencies (-am). The installed coordinates are
+#      software.amazon.awssdk:<artifact>:$RACECAR_VERSION.
 #   5. Writes $RACECAR_WORKTREE/racecar-reference.properties (commit, version, artifacts, build time, JDK).
 #
-# This script does not make the Racecar reference READY: PerformanceReferences also needs a Racecar reference client
-# main (a module like test/sdk-benchmarks-v2-reference built against these artifacts), which does not exist yet. Until
-# then the reference stays artifact-missing / client-missing and a release-gate collection fails closed.
+# The Racecar reference client (test/sdk-benchmarks-racecar-reference) is built against these artifacts; until both
+# exist, PerformanceReferences reports the reference artifact-missing / client-missing and a release-gate collection
+# fails closed. Not covered: restXml (route53 is not listed and there is no Racecar Route 53 workload; S3 is installed
+# only as a reactor dependency) and the streaming and Event Stream kinds, so those cells stay uncovered.
 #
-# The full -am build compiles a large part of the V2-derived reactor (codegen, core, services/dynamodb, the HTTP
-# clients); expect tens of minutes on a laptop.
+# The -am build compiles the V2-derived codegen, core, the listed services and the HTTP clients (a few minutes).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,8 +35,11 @@ RACECAR_WORKTREE="${RACECAR_WORKTREE:-$HOME/.cache/v3-benchmarks/racecar-$RACECA
 JAVA_HOME="${BENCH_JAVA_HOME:-/Library/Java/JavaVirtualMachines/amazon-corretto-21.jdk/Contents/Home}"
 export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
-# The modules of the harness's awsJson1.0 cells: the DynamoDB client and every transport a cell names.
-MODULES="services/dynamodb,http-clients/apache5-client,http-clients/apache-client,http-clients/url-connection-client,http-clients/netty-nio-client,http-clients/aws-crt-client"
+# The clients of the finite fixtures the Racecar reference serves (awsJson1.0 DynamoDB, awsJson1.1 Kinesis, restJson1
+# Lambda, awsQuery SNS, ec2Query EC2, rpcv2Cbor CloudWatch) and every transport a cell names, plus bom-internal: the
+# core, services and http-clients parents import it, so a consumer cannot resolve the installed POMs without it, and
+# -am does not install import-scoped BOMs.
+MODULES="bom-internal,services/dynamodb,services/kinesis,services/lambda,services/sns,services/ec2,services/cloudwatch,http-clients/apache5-client,http-clients/apache-client,http-clients/url-connection-client,http-clients/netty-nio-client,http-clients/aws-crt-client"
 
 DRY_RUN=false
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -69,8 +75,17 @@ else
     run git -C "$REPO_DIR" worktree add --detach "$RACECAR_WORKTREE" "$RACECAR_COMMIT"
 fi
 
-run mvn -o -B -ntp -f "$RACECAR_WORKTREE/pom.xml" versions:set -DnewVersion="$RACECAR_VERSION" \
-    -DgenerateBackupPoms=false -DprocessAllModules=true
+# versions:set only on unmodified POMs: re-running it over an already-set reactor rewrites the child modules'
+# parent versions to 1.0. A previous run's POMs are reused when exactly that version was set; anything else fails.
+if git -C "$RACECAR_WORKTREE" diff --quiet -- '*pom.xml'; then
+    run mvn -o -B -ntp -f "$RACECAR_WORKTREE/pom.xml" versions:set -DnewVersion="$RACECAR_VERSION" \
+        -DgenerateBackupPoms=false -DprocessAllModules=true
+elif git -C "$RACECAR_WORKTREE" diff -U0 -- '*pom.xml' | grep '^+ ' | grep -qv "<version>$RACECAR_VERSION</version>"; then
+    echo "error: $RACECAR_WORKTREE has POM changes other than the version $RACECAR_VERSION; restore its POMs" >&2
+    exit 1
+else
+    echo "worktree POMs already at $RACECAR_VERSION; skipping versions:set"
+fi
 run mvn -o -B -ntp -f "$RACECAR_WORKTREE/pom.xml" install -pl "$MODULES" -am -DskipTests \
     -Dcheckstyle.skip -Dspotbugs.skip -Djapicmp.skip -Dmaven.javadoc.skip -Drat.skip
 

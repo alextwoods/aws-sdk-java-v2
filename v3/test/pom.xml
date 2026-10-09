@@ -51,6 +51,8 @@
         <module>release-reactor-tests</module>
         <!-- Before sdk-benchmarks, whose forked smoke runs this reference client (target/classpath.txt). -->
         <module>sdk-benchmarks-v2-reference</module>
+        <!-- Likewise for the Racecar reference client (needs scripts/build-racecar-reference.sh's artifacts). -->
+        <module>sdk-benchmarks-racecar-reference</module>
         <module>sdk-benchmarks</module>
         <module>v2-migration-tests</module>
     </modules>

@@ -48,13 +48,16 @@ import software.amazon.awssdk.services.dynamodb.model.ReturnValue;
  * the V3 arm's: static credentials, a fixed region, the endpoint override, the cell's explicit transport and the
  * benchmark retry strategy (V2's standard AWS retry conditions, {@link DynamoDbPutItemFixture#MAX_ATTEMPTS} attempts,
  * no backoff, no circuit breaker).
+ *
+ * <p>Shared: test/sdk-benchmarks-racecar-reference compiles this source against the Racecar jars (Racecar keeps
+ * V2's client API), hence public.
  */
-final class V2DynamoDbWorkloads {
+public final class V2DynamoDbWorkloads {
 
     private V2DynamoDbWorkloads() {
     }
 
-    static CellWorkload create(CellId cell, URI endpoint) {
+    public static CellWorkload create(CellId cell, URI endpoint) {
         DynamoDbPutItemFixture fixture = new DynamoDbPutItemFixture(PayloadClass.fromId(cell.payload()));
         boolean expectError = Outcome.fromId(cell.outcome()) == Outcome.MODELED_ERROR;
         if (V2Transports.isAsync(cell.transport())) {
@@ -75,7 +78,7 @@ final class V2DynamoDbWorkloads {
         }
     }
 
-    static RetryStrategy retryStrategy() {
+    public static RetryStrategy retryStrategy() {
         return AwsRetryStrategy.standardRetryStrategy().toBuilder()
                                .maxAttempts(DynamoDbPutItemFixture.MAX_ATTEMPTS)
                                .backoffStrategy(BackoffStrategy.retryImmediately())
@@ -84,11 +87,11 @@ final class V2DynamoDbWorkloads {
                                .build();
     }
 
-    static StaticCredentialsProvider credentials() {
+    public static StaticCredentialsProvider credentials() {
         return StaticCredentialsProvider.create(AwsBasicCredentials.create("benchmark-akid", "benchmark-secret"));
     }
 
-    static PutItemRequest request(DynamoDbPutItemFixture fixture) {
+    public static PutItemRequest request(DynamoDbPutItemFixture fixture) {
         Map<String, AttributeValue> item = new LinkedHashMap<>();
         item.put("pk", AttributeValue.fromS(DynamoDbPutItemFixture.KEY));
         item.put("pad", AttributeValue.fromS(fixture.pad()));

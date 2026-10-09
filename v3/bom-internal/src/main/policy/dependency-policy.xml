@@ -1188,5 +1188,11 @@
             <allowsClass class="smithy-model-toolchain"/>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="sdk-benchmarks-racecar-reference" path="test/sdk-benchmarks-racecar-reference" kind="test" release="false">
+            <owns>The Racecar Performance Reference client of the performance harness: the harness's SDK-free client driver (compiled from test/sdk-benchmarks' sources) and the V2 reference's workloads (compiled from test/sdk-benchmarks-v2-reference's test sources) over the feature/poc/racecar clients and transports built from the pinned commit by test/sdk-benchmarks/scripts/build-racecar-reference.sh, run by the harness as a forked process on its own class path. The Racecar client code and every Racecar dependency are test scope; it depends on no V3 module: every software.amazon.awssdk dependency is a Racecar artifact at exactly the build script's version (enforced by its racecar-alignment rule, which replaces the V3 release-alignment rule here), so Racecar classes, which share V3's and V2's package names, never meet V3 or released V2 classes on one class path.</owns>
+            <!-- smithy-model only, for the Smithy Node JSON of the shared client result record. -->
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="logging-implementation"/>
+        </module>
     </modules>
 </dependencyPolicy>

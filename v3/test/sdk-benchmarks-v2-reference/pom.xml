@@ -27,6 +27,10 @@
   released V2 jars at test scope, like every verification module's SDK-specific code (the dependency policy governs
   compile/runtime edges; released V2 artifacts are never compile/runtime dependencies of a V3 module).
 
+  Shared: test/sdk-benchmarks-racecar-reference compiles V2DynamoDbWorkloads, V2FiniteWorkloads, V2Transports and
+  CapturingHttpClient from this module's src/test/java against the Racecar jars, so both references run the same
+  workload code; those classes are public for that reason.
+
   Isolation: V2 shares V3's package names (software.amazon.awssdk.*), so this module has no V3 dependency at all and
   never shares a class path with V3. Every software.amazon.awssdk dependency is a released V2
   ${v3.v2Baseline.version} artifact, and the module does not import bom-internal, whose V3 versions would otherwise

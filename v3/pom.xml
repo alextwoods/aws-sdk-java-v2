@@ -489,6 +489,8 @@
                 <module>dynamic</module>
                 <!-- The Launch Parity Baseline reference client, before the harness that runs it. -->
                 <module>test/sdk-benchmarks-v2-reference</module>
+                <!-- The Racecar reference client, likewise. -->
+                <module>test/sdk-benchmarks-racecar-reference</module>
                 <module>test/sdk-benchmarks</module>
             </modules>
         </profile>

@@ -30,20 +30,23 @@ import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
  * exactly as the harness's V3 {@code Transport} builds its counterpart. V2's transport classes carry the same names
  * as V3's, so the validity rules' transport check compares the same class names for both arms. V2 has no Apache 5
  * async client, so {@code apache5-async} cells are outside this reference.
+ *
+ * <p>Shared: test/sdk-benchmarks-racecar-reference compiles this source against the Racecar jars (Racecar keeps
+ * V2's client API), hence public.
  */
-final class V2Transports {
+public final class V2Transports {
 
-    static final Set<String> IDS = Set.of("apache5-sync", "apache4-sync", "urlconnection-sync", "crt-sync",
+    public static final Set<String> IDS = Set.of("apache5-sync", "apache4-sync", "urlconnection-sync", "crt-sync",
                                           "netty-async", "crt-async");
 
     private V2Transports() {
     }
 
-    static boolean isAsync(String id) {
+    public static boolean isAsync(String id) {
         return id.endsWith("-async");
     }
 
-    static SdkHttpClient sync(String id, int concurrency) {
+    public static SdkHttpClient sync(String id, int concurrency) {
         return switch (id) {
             case "apache5-sync" -> Apache5HttpClient.builder().maxConnections(concurrency).build();
             case "apache4-sync" -> ApacheHttpClient.builder().maxConnections(concurrency).build();
@@ -57,7 +60,7 @@ final class V2Transports {
         };
     }
 
-    static SdkAsyncHttpClient async(String id, int concurrency) {
+    public static SdkAsyncHttpClient async(String id, int concurrency) {
         return switch (id) {
             case "netty-async" -> NettyNioAsyncHttpClient.builder().maxConcurrency(concurrency).build();
             case "crt-async" -> AwsCrtAsyncHttpClient.builder().maxConcurrency(concurrency).build();

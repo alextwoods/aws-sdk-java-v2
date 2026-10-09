@@ -45,11 +45,13 @@ class ReactorInventoryTest {
     private static final String PRODUCT_PARITY_PROFILE = "v3-product-parity";
     /** The V2 Migration Corpus (test/v2-migration-tests), which depends on the release-evidence tooling. */
     private static final String MIGRATION_CORPUS = "v2-migration-tests";
-    /** The benchmark harness and its Launch Parity Baseline (released V2) reference client. */
-    private static final Set<String> BENCHMARKS = Set.of("sdk-benchmarks", "sdk-benchmarks-v2-reference");
+    /** The benchmark harness and its Launch Parity Baseline (released V2) and Racecar reference clients. */
+    private static final Set<String> BENCHMARKS = Set.of("sdk-benchmarks", "sdk-benchmarks-v2-reference",
+                                                         "sdk-benchmarks-racecar-reference");
     /** Verification modules the foundation gate does not build: the benchmarks and the migration corpus. */
     private static final Set<String> NOT_FOUNDATION_VERIFICATION = Set.of("sdk-benchmarks",
                                                                           "sdk-benchmarks-v2-reference",
+                                                                          "sdk-benchmarks-racecar-reference",
                                                                           MIGRATION_CORPUS);
     /** Simple class names matched by surefire's default includes (Test*, *Test, *Tests, *TestCase). */
     private static final Pattern SUREFIRE_DEFAULT_INCLUDES = Pattern.compile("Test.*|.*Test|.*Tests|.*TestCase");

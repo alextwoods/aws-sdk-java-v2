@@ -45,6 +45,16 @@ class V2ReferenceApplicabilityTest {
         PerformanceReferences.ClientLookup lookup =
             PerformanceReferences.v2Client(Path.of(System.getProperty("user.dir")).toAbsolutePath().getParent());
         assertNull(lookup.problem(), "build test/sdk-benchmarks-v2-reference first");
+        assertMainMatches(lookup, PerformanceReferences.V2_APPLICABILITY);
+    }
+
+    /**
+     * Loads {@code lookup}'s reference main from its own class path in an isolated class loader and checks that its
+     * {@code PROTOCOLS}, {@code PATHS}, {@code KINDS}, {@code TRANSPORTS} and {@code appliesTo} equal
+     * {@code expected} over the full matrix.
+     */
+    static void assertMainMatches(PerformanceReferences.ClientLookup lookup,
+                                  PerformanceReferences.Applicability expected) throws Exception {
         List<URL> urls = new ArrayList<>();
         for (String entry : lookup.classpath().split(File.pathSeparator)) {
             urls.add(Path.of(entry).toUri().toURL());
@@ -52,11 +62,10 @@ class V2ReferenceApplicabilityTest {
         try (URLClassLoader loader = new URLClassLoader(urls.toArray(new URL[0]),
                                                         ClassLoader.getPlatformClassLoader())) {
             Class<?> main = Class.forName(lookup.mainClass(), false, loader);
-            PerformanceReferences.Applicability v2 = PerformanceReferences.V2_APPLICABILITY;
-            assertEquals(ids(v2.protocols().stream().map(BenchProtocol::id)), field(main, "PROTOCOLS"));
-            assertEquals(ids(v2.paths().stream().map(ClientPath::id)), field(main, "PATHS"));
-            assertEquals(ids(v2.kinds().stream().map(WorkloadKind::id)), field(main, "KINDS"));
-            assertEquals(ids(v2.transports().stream().map(Transport::id)), field(main, "TRANSPORTS"));
+            assertEquals(ids(expected.protocols().stream().map(BenchProtocol::id)), field(main, "PROTOCOLS"));
+            assertEquals(ids(expected.paths().stream().map(ClientPath::id)), field(main, "PATHS"));
+            assertEquals(ids(expected.kinds().stream().map(WorkloadKind::id)), field(main, "KINDS"));
+            assertEquals(ids(expected.transports().stream().map(Transport::id)), field(main, "TRANSPORTS"));
 
             Class<?> cellId = Class.forName(CellId.class.getName(), false, loader);
             Method parse = cellId.getMethod("parse", String.class);
@@ -64,7 +73,7 @@ class V2ReferenceApplicabilityTest {
             int covered = 0;
             for (BenchmarkCell cell : CellMatrix.full()) {
                 boolean reference = (boolean) appliesTo.invoke(null, parse.invoke(null, cell.id()));
-                assertEquals(v2.contains(cell), reference, cell.id());
+                assertEquals(expected.contains(cell), reference, cell.id());
                 covered += reference ? 1 : 0;
             }
             assertTrue(covered > 0);

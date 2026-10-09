@@ -21,27 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.benchmark.harness.CellId;
 import software.amazon.awssdk.benchmark.harness.DynamoDbPutItemFixture;
 import software.amazon.awssdk.benchmark.harness.PaddedFixture;
 import software.amazon.awssdk.benchmark.harness.PayloadClass;
-import software.amazon.awssdk.benchmark.harness.ServiceFixture;
 import software.amazon.awssdk.core.util.VersionInfo;
-import software.amazon.awssdk.http.AbortableInputStream;
-import software.amazon.awssdk.http.ExecutableHttpRequest;
 import software.amazon.awssdk.http.HttpExecuteRequest;
-import software.amazon.awssdk.http.HttpExecuteResponse;
 import software.amazon.awssdk.http.SdkHttpClient;
-import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.PutItemResponse;
@@ -65,24 +54,24 @@ class V2ReferenceWireTest {
     void v2SendsTheFixtureBytesAndDecodesItsResponses() {
         for (PayloadClass payload : PayloadClass.values()) {
             DynamoDbPutItemFixture fixture = new DynamoDbPutItemFixture(payload);
-            Capturing http = new Capturing(fixture.success());
+            CapturingHttpClient http = new CapturingHttpClient(fixture.success());
             try (DynamoDbClient client = client(http)) {
                 PutItemResponse response = client.putItem(V2DynamoDbWorkloads.request(fixture));
                 assertEquals(fixture.pad(), response.attributes().get("pad").s());
             }
-            assertEquals(1, http.requests.size());
-            HttpExecuteRequest sent = http.requests.get(0);
+            assertEquals(1, http.requests().size());
+            HttpExecuteRequest sent = http.requests().get(0);
             assertTrue(fixture.matches(sent.httpRequest().method().name(), sent.httpRequest().encodedPath(),
                                        sent.httpRequest().firstMatchingHeader(fixture.routingHeaderName())
                                            .orElse(null)), payload.id());
-            assertArrayEquals(fixture.requestJson(), http.bodies.get(0), payload.id());
+            assertArrayEquals(fixture.requestJson(), http.bodies().get(0), payload.id());
         }
     }
 
     @Test
     void v2MapsTheModeledErrorToResourceNotFound() {
         DynamoDbPutItemFixture fixture = new DynamoDbPutItemFixture(PayloadClass.SMALL);
-        try (DynamoDbClient client = client(new Capturing(fixture.modeledError()))) {
+        try (DynamoDbClient client = client(new CapturingHttpClient(fixture.modeledError()))) {
             assertThrows(ResourceNotFoundException.class, () -> client.putItem(V2DynamoDbWorkloads.request(fixture)));
         }
     }
@@ -96,15 +85,15 @@ class V2ReferenceWireTest {
             for (PayloadClass payload : PayloadClass.values()) {
                 String label = protocol + "/" + payload.id();
                 PaddedFixture fixture = V2FiniteWorkloads.fixture(cell(protocol, payload, "success"));
-                Capturing http = new Capturing(fixture.success());
+                CapturingHttpClient http = new CapturingHttpClient(fixture.success());
                 V2FiniteWorkloads.Invoker invoker = V2FiniteWorkloads.invoker(protocol, fixture, ENDPOINT, http);
                 try (AutoCloseable client = invoker.client()) {
                     assertEquals(fixture.pad(), invoker.echo().apply(invoker.sync().get()), label);
                 } catch (Exception e) {
                     throw new AssertionError(label, e);
                 }
-                assertEquals(1, http.requests.size(), label);
-                HttpExecuteRequest sent = http.requests.get(0);
+                assertEquals(1, http.requests().size(), label);
+                HttpExecuteRequest sent = http.requests().get(0);
                 String header = fixture.routingHeaderName() == null ? null
                     : sent.httpRequest().firstMatchingHeader(fixture.routingHeaderName()).orElse(null);
                 // V2's query marshallers leave the path empty; every transport sends an empty path as "/" (the
@@ -113,11 +102,11 @@ class V2ReferenceWireTest {
                 encodedPath = encodedPath.isEmpty() ? "/" : encodedPath;
                 assertTrue(fixture.matches(sent.httpRequest().method().name(), encodedPath, header),
                            label + " " + sent.httpRequest());
-                assertTrue(fixture.matchesBody(http.bodies.get(0)), label);
+                assertTrue(fixture.matchesBody(http.bodies().get(0)), label);
                 byte[] expected = V2FiniteWorkloads.expectedRequest(protocol, fixture);
-                assertArrayEquals(expected, http.bodies.get(0), label);
+                assertArrayEquals(expected, http.bodies().get(0), label);
                 long encoded = V2FiniteWorkloads.encodedBytes(cell(protocol, payload, "success"));
-                assertEquals(http.bodies.get(0).length + (long) fixture.success().body().length, encoded, label);
+                assertEquals(http.bodies().get(0).length + (long) fixture.success().body().length, encoded, label);
                 // Only rpcv2Cbor's long text strings deviate from the shared fixture's bytes.
                 boolean shared = !protocol.equals("rpcv2Cbor") || payload == PayloadClass.SMALL;
                 assertEquals(shared, Arrays.equals(fixture.request(), expected), label);
@@ -133,8 +122,8 @@ class V2ReferenceWireTest {
             if (fixture == null || !fixture.hasModeledError()) {
                 continue;
             }
-            V2FiniteWorkloads.Invoker invoker = V2FiniteWorkloads.invoker(protocol, fixture, ENDPOINT,
-                                                                          new Capturing(fixture.modeledError()));
+            V2FiniteWorkloads.Invoker invoker =
+                V2FiniteWorkloads.invoker(protocol, fixture, ENDPOINT, new CapturingHttpClient(fixture.modeledError()));
             try (AutoCloseable client = invoker.client()) {
                 RuntimeException e = assertThrows(RuntimeException.class, () -> invoker.sync().get(), protocol);
                 assertTrue(invoker.modeledError().test(e), protocol + ": " + e);
@@ -175,48 +164,5 @@ class V2ReferenceWireTest {
         return DynamoDbClient.builder().region(Region.US_EAST_1).credentialsProvider(V2DynamoDbWorkloads.credentials())
                              .endpointOverride(URI.create("http://127.0.0.1:1")).httpClient(http)
                              .overrideConfiguration(o -> o.retryStrategy(V2DynamoDbWorkloads.retryStrategy())).build();
-    }
-
-    /** Records each request and its body and answers with one fixed response. */
-    private static final class Capturing implements SdkHttpClient {
-        final List<HttpExecuteRequest> requests = new ArrayList<>();
-        final List<byte[]> bodies = new ArrayList<>();
-        private final ServiceFixture.MockResponse response;
-
-        Capturing(ServiceFixture.MockResponse response) {
-            this.response = response;
-        }
-
-        @Override
-        public ExecutableHttpRequest prepareRequest(HttpExecuteRequest request) {
-            return new ExecutableHttpRequest() {
-                @Override
-                public HttpExecuteResponse call() {
-                    requests.add(request);
-                    bodies.add(request.contentStreamProvider().map(p -> {
-                        try (InputStream in = p.newStream()) {
-                            return in.readAllBytes();
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    }).orElse(new byte[0]));
-                    SdkHttpResponse.Builder headers = SdkHttpResponse.builder().statusCode(response.status())
-                                                                     .putHeader("Content-Type", response.contentType());
-                    response.headers().forEach(headers::putHeader);
-                    return HttpExecuteResponse.builder()
-                        .response(headers.build())
-                        .responseBody(AbortableInputStream.create(new ByteArrayInputStream(response.body())))
-                        .build();
-                }
-
-                @Override
-                public void abort() {
-                }
-            };
-        }
-
-        @Override
-        public void close() {
-        }
     }
 }

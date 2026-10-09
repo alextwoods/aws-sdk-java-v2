@@ -35,11 +35,12 @@ import org.junit.jupiter.api.Test;
  * SDK-free: they import only the JDK, Smithy {@code Node} JSON and each other (a static import of a shared class's
  * member counts as importing that class), and name no other harness class. The V2
  * baseline shares V3's package names, so a V3 type here would bind to V2 (or fail) on the reference class path. Also
- * checks the V2 reference module compiles exactly this list.
+ * checks that each reference module (V2, Racecar) compiles exactly this list.
  */
 class ReferenceSharedSourcesTest {
     private static final Path SOURCES = Path.of("src/main/java/software/amazon/awssdk/benchmark/harness");
-    private static final Path V2_POM = Path.of("../sdk-benchmarks-v2-reference/pom.xml");
+    private static final List<Path> REFERENCE_POMS = List.of(Path.of("../sdk-benchmarks-v2-reference/pom.xml"),
+                                                             Path.of("../sdk-benchmarks-racecar-reference/pom.xml"));
     private static final Pattern IMPORT = Pattern.compile("^import (static )?([\\w.]+)", Pattern.MULTILINE);
     private static final Pattern IDENT = Pattern.compile("\\b[A-Z]\\w*\\b");
     private static final Pattern INCLUDE = Pattern.compile(
@@ -108,12 +109,14 @@ class ReferenceSharedSourcesTest {
     }
 
     @Test
-    void v2ReferenceModuleCompilesExactlyTheSharedSources() throws IOException {
-        Matcher m = INCLUDE.matcher(Files.readString(V2_POM));
-        Set<String> included = new TreeSet<>();
-        while (m.find()) {
-            included.add(m.group(1));
+    void referenceModulesCompileExactlyTheSharedSources() throws IOException {
+        for (Path pom : REFERENCE_POMS) {
+            Matcher m = INCLUDE.matcher(Files.readString(pom));
+            Set<String> included = new TreeSet<>();
+            while (m.find()) {
+                included.add(m.group(1));
+            }
+            assertEquals(new TreeSet<>(ClientDriver.REFERENCE_SHARED_SOURCES), included, pom.toString());
         }
-        assertEquals(new TreeSet<>(ClientDriver.REFERENCE_SHARED_SOURCES), included);
     }
 }

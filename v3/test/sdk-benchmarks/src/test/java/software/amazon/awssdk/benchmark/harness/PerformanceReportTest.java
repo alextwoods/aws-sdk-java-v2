@@ -327,6 +327,88 @@ class PerformanceReportTest {
         assertEquals(PerformanceReferences.Status.CLIENT_MISSING, PerformanceReferences.resolve(m2, root).get(0).status());
     }
 
+    /**
+     * With the build script's Racecar jars and a built Racecar reference client module, Racecar is READY with an arm on
+     * that module's class path, for exactly {@link PerformanceReferences#RACECAR_APPLICABILITY}, and its provenance
+     * records the commit, the installed version, every artifact's SHA-256 and the build record; a released V2 jar on
+     * its class path, a build record of another commit, or missing jars are not ready.
+     */
+    @Test
+    void racecarIsReadyOnlyWithItsPinnedBuildAndAnIsolatedBuiltClient(@TempDir Path m2, @TempDir Path root,
+                                                                       @TempDir Path cache) throws Exception {
+        String version = PerformanceReferences.RACECAR_VERSION;
+        Path props = cache.resolve("racecar-reference.properties");
+        assertEquals(PerformanceReferences.Status.ARTIFACT_MISSING,
+                     PerformanceReferences.resolve(m2, root, props).get(1).status());
+        for (String a : PerformanceReferences.RACECAR_ARTIFACTS) {
+            Path jar = m2.resolve("software/amazon/awssdk").resolve(a).resolve(version).resolve(a + "-" + version
+                                                                                                 + ".jar");
+            Files.createDirectories(jar.getParent());
+            Files.writeString(jar, a);
+        }
+        assertEquals(PerformanceReferences.Status.CLIENT_MISSING,
+                     PerformanceReferences.resolve(m2, root, props).get(1).status());
+        Path target = root.resolve(PerformanceReferences.RACECAR_REFERENCE_MODULE).resolve("target");
+        Files.createDirectories(target.resolve("classes/software/amazon/awssdk/benchmark/harness"));
+        Path main = target.resolve("test-classes")
+                          .resolve(PerformanceReferences.RACECAR_REFERENCE_MAIN.replace('.', '/') + ".class");
+        Files.createDirectories(main.getParent());
+        Files.writeString(main, "class");
+        Path racecarJar = m2.resolve("software/amazon/awssdk/dynamodb").resolve(version)
+                            .resolve("dynamodb-" + version + ".jar");
+        Files.writeString(target.resolve("classpath.txt"), racecarJar.toString());
+        Files.writeString(props, "commit=" + PerformanceReferences.RACECAR_COMMIT + "\nversion=" + version
+                                 + "\nmodules=services/dynamodb\n");
+
+        PerformanceReferences.Reference racecar = PerformanceReferences.resolve(m2, root, props).get(1);
+        assertEquals("racecar", racecar.id());
+        assertEquals(PerformanceReferences.Status.READY, racecar.status(), racecar.reason());
+        assertEquals(PerformanceReferences.RACECAR_COMMIT, racecar.pin());
+        assertTrue(racecar.provenance().contains(PerformanceReferences.RACECAR_COMMIT));
+        assertTrue(racecar.provenance().contains("software.amazon.awssdk:*:" + version), racecar.provenance());
+        assertTrue(racecar.provenance().contains("modules=services/dynamodb;"), racecar.provenance());
+        assertEquals(PerformanceReferences.RACECAR_ARTIFACTS.size(), racecar.artifacts().size());
+        assertTrue(racecar.artifacts().stream().allMatch(x -> x.present() && x.sha256().length() == 64
+                                                              && x.coordinates().endsWith(":" + version)));
+        BenchmarkArm arm = racecar.arm().orElseThrow();
+        assertEquals("racecar", arm.id());
+        assertEquals(PerformanceReferences.RACECAR_REFERENCE_MAIN, arm.mainClass());
+        assertTrue(arm.classpath().endsWith(racecarJar.toString()), arm.classpath());
+        assertEquals(PerformanceReferences.RACECAR_APPLICABILITY, racecar.applicability());
+        assertTrue(racecar.appliesTo(GEN));
+        assertFalse(racecar.appliesTo(DYN));
+        assertTrue(racecar.appliesTo(BenchmarkCell.parse("rpcv2Cbor/generated-async/netty-async/finite/large/error/c1")));
+        BenchmarkCell asyncApache5 = BenchmarkCell.parse(
+            "awsJson1_0/generated-async/apache5-async/finite/small/success/c1");
+        BenchmarkCell restXml = BenchmarkCell.parse("restXml/generated-sync/apache5-sync/finite/small/success/c1");
+        List<String> uncovered = PerformanceReferences.uncovered(PerformanceReferences.resolve(m2, root, props),
+                                                                 List.of(asyncApache5, restXml));
+        assertTrue(uncovered.contains("racecar: " + asyncApache5.id()), uncovered.toString());
+        assertTrue(uncovered.contains("racecar: " + restXml.id()), uncovered.toString());
+
+        // No build record: still ready (the artifacts' version and SHA-256s identify the build), and noted.
+        PerformanceReferences.Reference noRecord =
+            PerformanceReferences.resolve(m2, root, cache.resolve("absent.properties")).get(1);
+        assertEquals(PerformanceReferences.Status.READY, noRecord.status(), noRecord.reason());
+        assertTrue(noRecord.provenance().contains("not available"), noRecord.provenance());
+
+        // A build record of another commit: not the pinned reference.
+        Files.writeString(props, "commit=0000000000000000000000000000000000000000\nversion=" + version + "\n");
+        PerformanceReferences.Reference other = PerformanceReferences.resolve(m2, root, props).get(1);
+        assertEquals(PerformanceReferences.Status.CLIENT_MISSING, other.status());
+        assertTrue(other.arm().isEmpty());
+        Files.writeString(props, "commit=" + PerformanceReferences.RACECAR_COMMIT + "\nversion=" + version + "\n");
+
+        // A released V2 jar on the Racecar class path: not ready.
+        Path v2Jar = m2.resolve("software/amazon/awssdk/dynamodb/2.54.0/dynamodb-2.54.0.jar");
+        Files.createDirectories(v2Jar.getParent());
+        Files.writeString(v2Jar, "v2");
+        Files.writeString(target.resolve("classpath.txt"), racecarJar + java.io.File.pathSeparator + v2Jar);
+        PerformanceReferences.Reference leaked = PerformanceReferences.resolve(m2, root, props).get(1);
+        assertEquals(PerformanceReferences.Status.CLIENT_MISSING, leaked.status());
+        assertTrue(leaked.reason().contains("non-" + version), leaked.reason());
+    }
+
     @Test
     void operationCorrectBasisIsExploratoryOnly() {
         List<ObjectNode> runs = collection(false);

@@ -84,14 +84,17 @@ import software.amazon.awssdk.services.sns.model.PublishResponse;
  *
  * <p>No restXml client: the V3 restXml fixture is Route 53 {@code UpdateHostedZoneComment}, and route53
  * {@value V2ReferenceMain#EXPECTED_VERSION} is not available to this build.
+ *
+ * <p>Shared: test/sdk-benchmarks-racecar-reference compiles this source against the Racecar jars (Racecar keeps
+ * V2's client API), hence public.
  */
-final class V2FiniteWorkloads {
+public final class V2FiniteWorkloads {
 
     private V2FiniteWorkloads() {
     }
 
     /** The fixture name of a protocol id this class serves (the V3 provider's name), or {@code null}. */
-    static String fixtureName(String protocol) {
+    public static String fixtureName(String protocol) {
         return switch (protocol) {
             case "awsJson1_1" -> KinesisPutRecordFixture.NAME;
             case "restJson1" -> LambdaUpdateFunctionConfigurationFixture.NAME;
@@ -102,7 +105,7 @@ final class V2FiniteWorkloads {
         };
     }
 
-    static PaddedFixture fixture(CellId cell) {
+    public static PaddedFixture fixture(CellId cell) {
         PayloadClass payload = PayloadClass.fromId(cell.payload());
         return switch (cell.protocol()) {
             case "awsJson1_1" -> KinesisPutRecordFixture.create(payload);
@@ -118,20 +121,20 @@ final class V2FiniteWorkloads {
      * The exact request body V2 sends for {@code fixture}: the shared fixture's, except on rpcv2Cbor, where V2's CBOR
      * generator chunks long text strings ({@link CloudWatchPutDashboardFixture#v2BaselineRequest}).
      */
-    static byte[] expectedRequest(String protocol, PaddedFixture fixture) {
+    public static byte[] expectedRequest(String protocol, PaddedFixture fixture) {
         return "rpcv2Cbor".equals(protocol) ? CloudWatchPutDashboardFixture.v2BaselineRequest(fixture)
                                             : fixture.request();
     }
 
     /** The encoded bytes of one logical operation V2 moves (its exact request plus the shared success response). */
-    static long encodedBytes(CellId cell) {
+    public static long encodedBytes(CellId cell) {
         PaddedFixture fixture = fixture(cell);
         return "rpcv2Cbor".equals(cell.protocol())
                ? CloudWatchPutDashboardFixture.v2BaselineEncodedBytes(fixture, PayloadClass.fromId(cell.payload()))
                : fixture.encodedBytes();
     }
 
-    static CellWorkload create(CellId cell, URI endpoint) {
+    public static CellWorkload create(CellId cell, URI endpoint) {
         PaddedFixture fixture = fixture(cell);
         if (Outcome.fromId(cell.outcome()) == Outcome.MODELED_ERROR && !fixture.hasModeledError()) {
             throw new IllegalArgumentException(cell + ": the operation models no error");
@@ -152,7 +155,7 @@ final class V2FiniteWorkloads {
     }
 
     /** One client's invocation, as the V3 harness's {@code FiniteWorkloads.Invoker}. */
-    record Invoker(AutoCloseable client, Supplier<Object> sync, Supplier<CompletableFuture<?>> async,
+    public record Invoker(AutoCloseable client, Supplier<Object> sync, Supplier<CompletableFuture<?>> async,
                    Predicate<Throwable> modeledError, Function<Object, String> echo) {
     }
 
@@ -173,7 +176,7 @@ final class V2FiniteWorkloads {
         return configure(builder, endpoint).httpClient((SdkAsyncHttpClient) http).build();
     }
 
-    static Invoker invoker(String protocol, PaddedFixture fixture, URI endpoint, AutoCloseable http) {
+    public static Invoker invoker(String protocol, PaddedFixture fixture, URI endpoint, AutoCloseable http) {
         boolean async = http instanceof SdkAsyncHttpClient;
         String pad = fixture.pad();
         switch (protocol) {

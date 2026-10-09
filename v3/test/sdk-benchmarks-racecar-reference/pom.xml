@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  The Racecar Performance Reference client of the performance harness (task 19.3; Requirements 20.14, 20.15).
+
+  RacecarReferenceMain is the reference arm's forked client process: the harness's SDK-free ClientDriver (the same
+  command line, verification call, steady-state warmup gate, measurement, counters and result record as the V3 arm's
+  ClientMain), compiled here from test/sdk-benchmarks' own sources (ClientDriver.REFERENCE_SHARED_SOURCES), over the
+  feature/poc/racecar clients built from the pinned commit by test/sdk-benchmarks/scripts/build-racecar-reference.sh and
+  installed as software.amazon.awssdk:*:${v3.racecar.version} (a version no released V2 or V3 artifact carries).
+
+  Racecar is a V2 fork whose client API is source-compatible with V2's, so its workloads are the V2 reference's own
+  sources (V2DynamoDbWorkloads, V2FiniteWorkloads, V2Transports and the wire tests' CapturingHttpClient from
+  test/sdk-benchmarks-v2-reference/src/test/java), compiled here against the Racecar jars rather than copied; only
+  RacecarReferenceMain (applicability and the Racecar isolation check) and its wire test are Racecar-specific.
+
+  Layout, as in test/sdk-benchmarks-v2-reference: target/classes holds only the shared SDK-free driver (its sole
+  dependency is smithy-model); the Racecar client code compiles at test scope against the Racecar jars.
+
+  Isolation: Racecar shares V3's package names (software.amazon.awssdk.*), so this module has no V3 dependency, does
+  not import bom-internal, and never shares a class path with V3 or with released V2. The V3 release-alignment rule is
+  replaced by racecar-alignment: every software.amazon.awssdk artifact in the tree is exactly ${v3.racecar.version}, so
+  a V3 or released V2 artifact on this class path fails the build. The package phase writes target/classpath.txt (the
+  test class path without JUnit), from which PerformanceReferences builds the arm's class path. RacecarReferenceMain
+  also checks at run time that VersionInfo.SDK_VERSION is ${v3.racecar.version} and that no V3 class resolves.
+
+  Test tooling (release="false"), built by the v3-benchmarks and v3-tests profiles only, before test/sdk-benchmarks,
+  whose forked smoke runs this reference. Building it needs the Racecar artifacts in the local repository (run the
+  build script first).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>sdk-benchmarks-racecar-reference</artifactId>
+    <name>AWS Java SDK V3 :: Test :: SDK Benchmarks Racecar Reference</name>
+    <description>Racecar (feature/poc/racecar at a pinned commit) reference client of the performance harness.</description>
+    <properties>
+        <!-- PerformanceReferences.RACECAR_VERSION: 2.54.18-RACECAR-<first 12 characters of RACECAR_COMMIT>, as
+             scripts/build-racecar-reference.sh installs it. -->
+        <v3.racecar.version>2.54.18-RACECAR-ef9112895aca</v3.racecar.version>
+        <!-- The aws-crt release the pinned Racecar commit is built with (its root pom's awscrt.version). -->
+        <v3.racecar.awscrt.version>0.48.4</v3.racecar.awscrt.version>
+        <!-- Replaced by racecar-alignment below (see the header). -->
+        <v3.releaseAlignment.skip>true</v3.releaseAlignment.skip>
+        <v3.benchmarks.sharedSources>${project.basedir}/../sdk-benchmarks/src/main/java</v3.benchmarks.sharedSources>
+        <v3.benchmarks.v2ReferenceSources>${project.basedir}/../sdk-benchmarks-v2-reference/src/test/java</v3.benchmarks.v2ReferenceSources>
+    </properties>
+    <dependencies>
+        <!-- The Racecar clients of the harness's finite fixtures: awsJson1.0 DynamoDB, awsJson1.1 Kinesis, restJson1
+             Lambda, awsQuery SNS, ec2Query EC2 and rpcv2Cbor CloudWatch (the build script's MODULES). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>kinesis</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>lambda</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ec2</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cloudwatch</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The Racecar transports whose classes the cells name: apache5-sync, apache4-sync, urlconnection-sync,
+             crt-sync, netty-async and crt-async. Racecar, like V2, has no Apache 5 async client. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache5-client</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>netty-nio-client</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-crt-client</artifactId>
+            <version>${v3.racecar.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk.crt</groupId>
+            <artifactId>aws-crt</artifactId>
+            <version>${v3.racecar.awscrt.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Smithy Node JSON of the shared result record, exactly as the V3 arm's ClientMain writes it. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <!-- The harness's SDK-free client protocol (main) and the V2 reference's SDK workloads (test), compiled
+                     from their modules' sources rather than copied, so every reference arm runs the identical driver
+                     and Racecar runs exactly V2's request construction and outcome checks. -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>benchmark-shared-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${v3.benchmarks.sharedSources}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>v2-reference-shared-workloads</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>add-test-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${v3.benchmarks.v2ReferenceSources}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- Exactly ClientDriver.REFERENCE_SHARED_SOURCES of the shared root (ReferenceSharedSourcesTest in
+                         test/sdk-benchmarks checks the list matches). -->
+                    <includes>
+                        <include>software/amazon/awssdk/benchmark/harness/CellId.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/CellWorkload.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/ClientDriver.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/CloudWatchPutDashboardFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/DynamoDbPutItemFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/Ec2ImportKeyPairFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/KinesisPutRecordFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/LambdaUpdateFunctionConfigurationFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/LatencyHistogram.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/Outcome.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/PaddedFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/PayloadClass.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/Route53UpdateHostedZoneCommentFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/ServiceFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/SnsPublishFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/SteadyStateDetector.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/SteadyStatePolicy.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/WarmupPolicy.java</include>
+                    </includes>
+                    <!-- The V2 reference's SDK workloads (not its main or its tests) and this module's own package. -->
+                    <testIncludes>
+                        <testInclude>software/amazon/awssdk/benchmark/reference/v2/CapturingHttpClient.java</testInclude>
+                        <testInclude>software/amazon/awssdk/benchmark/reference/v2/V2DynamoDbWorkloads.java</testInclude>
+                        <testInclude>software/amazon/awssdk/benchmark/reference/v2/V2FiniteWorkloads.java</testInclude>
+                        <testInclude>software/amazon/awssdk/benchmark/reference/v2/V2Transports.java</testInclude>
+                        <testInclude>software/amazon/awssdk/benchmark/reference/racecar/**/*.java</testInclude>
+                    </testIncludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <!-- The V3 release-alignment rule, pinned to the Racecar build instead of ${project.version}:
+                             every software.amazon.awssdk artifact in the tree is exactly ${v3.racecar.version}, so no
+                             V3 or released V2 artifact can reach the reference class path. -->
+                        <id>racecar-alignment</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <fail>true</fail>
+                            <rules>
+                                <bannedDependencies>
+                                    <message>The Racecar reference client must run the pinned Racecar build only; every software.amazon.awssdk artifact must be at exactly ${v3.racecar.version} and none may be a V3 or released V2 artifact.</message>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>software.amazon.awssdk</exclude>
+                                    </excludes>
+                                    <includes>
+                                        <include>software.amazon.awssdk:*:[${v3.racecar.version}]</include>
+                                    </includes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- target/classpath.txt: the reference client's class path besides its own classes (the Racecar
+                     jars, aws-crt and smithy-model; JUnit excluded). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>racecar-reference-classpath</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>test</includeScope>
+                            <excludeGroupIds>org.junit.jupiter,org.junit.platform,org.opentest4j,org.apiguardian</excludeGroupIds>
+                            <outputFile>${project.build.directory}/classpath.txt</outputFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

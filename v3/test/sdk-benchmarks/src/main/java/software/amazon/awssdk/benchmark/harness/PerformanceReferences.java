@@ -32,7 +32,8 @@ import software.amazon.smithy.model.node.ObjectNode;
 /**
  * The Performance Reference arms (Req 20.14, 20.15; glossary "Performance Reference"): the Launch Parity Baseline
  * (released V2 {@value #V2_BASELINE_VERSION}, the Parity Manifest's frozen baseline), the inspected
- * {@code feature/poc/racecar} implementation pinned to commit {@value #RACECAR_COMMIT}, and the pinned Smithy Java
+ * {@code feature/poc/racecar} implementation pinned to commit {@value #RACECAR_COMMIT} (built from that commit and
+ * installed as {@value #RACECAR_VERSION} by {@code scripts/build-racecar-reference.sh}), and the pinned Smithy Java
  * reference implementation ({@value #SMITHY_JAVA_VERSION}, V3's {@code v3.smithy-java.version}).
  *
  * <p>Each reference records its pinned provenance (coordinates or commit, and the SHA-256 and size of every resolved
@@ -46,6 +47,11 @@ public final class PerformanceReferences {
     public static final String V2_BASELINE_VERSION = "2.54.0";
     public static final String RACECAR_BRANCH = "feature/poc/racecar";
     public static final String RACECAR_COMMIT = "ef9112895aca3057dd3a01b1731fc97ae0cdbe6e";
+    /**
+     * The version scripts/build-racecar-reference.sh installs the pinned Racecar build as: {@code 2.54.18-RACECAR-}
+     * and the commit's first 12 characters, a version no released V2 or V3 artifact carries.
+     */
+    public static final String RACECAR_VERSION = "2.54.18-RACECAR-ef9112895aca";
     public static final String SMITHY_JAVA_VERSION = "1.6.1";
 
     /**
@@ -59,6 +65,12 @@ public final class PerformanceReferences {
         "profiles", "retries", "retries-spi", "json-utils", "third-party-jackson-core", "utils", "utils-lite",
         "annotations", "checksums", "checksums-spi", "apache-client", "apache5-client", "url-connection-client",
         "netty-nio-client", "aws-crt-client");
+
+    /**
+     * The Racecar build's runtime closure of its reference's cells: the same artifacts as {@link #V2_ARTIFACTS} (the
+     * build script installs those clients, protocols and transports at {@link #RACECAR_VERSION}).
+     */
+    static final List<String> RACECAR_ARTIFACTS = V2_ARTIFACTS;
 
     /** Smithy Java runtime modules of a Smithy Java DynamoDB (awsJson1.0) client, dynamic and generated. */
     static final List<String> SMITHY_JAVA_ARTIFACTS = List.of(
@@ -161,9 +173,29 @@ public final class PerformanceReferences {
                                             Transport.URLCONNECTION_SYNC, Transport.CRT_SYNC, Transport.NETTY_ASYNC,
                                             Transport.CRT_ASYNC));
 
+    /**
+     * The Racecar reference's client ({@code test/sdk-benchmarks-racecar-reference}), from what the build script
+     * builds: the finite cells of awsJson1.0 (DynamoDB), awsJson1.1 (Kinesis), restJson1 (Lambda), awsQuery (SNS),
+     * ec2Query (EC2) and rpcv2Cbor (CloudWatch) on the generated sync and async clients over every Racecar transport the
+     * cells name, with the V2 reference's workloads. Not covered, so release mode fails closed on them
+     * ({@link #uncovered}): restXml (Route 53 is not built and has no Racecar workload), {@code apache5-async}
+     * (Racecar's {@code apache5-client} has no async client), and the streaming and Event Stream kinds. Must equal that
+     * module's {@code RacecarReferenceMain} applicability ({@code RacecarReferenceApplicabilityTest} compares them).
+     */
+    public static final Applicability RACECAR_APPLICABILITY = new Applicability(
+        Set.of(BenchProtocol.AWS_JSON_1_0, BenchProtocol.AWS_JSON_1_1, BenchProtocol.REST_JSON_1,
+               BenchProtocol.AWS_QUERY, BenchProtocol.EC2_QUERY, BenchProtocol.RPC_V2_CBOR),
+        Set.of(ClientPath.GENERATED_SYNC, ClientPath.GENERATED_ASYNC), Set.of(WorkloadKind.FINITE),
+        Set.of(Transport.APACHE5_SYNC, Transport.APACHE4_SYNC, Transport.URLCONNECTION_SYNC, Transport.CRT_SYNC,
+               Transport.NETTY_ASYNC, Transport.CRT_ASYNC));
+
     /** The V2 reference client module, relative to the reference root (the {@code v3/test} directory). */
     public static final String V2_REFERENCE_MODULE = "sdk-benchmarks-v2-reference";
     public static final String V2_REFERENCE_MAIN = "software.amazon.awssdk.benchmark.reference.v2.V2ReferenceMain";
+    /** The Racecar reference client module, relative to the reference root. */
+    public static final String RACECAR_REFERENCE_MODULE = "sdk-benchmarks-racecar-reference";
+    public static final String RACECAR_REFERENCE_MAIN =
+        "software.amazon.awssdk.benchmark.reference.racecar.RacecarReferenceMain";
 
     /**
      * One reference.
@@ -209,12 +241,21 @@ public final class PerformanceReferences {
     }
 
     /**
-     * The three references resolved against the local Maven repository {@code m2Repository} and the built reference
-     * client modules under {@code referenceRoot} (the {@code v3/test} directory; {@code null} for none).
+     * {@link #resolve(Path, Path, Path)} with the build script's default Racecar build record,
+     * {@code ~/.cache/v3-benchmarks/racecar-<commit>/racecar-reference.properties}.
      */
     public static List<Reference> resolve(Path m2Repository, Path referenceRoot) {
+        return resolve(m2Repository, referenceRoot, defaultRacecarProperties());
+    }
+
+    /**
+     * The three references resolved against the local Maven repository {@code m2Repository}, the built reference
+     * client modules under {@code referenceRoot} (the {@code v3/test} directory; {@code null} for none) and the Racecar
+     * build record {@code racecarProperties} written by scripts/build-racecar-reference.sh ({@code null} for none;
+     * recorded in the provenance when readable).
+     */
+    public static List<Reference> resolve(Path m2Repository, Path referenceRoot, Path racecarProperties) {
         List<Reference> refs = new ArrayList<>();
-        Set<ClientPath> generated = Set.of(ClientPath.GENERATED_SYNC, ClientPath.GENERATED_ASYNC);
         List<Artifact> v2 = new ArrayList<>();
         for (String a : V2_ARTIFACTS) {
             v2.add(artifact(m2Repository, "software.amazon.awssdk", a, V2_BASELINE_VERSION));
@@ -223,10 +264,18 @@ public final class PerformanceReferences {
                            "software.amazon.awssdk:*:" + V2_BASELINE_VERSION
                            + " (Parity Manifest v3.v2Baseline.version)", V2_APPLICABILITY, v2,
                            v2Client(referenceRoot)));
+        List<Artifact> racecar = new ArrayList<>();
+        for (String a : RACECAR_ARTIFACTS) {
+            racecar.add(artifact(m2Repository, "software.amazon.awssdk", a, RACECAR_VERSION));
+        }
+        RacecarBuild build = RacecarBuild.read(racecarProperties);
+        ClientLookup racecarClient = build.problem() != null ? ClientLookup.none(build.problem())
+                                                             : racecarClient(referenceRoot);
         refs.add(reference("racecar", Role.RACECAR, RACECAR_COMMIT,
                            "git " + RACECAR_BRANCH + "@" + RACECAR_COMMIT + "; no published artifact: built from that "
-                           + "commit by scripts/build-racecar-reference.sh", Applicability.of(generated), List.of(),
-                           ClientLookup.none("no Racecar reference client main exists")));
+                           + "commit by scripts/build-racecar-reference.sh and installed as software.amazon.awssdk:*:"
+                           + RACECAR_VERSION + "; " + build.provenance(), RACECAR_APPLICABILITY, racecar,
+                           racecarClient));
         List<Artifact> smithy = new ArrayList<>();
         for (String a : SMITHY_JAVA_ARTIFACTS) {
             smithy.add(artifact(m2Repository, "software.amazon.smithy.java", a, SMITHY_JAVA_VERSION));
@@ -239,16 +288,19 @@ public final class PerformanceReferences {
     }
 
     /**
-     * {@link #resolve(Path, Path)} of {@code ~/.m2/repository} (or {@code -Dmaven.repo.local}) and the reference root
-     * {@code -Dv3.benchmark.referenceRoot}, by default the parent of the working directory (the harness runs from
-     * {@code v3/test/sdk-benchmarks}).
+     * {@link #resolve(Path, Path, Path)} of {@code ~/.m2/repository} (or {@code -Dmaven.repo.local}), the reference
+     * root {@code -Dv3.benchmark.referenceRoot}, by default the parent of the working directory (the harness runs from
+     * {@code v3/test/sdk-benchmarks}), and the Racecar build record {@code -Dv3.benchmark.racecarProperties}, by
+     * default {@link #defaultRacecarProperties()}.
      */
     public static List<Reference> resolveLocal() {
         String local = System.getProperty("maven.repo.local");
         String root = System.getProperty("v3.benchmark.referenceRoot");
+        String racecar = System.getProperty("v3.benchmark.racecarProperties");
         return resolve(local != null ? Path.of(local) : Path.of(System.getProperty("user.home"), ".m2", "repository"),
                        root != null ? Path.of(root) : Path.of(System.getProperty("user.dir")).toAbsolutePath()
-                                                          .getParent());
+                                                          .getParent(),
+                       racecar != null ? Path.of(racecar) : defaultRacecarProperties());
     }
 
     /** A reference client main found on disk (its class path and main class), or why there is none. */
@@ -259,24 +311,38 @@ public final class PerformanceReferences {
     }
 
     /**
-     * The built V2 reference client: {@code <root>/sdk-benchmarks-v2-reference/target/classes} (the driver and
-     * {@code V2ReferenceMain}) plus {@code target/classpath.txt} (its V2-only runtime class path). Rejected when any
-     * entry is missing or any {@code software.amazon.awssdk} jar on it is not a {@value #V2_BASELINE_VERSION} jar (a
-     * V3 jar there would bind V2's shared package names to V3 classes).
+     * The built V2 reference client: {@code <root>/sdk-benchmarks-v2-reference/target/classes} (the driver),
+     * {@code target/test-classes} ({@code V2ReferenceMain}) plus {@code target/classpath.txt} (its V2-only runtime
+     * class path). Rejected when any entry is missing or any {@code software.amazon.awssdk} jar on it is not a
+     * {@value #V2_BASELINE_VERSION} jar (a V3 jar there would bind V2's shared package names to V3 classes).
      */
     static ClientLookup v2Client(Path root) {
+        return referenceClient(root, "V2", V2_REFERENCE_MODULE, V2_REFERENCE_MAIN, V2_BASELINE_VERSION);
+    }
+
+    /**
+     * The built Racecar reference client, as {@link #v2Client} for {@code sdk-benchmarks-racecar-reference} and
+     * {@code RacecarReferenceMain}: rejected when any entry is missing or any {@code software.amazon.awssdk} jar on its
+     * class path is not a {@value #RACECAR_VERSION} jar (a released V2 or a V3 jar would replace Racecar's classes).
+     */
+    static ClientLookup racecarClient(Path root) {
+        return referenceClient(root, "Racecar", RACECAR_REFERENCE_MODULE, RACECAR_REFERENCE_MAIN, RACECAR_VERSION);
+    }
+
+    private static ClientLookup referenceClient(Path root, String label, String module, String mainClass,
+                                                String sdkVersion) {
         if (root == null) {
             return ClientLookup.none("no reference root given");
         }
-        Path target = root.resolve(V2_REFERENCE_MODULE).resolve("target");
+        Path target = root.resolve(module).resolve("target");
         Path classes = target.resolve("classes");
-        // The V2 client code compiles at the module's test scope (against the released V2 jars), the driver in main.
+        // The client code compiles at the module's test scope (against the reference's jars), the driver in main.
         Path clientClasses = target.resolve("test-classes");
-        Path main = clientClasses.resolve(V2_REFERENCE_MAIN.replace('.', '/') + ".class");
+        Path main = clientClasses.resolve(mainClass.replace('.', '/') + ".class");
         Path classpathFile = target.resolve("classpath.txt");
         if (!Files.isRegularFile(main) || !Files.isRegularFile(classpathFile)) {
-            return ClientLookup.none("the V2 reference client is not built (" + main + ", " + classpathFile
-                                     + "); build test/" + V2_REFERENCE_MODULE);
+            return ClientLookup.none("the " + label + " reference client is not built (" + main + ", " + classpathFile
+                                     + "); build test/" + module);
         }
         String deps;
         try {
@@ -287,20 +353,54 @@ public final class PerformanceReferences {
         for (String entry : deps.split(java.io.File.pathSeparator)) {
             Path p = Path.of(entry);
             if (!Files.exists(p)) {
-                return ClientLookup.none("V2 reference class path entry missing: " + entry);
+                return ClientLookup.none(label + " reference class path entry missing: " + entry);
             }
             String normalized = p.toAbsolutePath().normalize().toString().replace('\\', '/');
             if (normalized.contains("/software/amazon/awssdk/") && !normalized.contains("/software/amazon/awssdk/crt/")
-                && !normalized.contains("/" + V2_BASELINE_VERSION + "/")) {
-                return ClientLookup.none("V2 reference class path carries a non-" + V2_BASELINE_VERSION
-                                         + " SDK jar: " + entry);
+                && !normalized.contains("/" + sdkVersion + "/")) {
+                return ClientLookup.none(label + " reference class path carries a non-" + sdkVersion + " SDK jar: "
+                                         + entry);
             }
         }
         if (!Files.isDirectory(classes.resolve("software/amazon/awssdk/benchmark/harness"))) {
-            return ClientLookup.none("the V2 reference client's shared driver is not built: " + classes);
+            return ClientLookup.none("the " + label + " reference client's shared driver is not built: " + classes);
         }
         return new ClientLookup(classes.toAbsolutePath() + java.io.File.pathSeparator + clientClasses.toAbsolutePath()
-                                + java.io.File.pathSeparator + deps, V2_REFERENCE_MAIN, null);
+                                + java.io.File.pathSeparator + deps, mainClass, null);
+    }
+
+    /** The build script's default Racecar build record (its default {@code RACECAR_WORKTREE}). */
+    static Path defaultRacecarProperties() {
+        return Path.of(System.getProperty("user.home"), ".cache", "v3-benchmarks", "racecar-" + RACECAR_COMMIT,
+                       "racecar-reference.properties");
+    }
+
+    /**
+     * The Racecar build record ({@code racecar-reference.properties}) as provenance text, and why the build cannot be
+     * the pinned reference when the record names another commit or version. An absent or unreadable record is noted
+     * in the provenance only: the installed artifacts' version and SHA-256s identify the build.
+     */
+    record RacecarBuild(String provenance, String problem) {
+        static RacecarBuild read(Path file) {
+            if (file == null || !Files.isRegularFile(file)) {
+                return new RacecarBuild("racecar-reference.properties not available (" + file + ")", null);
+            }
+            java.util.Properties p = new java.util.Properties();
+            try (InputStream in = Files.newInputStream(file)) {
+                p.load(in);
+            } catch (IOException | IllegalArgumentException e) {
+                return new RacecarBuild("racecar-reference.properties unreadable (" + file + "): " + e, null);
+            }
+            StringBuilder text = new StringBuilder("racecar-reference.properties (" + file + "):");
+            new java.util.TreeMap<>(p).forEach((k, v) -> text.append(' ').append(k).append('=').append(v).append(';'));
+            String problem = null;
+            if (!RACECAR_COMMIT.equals(p.getProperty("commit")) || !RACECAR_VERSION.equals(p.getProperty("version"))) {
+                problem = "the Racecar build record " + file + " names commit " + p.getProperty("commit")
+                          + " version " + p.getProperty("version") + ", not the pinned " + RACECAR_COMMIT + " "
+                          + RACECAR_VERSION;
+            }
+            return new RacecarBuild(text.toString(), problem);
+        }
     }
 
     private static Reference reference(String id, Role role, String pin, String provenance,
