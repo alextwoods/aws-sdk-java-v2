@@ -133,6 +133,56 @@
             <artifactId>netty-nio-client</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Dynamic Client paths of the forked-process harness (dynamic-sync, dynamic-async cells). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamic-client</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Generated V3 services of the harness's other protocol fixtures: awsJson1.1 (Kinesis), restJson1 (Lambda),
+             restXml (Route 53), awsQuery (SNS), ec2Query (EC2) and rpcv2Cbor (CloudWatch). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>kinesis</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>lambda</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>route53</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ec2</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cloudwatch</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Generated V3 services of the harness's streaming blob fixtures: S3 (restXml) and MediaStore Data
+             (restJson1) PutObject/GetObject. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>mediastoredata</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

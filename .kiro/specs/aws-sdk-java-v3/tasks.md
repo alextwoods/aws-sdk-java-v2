@@ -538,7 +538,7 @@ All tasks are required for general availability. No task is marked optional beca
     - _Requirements: 16.14, 16.15, 19.14, 19.15_
 
 - [ ] 19. Implement the reproducible performance harness and performance gates
-  - [ ] 19.1 Implement forked client/mock-service benchmark orchestration
+  - [x] 19.1 Implement forked client/mock-service benchmark orchestration
     - Extend `v3/test/sdk-benchmarks` from the repository benchmark infrastructure with separate pinned processes, host/JDK/JVM/power/background metadata, explicit transports, all protocols, sync/async/dynamic paths, payload/outcome/stream/Event Stream scenarios, and concurrency 1/8/32.
     - _Requirements: 20.1, 20.2, 20.3, 20.4, 20.5, 20.10_
   - [ ] 19.2 Implement interleaving, steady-state, null experiments, and validity checks

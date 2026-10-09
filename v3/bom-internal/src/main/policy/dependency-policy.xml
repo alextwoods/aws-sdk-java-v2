@@ -1164,6 +1164,19 @@
             <allows module="url-connection-client"/>
             <allows module="aws-crt-client"/>
             <allows module="netty-nio-client"/>
+            <!-- The Dynamic Client paths of the forked-process harness (dynamic-sync, dynamic-async cells). -->
+            <allows module="dynamic-client"/>
+            <!-- The generated V3 services of the harness's other protocol fixtures: awsJson1.1, restJson1, restXml,
+                 awsQuery, ec2Query and rpcv2Cbor. -->
+            <requiresService module="kinesis"/>
+            <requiresService module="lambda"/>
+            <requiresService module="route53"/>
+            <requiresService module="sns"/>
+            <requiresService module="ec2"/>
+            <requiresService module="cloudwatch"/>
+            <!-- The streaming blob fixtures: S3 (restXml) and MediaStore Data (restJson1) PutObject/GetObject. -->
+            <requiresService module="s3"/>
+            <requiresService module="mediastoredata"/>
             <forbids class="logging-implementation"/>
         </module>
     </modules>
