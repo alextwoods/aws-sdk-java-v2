@@ -170,10 +170,9 @@ public final class CoreRuntimeSuiteReports {
      * means every suite ran and passed in the build that started at {@code buildStart}.
      */
     public static List<String> problems(Path v3Root, List<Suite> suites, Instant buildStart) {
-        Instant freshAfter = buildStart.minus(MTIME_TOLERANCE);
         List<String> problems = new ArrayList<>();
         for (Suite suite : suites) {
-            String problem = problem(v3Root, suite, buildStart, freshAfter);
+            String problem = problem(v3Root, suite, buildStart);
             if (problem != null) {
                 problems.add(suite + ": " + problem);
             }
@@ -181,36 +180,58 @@ public final class CoreRuntimeSuiteReports {
         return problems;
     }
 
-    private static String problem(Path v3Root, Suite suite, Instant buildStart, Instant freshAfter) {
+    /**
+     * The surefire report of {@code suite} written during the build that started at {@code buildStart}: either its
+     * {@code <testsuite>} root element, or (with a null element) why the suite does not count as run in this build.
+     */
+    record FreshReport(Element testsuite, String problem) {
+    }
+
+    /** Reads the fresh report of {@code suite}; see the class documentation for freshness. */
+    static FreshReport freshReport(Path v3Root, Suite suite, Instant buildStart) {
+        Instant freshAfter = buildStart.minus(MTIME_TOLERANCE);
         Path report = suite.report(v3Root);
         if (!Files.isRegularFile(report)) {
-            return "no surefire report " + v3Root.relativize(report) + " (the suite did not run in this build: "
-                   + "renamed, filtered out, excluded, or its module was skipped)";
+            return missing("no surefire report " + v3Root.relativize(report) + " (the suite did not run in this "
+                           + "build: renamed, filtered out, excluded, its module was skipped, or its fork was killed)");
         }
         Instant modified;
         try {
             modified = Files.getLastModifiedTime(report).toInstant();
         } catch (IOException e) {
-            return "cannot read the modification time of " + report + ": " + e;
+            return missing("cannot read the modification time of " + report + ": " + e);
         }
         if (modified.isBefore(freshAfter)) {
-            return "stale surefire report " + v3Root.relativize(report) + " written at " + modified
-                   + ", before this build started at " + buildStart
-                   + " (the suite did not run in this build: tests skipped, resumed build, or filtered out)";
+            return missing("stale surefire report " + v3Root.relativize(report) + " written at " + modified
+                           + ", before this build started at " + buildStart
+                           + " (the suite did not run in this build: tests skipped, resumed build, or filtered out)");
         }
         Element testsuite;
         try {
             testsuite = Xml.read(report);
         } catch (RuntimeException e) {
-            return "unreadable surefire report " + report + ": " + e.getMessage();
+            return missing("unreadable surefire report " + report + ": " + e.getMessage());
         }
         if (!"testsuite".equals(testsuite.getTagName())) {
-            return "surefire report " + report + " has root element <" + testsuite.getTagName()
-                   + ">, expected <testsuite>";
+            return missing("surefire report " + report + " has root element <" + testsuite.getTagName()
+                           + ">, expected <testsuite>");
         }
         if (!suite.reportedName().equals(testsuite.getAttribute("name"))) {
-            return "surefire report " + report + " is for '" + testsuite.getAttribute("name") + "'";
+            return missing("surefire report " + report + " is for '" + testsuite.getAttribute("name") + "'");
         }
+        return new FreshReport(testsuite, null);
+    }
+
+    private static FreshReport missing(String problem) {
+        return new FreshReport(null, problem);
+    }
+
+    private static String problem(Path v3Root, Suite suite, Instant buildStart) {
+        FreshReport fresh = freshReport(v3Root, suite, buildStart);
+        if (fresh.problem() != null) {
+            return fresh.problem();
+        }
+        Element testsuite = fresh.testsuite();
         try {
             long tests = count(testsuite, "tests");
             long skipped = count(testsuite, "skipped");
@@ -225,7 +246,7 @@ public final class CoreRuntimeSuiteReports {
                 return "executed no tests (tests=" + tests + ", skipped=" + skipped + ")";
             }
         } catch (NumberFormatException e) {
-            return "surefire report " + report + " has a malformed count: " + e.getMessage();
+            return "surefire report " + suite.report(v3Root) + " has a malformed count: " + e.getMessage();
         }
         return null;
     }

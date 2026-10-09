@@ -1,0 +1,20 @@
+# Approved release-gate omissions (task 18.10; Requirement 19.15), read by ReleaseGateReportsTest.
+#
+# ReleaseGateEnforcement fails the product-parity release reactor for every skipped case of an expected release-gate
+# suite (ReleaseGateInventory) that no entry below covers. One entry per line:
+#   <suite class> | <case name pattern, '*' matches any characters> | <condition> | <reason> | <reference>
+# Conditions:
+#   always                     the skip is approved in every build
+#   native-image-not-required  the skip is approved only while the native-image deployment mode is not required; it
+#                              is required with -Dv3.nativeImage.required=true or -Dv3.launchGate=general-availability
+# An entry naming no expected release-gate suite fails the gate. An entry approves skips only: a failure, an error or a
+# timeout of a covered case still fails the gate. Conformance cases that are expected to fail are approved in their own
+# suites' omission lists (test/protocol-tests approved-protocol-omissions.txt, test/endpoint-tests
+# approved-endpoint-omissions.txt), where they run and must keep failing; the gate checks that they ran as approved.
+#
+# Do not add an entry to make the gate pass: an entry records a release decision and needs its reference.
+
+# Task 18.9 (Requirement 19.13): the native-image smoke test needs GraalVM native-image, which the release reactor
+# requires only at the general-availability launch gate stage. Without it the suite skips; when native image is
+# required and native-image is unavailable, the suite fails rather than skips, and this entry no longer applies.
+software.amazon.awssdk.test.modulepath.NativeImageSmokeTest | * | native-image-not-required | native-image is not a required deployment mode before general availability | Task 18.9; Requirements 16.10, 19.13

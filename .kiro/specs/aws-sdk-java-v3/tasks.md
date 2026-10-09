@@ -502,7 +502,7 @@ All tasks are required for general availability. No task is marked optional beca
     - Execute all included modules in Maven dependency order and fail the profile on any dependency-isolation, generated/dynamic equivalence, fleet completeness, parity, compatibility, migration, high-level-library, telemetry, logging, or safe-diagnostics gate failure.
     - _Requirements: 2.1–2.2, 2.10–2.11, 4.1–4.3, 6.8, 7.1–7.10, 8.1, 8.3, 9.9–9.10, 10.1, 10.4–10.5, 11.12, 12.10, 14.1–14.19, 15.5, 16.1–16.15, 17.1–17.12, 18.1–18.9, 19.6–19.12, 21.1–21.15_
 
-- [ ] 18. Implement cross-cutting conformance and release-gate test systems
+- [x] 18. Implement cross-cutting conformance and release-gate test systems
   - [x] 18.1 Implement protocol and endpoint conformance runners
     - Build `v3/test/protocol-tests` and endpoint test modules that discover and execute every applicable pinned Smithy protocol case and canonical endpoint case across all seven runtimes and generated services.
     - Fail on test timeouts, failures, or unapproved omissions.
@@ -521,7 +521,7 @@ All tasks are required for general availability. No task is marked optional beca
     - Build controllable endpoint, identity, signer, scheduler, body, and transport fakes for connection failure, partial request/response, timeout, throttling, retry hints, malformed success, modeled/unmodeled errors, cancellation, and resolution failures.
     - Assert terminal outcome, attempts, delays, cancellation, cleanup, metadata, and no duplicate completion.
     - _Requirements: 19.7, 19.8, 19.14_
-  - [ ] 18.6 Write the property test for model-predicted fault outcomes
+  - [x] 18.6 Write the property test for model-predicted fault outcomes
     - **Property 63: Fault outcomes follow pipeline state.** Generate bounded fault/retry/cancellation traces; compare execution results with an independent pipeline state-machine oracle.
     - **Validates: Requirements 19.7, 19.8**
   - [x] 18.7 Implement barrier-controlled concurrency suites
@@ -533,7 +533,7 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 18.9 Implement module-path and supported native-image smoke modules
     - Build dedicated JPMS and native-image fixtures that resolve minimal generated clients, construct each supported transport mode, and complete a modeled call without forbidden dependencies.
     - _Requirements: 16.10, 19.13, 19.14_
-  - [ ] 18.10 Wire release-test discovery, timeout, and omission enforcement
+  - [x] 18.10 Wire release-test discovery, timeout, and omission enforcement
     - Generate the expected release-gate test inventory from protocols, models, manifest, transports, services, and deployment modes; fail the Maven release reactor for missing, failed, timed-out, or unapproved-skipped cases.
     - _Requirements: 16.14, 16.15, 19.14, 19.15_
 

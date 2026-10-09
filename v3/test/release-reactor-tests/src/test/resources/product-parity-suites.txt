@@ -237,6 +237,18 @@ test/fleet-differential-tests software.amazon.awssdk.test.fleet.IntentionalDelta
 # -Dv3.launchGate=general-availability) and native-image is unavailable.
 test/module-path-tests software.amazon.awssdk.test.modulepath.ModulePathSmokeTest
 test/module-path-tests software.amazon.awssdk.test.modulepath.ForbiddenDependenciesTest
+# Task 18.10: suites of the generated release-gate inventory (ReleaseGateInventory) not listed above: the pinned
+# conformance suite of every protocol runtime under protocols/, and the Parity Manifest evidence hooks whose suites no
+# other block lists. ReleaseGateInventoryTest fails while an inventory suite is missing from both lists; the case-level
+# gate (ReleaseGateReportsTest) checks their cases, timeouts and skips.
+protocols/aws-json-protocol software.amazon.awssdk.protocols.awsjson.AwsJsonProtocolConformanceTest
+protocols/aws-query-protocol software.amazon.awssdk.protocols.query.AwsQueryProtocolConformanceTest
+protocols/ec2-query-protocol software.amazon.awssdk.protocols.ec2query.Ec2QueryProtocolConformanceTest
+protocols/rest-json-protocol software.amazon.awssdk.protocols.restjson.RestJsonEventStreamConformanceTest
+protocols/rest-json-protocol software.amazon.awssdk.protocols.restjson.RestJsonProtocolConformanceTest
+protocols/rest-xml-protocol software.amazon.awssdk.protocols.restxml.RestXmlProtocolConformanceTest
+protocols/rpcv2-cbor-protocol software.amazon.awssdk.protocols.rpcv2cbor.Rpcv2CborProtocolConformanceTest
+core/sdk-core software.amazon.awssdk.core.SdkNumberTest
 
 # Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
 # require their reports):

@@ -39,6 +39,11 @@
   * ProductParitySuiteReportsTest (product-parity gate): the same check for src/test/resources/product-parity-suites.txt
     (tasks 12-16). Enabled only by the product-parity-gate profile below (-Dv3.aggregate=product-parity), which also
     enables CoreRuntimeSuiteReportsTest; skipped in every other build.
+  * ReleaseGateInventoryTest (every build, task 18.10): the release-gate inventory generated from protocols, models,
+    Parity Manifest evidence hooks, transports, services and deployment modes is consistent, and every expected suite is
+    in a suite list. ReleaseGateReportsTest (product-parity gate): case by case, every expected release-gate case ran in
+    this session and passed within its case/suite timeout, and every skip is covered by
+    src/test/resources/release-gate-omissions.txt; evidence is written to target/release-gate/.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -67,12 +72,25 @@
         <v3.jdkDiscovery.scanWellKnownLocations>true</v3.jdkDiscovery.scanWellKnownLocations>
         <v3.coreRuntimeGate>false</v3.coreRuntimeGate>
         <v3.productParityGate>false</v3.productParityGate>
+        <!-- Task 18.10: the case-level release-gate enforcement (ReleaseGateReportsTest), enabled by product-parity-gate.
+             Native image is a required deployment mode with -Dv3.nativeImage.required=true or
+             -Dv3.launchGate=general-availability. -->
+        <v3.releaseGate>false</v3.releaseGate>
+        <v3.nativeImage.required>false</v3.nativeImage.required>
+        <v3.launchGate></v3.launchGate>
         <!-- ${maven.build.timestamp} is the Maven session start (UTC). The gate compares report modification times with
              it, so it needs millisecond precision and an explicit offset rather than the default yyyyMMdd-HHmm. -->
         <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</maven.build.timestamp.format>
     </properties>
 
     <dependencies>
+        <!-- Task 18.10: the release-gate inventory reads services/service-fleet.json, the Parity Manifest classification
+             rules and the protocol conformance evidence (JSON) with the Smithy node parser. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -103,6 +121,10 @@
                         <v3.jdkMatrixReactorTest>${v3.jdkMatrixReactorTest}</v3.jdkMatrixReactorTest>
                         <v3.coreRuntimeGate>${v3.coreRuntimeGate}</v3.coreRuntimeGate>
                         <v3.productParityGate>${v3.productParityGate}</v3.productParityGate>
+                        <v3.releaseGate>${v3.releaseGate}</v3.releaseGate>
+                        <v3.nativeImage.required>${v3.nativeImage.required}</v3.nativeImage.required>
+                        <v3.launchGate>${v3.launchGate}</v3.launchGate>
+                        <v3.releaseGate.evidenceDirectory>${project.build.directory}/release-gate</v3.releaseGate.evidenceDirectory>
                         <v3.buildStartTime>${maven.build.timestamp}</v3.buildStartTime>
                     </systemPropertyVariables>
                 </configuration>
@@ -494,6 +516,8 @@
             <properties>
                 <v3.coreRuntimeGate>true</v3.coreRuntimeGate>
                 <v3.productParityGate>true</v3.productParityGate>
+                <!-- Task 18.10: the case-level release-gate inventory enforcement (ReleaseGateReportsTest). -->
+                <v3.releaseGate>true</v3.releaseGate>
             </properties>
             <dependencies>
                 <dependency>
@@ -1092,6 +1116,85 @@
                 <dependency>
                     <groupId>software.amazon.awssdk</groupId>
                     <artifactId>v2-migration-tests</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <!-- Task 18.10: the protocol runtimes, whose pinned conformance suites the release-gate inventory requires. -->
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>aws-json-protocol</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>aws-query-protocol</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>ec2-query-protocol</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>rest-json-protocol</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>rest-xml-protocol</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>test</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>*</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>rpcv2-cbor-protocol</artifactId>
                     <version>${project.version}</version>
                     <type>pom</type>
                     <scope>test</scope>
