@@ -48,9 +48,13 @@ public final class PerformanceReferences {
     public static final String RACECAR_COMMIT = "ef9112895aca3057dd3a01b1731fc97ae0cdbe6e";
     public static final String SMITHY_JAVA_VERSION = "1.6.1";
 
-    /** V2 baseline runtime closure of the DynamoDB awsJson1.0 cells (as fleet-differential-tests resolves it). */
+    /**
+     * V2 baseline runtime closure of the reference's cells (as fleet-differential-tests resolves it): the clients of
+     * every protocol's finite fixture and their protocol modules.
+     */
     static final List<String> V2_ARTIFACTS = List.of(
-        "dynamodb", "sdk-core", "aws-core", "aws-json-protocol", "protocol-core", "regions", "auth", "http-auth",
+        "dynamodb", "kinesis", "lambda", "sns", "ec2", "cloudwatch", "aws-cbor-protocol", "aws-query-protocol",
+        "smithy-rpcv2-protocol", "third-party-jackson-dataformat-cbor", "sdk-core", "aws-core", "aws-json-protocol", "protocol-core", "regions", "auth", "http-auth",
         "http-auth-aws", "http-auth-spi", "identity-spi", "http-client-spi", "endpoints-spi", "metrics-spi",
         "profiles", "retries", "retries-spi", "json-utils", "third-party-jackson-core", "utils", "utils-lite",
         "annotations", "checksums", "checksums-spi", "apache-client", "apache5-client", "url-connection-client",
@@ -142,13 +146,17 @@ public final class PerformanceReferences {
     }
 
     /**
-     * The Launch Parity Baseline's client ({@code test/sdk-benchmarks-v2-reference}): the awsJson1.0 finite cells on
-     * the generated sync and async clients over every V2 transport the cells name (V2 has no Apache 5 async client).
-     * Must equal that module's {@code V2ReferenceMain} applicability ({@code V2ReferenceWireTest} and the forked smoke
-     * check both sides).
+     * The Launch Parity Baseline's client ({@code test/sdk-benchmarks-v2-reference}): the finite cells of awsJson1.0
+     * (DynamoDB), awsJson1.1 (Kinesis), restJson1 (Lambda), awsQuery (SNS), ec2Query (EC2) and rpcv2Cbor (CloudWatch,
+     * which V2 2.54.0 speaks rpcv2Cbor for) on the generated sync and async clients over every V2 transport the cells
+     * name. Not covered, so release mode fails closed on them ({@link #uncovered}): restXml (the fixture's Route 53
+     * client is not available at {@value #V2_BASELINE_VERSION} offline), {@code apache5-async} (V2 has no Apache 5
+     * async client), and the streaming and Event Stream kinds (no V2 reference fixture). Must equal that module's
+     * {@code V2ReferenceMain} applicability ({@code V2ReferenceApplicabilityTest} compares them).
      */
     public static final Applicability V2_APPLICABILITY = new Applicability(
-        Set.of(BenchProtocol.AWS_JSON_1_0), Set.of(ClientPath.GENERATED_SYNC, ClientPath.GENERATED_ASYNC),
+        Set.of(BenchProtocol.AWS_JSON_1_0, BenchProtocol.AWS_JSON_1_1, BenchProtocol.REST_JSON_1,
+               BenchProtocol.AWS_QUERY, BenchProtocol.EC2_QUERY, BenchProtocol.RPC_V2_CBOR), Set.of(ClientPath.GENERATED_SYNC, ClientPath.GENERATED_ASYNC),
         Set.of(WorkloadKind.FINITE), Set.of(Transport.APACHE5_SYNC, Transport.APACHE4_SYNC,
                                             Transport.URLCONNECTION_SYNC, Transport.CRT_SYNC, Transport.NETTY_ASYNC,
                                             Transport.CRT_ASYNC));

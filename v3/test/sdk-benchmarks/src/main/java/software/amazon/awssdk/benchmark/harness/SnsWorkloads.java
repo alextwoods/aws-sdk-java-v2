@@ -15,19 +15,12 @@
 
 package software.amazon.awssdk.benchmark.harness;
 
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.response;
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.utf8;
-
 import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Invoker;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.PaddedFixture;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Route;
 import software.amazon.awssdk.http.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.SdkSyncHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -45,9 +38,9 @@ import software.amazon.smithy.java.core.serde.document.Document;
  * {@code InternalErrorException} (query code {@code InternalError}, 500).
  */
 final class SnsWorkloads extends FiniteWorkloads.Provider {
-    static final String TOPIC = "arn:aws:sns:us-east-1:123456789012:benchmark-topic";
-    static final String NS = "http://sns.amazonaws.com/doc/2010-03-31/";
-    static final String CONTENT_TYPE = "text/xml";
+    static final String TOPIC = SnsPublishFixture.TOPIC;
+    static final String NS = SnsPublishFixture.NS;
+    static final String CONTENT_TYPE = SnsPublishFixture.CONTENT_TYPE;
 
     SnsWorkloads() {
         super("sns-publish", BenchProtocol.AWS_QUERY, "sns", "com.amazonaws.sns#AmazonSimpleNotificationService",
@@ -56,20 +49,7 @@ final class SnsWorkloads extends FiniteWorkloads.Provider {
 
     @Override
     public PaddedFixture fixture(BenchmarkCell cell) {
-        return new PaddedFixture(
-            cell.payload(), new Route("POST", "/", null, null, utf8("Action=Publish&")), 1,
-            pad -> utf8("Action=Publish&Version=2010-03-31&TopicArn="
-                        + URLEncoder.encode(TOPIC, StandardCharsets.UTF_8) + "&Message=" + pad),
-            pad -> response(200, CONTENT_TYPE, "<PublishResponse xmlns=\"" + NS + "\"><PublishResult><MessageId>" + pad
-                                               + "</MessageId></PublishResult><ResponseMetadata><RequestId>benchmark"
-                                               + "</RequestId></ResponseMetadata></PublishResponse>"),
-            response(404, CONTENT_TYPE, error("NotFound", "Sender", "Topic does not exist")),
-            response(500, CONTENT_TYPE, error("InternalError", "Receiver", "injected retry")));
-    }
-
-    static String error(String code, String type, String message) {
-        return "<ErrorResponse xmlns=\"" + NS + "\"><Error><Type>" + type + "</Type><Code>" + code + "</Code>"
-               + "<Message>" + message + "</Message></Error><RequestId>benchmark</RequestId></ErrorResponse>";
+        return SnsPublishFixture.create(cell.payload());
     }
 
     @Override

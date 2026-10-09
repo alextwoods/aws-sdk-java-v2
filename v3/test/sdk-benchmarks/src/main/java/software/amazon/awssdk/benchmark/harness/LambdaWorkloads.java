@@ -15,17 +15,12 @@
 
 package software.amazon.awssdk.benchmark.harness;
 
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.response;
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.utf8;
-
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Invoker;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.PaddedFixture;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Route;
 import software.amazon.awssdk.http.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.SdkSyncHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -43,8 +38,8 @@ import software.amazon.smithy.java.core.serde.document.Document;
  * {@code ServiceException} (500).
  */
 final class LambdaWorkloads extends FiniteWorkloads.Provider {
-    static final String FUNCTION = "benchmark-function";
-    static final String CONTENT_TYPE = "application/json";
+    static final String FUNCTION = LambdaUpdateFunctionConfigurationFixture.FUNCTION;
+    static final String CONTENT_TYPE = LambdaUpdateFunctionConfigurationFixture.CONTENT_TYPE;
 
     LambdaWorkloads() {
         super("lambda-updatefunctionconfiguration", BenchProtocol.REST_JSON_1, "lambda",
@@ -54,14 +49,7 @@ final class LambdaWorkloads extends FiniteWorkloads.Provider {
 
     @Override
     public PaddedFixture fixture(BenchmarkCell cell) {
-        return new PaddedFixture(
-            cell.payload(), Route.path("PUT", "/2015-03-31/functions/" + FUNCTION + "/configuration"), 1,
-            pad -> utf8("{\"Description\":\"" + pad + "\"}"),
-            pad -> response(200, CONTENT_TYPE, "{\"FunctionName\":\"" + FUNCTION + "\",\"Description\":\"" + pad + "\"}"),
-            response(404, CONTENT_TYPE, utf8("{\"Type\":\"User\",\"message\":\"Function not found\"}"),
-                     Map.of("X-Amzn-ErrorType", "ResourceNotFoundException")),
-            response(500, CONTENT_TYPE, utf8("{\"Type\":\"Service\",\"message\":\"injected retry\"}"),
-                     Map.of("X-Amzn-ErrorType", "ServiceException")));
+        return LambdaUpdateFunctionConfigurationFixture.create(cell.payload());
     }
 
     @Override

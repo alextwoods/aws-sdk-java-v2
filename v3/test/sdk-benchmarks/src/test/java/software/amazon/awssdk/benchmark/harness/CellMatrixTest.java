@@ -183,7 +183,7 @@ class CellMatrixTest {
             WorkloadProvider.forCell(cell).ifPresent(p -> {
                 ServiceFixture fixture = p.fixture(cell);
                 assertEquals(Optional.of(cell.payload()), PayloadClass.classify(fixture.encodedBytes()), cell.id());
-                if (fixture instanceof FiniteWorkloads.PaddedFixture padded && cell.outcome() == Outcome.MODELED_ERROR) {
+                if (fixture instanceof PaddedFixture padded && cell.outcome() == Outcome.MODELED_ERROR) {
                     assertEquals(Optional.of(cell.payload()), PayloadClass.classify(
                         padded.request().length + (long) padded.modeledError().body().length), cell.id());
                 }

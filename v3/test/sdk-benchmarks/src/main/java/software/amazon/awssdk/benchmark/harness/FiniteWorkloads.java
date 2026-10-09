@@ -16,9 +16,7 @@
 package software.amazon.awssdk.benchmark.harness;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -38,7 +36,8 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * The shared engine of the finite workloads of every protocol other than awsJson1.0 (which {@link DynamoDbWorkloads}
  * covers): one modeled operation per protocol whose request carries a padded string or blob member and whose success
  * response echoes the pad, so the request plus the response hit the payload class's target size and the decoded
- * response proves the round trip. Each provider supplies the wire bytes ({@link PaddedFixture}), the generated sync
+ * response proves the round trip. Each provider supplies the wire bytes (an SDK-free {@link PaddedFixture} shared with
+ * the reference clients), the generated sync
  * and async invocations, and the Dynamic Client input over the service's vendored Smithy model; this class supplies
  * the four client paths, the outcome checks and the shared client configuration of {@link DynamoDbWorkloads}
  * (static credentials, fixed region, endpoint override, the cell's transport, the benchmark retry strategy).
@@ -49,102 +48,7 @@ final class FiniteWorkloads {
     }
 
     static byte[] utf8(String s) {
-        return s.getBytes(StandardCharsets.UTF_8);
-    }
-
-    /** How the mock service recognizes the operation. */
-    record Route(String method, String path, String headerName, String headerValue, byte[] bodyPrefix) {
-        static Route path(String method, String path) {
-            return new Route(method, path, null, null, null);
-        }
-    }
-
-    /**
-     * The wire bytes of one cell, deterministic in the payload class. The pad is a run of {@code x} whose length is a
-     * multiple of {@code granularity} (3 for base64-encoded blobs, so the encoding has no padding) and is solved
-     * from the encoded size of the request and success response, which are linear in it.
-     */
-    static final class PaddedFixture implements ServiceFixture {
-        private final Route route;
-        private final String pad;
-        private final byte[] request;
-        private final MockResponse success;
-        private final MockResponse error;
-        private final MockResponse retryable;
-
-        PaddedFixture(PayloadClass payload, Route route, int granularity, Function<String, byte[]> request,
-                      Function<String, MockResponse> success, MockResponse error, MockResponse retryable) {
-            Function<Integer, Long> size = n -> {
-                String p = "x".repeat(n);
-                return (long) request.apply(p).length + success.apply(p).body().length;
-            };
-            int base = granularity;
-            int probe = granularity * 1001;
-            long s1 = size.apply(base);
-            double slope = (size.apply(probe) - s1) / (double) (probe - base);
-            long units = Math.max(0, Math.round((payload.targetBytes() - s1) / slope / granularity));
-            this.route = route;
-            this.pad = "x".repeat(base + (int) units * granularity);
-            this.request = request.apply(pad);
-            this.success = success.apply(pad);
-            this.error = error;
-            this.retryable = retryable;
-            if (!payload.contains(encodedBytes())) {
-                throw new IllegalStateException("fixture of " + encodedBytes() + " encoded bytes is not " + payload.id());
-            }
-            if (error != null && !payload.contains(this.request.length + (long) error.body().length)) {
-                throw new IllegalStateException("error fixture is not " + payload.id());
-            }
-        }
-
-        String pad() {
-            return pad;
-        }
-
-        byte[] request() {
-            return request.clone();
-        }
-
-        @Override
-        public boolean matches(String method, String path, String routingHeader) {
-            return route.method().equals(method) && route.path().equals(path)
-                   && (route.headerName() == null || route.headerValue().equals(routingHeader));
-        }
-
-        @Override
-        public boolean matchesBody(byte[] body) {
-            byte[] prefix = route.bodyPrefix();
-            return prefix == null
-                   || body.length >= prefix.length && Arrays.equals(body, 0, prefix.length, prefix, 0, prefix.length);
-        }
-
-        @Override
-        public String routingHeaderName() {
-            return route.headerName();
-        }
-
-        @Override
-        public MockResponse success() {
-            return success;
-        }
-
-        @Override
-        public MockResponse modeledError() {
-            if (error == null) {
-                throw new IllegalStateException("the operation has no modeled error");
-            }
-            return error;
-        }
-
-        @Override
-        public MockResponse retryableError() {
-            return retryable;
-        }
-
-        @Override
-        public long encodedBytes() {
-            return request.length + (long) success.body().length;
-        }
+        return PaddedFixture.utf8(s);
     }
 
     /**
@@ -343,11 +247,11 @@ final class FiniteWorkloads {
 
     /** A {@code Content-Type}-only response. */
     static ServiceFixture.MockResponse response(int status, String contentType, String body) {
-        return new ServiceFixture.MockResponse(status, contentType, utf8(body));
+        return PaddedFixture.response(status, contentType, body);
     }
 
     static ServiceFixture.MockResponse response(int status, String contentType, byte[] body,
                                                 Map<String, String> headers) {
-        return new ServiceFixture.MockResponse(status, contentType, body, headers);
+        return PaddedFixture.response(status, contentType, body, headers);
     }
 }

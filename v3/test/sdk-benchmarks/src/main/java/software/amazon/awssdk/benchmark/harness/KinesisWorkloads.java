@@ -15,20 +15,14 @@
 
 package software.amazon.awssdk.benchmark.harness;
 
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.response;
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.utf8;
-
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Invoker;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.PaddedFixture;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Route;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.http.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.SdkSyncHttpClient;
@@ -46,9 +40,9 @@ import software.amazon.smithy.java.core.serde.document.Document;
  * {@code ResourceNotFoundException}; retry cells the modeled, retryable {@code InternalFailureException} (HTTP 500).
  */
 final class KinesisWorkloads extends FiniteWorkloads.Provider {
-    static final String STREAM = "benchmark-stream";
-    static final String KEY = "benchmark-key";
-    static final String CONTENT_TYPE = "application/x-amz-json-1.1";
+    static final String STREAM = KinesisPutRecordFixture.STREAM;
+    static final String KEY = KinesisPutRecordFixture.KEY;
+    static final String CONTENT_TYPE = KinesisPutRecordFixture.CONTENT_TYPE;
 
     KinesisWorkloads() {
         super("kinesis-putrecord", BenchProtocol.AWS_JSON_1_1, "kinesis", "com.amazonaws.kinesis#Kinesis_20131202",
@@ -57,15 +51,7 @@ final class KinesisWorkloads extends FiniteWorkloads.Provider {
 
     @Override
     public PaddedFixture fixture(BenchmarkCell cell) {
-        return new PaddedFixture(
-            cell.payload(), new Route("POST", "/", "X-Amz-Target", "Kinesis_20131202.PutRecord", null), 3,
-            pad -> utf8("{\"StreamName\":\"" + STREAM + "\",\"Data\":\""
-                        + Base64.getEncoder().encodeToString(pad.getBytes(StandardCharsets.UTF_8))
-                        + "\",\"PartitionKey\":\"" + KEY + "\"}"),
-            pad -> response(200, CONTENT_TYPE, "{\"ShardId\":\"shardId-000000000000\",\"SequenceNumber\":\"" + pad
-                                               + "\"}"),
-            response(400, CONTENT_TYPE, "{\"__type\":\"ResourceNotFoundException\",\"message\":\"Stream not found\"}"),
-            response(500, CONTENT_TYPE, "{\"__type\":\"InternalFailureException\",\"message\":\"injected retry\"}"));
+        return KinesisPutRecordFixture.create(cell.payload());
     }
 
     @Override

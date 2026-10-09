@@ -209,13 +209,24 @@ class ForkedHarnessSmokeTest {
     }
 
     /**
-     * V3 against the Launch Parity Baseline on the tiny awsJson1.0 cell: the V2 2.54.0 reference arm (built by
-     * test/sdk-benchmarks-v2-reference) runs on its own V2-only class path, interleaved with V3 and V3's null twin, 2
-     * repetitions each at the smoke geometry. Checks that the reference is ready exactly for its cells, that its runs
-     * pass every operation rule (V2 sends the fixture's exact bytes: wire-bytes and unmatched-request checks
-     * unchanged), that no V3 jar is on its class path, and that the exploratory report, on the operation-correct
-     * basis (a development host cannot pin CPUs, so no repetition is valid), carries {@code comparisons[]} and
-     * {@code best_reference[]} entries with finite, positive ratios. Exploratory numbers, never evidence.
+     * Cells of protocols other than awsJson1.0 the V2 reference serves: small restJson1 (Lambda) on a sync transport
+     * and small awsQuery (SNS, whose V2 request has an empty path, sent as {@code /}) on an async one, and medium
+     * rpcv2Cbor (CloudWatch), where V2 sends its reference-specific chunked-CBOR request and declares those bytes.
+     */
+    static final List<BenchmarkCell> V2_OTHER_PROTOCOL_CELLS = List.of(
+        BenchmarkCell.parse("restJson1/generated-sync/apache5-sync/finite/small/success/c1"),
+        BenchmarkCell.parse("awsQuery/generated-async/netty-async/finite/small/success/c1"),
+        BenchmarkCell.parse("rpcv2Cbor/generated-sync/apache5-sync/finite/medium/success/c1"));
+
+    /**
+     * V3 against the Launch Parity Baseline on the tiny awsJson1.0 cell and {@link #V2_OTHER_PROTOCOL_CELLS}: the V2
+     * 2.54.0 reference arm (built by test/sdk-benchmarks-v2-reference) runs on its own V2-only class path, interleaved
+     * with V3 and V3's null twin, 2 repetitions each at the smoke geometry. Checks that the reference is ready exactly
+     * for its cells, that its runs pass every operation rule (V2 sends the fixture's exact bytes, or on rpcv2Cbor its
+     * proven reference-specific bytes: wire-bytes and unmatched-request checks unchanged), that no V3 jar is on its
+     * class path, and that the exploratory report, on the operation-correct basis (a development host cannot pin CPUs,
+     * so no repetition is valid), carries {@code comparisons[]} and {@code best_reference[]} entries with finite,
+     * positive ratios for every cell. Exploratory numbers, never evidence.
      */
     @Test
     void v3IsComparedWithTheV2BaselineReference(@TempDir Path out) throws Exception {
@@ -228,7 +239,12 @@ class ForkedHarnessSmokeTest {
         assertFalse(v2.appliesTo(BenchmarkCell.parse("awsJson1_0/dynamic-sync/apache5-sync/finite/small/success/c1")));
         assertFalse(v2.appliesTo(BenchmarkCell.parse(
             "awsJson1_0/generated-async/apache5-async/finite/small/success/c1")));
-        assertFalse(v2.appliesTo(BenchmarkCell.parse("restJson1/generated-sync/apache5-sync/finite/small/success/c1")));
+        assertFalse(v2.appliesTo(BenchmarkCell.parse("restXml/generated-sync/apache5-sync/finite/small/success/c1")));
+        for (BenchmarkCell c : V2_OTHER_PROTOCOL_CELLS) {
+            assertTrue(v2.appliesTo(c), c.id());
+        }
+        List<BenchmarkCell> cells = new ArrayList<>(List.of(CELL));
+        cells.addAll(V2_OTHER_PROTOCOL_CELLS);
         BenchmarkArm v2Arm = v2.arm().orElseThrow();
         for (String entry : v2Arm.classpath().split(java.io.File.pathSeparator)) {
             assertFalse(entry.contains("3.0.0-SNAPSHOT") || entry.contains("/v3/core/")
@@ -236,7 +252,7 @@ class ForkedHarnessSmokeTest {
         }
         // Release collections stay fail-closed: Racecar and Smithy Java are not ready.
         org.junit.jupiter.api.Assertions.assertThrows(HarnessPolicyException.class,
-            () -> PerformanceReferences.requireReady(HarnessMode.RELEASE, references, List.of(CELL)));
+            () -> PerformanceReferences.requireReady(HarnessMode.RELEASE, references, cells));
 
         SteadyStatePolicy smoke = new SteadyStatePolicy(Duration.ofMillis(100), 3, Duration.ofMillis(2500));
         List<String> flags = List.of("-Xms128m", "-Xmx128m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1");
@@ -249,10 +265,10 @@ class ForkedHarnessSmokeTest {
             out.resolve("validity.json"), out.resolve("report.json"), references, records::add,
             PerformanceReport.Basis.OPERATION_CORRECT);
         new HarnessOrchestrator(config, SystemProbe.live())
-            .run(List.of(CELL), RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3, v2Arm), 2),
+            .run(cells, RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3, v2Arm), 2),
                  chain.validity());
 
-        assertEquals(6, records.size());
+        assertEquals(6 * cells.size(), records.size());
         for (ObjectNode run : records) {
             String json = Node.prettyPrintJson(run);
             assertEquals("completed", run.expectStringMember("status").getValue(), json);
@@ -274,23 +290,29 @@ class ForkedHarnessSmokeTest {
         assertFalse(report.expectBooleanMember("release_evidence").getValue());
         assertEquals(List.of("v2-baseline"), report.expectArrayMember("reference_arms")
             .getElementsAs(n -> n.expectStringNode().getValue()));
-        ObjectNode cell = report.expectArrayMember("cells").get(0).orElseThrow().expectObjectNode();
-        for (String member : List.of("comparisons", "best_reference")) {
-            List<ObjectNode> ratios = cell.expectArrayMember(member).getElementsAs(Node::expectObjectNode);
-            List<String> metrics = ratios.stream().map(r -> r.expectStringMember("metric").getValue()).toList();
-            for (RepetitionMetrics.Metric m : List.of(RepetitionMetrics.Metric.CPU_PER_OP,
-                                                      RepetitionMetrics.Metric.ALLOC_PER_OP,
-                                                      RepetitionMetrics.Metric.THROUGHPUT)) {
-                assertTrue(metrics.contains(m.id()), member + " lacks " + m.id() + ": " + Node.prettyPrintJson(cell));
-            }
-            for (ObjectNode r : ratios) {
-                assertEquals("v2-baseline", r.expectStringMember("reference").getValue());
-                BenchmarkStatistics.Ratio ratio = BenchmarkStatistics.Ratio.fromNode(r);
-                assertTrue(Double.isFinite(ratio.ratio()) && ratio.ratio() > 0, Node.prettyPrintJson(r));
-                assertTrue(ratio.ciLow() <= ratio.ratio() && ratio.ratio() <= ratio.ciHigh(), Node.prettyPrintJson(r));
+        List<ObjectNode> reportCells = report.expectArrayMember("cells").getElementsAs(Node::expectObjectNode);
+        assertEquals(cells.stream().map(BenchmarkCell::id).sorted().toList(),
+                     reportCells.stream().map(c -> c.expectStringMember("cell").getValue()).sorted().toList());
+        for (ObjectNode cell : reportCells) {
+            for (String member : List.of("comparisons", "best_reference")) {
+                List<ObjectNode> ratios = cell.expectArrayMember(member).getElementsAs(Node::expectObjectNode);
+                List<String> metrics = ratios.stream().map(r -> r.expectStringMember("metric").getValue()).toList();
+                for (RepetitionMetrics.Metric m : List.of(RepetitionMetrics.Metric.CPU_PER_OP,
+                                                          RepetitionMetrics.Metric.ALLOC_PER_OP,
+                                                          RepetitionMetrics.Metric.THROUGHPUT)) {
+                    assertTrue(metrics.contains(m.id()),
+                               member + " lacks " + m.id() + ": " + Node.prettyPrintJson(cell));
+                }
+                for (ObjectNode r : ratios) {
+                    assertEquals("v2-baseline", r.expectStringMember("reference").getValue());
+                    BenchmarkStatistics.Ratio ratio = BenchmarkStatistics.Ratio.fromNode(r);
+                    assertTrue(Double.isFinite(ratio.ratio()) && ratio.ratio() > 0, Node.prettyPrintJson(r));
+                    assertTrue(ratio.ciLow() <= ratio.ratio() && ratio.ratio() <= ratio.ciHigh(),
+                               Node.prettyPrintJson(r));
+                }
             }
         }
-        // The aggregate over this one generated non-streaming cell exists for the V2 reference.
+        // The aggregate over these generated non-streaming cells exists for the V2 reference.
         assertTrue(report.expectArrayMember("aggregates").getElements().stream().map(Node::expectObjectNode)
                          .anyMatch(a -> a.expectStringMember("reference").getValue().equals("v2-baseline")
                                         && a.expectStringMember("metric").getValue().equals("cpu_per_op_ns")

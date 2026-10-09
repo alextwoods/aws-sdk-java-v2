@@ -16,6 +16,8 @@
 package software.amazon.awssdk.benchmark.harness;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,7 +32,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The sources every reference client compiles with its own SDK ({@link ClientDriver#REFERENCE_SHARED_SOURCES}) are
- * SDK-free: they import only the JDK, Smithy {@code Node} JSON and each other, and name no other harness class. The V2
+ * SDK-free: they import only the JDK, Smithy {@code Node} JSON and each other (a static import of a shared class's
+ * member counts as importing that class), and name no other harness class. The V2
  * baseline shares V3's package names, so a V3 type here would bind to V2 (or fail) on the reference class path. Also
  * checks the V2 reference module compiles exactly this list.
  */
@@ -56,7 +59,8 @@ class ReferenceSharedSourcesTest {
             Matcher m = IMPORT.matcher(src);
             while (m.find()) {
                 String imported = m.group(2);
-                if (!imported.startsWith("java.") && !imported.startsWith("software.amazon.smithy.model.node.")) {
+                if (!imported.startsWith("java.") && !imported.startsWith("software.amazon.smithy.model.node.")
+                    && !isShared(shared, sharedHarnessClass(imported))) {
                     problems.add(name + " imports " + imported);
                 }
             }
@@ -74,6 +78,33 @@ class ReferenceSharedSourcesTest {
             }
         }
         assertEquals(List.of(), problems);
+    }
+
+    /**
+     * The top-level harness class an import names ({@code PaddedFixture} for a static import of
+     * {@code ...harness.PaddedFixture.response}), or {@code null} if it is not in the harness package.
+     */
+    private static String sharedHarnessClass(String imported) {
+        String prefix = ClientDriver.class.getPackageName() + ".";
+        if (!imported.startsWith(prefix)) {
+            return null;
+        }
+        String rest = imported.substring(prefix.length());
+        int dot = rest.indexOf('.');
+        return dot < 0 ? rest : rest.substring(0, dot);
+    }
+
+    private static boolean isShared(Set<String> shared, String harnessClass) {
+        return harnessClass != null && shared.contains(harnessClass);
+    }
+
+    @Test
+    void sharedSourceImportsOfNonSharedHarnessClassesAreRejected() {
+        Set<String> shared = Set.copyOf(ClientDriver.REFERENCE_SHARED_SOURCES);
+        String pkg = ClientDriver.class.getPackageName() + ".";
+        assertTrue(isShared(shared, sharedHarnessClass(pkg + "PaddedFixture.utf8")));
+        assertFalse(isShared(shared, sharedHarnessClass(pkg + "FiniteWorkloads.Invoker")));
+        assertFalse(isShared(shared, sharedHarnessClass("software.amazon.awssdk.http.SdkHttpClient")));
     }
 
     @Test

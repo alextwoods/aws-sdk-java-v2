@@ -29,11 +29,17 @@ import software.amazon.awssdk.core.util.VersionInfo;
 /**
  * The Launch Parity Baseline arm's forked client process: the harness's shared {@link ClientDriver} (the V3 arm's
  * command line, verification call, steady-state warmup gate, measurement, counters and result record) over the
- * released V2 DynamoDB clients ({@link V2DynamoDbWorkloads}).
+ * released V2 clients of the V3 harness's finite fixtures ({@link V2DynamoDbWorkloads}, {@link V2FiniteWorkloads}).
  *
- * <p>Applicability ({@link #PROTOCOLS}, {@link #PATHS}, {@link #KINDS}, {@link #TRANSPORTS}): the awsJson1.0 finite
- * cells (DynamoDB {@code PutItem}, every payload class, outcome and concurrency) on the generated sync and async
- * clients over every V2 transport whose class the cell names. Any other cell is refused before anything is built.
+ * <p>Applicability ({@link #PROTOCOLS}, {@link #PATHS}, {@link #KINDS}, {@link #TRANSPORTS}; equal to the harness's
+ * {@code PerformanceReferences.V2_APPLICABILITY}, which {@code V2ReferenceApplicabilityTest} checks): the finite cells
+ * (every payload class, outcome and concurrency of the matrix) of awsJson1.0 (DynamoDB {@code PutItem}), awsJson1.1
+ * (Kinesis {@code PutRecord}), restJson1 (Lambda {@code UpdateFunctionConfiguration}), awsQuery (SNS
+ * {@code Publish}), ec2Query (EC2 {@code ImportKeyPair}) and rpcv2Cbor (CloudWatch {@code PutDashboard}) on the
+ * generated sync and async clients over every V2 transport whose class the cell names. Any other cell is refused
+ * before anything is built. Not served: restXml (the fixture's Route 53 client is not available at
+ * {@value #EXPECTED_VERSION} to this build), the Dynamic Client paths (V2 has none), {@code apache5-async} (V2 has no
+ * Apache 5 async client), and the streaming and Event Stream kinds.
  *
  * <p>Isolation: before building anything it checks that the class path's SDK is exactly V2
  * {@value #EXPECTED_VERSION} and that no V3 class is resolvable ({@link #V3_ONLY_CLASS}); a violation fails the run
@@ -45,7 +51,8 @@ public final class V2ReferenceMain {
     /** A class only V3 has; resolvable here means a V3 jar leaked onto the reference class path. */
     static final String V3_ONLY_CLASS = "software.amazon.awssdk.http.HttpTransportMode";
 
-    public static final Set<String> PROTOCOLS = Set.of("awsJson1_0");
+    public static final Set<String> PROTOCOLS = Set.of("awsJson1_0", "awsJson1_1", "restJson1", "awsQuery", "ec2Query",
+                                                        "rpcv2Cbor");
     public static final Set<String> PATHS = Set.of("generated-sync", "generated-async");
     public static final Set<String> KINDS = Set.of("finite");
     public static final Set<String> TRANSPORTS = V2Transports.IDS;
@@ -94,13 +101,14 @@ public final class V2ReferenceMain {
         @Override
         public String fixtureName(CellId cell) {
             requireApplicable(cell);
-            return "dynamodb-putitem";
+            return isDynamoDb(cell) ? "dynamodb-putitem" : V2FiniteWorkloads.fixtureName(cell.protocol());
         }
 
         @Override
         public long encodedBytesPerOperation(CellId cell) {
             requireApplicable(cell);
-            return new DynamoDbPutItemFixture(PayloadClass.fromId(cell.payload())).encodedBytes();
+            return isDynamoDb(cell) ? new DynamoDbPutItemFixture(PayloadClass.fromId(cell.payload())).encodedBytes()
+                                    : V2FiniteWorkloads.encodedBytes(cell);
         }
 
         @Override
@@ -113,7 +121,12 @@ public final class V2ReferenceMain {
         public CellWorkload create(CellId cell, URI endpoint, Map<String, Path> models) {
             requireApplicable(cell);
             checkIsolation();
-            return V2DynamoDbWorkloads.create(cell, endpoint);
+            return isDynamoDb(cell) ? V2DynamoDbWorkloads.create(cell, endpoint)
+                                    : V2FiniteWorkloads.create(cell, endpoint);
+        }
+
+        private static boolean isDynamoDb(CellId cell) {
+            return "awsJson1_0".equals(cell.protocol());
         }
     }
 }

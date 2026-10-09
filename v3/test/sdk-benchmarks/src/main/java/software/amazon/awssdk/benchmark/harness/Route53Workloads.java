@@ -15,17 +15,12 @@
 
 package software.amazon.awssdk.benchmark.harness;
 
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.response;
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.utf8;
-
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Invoker;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.PaddedFixture;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Route;
 import software.amazon.awssdk.http.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.SdkSyncHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -42,9 +37,9 @@ import software.amazon.smithy.java.core.serde.document.Document;
  * modeled {@code NoSuchHostedZone} (404); retry cells a 500 {@code InternalFailure}, retryable by status.
  */
 final class Route53Workloads extends FiniteWorkloads.Provider {
-    static final String ZONE = "ZBENCHMARK";
-    static final String NS = "https://route53.amazonaws.com/doc/2013-04-01/";
-    static final String CONTENT_TYPE = "text/xml";
+    static final String ZONE = Route53UpdateHostedZoneCommentFixture.ZONE;
+    static final String NS = Route53UpdateHostedZoneCommentFixture.NS;
+    static final String CONTENT_TYPE = Route53UpdateHostedZoneCommentFixture.CONTENT_TYPE;
 
     Route53Workloads() {
         super("route53-updatehostedzonecomment", BenchProtocol.REST_XML, "route53",
@@ -54,23 +49,7 @@ final class Route53Workloads extends FiniteWorkloads.Provider {
 
     @Override
     public PaddedFixture fixture(BenchmarkCell cell) {
-        return new PaddedFixture(
-            cell.payload(), Route.path("POST", "/2013-04-01/hostedzone/" + ZONE), 1,
-            pad -> utf8("<UpdateHostedZoneCommentRequest xmlns=\"" + NS + "\"><Comment>" + pad
-                        + "</Comment></UpdateHostedZoneCommentRequest>"),
-            pad -> response(200, CONTENT_TYPE, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                                               + "<UpdateHostedZoneCommentResponse xmlns=\"" + NS + "\"><HostedZone>"
-                                               + "<Id>/hostedzone/" + ZONE + "</Id><Name>example.com.</Name>"
-                                               + "<CallerReference>benchmark</CallerReference><Config><Comment>" + pad
-                                               + "</Comment></Config></HostedZone></UpdateHostedZoneCommentResponse>"),
-            response(404, CONTENT_TYPE, error("NoSuchHostedZone", "Sender", "No hosted zone found")),
-            response(500, CONTENT_TYPE, error("InternalFailure", "Receiver", "injected retry")));
-    }
-
-    private static String error(String code, String type, String message) {
-        return "<?xml version=\"1.0\"?>\n<ErrorResponse xmlns=\"" + NS + "\"><Error><Type>" + type + "</Type><Code>"
-               + code + "</Code><Message>" + message + "</Message></Error><RequestId>benchmark</RequestId>"
-               + "</ErrorResponse>";
+        return Route53UpdateHostedZoneCommentFixture.create(cell.payload());
     }
 
     @Override

@@ -293,7 +293,11 @@ class PerformanceReportTest {
         assertFalse(v2.appliesTo(DYN));
         assertFalse(v2.appliesTo(BenchmarkCell.parse("awsJson1_0/generated-async/apache5-async/finite/small/success/c1")));
         assertTrue(v2.appliesTo(BenchmarkCell.parse("awsJson1_0/generated-async/crt-async/finite/large/retry/c32")));
-        assertFalse(v2.appliesTo(BenchmarkCell.parse("restJson1/generated-sync/apache5-sync/finite/small/success/c1")));
+        assertTrue(v2.appliesTo(BenchmarkCell.parse("restJson1/generated-sync/apache5-sync/finite/small/success/c1")));
+        assertTrue(v2.appliesTo(BenchmarkCell.parse("rpcv2Cbor/generated-async/netty-async/finite/large/error/c1")));
+        // No V2 2.54.0 Route 53 client offline: restXml stays outside the reference, so release mode fails closed.
+        BenchmarkCell restXml = BenchmarkCell.parse("restXml/generated-sync/apache5-sync/finite/small/success/c1");
+        assertFalse(v2.appliesTo(restXml));
         assertTrue(v2.toNode().expectObjectMember("applicability").getArrayMember("transports").isPresent());
 
         // Uncovered generated cells: V2 has no apache5-async client; dynamic cells need no reference.
@@ -302,6 +306,7 @@ class PerformanceReportTest {
         List<PerformanceReferences.Reference> refs = PerformanceReferences.resolve(m2, root);
         assertTrue(PerformanceReferences.uncovered(refs, List.of(GEN, DYN, asyncApache5))
                                         .contains("v2-baseline: " + asyncApache5.id()));
+        assertTrue(PerformanceReferences.uncovered(refs, List.of(restXml)).contains("v2-baseline: " + restXml.id()));
         assertFalse(PerformanceReferences.uncovered(refs, List.of(DYN)).stream().anyMatch(s -> s.contains(DYN.id())));
         PerformanceReferences.requireReady(HarnessMode.EXPLORATORY, refs, List.of(asyncApache5));
         assertThrows(HarnessPolicyException.class,

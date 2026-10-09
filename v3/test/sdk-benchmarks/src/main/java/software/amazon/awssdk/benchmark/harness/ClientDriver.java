@@ -79,8 +79,10 @@ public final class ClientDriver {
      * driver and its SDK-free dependencies, plus the SDK-free wire fixtures the references share with V3.
      */
     public static final java.util.List<String> REFERENCE_SHARED_SOURCES = java.util.List.of(
-        "CellId", "CellWorkload", "ClientDriver", "DynamoDbPutItemFixture", "LatencyHistogram", "Outcome",
-        "PayloadClass", "ServiceFixture", "SteadyStateDetector", "SteadyStatePolicy", "WarmupPolicy");
+        "CellId", "CellWorkload", "ClientDriver", "CloudWatchPutDashboardFixture", "DynamoDbPutItemFixture",
+        "Ec2ImportKeyPairFixture", "KinesisPutRecordFixture", "LambdaUpdateFunctionConfigurationFixture",
+        "LatencyHistogram", "Outcome", "PaddedFixture", "PayloadClass", "Route53UpdateHostedZoneCommentFixture",
+        "ServiceFixture", "SnsPublishFixture", "SteadyStateDetector", "SteadyStatePolicy", "WarmupPolicy");
 
     private static final CompilationMXBean COMPILATION = ManagementFactory.getCompilationMXBean();
 

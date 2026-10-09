@@ -15,19 +15,13 @@
 
 package software.amazon.awssdk.benchmark.harness;
 
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.response;
-import static software.amazon.awssdk.benchmark.harness.FiniteWorkloads.utf8;
-
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Invoker;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.PaddedFixture;
-import software.amazon.awssdk.benchmark.harness.FiniteWorkloads.Route;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.http.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.SdkSyncHttpClient;
@@ -47,9 +41,9 @@ import software.amazon.smithy.java.core.serde.document.Document;
  * ec2Query modeled-error workload does not exist; those cells stay without a fixture, and release mode refuses them.
  */
 final class Ec2Workloads extends FiniteWorkloads.Provider {
-    static final String KEY_NAME = "benchmark-key";
-    static final String NS = "http://ec2.amazonaws.com/doc/2016-11-15/";
-    static final String CONTENT_TYPE = "text/xml;charset=UTF-8";
+    static final String KEY_NAME = Ec2ImportKeyPairFixture.KEY_NAME;
+    static final String NS = Ec2ImportKeyPairFixture.NS;
+    static final String CONTENT_TYPE = Ec2ImportKeyPairFixture.CONTENT_TYPE;
 
     Ec2Workloads() {
         super("ec2-importkeypair", BenchProtocol.EC2_QUERY, "ec2", "com.amazonaws.ec2#AmazonEC2", "ImportKeyPair",
@@ -58,17 +52,7 @@ final class Ec2Workloads extends FiniteWorkloads.Provider {
 
     @Override
     public PaddedFixture fixture(BenchmarkCell cell) {
-        return new PaddedFixture(
-            cell.payload(), new Route("POST", "/", null, null, utf8("Action=ImportKeyPair&")), 3,
-            pad -> utf8("Action=ImportKeyPair&Version=2016-11-15&KeyName=" + KEY_NAME + "&PublicKeyMaterial="
-                        + Base64.getEncoder().encodeToString(pad.getBytes(StandardCharsets.UTF_8))),
-            pad -> response(200, CONTENT_TYPE, "<ImportKeyPairResponse xmlns=\"" + NS + "\"><requestId>benchmark"
-                                               + "</requestId><keyFingerprint>" + pad + "</keyFingerprint><keyName>"
-                                               + KEY_NAME + "</keyName><keyPairId>key-0123456789abcdef0</keyPairId>"
-                                               + "</ImportKeyPairResponse>"),
-            null,
-            response(500, CONTENT_TYPE, "<Response><Errors><Error><Code>InternalError</Code><Message>injected retry"
-                                        + "</Message></Error></Errors><RequestID>benchmark</RequestID></Response>"));
+        return Ec2ImportKeyPairFixture.create(cell.payload());
     }
 
     @Override
