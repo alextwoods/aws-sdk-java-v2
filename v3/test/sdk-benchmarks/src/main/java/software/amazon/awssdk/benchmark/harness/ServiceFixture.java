@@ -82,4 +82,12 @@ public interface ServiceFixture {
      * cell's {@link PayloadClass} when the fixture is built.
      */
     long encodedBytes();
+
+    /**
+     * Matching requests of one successful logical operation, excluding injected retries; the validity rules compare
+     * the mock's request counter with {@code operations * requestsPerOperation()}.
+     */
+    default int requestsPerOperation() {
+        return 1;
+    }
 }

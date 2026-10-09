@@ -155,6 +155,12 @@ final class StreamingWorkloads {
         public long encodedBytes() {
             return 2L * CONTENT.length + uploadResponse.body().length;
         }
+
+        /** The upload and the download. */
+        @Override
+        public int requestsPerOperation() {
+            return 2;
+        }
     }
 
     /**

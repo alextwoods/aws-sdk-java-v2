@@ -36,14 +36,21 @@ import software.amazon.smithy.model.node.ObjectNode;
  * JVM for the cell, then one fresh client JVM against it, each under its own CPU pinning when the host supports it,
  * both with the identical JVM flag list, JDK and classpath.
  *
- * <p>Before anything is launched the orchestrator captures the host metadata, plans the pinning and checks coverage;
- * in {@link HarnessMode#RELEASE} an unpinnable host or a selected cell without a workload fixture fails the whole
- * run closed ({@link HarnessPolicyException}). In exploratory mode those are recorded with their reason, cells without
- * a fixture get a {@code status=no-fixture} record, and every record says {@code release_evidence=false}.
+ * <p>Before anything is launched the orchestrator captures the host metadata, plans the pinning, checks coverage, the
+ * warmup/measurement policy and the schedule's structure ({@link RepetitionSchedule#problems}); in
+ * {@link HarnessMode#RELEASE} an unpinnable host, a selected cell without a workload fixture, anything but the
+ * documented steady-state gate with at least 30 s of measurement, or a schedule outside 5-10 interleaved repetitions
+ * with a same-artifact null arm per cell fails the whole run closed ({@link HarnessPolicyException}). In exploratory
+ * mode those are recorded with their reason, cells without a fixture get a {@code status=no-fixture} record, and
+ * every record says {@code release_evidence=false}.
  *
- * <p>Output directory: {@code manifest.json} (host, config, pinning, plan, coverage), {@code results.jsonl} (one
- * record per scheduled run), and per-run client result files and process logs. 19.2-19.4 plug in through
- * {@link RepetitionSchedule} and {@link ResultSink}.
+ * <p>Each scheduled run records its arm and the digest of the artifact its client ran (JDK, JVM flags, classpath with
+ * each entry's size and modification time, main class), and a fresh host snapshot taken just before its processes
+ * start, so the validity rules can detect artifact and host drift between repetitions.
+ *
+ * <p>Output directory: {@code manifest.json} (host, config, pinning, schedule, coverage), and per-run client result
+ * files and process logs; the {@link ResultSink} gets the plan first ({@link ResultSink#begin}), then every run record,
+ * then the manifest.
  */
 public final class HarnessOrchestrator {
 
@@ -58,8 +65,16 @@ public final class HarnessOrchestrator {
         this.probe = probe;
     }
 
-    /** The plan's preflight: metadata, pinning, coverage. Throws {@link HarnessPolicyException} in release mode. */
+    /** {@link #preflight(List, List)} of {@code cells} scheduled {@link RepetitionSchedule#once() once}. */
     public Preflight preflight(List<BenchmarkCell> cells) {
+        return preflight(cells, RepetitionSchedule.once().schedule(cells));
+    }
+
+    /**
+     * The plan's preflight: metadata, pinning, coverage, warmup/measure policy and schedule structure. Throws
+     * {@link HarnessPolicyException} in release mode when any of them disqualifies the collection.
+     */
+    public Preflight preflight(List<BenchmarkCell> cells, List<RepetitionSchedule.ScheduledRun> runs) {
         CpuPinning.Plan pinning = CpuPinning.plan(probe, config.mode(), config.clientCpus(), config.serviceCpus(),
                                                   Runtime.getRuntime().availableProcessors());
         List<BenchmarkCell> missing = cells.stream().filter(c -> WorkloadProvider.forCell(c).isEmpty()).toList();
@@ -67,13 +82,30 @@ public final class HarnessOrchestrator {
             throw new HarnessPolicyException("release-gate collection selects " + missing.size()
                                              + " cell(s) without a workload fixture, e.g. " + missing.get(0));
         }
-        HostMetadata host = HostMetadata.capture(probe, config.javaExecutable(), config.jvmFlags(),
-                                                 config.backgroundPolicy());
-        return new Preflight(host, pinning, missing);
+        List<String> policy = config.mode() == HarnessMode.RELEASE ? config.releasePolicyProblems() : List.of();
+        if (!policy.isEmpty()) {
+            throw new HarnessPolicyException("release-gate collection policy: " + String.join("; ", policy));
+        }
+        List<String> schedule = RepetitionSchedule.problems(cells, runs, config.mode());
+        if (config.mode() == HarnessMode.RELEASE && !schedule.isEmpty()) {
+            throw new HarnessPolicyException("release-gate schedule has " + schedule.size() + " problem(s), e.g. "
+                                             + schedule.get(0));
+        }
+        HostMetadata host = captureHost();
+        return new Preflight(host, pinning, missing, schedule);
     }
 
-    /** Metadata, pinning plan and uncovered cells of a plan. */
-    public record Preflight(HostMetadata host, CpuPinning.Plan pinning, List<BenchmarkCell> missingFixtures) {
+    private HostMetadata captureHost() {
+        return HostMetadata.capture(probe, config.javaExecutable(), config.jvmFlags(), config.backgroundPolicy());
+    }
+
+    /** Metadata, pinning plan, uncovered cells and schedule problems of a plan. */
+    public record Preflight(HostMetadata host, CpuPinning.Plan pinning, List<BenchmarkCell> missingFixtures,
+                            List<String> scheduleProblems) {
+        public Preflight {
+            missingFixtures = List.copyOf(missingFixtures);
+            scheduleProblems = List.copyOf(scheduleProblems);
+        }
     }
 
     /** The mock-service launch of {@code cell}. */
@@ -87,9 +119,18 @@ public final class HarnessOrchestrator {
     /** The client launch of one scheduled run against {@code endpoint}. */
     public JvmLaunchSpec clientSpec(RepetitionSchedule.ScheduledRun run, URI endpoint, Path resultFile,
                                     CpuPinning.Plan pinning) {
+        WarmupPolicy warmup = config.warmup();
+        SteadyStatePolicy sampling = warmup.sampling();
         List<String> args = new ArrayList<>(List.of(
             "--cell", run.cell().id(), "--endpoint", endpoint.toString(),
-            "--warmup-seconds", seconds(config.warmup().toNanos()),
+            "--warmup-policy", warmup.kind().id()));
+        if (warmup.kind() == WarmupPolicy.Kind.FIXED) {
+            args.addAll(List.of("--warmup-seconds", seconds(warmup.fixedDuration().toNanos())));
+        }
+        args.addAll(List.of(
+            "--sample-interval-seconds", seconds(sampling.interval().toNanos()),
+            "--steady-window", Integer.toString(sampling.window()),
+            "--warmup-timeout-seconds", seconds(sampling.warmupTimeout().toNanos()),
             "--measure-seconds", seconds(config.measure().toNanos()),
             "--result-file", resultFile.toString(),
             "--repetition", Integer.toString(run.repetition()),
@@ -99,21 +140,58 @@ public final class HarnessOrchestrator {
             args.add(model.getKey() + "=" + model.getValue());
         }
         return new JvmLaunchSpec("client", pinning.clientPrefix(), config.javaExecutable(), config.jvmFlags(),
-                                 config.classpath(), ClientMain.class.getName(), args);
+                                 run.arm().classpathOverride().orElse(config.classpath()), run.arm().mainClass(),
+                                 args);
     }
 
-    private static String seconds(long nanos) {
-        return String.format(Locale.ROOT, "%.3f", nanos / 1e9);
+    /** Exact decimal seconds, so the client parses back the identical duration. */
+    static String seconds(long nanos) {
+        return java.math.BigDecimal.valueOf(nanos, 9).stripTrailingZeros().toPlainString();
+    }
+
+    /**
+     * SHA-256 of what a client launch runs: JDK executable, JVM flags, main class, and each classpath entry with its
+     * size and modification time (directories by path only). Equal digests mean the same artifact (Req 20.8).
+     */
+    static String artifactDigest(JvmLaunchSpec spec) {
+        StringBuilder b = new StringBuilder();
+        b.append("java=").append(spec.javaExecutable()).append('\n');
+        b.append("flags=").append(String.join(" ", spec.jvmFlags())).append('\n');
+        b.append("main=").append(spec.mainClass()).append('\n');
+        for (String entry : spec.classpath().split(java.io.File.pathSeparator)) {
+            Path p = Path.of(entry);
+            b.append("cp=").append(entry);
+            try {
+                if (Files.isRegularFile(p)) {
+                    b.append(" size=").append(Files.size(p)).append(" mtime=")
+                     .append(Files.getLastModifiedTime(p).toMillis());
+                } else if (!Files.isDirectory(p)) {
+                    b.append(" missing");
+                }
+            } catch (IOException e) {
+                b.append(" unreadable");
+            }
+            b.append('\n');
+        }
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256")
+                                                 .digest(b.toString().getBytes(StandardCharsets.UTF_8));
+            return "sha256:" + java.util.HexFormat.of().formatHex(d);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** Runs {@code cells} under {@code schedule}; returns the manifest. */
     public ObjectNode run(List<BenchmarkCell> cells, RepetitionSchedule schedule, ResultSink sink)
             throws IOException, InterruptedException {
-        Preflight pre = preflight(cells);
+        List<RepetitionSchedule.ScheduledRun> runs = schedule.schedule(cells);
+        Preflight pre = preflight(cells, runs);
         Path out = config.outputDirectory();
         Files.createDirectories(out);
         String runId = Instant.now().toString();
-        List<RepetitionSchedule.ScheduledRun> runs = schedule.schedule(cells);
+        ObjectNode plan = plan(runId, cells, runs, pre);
+        sink.begin(plan);
         ArrayNode.Builder outcomes = ArrayNode.builder();
         int index = 0;
         for (RepetitionSchedule.ScheduledRun run : runs) {
@@ -124,7 +202,7 @@ public final class HarnessOrchestrator {
                                          .withMember("status", record.expectStringMember("status").getValue())
                                          .build());
         }
-        ObjectNode manifest = manifest(runId, cells, runs, pre, outcomes.build());
+        ObjectNode manifest = plan.toBuilder().withMember("runs", outcomes.build()).build();
         Files.writeString(out.resolve("manifest.json"), Node.prettyPrintJson(manifest) + "\n",
                           StandardCharsets.UTF_8);
         sink.finish(manifest);
@@ -140,13 +218,15 @@ public final class HarnessOrchestrator {
             .withMember("index", index)
             .withMember("label", run.label())
             .withMember("repetition", run.repetition())
+            .withMember("slot", run.slot())
             .withMember("position", run.position())
             .withMember("mode", config.mode().id())
             .withMember("release_evidence", releaseEvidence(pre))
             .withMember("cell", cellNode(cell));
         Optional<WorkloadProvider> provider = WorkloadProvider.forCell(cell);
         if (provider.isEmpty()) {
-            return record.withMember("status", "no-fixture")
+            return record.withMember("arm", run.arm().toNode())
+                         .withMember("status", "no-fixture")
                          .withMember("reason", "no WorkloadProvider covers " + cell.protocol().id() + " "
                                                + cell.kind().id() + " cells yet").build();
         }
@@ -155,6 +235,11 @@ public final class HarnessOrchestrator {
         Path clientLog = config.outputDirectory().resolve("runs").resolve(stem + "-client.log");
         Path serviceLog = config.outputDirectory().resolve("runs").resolve(stem + "-mock-service.log");
         JvmLaunchSpec serviceSpec = mockServiceSpec(cell, pre.pinning());
+        // Placeholder endpoint: the digest covers the artifact, not the per-run arguments.
+        JvmLaunchSpec artifact = clientSpec(run, URI.create("http://127.0.0.1:0"), resultFile, pre.pinning());
+        record.withMember("arm", run.arm().toNode().toBuilder()
+                                    .withMember("artifact_digest", artifactDigest(artifact)).build());
+        record.withMember("host", Node.objectNode(toNodes(captureHost().entries())));
         try (MockServiceProcess service = MockServiceProcess.start(serviceSpec, serviceLog,
                                                                    config.processTimeout())) {
             record.withMember("mock_service", processNode(serviceSpec, service.pid(), pre.pinning().mockService())
@@ -192,7 +277,8 @@ public final class HarnessOrchestrator {
 
     private boolean releaseEvidence(Preflight pre) {
         return config.mode() == HarnessMode.RELEASE && pre.pinning().client().applied()
-               && pre.missingFixtures().isEmpty();
+               && pre.pinning().mockService().applied() && pre.missingFixtures().isEmpty()
+               && pre.scheduleProblems().isEmpty() && config.releasePolicyProblems().isEmpty();
     }
 
     /** One forked process's launch: pid, argv, requested and kernel-effective pinning. */
@@ -236,8 +322,9 @@ public final class HarnessOrchestrator {
                          .build();
     }
 
-    private ObjectNode manifest(String runId, List<BenchmarkCell> cells, List<RepetitionSchedule.ScheduledRun> runs,
-                                Preflight pre, ArrayNode outcomes) {
+    /** The manifest before any run: what {@link ResultSink#begin} receives. */
+    private ObjectNode plan(String runId, List<BenchmarkCell> cells, List<RepetitionSchedule.ScheduledRun> runs,
+                            Preflight pre) {
         ObjectNode.Builder payloadClasses = ObjectNode.builder();
         for (PayloadClass c : PayloadClass.values()) {
             payloadClasses.withMember(c.id(), ObjectNode.builder().withMember("min_inclusive", c.minInclusive())
@@ -254,8 +341,12 @@ public final class HarnessOrchestrator {
                 .withMember("java", config.javaExecutable())
                 .withMember("jvm_flags", ArrayNode.fromStrings(config.jvmFlags()))
                 .withMember("classpath_entries", config.classpath().split(java.io.File.pathSeparator).length)
-                .withMember("warmup_s", config.warmup().toNanos() / 1e9)
-                .withMember("measure_s", config.measure().toNanos() / 1e9)
+                .withMember("warmup", ObjectNode.builder()
+                    .withMember("policy", config.warmup().kind().id())
+                    .withMember("fixed_ns", config.warmup().fixedDuration().toNanos())
+                    .withMember("sampling", config.warmup().sampling().toNode())
+                    .build())
+                .withMember("measure_ns", config.measure().toNanos())
                 .withMember("background_policy", config.backgroundPolicy())
                 .withMember("payload_classes", payloadClasses.build())
                 .build())
@@ -266,8 +357,10 @@ public final class HarnessOrchestrator {
             .withMember("cells", ArrayNode.fromStrings(cells.stream().map(BenchmarkCell::id).toList()))
             .withMember("missing_fixtures", ArrayNode.fromStrings(
                 pre.missingFixtures().stream().map(BenchmarkCell::id).toList()))
+            .withMember("schedule", RepetitionSchedule.summary(runs).toBuilder()
+                .withMember("problems", ArrayNode.fromStrings(pre.scheduleProblems()))
+                .build())
             .withMember("scheduled_runs", runs.size())
-            .withMember("runs", outcomes)
             .build();
     }
 

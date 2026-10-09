@@ -116,4 +116,67 @@ class ForkedHarnessSmokeTest {
         assertEquals(List.of(UNCOVERED.id()), manifest.expectArrayMember("missing_fixtures")
                                                       .getElementsAs(n -> n.expectStringNode().getValue()));
     }
+
+    /**
+     * A 2-arm (V3 and its same-artifact null twin), 2-repetition exploratory schedule on one tiny cell, with the
+     * steady-state gate at a smoke-sized sampling geometry (100 ms intervals, 3-interval window, 2.5 s timeout) and
+     * 0.6 s of measurement, through {@link ValiditySink}. Checks the interleaved order, that every run is annotated,
+     * that no operation, sample or drift rule fails, that both arms ran the same artifact, and that the cell is
+     * invalid for having 2 < 5 repetitions. Whether the gate passes in 2.5 s on this host is recorded, not asserted.
+     */
+    @Test
+    void interleavedNullScheduleIsValidatedEndToEnd(@TempDir Path out) throws Exception {
+        SteadyStatePolicy smoke = new SteadyStatePolicy(Duration.ofMillis(100), 3, Duration.ofMillis(2500));
+        List<String> flags = List.of("-Xms128m", "-Xmx128m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1");
+        HarnessConfig config = new HarnessConfig(
+            HarnessMode.EXPLORATORY, HarnessConfig.currentJava(), flags, System.getProperty("java.class.path"),
+            WarmupPolicy.steadyState(smoke), Duration.ofMillis(600), Duration.ofSeconds(60), out, List.of(),
+            List.of(), "unmanaged", Map.of());
+        List<ObjectNode> records = new ArrayList<>();
+        ValiditySink sink = new ValiditySink(out.resolve("validity.json"), records::add);
+        ObjectNode manifest = new HarnessOrchestrator(config, SystemProbe.live())
+            .run(List.of(CELL), RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3), 2), sink);
+
+        assertEquals(List.of("v3/r1/", "v3#null/r1/", "v3#null/r2/", "v3/r2/"),
+                     records.stream().map(r -> r.expectStringMember("label").getValue().replace(CELL.id(), ""))
+                            .toList());
+        assertEquals(List.of(), manifest.expectObjectMember("schedule").expectArrayMember("problems").getElements());
+        List<String> mustPass = List.of(ValidityRules.RUN_STATUS, ValidityRules.FAILED_OPERATIONS,
+                                        ValidityRules.OPERATION_COUNT, ValidityRules.UNEXPECTED_OUTCOME,
+                                        ValidityRules.UNMATCHED_REQUESTS, ValidityRules.WIRE_BYTES,
+                                        ValidityRules.TRANSPORT, ValidityRules.INCOMPLETE_SAMPLE,
+                                        ValidityRules.HOST_DRIFT);
+        java.util.Set<String> digests = new java.util.HashSet<>();
+        for (ObjectNode run : records) {
+            String json = Node.prettyPrintJson(run);
+            assertEquals("completed", run.expectStringMember("status").getValue(), json);
+            List<String> failed = run.expectObjectMember("validity").expectArrayMember("violations")
+                                     .getElementsAs(n -> n.expectObjectNode().expectStringMember("rule").getValue());
+            for (String rule : mustPass) {
+                assertFalse(failed.contains(rule), rule + " failed: " + json);
+            }
+            ObjectNode warmup = run.expectObjectMember("result").expectObjectMember("warmup");
+            assertEquals("steady-state", warmup.expectStringMember("policy").getValue());
+            if (!warmup.expectBooleanMember("passed").getValue()) {
+                assertTrue(failed.contains(ValidityRules.STEADY_STATE_GATE), json);
+            }
+            assertTrue(run.expectObjectMember("result").expectObjectMember("measurement")
+                          .expectArrayMember("samples").size() >= 7, json);
+            assertTrue(run.expectObjectMember("host").getMember("jdk.version").isPresent());
+            digests.add(run.expectObjectMember("arm").expectStringMember("artifact_digest").getValue());
+        }
+        assertEquals(1, digests.size(), "the null arm runs the same artifact");
+
+        CollectionValidity.CollectionVerdict verdict = sink.verdict();
+        assertFalse(verdict.releaseEvidence());
+        assertEquals(1, verdict.cells().size());
+        CollectionValidity.CellVerdict cell = verdict.cells().get(0);
+        assertFalse(cell.valid());
+        assertTrue(cell.violations().stream()
+                       .anyMatch(v -> v.rule().equals(CollectionValidity.TOO_FEW_VALID_REPETITIONS)));
+        assertEquals(List.of("v3", "v3#null"), cell.arms().stream().map(CollectionValidity.ArmVerdict::armId).toList());
+        assertEquals(1, cell.nullExperiments().size());
+        assertEquals("v3", cell.nullExperiments().get(0).sourceArm());
+        assertEquals(verdict.toNode(), Node.parse(Files.readString(out.resolve("validity.json"))));
+    }
 }

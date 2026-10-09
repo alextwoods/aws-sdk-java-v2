@@ -46,7 +46,8 @@ class ProcessLaunchTest {
         HarnessOrchestrator o = new HarnessOrchestrator(config(HarnessMode.RELEASE), linux());
         CpuPinning.Plan plan = CpuPinning.plan(linux(), HarnessMode.RELEASE, List.of(4, 5, 6, 7), List.of(1, 2), 8);
         JvmLaunchSpec service = o.mockServiceSpec(CELL, plan);
-        RepetitionSchedule.ScheduledRun run = new RepetitionSchedule.ScheduledRun(CELL, 3, 2, "arm#null");
+        RepetitionSchedule.ScheduledRun run =
+            new RepetitionSchedule.ScheduledRun(CELL, BenchmarkArm.V3.nullTwin(), 3, 1, 2);
         JvmLaunchSpec client = o.clientSpec(run, URI.create("http://127.0.0.1:4567"), Path.of("/tmp/out/r.json"), plan);
 
         assertEquals(List.of("/usr/bin/taskset", "-c", "1-2", "/jdk/bin/java", "-Xms64m", "-Xmx64m",
@@ -58,8 +59,11 @@ class ProcessLaunchTest {
                              "-XX:+UseSerialGC", "-cp", "/a.jar:/b.jar",
                              "software.amazon.awssdk.benchmark.harness.ClientMain",
                              "--cell", CELL.id(), "--endpoint", "http://127.0.0.1:4567",
-                             "--warmup-seconds", "1.500", "--measure-seconds", "30.000",
-                             "--result-file", "/tmp/out/r.json", "--repetition", "3", "--label", "arm#null",
+                             "--warmup-policy", "fixed-duration", "--warmup-seconds", "1.5",
+                             "--sample-interval-seconds", "1", "--steady-window", "5",
+                             "--warmup-timeout-seconds", "300", "--measure-seconds", "30",
+                             "--result-file", "/tmp/out/r.json", "--repetition", "3",
+                             "--label", "v3#null/r3/" + CELL.id(),
                              "--model", "dynamodb=/models/ddb.json"),
                      client.command());
         assertEquals(service.jvmFlags(), client.jvmFlags());
@@ -72,15 +76,15 @@ class ProcessLaunchTest {
         HarnessOrchestrator o = new HarnessOrchestrator(config(HarnessMode.EXPLORATORY), new RecordedProbe("mac os x"));
         CpuPinning.Plan plan = CpuPinning.plan(new RecordedProbe("mac os x"), HarnessMode.EXPLORATORY, List.of(),
                                                List.of(), 8);
-        RepetitionSchedule.ScheduledRun run = new RepetitionSchedule.ScheduledRun(CELL, 2, 1, "label-x");
+        RepetitionSchedule.ScheduledRun run = new RepetitionSchedule.ScheduledRun(CELL, BenchmarkArm.V3, 2, 0, 1);
         List<String> argv = o.clientSpec(run, URI.create("http://127.0.0.1:1"), Path.of("r.json"), plan).programArgs();
         ClientMain.Args args = ClientMain.Args.parse(argv.toArray(new String[0]));
         assertEquals(CELL, args.cell());
         assertEquals(URI.create("http://127.0.0.1:1"), args.endpoint());
-        assertEquals(Duration.ofMillis(1500), args.warmup());
+        assertEquals(WarmupPolicy.fixed(Duration.ofMillis(1500), SteadyStatePolicy.RELEASE), args.warmup());
         assertEquals(Duration.ofSeconds(30), args.measure());
         assertEquals(2, args.repetition());
-        assertEquals("label-x", args.label());
+        assertEquals("v3/r2/" + CELL.id(), args.label());
         assertEquals(Map.of("dynamodb", Path.of("/models/ddb.json")), args.models());
         // Unpinned on macOS: the command starts with java itself.
         assertEquals("/jdk/bin/java", o.mockServiceSpec(CELL, plan).command().get(0));
@@ -96,6 +100,60 @@ class ProcessLaunchTest {
         assertTrue(CellMatrix.inapplicability(uncovered).isPresent());
         HarnessPolicyException e = assertThrows(HarnessPolicyException.class, () -> o.preflight(List.of(CELL, uncovered)));
         assertTrue(e.getMessage().contains(uncovered.id()), e.getMessage());
+    }
+
+    @Test
+    void steadyStateArgumentsParseBackExactly() {
+        SteadyStatePolicy smoke = new SteadyStatePolicy(Duration.ofMillis(100), 3, Duration.ofMillis(2500));
+        HarnessConfig cfg = new HarnessConfig(HarnessMode.EXPLORATORY, "/jdk/bin/java", FLAGS, "/a.jar",
+                                              WarmupPolicy.steadyState(smoke), Duration.ofMillis(600),
+                                              Duration.ofMinutes(1), Path.of("/tmp/out"), List.of(), List.of(),
+                                              "unmanaged", Map.of());
+        HarnessOrchestrator o = new HarnessOrchestrator(cfg, new RecordedProbe("mac os x"));
+        CpuPinning.Plan plan = CpuPinning.plan(new RecordedProbe("mac os x"), HarnessMode.EXPLORATORY, List.of(),
+                                               List.of(), 8);
+        RepetitionSchedule.ScheduledRun run = new RepetitionSchedule.ScheduledRun(CELL, BenchmarkArm.V3, 1, 0, 1);
+        List<String> argv = o.clientSpec(run, URI.create("http://127.0.0.1:1"), Path.of("r.json"), plan).programArgs();
+        assertTrue(!argv.contains("--warmup-seconds"), argv.toString());
+        ClientMain.Args args = ClientMain.Args.parse(argv.toArray(new String[0]));
+        assertEquals(WarmupPolicy.steadyState(smoke), args.warmup());
+        assertEquals(Duration.ofMillis(600), args.measure());
+        assertEquals("0.0000001", HarnessOrchestrator.seconds(100));
+    }
+
+    @Test
+    void releasePreflightRefusesFixedWarmupShortMeasureUndocumentedPolicyAndWeakSchedules() {
+        List<BenchmarkCell> cells = List.of(CELL);
+        RepetitionSchedule release = RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3), 5);
+        // Fixed warmup (the config(mode) helper) and the documented policy otherwise.
+        assertPolicy(config(HarnessMode.RELEASE), release, "steady-state warmup gate");
+        assertPolicy(releaseConfig(WarmupPolicy.steadyState(SteadyStatePolicy.RELEASE), Duration.ofSeconds(29)),
+                     release, "at least 30 s");
+        assertPolicy(releaseConfig(WarmupPolicy.steadyState(
+                         new SteadyStatePolicy(Duration.ofMillis(500), 5, Duration.ofSeconds(300))),
+                                   Duration.ofSeconds(30)),
+                     release, "documented steady-state policy");
+        HarnessConfig ok = releaseConfig(WarmupPolicy.steadyState(SteadyStatePolicy.RELEASE), Duration.ofSeconds(30));
+        assertPolicy(ok, RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3), 4), "outside 5..10");
+        assertPolicy(ok, RepetitionSchedule.interleaved(List.of(BenchmarkArm.V3), 5), "no same-artifact null");
+        HarnessOrchestrator.Preflight pre = new HarnessOrchestrator(ok, linux())
+            .preflight(cells, release.schedule(cells));
+        assertEquals(List.of(), pre.scheduleProblems());
+        assertTrue(ok.releasePolicyProblems().isEmpty());
+    }
+
+    private static HarnessConfig releaseConfig(WarmupPolicy warmup, Duration measure) {
+        return new HarnessConfig(HarnessMode.RELEASE, "/jdk/bin/java", FLAGS, "/a.jar:/b.jar", warmup, measure,
+                                 Duration.ofMinutes(10), Path.of("/tmp/out"), List.of(4, 5, 6, 7), List.of(1, 2),
+                                 "unmanaged", Map.of());
+    }
+
+    private static void assertPolicy(HarnessConfig cfg, RepetitionSchedule schedule, String expected) {
+        HarnessOrchestrator o = new HarnessOrchestrator(cfg, linux());
+        List<BenchmarkCell> cells = List.of(CELL);
+        HarnessPolicyException e = assertThrows(HarnessPolicyException.class,
+                                                () -> o.preflight(cells, schedule.schedule(cells)));
+        assertTrue(e.getMessage().contains(expected), e.getMessage());
     }
 
     @Test

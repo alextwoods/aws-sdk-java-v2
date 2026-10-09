@@ -32,13 +32,23 @@ import java.util.Map;
  * HarnessMain [--mode exploratory|release] [--list] [--dry-run]
  *             [--protocols ids] [--paths ids] [--transports ids] [--kinds ids] [--payloads ids]
  *             [--outcomes ids] [--concurrency 1,8,32]
- *             [--warmup-seconds S] [--measure-seconds S] [--timeout-seconds S]
+ *             [--repetitions N] [--null-experiment true|false]
+ *             [--warmup-policy fixed|steady-state] [--warmup-seconds S]
+ *             [--sample-interval-seconds S] [--steady-window N] [--warmup-timeout-seconds S]
+ *             [--measure-seconds S] [--timeout-seconds S]
  *             [--java PATH] [--jvm-flags "..."] [--client-cpus 4-7] [--service-cpus 1-3]
  *             [--background-policy NAME] [--model dynamodb=PATH] [--out DIR]
  * </pre>
  *
+ * <p>Defaults by mode: {@code release} runs 5 interleaved repetitions with a same-artifact null arm, the documented
+ * steady-state gate ({@link SteadyStatePolicy#RELEASE}) and 30 s of measurement, and refuses anything weaker in
+ * preflight; {@code exploratory} runs each cell once, without a null arm, after a fixed 10 s warmup, all marked as
+ * non-evidence. The arms are {@link BenchmarkArm#V3} (and its null twin); reference arms are added by 19.3.
+ *
  * <p>{@code --list} prints the selected cells (and whether each has a fixture); {@code --dry-run} additionally prints
- * the preflight (pinning, coverage) and the exact argv of each process without launching anything.
+ * the preflight (pinning, coverage, schedule problems) and the exact argv of each process without launching anything.
+ * A run writes {@code manifest.json}, {@code results.jsonl} (each record with its {@code validity}) and
+ * {@code validity.json} ({@link ValiditySink}).
  */
 public final class HarnessMain {
 
@@ -77,24 +87,46 @@ public final class HarnessMain {
         Path out = Path.of(a.getOrDefault("out", "target/harness/"
                                                  + LocalDateTime.now().format(DateTimeFormatter.ofPattern(
                                                      "yyyyMMdd-HHmmss"))));
+        boolean release = mode == HarnessMode.RELEASE;
+        SteadyStatePolicy sampling = new SteadyStatePolicy(
+            ClientMain.Args.seconds(a.getOrDefault("sample-interval-seconds",
+                                                   HarnessOrchestrator.seconds(
+                                                       SteadyStatePolicy.RELEASE.interval().toNanos()))),
+            Integer.parseInt(a.getOrDefault("steady-window", Integer.toString(SteadyStatePolicy.RELEASE.window()))),
+            ClientMain.Args.seconds(a.getOrDefault("warmup-timeout-seconds", HarnessOrchestrator.seconds(
+                SteadyStatePolicy.RELEASE.warmupTimeout().toNanos()))));
+        WarmupPolicy.Kind warmupKind = WarmupPolicy.Kind.fromId(a.getOrDefault("warmup-policy",
+                                                                               release ? "steady-state" : "fixed"));
+        WarmupPolicy warmup = warmupKind == WarmupPolicy.Kind.FIXED
+                              ? WarmupPolicy.fixed(ClientMain.Args.seconds(a.getOrDefault("warmup-seconds", "10")),
+                                                   sampling)
+                              : WarmupPolicy.steadyState(sampling);
+        int repetitions = Integer.parseInt(a.getOrDefault(
+            "repetitions", Integer.toString(release ? RepetitionSchedule.MIN_RELEASE_REPETITIONS : 1)));
+        boolean nullExperiment = Boolean.parseBoolean(a.getOrDefault("null-experiment", Boolean.toString(release)));
+        RepetitionSchedule schedule = nullExperiment
+                                      ? RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3), repetitions)
+                                      : RepetitionSchedule.interleaved(List.of(BenchmarkArm.V3), repetitions);
         HarnessConfig config = new HarnessConfig(
             mode, a.getOrDefault("java", HarnessConfig.currentJava()),
             a.containsKey("jvm-flags") ? Arrays.asList(a.get("jvm-flags").trim().split("\\s+"))
                                        : HarnessConfig.DEFAULT_JVM_FLAGS,
             System.getProperty("java.class.path"),
-            ClientMain.Args.seconds(a.getOrDefault("warmup-seconds", "10")),
+            warmup,
             ClientMain.Args.seconds(a.getOrDefault("measure-seconds", "30")),
             ClientMain.Args.seconds(a.getOrDefault("timeout-seconds", "600")), out,
             CpuPinning.parseCpuList(a.get("client-cpus")), CpuPinning.parseCpuList(a.get("service-cpus")),
             a.getOrDefault("background-policy", "unmanaged"), models);
         HarnessOrchestrator orchestrator = new HarnessOrchestrator(config, SystemProbe.live());
         if (flags.contains("--dry-run")) {
-            HarnessOrchestrator.Preflight pre = orchestrator.preflight(cells);
+            List<RepetitionSchedule.ScheduledRun> runs = schedule.schedule(cells);
+            HarnessOrchestrator.Preflight pre = orchestrator.preflight(cells, runs);
             System.out.println("pinning client: " + pre.pinning().client());
             System.out.println("pinning mock-service: " + pre.pinning().mockService());
             pre.host().entries().forEach((k, v) -> System.out.println("host " + k + ": " + v));
             System.out.println("cells without fixture: " + pre.missingFixtures().size() + " of " + cells.size());
-            for (RepetitionSchedule.ScheduledRun run : RepetitionSchedule.once().schedule(cells)) {
+            System.out.println("scheduled runs: " + runs.size() + ", schedule problems: " + pre.scheduleProblems());
+            for (RepetitionSchedule.ScheduledRun run : runs) {
                 if (WorkloadProvider.forCell(run.cell()).isPresent()) {
                     System.out.println(String.join(" ", orchestrator.mockServiceSpec(run.cell(), pre.pinning())
                                                                     .command()));
@@ -105,8 +137,15 @@ public final class HarnessMain {
             }
             return;
         }
-        orchestrator.run(cells, RepetitionSchedule.once(), ResultSink.jsonLines(out.resolve("results.jsonl")));
+        ValiditySink validity = new ValiditySink(out.resolve("validity.json"),
+                                                 ResultSink.jsonLines(out.resolve("results.jsonl")));
+        orchestrator.run(cells, schedule, validity);
+        CollectionValidity.CollectionVerdict verdict = validity.verdict();
         System.out.println("manifest: " + out.resolve("manifest.json"));
         System.out.println("results: " + out.resolve("results.jsonl"));
+        System.out.println("validity: " + out.resolve("validity.json") + " (collection "
+                           + (verdict.valid() ? "valid" : "invalid") + ", " + verdict.invalidCells() + " of "
+                           + verdict.cells().size() + " cells invalid, release evidence "
+                           + verdict.releaseEvidence() + ")");
     }
 }

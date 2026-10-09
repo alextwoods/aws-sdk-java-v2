@@ -541,7 +541,7 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 19.1 Implement forked client/mock-service benchmark orchestration
     - Extend `v3/test/sdk-benchmarks` from the repository benchmark infrastructure with separate pinned processes, host/JDK/JVM/power/background metadata, explicit transports, all protocols, sync/async/dynamic paths, payload/outcome/stream/Event Stream scenarios, and concurrency 1/8/32.
     - _Requirements: 20.1, 20.2, 20.3, 20.4, 20.5, 20.10_
-  - [ ] 19.2 Implement interleaving, steady-state, null experiments, and validity checks
+  - [x] 19.2 Implement interleaving, steady-state, null experiments, and validity checks
     - Run 5–10 interleaved repetitions, JIT stability gates, at least 30-second samples, same-artifact null cells, operation/host-policy validation, and cell invalidation.
     - _Requirements: 20.6, 20.7, 20.8, 20.9, 20.23, 20.24, 20.25, 20.26, 20.27, 20.28_
   - [ ] 19.3 Implement metrics, statistics, references, and machine-readable reports

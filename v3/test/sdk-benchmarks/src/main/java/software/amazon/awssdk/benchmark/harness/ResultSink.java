@@ -24,11 +24,19 @@ import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 
 /**
- * Receives every run record as it is produced, and the manifest once the run ends. Extension point for 19.2
- * (repetition/cell validity), 19.3 (metrics, statistics, reports) and 19.4 (gates); the orchestrator itself only
- * appends records to {@code results.jsonl} and writes {@code manifest.json}.
+ * Receives the plan before anything is launched, every run record as it is produced, and the manifest once the run
+ * ends. {@link ValiditySink} (repetition, cell and collection validity) is the first consumer and forwards annotated
+ * records to 19.3 (metrics, statistics, reports) and 19.4 (gates); the orchestrator itself writes {@code manifest.json}.
  */
 public interface ResultSink {
+
+    /**
+     * The preflight plan: {@code mode}, {@code release_evidence}, {@code host} (preflight metadata), {@code config}
+     * (including {@code measure_ns}, {@code jvm_flags} and {@code warmup.sampling}), {@code pinning}, and
+     * {@code schedule} (arms, runs, structural {@code problems}).
+     */
+    default void begin(ObjectNode plan) throws IOException {
+    }
 
     void accept(ObjectNode runRecord) throws IOException;
 
