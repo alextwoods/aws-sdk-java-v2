@@ -145,6 +145,51 @@ class PaginationTest {
         assertEquals(List.of(0), recorder.pages);
     }
 
+    /**
+     * Reactive Streams rule 1.3 (found by the generated-paginator TCK of task 18.8): a page requested inside
+     * onSubscribe may complete on another thread while onSubscribe is still running, so no page call starts before
+     * onSubscribe returns. Here the page completes inside onSubscribe, standing in for that other thread.
+     */
+    @Test
+    void noPageIsSignalledBeforeOnSubscribeReturns() {
+        Pages pages = new Pages(3);
+        pages.defer = true;
+        List<Integer> received = new ArrayList<>();
+        List<String> violations = new ArrayList<>();
+        PagePublisher.create(fetcher(pages)).subscribe(new Subscriber<Integer>() {
+            private boolean inOnSubscribe;
+
+            @Override
+            public void onSubscribe(Subscription s) {
+                inOnSubscribe = true;
+                s.request(1);
+                pages.pending.forEach(page -> page.complete(0));
+                inOnSubscribe = false;
+            }
+
+            @Override
+            public void onNext(Integer page) {
+                if (inOnSubscribe) {
+                    violations.add("onNext(" + page + ") during onSubscribe");
+                }
+                received.add(page);
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                throw new AssertionError(t);
+            }
+
+            @Override
+            public void onComplete() {
+            }
+        });
+        assertEquals(List.of(), violations);
+        assertEquals(1, pages.calls.get(), "the demand from onSubscribe starts the call once onSubscribe returns");
+        pages.pending.get(0).complete(0);
+        assertEquals(List.of(0), received);
+    }
+
     private static AsyncPageFetcher<Integer> fetcher(Pages pages) {
         return new AsyncPageFetcher<>() {
             @Override

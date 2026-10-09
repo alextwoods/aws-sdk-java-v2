@@ -1036,6 +1036,10 @@
             <owns>Architecture tests that enforce this policy, the BOM and runtime version alignment.</owns>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="bounded-memory-tests" path="test/bounded-memory-tests" kind="test" release="false">
+            <owns>Bounded-memory streaming and Reactive Streams release suites: the TCK of the public AsyncRequestBody factories, AsyncResponseTransformer subscribers and generated async paginator publishers not verified in their own modules, and a 1 GiB payload streamed upload and download, sync and async, through generated clients, the real pipeline and real transports over loopback HTTP in a 256 MiB heap. Every dependency is test scope.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
         <module artifactId="codegen-generated-classes-test" path="test/codegen-generated-classes-test" kind="test" release="false">
             <owns>Compile and compatibility fixtures of generated synthetic, DynamoDB and S3 APIs, and execution of the Parity Manifest's generated compatibility fixtures: preserved V2 surfaces compile, link and keep their signatures and hierarchy, adapted and excluded calls are rejected with manifest-linked diagnostics, and V2 caller bytecode runs against V3.</owns>
             <allows module="aws-core"/>

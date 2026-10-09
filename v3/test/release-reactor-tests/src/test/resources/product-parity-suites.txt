@@ -203,6 +203,16 @@ test/dynamic-differential-tests software.amazon.awssdk.test.differential.Generat
 # cancellation, release and exactly-once completion).
 test/fault-injection-tests software.amazon.awssdk.test.fault.PipelineFaultMatrixTest
 test/fault-injection-tests software.amazon.awssdk.test.fault.GeneratedClientFaultMatrixTest
+# Task 18.8: bounded-memory streaming and Reactive Streams (the TCK of the public AsyncRequestBody factories,
+# AsyncResponseTransformer subscribers and a generated async paginator publisher not verified in their own modules; a
+# 1 GiB payload upload and download, sync and async, through generated clients, the real pipeline and real transports
+# over loopback HTTP in a forked -Xmx256m JVM, with exact bytes and order, bounded in-flight bytes and demand, and early
+# close/cancel). The sdk-core, protocol-core and transport TCK suites are in core-runtime-suites.txt; the enhanced
+# client and transfer manager TCK and bounded-memory suites are listed above.
+test/bounded-memory-tests software.amazon.awssdk.test.boundedmemory.AsyncRequestBodyFactoriesTckTest
+test/bounded-memory-tests software.amazon.awssdk.test.boundedmemory.AsyncResponseTransformerSubscriberTckTest
+test/bounded-memory-tests software.amazon.awssdk.test.boundedmemory.GeneratedPaginatorPublisherTckTest
+test/bounded-memory-tests software.amazon.awssdk.test.boundedmemory.StreamingBoundedMemoryTest bounded-memory
 # Task 18.1: protocol and endpoint conformance (every applicable case of the pinned Smithy protocol test models through
 # generated clients of the seven launch protocols and the real pipeline, and every smithy.rules#endpointTests case of
 # every vendored fleet model through the V3 rule evaluator; unlisted failures, timeouts and stale omissions fail).

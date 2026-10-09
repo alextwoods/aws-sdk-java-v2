@@ -35,6 +35,7 @@
          (not this POM) so that it exercises exactly the lifecycle a generated service module inherits. -->
     <modules>
         <module>architecture-tests</module>
+        <module>bounded-memory-tests</module>
         <module>codegen-generated-classes-test</module>
         <module>codegen-lifecycle-tests</module>
         <module>codegen-tests</module>

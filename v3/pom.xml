@@ -164,6 +164,7 @@
                 <module>services-custom</module>
                 <module>tools/v2-migration</module>
                 <module>test/architecture-tests</module>
+                <module>test/bounded-memory-tests</module>
                 <module>test/codegen-generated-classes-test</module>
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
@@ -226,6 +227,7 @@
                 <module>services-custom</module>
                 <module>tools/v2-migration</module>
                 <module>test/architecture-tests</module>
+                <module>test/bounded-memory-tests</module>
                 <module>test/codegen-generated-classes-test</module>
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>
@@ -299,6 +301,7 @@
                 <module>tools/v2-migration</module>
                 <module>tools/service-fleet</module>
                 <module>test/architecture-tests</module>
+                <module>test/bounded-memory-tests</module>
                 <module>test/codegen-generated-classes-test</module>
                 <module>test/codegen-lifecycle-tests</module>
                 <module>test/codegen-tests</module>

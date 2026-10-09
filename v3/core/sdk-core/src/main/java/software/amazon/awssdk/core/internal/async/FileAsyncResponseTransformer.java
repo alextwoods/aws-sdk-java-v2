@@ -80,7 +80,7 @@ public final class FileAsyncResponseTransformer<ResponseT> implements AsyncRespo
     public void exceptionOccurred(Throwable error) {
         FileWritingSubscriber writer = subscriber;
         if (writer != null) {
-            writer.fail(error);
+            writer.fail(error, true);
         } else {
             CompletableFuture<ResponseT> future = result;
             if (future != null) {
@@ -160,7 +160,7 @@ public final class FileAsyncResponseTransformer<ResponseT> implements AsyncRespo
             try {
                 channel.write(chunk, position, chunk, this);
             } catch (RuntimeException e) {
-                fail(e);
+                fail(e, true);
             }
         }
 
@@ -173,6 +173,10 @@ public final class FileAsyncResponseTransformer<ResponseT> implements AsyncRespo
             }
             boolean complete;
             synchronized (this) {
+                if (finished) {
+                    // The attempt failed while this chunk was written; upstream must not be asked for more.
+                    return;
+                }
                 writing = false;
                 complete = upstreamComplete;
             }
@@ -185,12 +189,13 @@ public final class FileAsyncResponseTransformer<ResponseT> implements AsyncRespo
 
         @Override
         public void failed(Throwable error, ByteBuffer chunk) {
-            fail(error);
+            fail(error, true);
         }
 
         @Override
         public void onError(Throwable t) {
-            fail(Objects.requireNonNull(t, "throwable"));
+            // Rule 2.3: upstream has terminated, so its subscription is not cancelled from onError.
+            fail(Objects.requireNonNull(t, "throwable"), false);
         }
 
         @Override
@@ -227,8 +232,11 @@ public final class FileAsyncResponseTransformer<ResponseT> implements AsyncRespo
             }
         }
 
-        /** Stops the attempt: cancels upstream, closes and deletes the file, and fails the future. Idempotent. */
-        private void fail(Throwable error) {
+        /**
+         * Stops the attempt: cancels upstream (unless upstream itself terminated), closes and deletes the file, and fails
+         * the future. Idempotent.
+         */
+        private void fail(Throwable error, boolean cancelUpstream) {
             Subscription s;
             synchronized (this) {
                 if (finished) {
@@ -237,7 +245,7 @@ public final class FileAsyncResponseTransformer<ResponseT> implements AsyncRespo
                 finished = true;
                 s = subscription;
             }
-            if (s != null) {
+            if (s != null && cancelUpstream) {
                 s.cancel();
             }
             try {

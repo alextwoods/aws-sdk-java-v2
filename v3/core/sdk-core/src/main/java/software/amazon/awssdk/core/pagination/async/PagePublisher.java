@@ -48,7 +48,11 @@ public final class PagePublisher<T> implements SdkPublisher<T> {
     public void subscribe(Subscriber<? super T> subscriber) {
         Objects.requireNonNull(subscriber, "subscriber");
         PageSubscription<T> subscription = new PageSubscription<>(fetcher, subscriber);
+        // Rule 1.3: a page call started by a request made inside onSubscribe could complete on another thread and
+        // signal onNext while onSubscribe is still running, so the drain loop is held until onSubscribe returns.
+        subscription.wip.set(1);
         subscriber.onSubscribe(subscription);
+        subscription.resumeAfterOnSubscribe();
     }
 
     /**
@@ -94,6 +98,13 @@ public final class PagePublisher<T> implements SdkPublisher<T> {
             if (call != null) {
                 call.cancel(false);
             }
+        }
+
+        /** Runs the drain loop whose work-in-progress claim {@link #subscribe} took before {@code onSubscribe}. */
+        private void resumeAfterOnSubscribe() {
+            do {
+                step();
+            } while (wip.decrementAndGet() != 0);
         }
 
         private void drain() {
