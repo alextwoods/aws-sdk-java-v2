@@ -44,7 +44,7 @@ import software.amazon.smithy.model.node.ObjectNode;
  *
  * <p>The thresholds are constants: no mode or command line can relax them. Only the sampling geometry
  * ({@code interval}, {@code window}, {@code warmupTimeout}) may differ from {@link #RELEASE}, and only in
- * {@link HarnessMode#EXPLORATORY}, where it lets development runs and smoke tests finish in seconds; release
+ * {@code HarnessMode.EXPLORATORY}, where it lets development runs and smoke tests finish in seconds; release
  * preflight refuses any policy other than {@link #RELEASE}.
  *
  * @param interval sampling interval

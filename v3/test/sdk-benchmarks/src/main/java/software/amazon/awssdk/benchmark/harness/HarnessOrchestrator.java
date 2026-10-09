@@ -182,6 +182,36 @@ public final class HarnessOrchestrator {
         }
     }
 
+    /**
+     * Artifact size of a client launch (Req 20.10): the bytes of every classpath entry, jars by file size and
+     * directories by the sum of their regular files, each distinct entry once; -1 when an entry is missing or
+     * unreadable (an unmeasurable artifact is never reported as small).
+     */
+    static long artifactBytes(JvmLaunchSpec spec) {
+        long total = 0;
+        String[] entries = spec.classpath().split(java.io.File.pathSeparator);
+        for (String entry : new java.util.LinkedHashSet<>(List.of(entries))) {
+            if (entry.isEmpty()) {
+                continue;
+            }
+            Path p = Path.of(entry);
+            try {
+                if (Files.isRegularFile(p)) {
+                    total += Files.size(p);
+                } else if (Files.isDirectory(p)) {
+                    try (java.util.stream.Stream<Path> files = Files.walk(p)) {
+                        total += files.filter(Files::isRegularFile).mapToLong(f -> f.toFile().length()).sum();
+                    }
+                } else {
+                    return -1;
+                }
+            } catch (IOException | java.io.UncheckedIOException e) {
+                return -1;
+            }
+        }
+        return total;
+    }
+
     /** Runs {@code cells} under {@code schedule}; returns the manifest. */
     public ObjectNode run(List<BenchmarkCell> cells, RepetitionSchedule schedule, ResultSink sink)
             throws IOException, InterruptedException {
@@ -238,7 +268,8 @@ public final class HarnessOrchestrator {
         // Placeholder endpoint: the digest covers the artifact, not the per-run arguments.
         JvmLaunchSpec artifact = clientSpec(run, URI.create("http://127.0.0.1:0"), resultFile, pre.pinning());
         record.withMember("arm", run.arm().toNode().toBuilder()
-                                    .withMember("artifact_digest", artifactDigest(artifact)).build());
+                                    .withMember("artifact_digest", artifactDigest(artifact))
+                                    .withMember("artifact_bytes", artifactBytes(artifact)).build());
         record.withMember("host", Node.objectNode(toNodes(captureHost().entries())));
         try (MockServiceProcess service = MockServiceProcess.start(serviceSpec, serviceLog,
                                                                    config.processTimeout())) {

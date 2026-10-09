@@ -78,8 +78,8 @@ class ProcessLaunchTest {
                                                List.of(), 8);
         RepetitionSchedule.ScheduledRun run = new RepetitionSchedule.ScheduledRun(CELL, BenchmarkArm.V3, 2, 0, 1);
         List<String> argv = o.clientSpec(run, URI.create("http://127.0.0.1:1"), Path.of("r.json"), plan).programArgs();
-        ClientMain.Args args = ClientMain.Args.parse(argv.toArray(new String[0]));
-        assertEquals(CELL, args.cell());
+        ClientDriver.Args args = ClientDriver.Args.parse(argv.toArray(new String[0]));
+        assertEquals(CELL.id(), args.cell().id());
         assertEquals(URI.create("http://127.0.0.1:1"), args.endpoint());
         assertEquals(WarmupPolicy.fixed(Duration.ofMillis(1500), SteadyStatePolicy.RELEASE), args.warmup());
         assertEquals(Duration.ofSeconds(30), args.measure());
@@ -115,7 +115,7 @@ class ProcessLaunchTest {
         RepetitionSchedule.ScheduledRun run = new RepetitionSchedule.ScheduledRun(CELL, BenchmarkArm.V3, 1, 0, 1);
         List<String> argv = o.clientSpec(run, URI.create("http://127.0.0.1:1"), Path.of("r.json"), plan).programArgs();
         assertTrue(!argv.contains("--warmup-seconds"), argv.toString());
-        ClientMain.Args args = ClientMain.Args.parse(argv.toArray(new String[0]));
+        ClientDriver.Args args = ClientDriver.Args.parse(argv.toArray(new String[0]));
         assertEquals(WarmupPolicy.steadyState(smoke), args.warmup());
         assertEquals(Duration.ofMillis(600), args.measure());
         assertEquals("0.0000001", HarnessOrchestrator.seconds(100));
@@ -160,8 +160,8 @@ class ProcessLaunchTest {
     void launchSpecsRejectClasspathFlagsAndClientArgsRejectBadInput() {
         assertThrows(IllegalArgumentException.class, () -> new JvmLaunchSpec(
             "client", List.of(), "java", List.of("-cp", "x"), "cp", "Main", List.of()));
-        assertThrows(IllegalArgumentException.class, () -> ClientMain.Args.parse(new String[] {"--cell", CELL.id()}));
-        assertThrows(IllegalArgumentException.class, () -> ClientMain.Args.parse(new String[] {
+        assertThrows(IllegalArgumentException.class, () -> ClientDriver.Args.parse(new String[] {"--cell", CELL.id()}));
+        assertThrows(IllegalArgumentException.class, () -> ClientDriver.Args.parse(new String[] {
             "--cell", CELL.id(), "--endpoint", "http://x", "--result-file", "r", "--measure-seconds", "0"}));
         assertEquals(Map.of("port", "4321", "pid", "77", "cell", CELL.id()),
                      MockServiceProcess.parseReady("READY port=4321 pid=77 cell=" + CELL.id()));

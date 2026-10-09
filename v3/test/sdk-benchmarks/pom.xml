@@ -188,6 +188,16 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Build order only (the pom, no classes, nothing on any class path): the Launch Parity Baseline reference
+             client is built before the forked smoke runs it, from its own target/ on its own V2-only class path
+             (PerformanceReferences), including under -am. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-benchmarks-v2-reference</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

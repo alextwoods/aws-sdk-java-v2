@@ -43,12 +43,14 @@ import java.util.Map;
  * <p>Defaults by mode: {@code release} runs 5 interleaved repetitions with a same-artifact null arm, the documented
  * steady-state gate ({@link SteadyStatePolicy#RELEASE}) and 30 s of measurement, and refuses anything weaker in
  * preflight; {@code exploratory} runs each cell once, without a null arm, after a fixed 10 s warmup, all marked as
- * non-evidence. The arms are {@link BenchmarkArm#V3} (and its null twin); reference arms are added by 19.3.
+ * non-evidence. The arms are {@link BenchmarkArm#V3} (and its null twin) plus every {@link PerformanceReferences}
+ * reference that is ready, on the cells it applies to; a release collection fails closed unless all three references
+ * are ready.
  *
  * <p>{@code --list} prints the selected cells (and whether each has a fixture); {@code --dry-run} additionally prints
  * the preflight (pinning, coverage, schedule problems) and the exact argv of each process without launching anything.
- * A run writes {@code manifest.json}, {@code results.jsonl} (each record with its {@code validity}) and
- * {@code validity.json} ({@link ValiditySink}).
+ * A run writes {@code manifest.json}, {@code results.jsonl} (each record with its {@code validity}),
+ * {@code validity.json} ({@link ValiditySink}) and {@code report.json} ({@link PerformanceReport}).
  */
 public final class HarnessMain {
 
@@ -89,32 +91,46 @@ public final class HarnessMain {
                                                      "yyyyMMdd-HHmmss"))));
         boolean release = mode == HarnessMode.RELEASE;
         SteadyStatePolicy sampling = new SteadyStatePolicy(
-            ClientMain.Args.seconds(a.getOrDefault("sample-interval-seconds",
+            ClientDriver.Args.seconds(a.getOrDefault("sample-interval-seconds",
                                                    HarnessOrchestrator.seconds(
                                                        SteadyStatePolicy.RELEASE.interval().toNanos()))),
             Integer.parseInt(a.getOrDefault("steady-window", Integer.toString(SteadyStatePolicy.RELEASE.window()))),
-            ClientMain.Args.seconds(a.getOrDefault("warmup-timeout-seconds", HarnessOrchestrator.seconds(
+            ClientDriver.Args.seconds(a.getOrDefault("warmup-timeout-seconds", HarnessOrchestrator.seconds(
                 SteadyStatePolicy.RELEASE.warmupTimeout().toNanos()))));
         WarmupPolicy.Kind warmupKind = WarmupPolicy.Kind.fromId(a.getOrDefault("warmup-policy",
                                                                                release ? "steady-state" : "fixed"));
         WarmupPolicy warmup = warmupKind == WarmupPolicy.Kind.FIXED
-                              ? WarmupPolicy.fixed(ClientMain.Args.seconds(a.getOrDefault("warmup-seconds", "10")),
+                              ? WarmupPolicy.fixed(ClientDriver.Args.seconds(a.getOrDefault("warmup-seconds", "10")),
                                                    sampling)
                               : WarmupPolicy.steadyState(sampling);
         int repetitions = Integer.parseInt(a.getOrDefault(
             "repetitions", Integer.toString(release ? RepetitionSchedule.MIN_RELEASE_REPETITIONS : 1)));
         boolean nullExperiment = Boolean.parseBoolean(a.getOrDefault("null-experiment", Boolean.toString(release)));
-        RepetitionSchedule schedule = nullExperiment
-                                      ? RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3), repetitions)
-                                      : RepetitionSchedule.interleaved(List.of(BenchmarkArm.V3), repetitions);
+        // Performance References: a release collection fails closed unless all three are runnable; the ready ones
+        // run as arms of every cell they apply to.
+        List<PerformanceReferences.Reference> references = PerformanceReferences.resolveLocal();
+        for (PerformanceReferences.Reference r : references) {
+            System.out.println("reference " + r.id() + " (" + r.pin() + "): " + r.status().id()
+                               + (r.reason() == null ? "" : " - " + r.reason()));
+        }
+        PerformanceReferences.requireReady(mode, references, cells);
+        List<BenchmarkArm> arms = new ArrayList<>(List.of(BenchmarkArm.V3));
+        arms.addAll(PerformanceReferences.readyArms(references));
+        java.util.function.BiPredicate<BenchmarkArm, BenchmarkCell> applies = (arm, cell) ->
+            references.stream().filter(r -> r.arm().filter(arm::equals).isPresent())
+                      .allMatch(r -> r.appliesTo(cell));
+        if (nullExperiment) {
+            arms.add(BenchmarkArm.V3.nullTwin());
+        }
+        RepetitionSchedule schedule = RepetitionSchedule.interleaved(arms, repetitions, applies);
         HarnessConfig config = new HarnessConfig(
             mode, a.getOrDefault("java", HarnessConfig.currentJava()),
             a.containsKey("jvm-flags") ? Arrays.asList(a.get("jvm-flags").trim().split("\\s+"))
                                        : HarnessConfig.DEFAULT_JVM_FLAGS,
             System.getProperty("java.class.path"),
             warmup,
-            ClientMain.Args.seconds(a.getOrDefault("measure-seconds", "30")),
-            ClientMain.Args.seconds(a.getOrDefault("timeout-seconds", "600")), out,
+            ClientDriver.Args.seconds(a.getOrDefault("measure-seconds", "30")),
+            ClientDriver.Args.seconds(a.getOrDefault("timeout-seconds", "600")), out,
             CpuPinning.parseCpuList(a.get("client-cpus")), CpuPinning.parseCpuList(a.get("service-cpus")),
             a.getOrDefault("background-policy", "unmanaged"), models);
         HarnessOrchestrator orchestrator = new HarnessOrchestrator(config, SystemProbe.live());
@@ -137,12 +153,16 @@ public final class HarnessMain {
             }
             return;
         }
-        ValiditySink validity = new ValiditySink(out.resolve("validity.json"),
-                                                 ResultSink.jsonLines(out.resolve("results.jsonl")));
-        orchestrator.run(cells, schedule, validity);
-        CollectionValidity.CollectionVerdict verdict = validity.verdict();
+        PerformanceReportSink.Chain sinks = PerformanceReportSink.chain(
+            out.resolve("validity.json"), out.resolve("report.json"), references,
+            ResultSink.jsonLines(out.resolve("results.jsonl")));
+        java.nio.file.Files.createDirectories(out);
+        orchestrator.run(cells, schedule, sinks.validity());
+        CollectionValidity.CollectionVerdict verdict = sinks.validity().verdict();
         System.out.println("manifest: " + out.resolve("manifest.json"));
         System.out.println("results: " + out.resolve("results.jsonl"));
+        System.out.println("report: " + out.resolve("report.json") + " (references ready "
+                           + sinks.report().report().expectBooleanMember("references_ready").getValue() + ")");
         System.out.println("validity: " + out.resolve("validity.json") + " (collection "
                            + (verdict.valid() ? "valid" : "invalid") + ", " + verdict.invalidCells() + " of "
                            + verdict.cells().size() + " cells invalid, release evidence "

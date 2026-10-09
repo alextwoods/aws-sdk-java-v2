@@ -82,6 +82,17 @@ public interface RepetitionSchedule {
      *     arm whose source arm is absent or runs a different artifact
      */
     static RepetitionSchedule interleaved(List<BenchmarkArm> arms, int repetitions) {
+        return interleaved(arms, repetitions, (arm, cell) -> true);
+    }
+
+    /**
+     * {@link #interleaved(List, int)} where each cell runs only the arms {@code applies} accepts for it (per-arm cell
+     * applicability: a reference without a Dynamic Client has no dynamic cells). A cell's rounds rotate its own
+     * applicable arms, so every scheduled cell keeps the interleaving and slot-balance properties; a null arm is
+     * applicable exactly where its source arm is.
+     */
+    static RepetitionSchedule interleaved(List<BenchmarkArm> arms, int repetitions,
+                                          java.util.function.BiPredicate<BenchmarkArm, BenchmarkCell> applies) {
         List<BenchmarkArm> order = List.copyOf(arms);
         if (order.isEmpty()) {
             throw new IllegalArgumentException("a schedule needs at least one arm");
@@ -104,13 +115,20 @@ public interface RepetitionSchedule {
                 }
             }
         }
-        int n = order.size();
         return cells -> {
-            List<ScheduledRun> runs = new ArrayList<>(cells.size() * n * repetitions);
+            Map<BenchmarkCell, List<BenchmarkArm>> perCell = new LinkedHashMap<>();
+            for (BenchmarkCell cell : cells) {
+                perCell.put(cell, order.stream()
+                                       .filter(a -> applies.test(a.isNull() ? byId.get(a.nullOf()) : a, cell))
+                                       .toList());
+            }
+            List<ScheduledRun> runs = new ArrayList<>(cells.size() * order.size() * repetitions);
             for (int k = 1; k <= repetitions; k++) {
                 for (BenchmarkCell cell : cells) {
+                    List<BenchmarkArm> cellArms = perCell.get(cell);
+                    int n = cellArms.size();
                     for (int slot = 0; slot < n; slot++) {
-                        BenchmarkArm arm = order.get((slot + k - 1) % n);
+                        BenchmarkArm arm = cellArms.get((slot + k - 1) % n);
                         runs.add(new ScheduledRun(cell, arm, k, slot, runs.size() + 1));
                     }
                 }

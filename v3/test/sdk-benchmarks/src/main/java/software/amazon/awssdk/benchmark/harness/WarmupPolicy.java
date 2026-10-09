@@ -24,7 +24,7 @@ import java.util.Objects;
  *
  * <ul>
  *     <li>{@link Kind#STEADY_STATE}: the JIT steady-state gate of {@link SteadyStatePolicy}; required in
- *     {@link HarnessMode#RELEASE} with {@link SteadyStatePolicy#RELEASE}.</li>
+ *     {@code HarnessMode.RELEASE} with {@link SteadyStatePolicy#RELEASE}.</li>
  *     <li>{@link Kind#FIXED}: a fixed duration, for exploratory runs only. Such a repetition never passed a gate, so
  *     the validity rules mark it invalid (it is not steady-state evidence).</li>
  * </ul>

@@ -45,8 +45,12 @@ class ReactorInventoryTest {
     private static final String PRODUCT_PARITY_PROFILE = "v3-product-parity";
     /** The V2 Migration Corpus (test/v2-migration-tests), which depends on the release-evidence tooling. */
     private static final String MIGRATION_CORPUS = "v2-migration-tests";
+    /** The benchmark harness and its Launch Parity Baseline (released V2) reference client. */
+    private static final Set<String> BENCHMARKS = Set.of("sdk-benchmarks", "sdk-benchmarks-v2-reference");
     /** Verification modules the foundation gate does not build: the benchmarks and the migration corpus. */
-    private static final Set<String> NOT_FOUNDATION_VERIFICATION = Set.of("sdk-benchmarks", MIGRATION_CORPUS);
+    private static final Set<String> NOT_FOUNDATION_VERIFICATION = Set.of("sdk-benchmarks",
+                                                                          "sdk-benchmarks-v2-reference",
+                                                                          MIGRATION_CORPUS);
     /** Simple class names matched by surefire's default includes (Test*, *Test, *Tests, *TestCase). */
     private static final Pattern SUREFIRE_DEFAULT_INCLUDES = Pattern.compile("Test.*|.*Test|.*Tests|.*TestCase");
 
@@ -127,7 +131,7 @@ class ReactorInventoryTest {
         assertBuilds("v3-high-level", Set.of("cloudwatch-metric-publisher"));
         assertBuilds("v3-migration", RequiredArtifacts.named(Category.MIGRATION));
         assertBuilds("v3-tests", artifactIds(RequiredArtifacts.members(full, Category.TEST)));
-        assertBuilds("v3-benchmarks", Set.of("sdk-benchmarks"));
+        assertBuilds("v3-benchmarks", BENCHMARKS);
         assertBuilds("v3-release-evidence", RequiredArtifacts.named(Category.RELEASE_TOOLING));
         assertBuilds("v3-release-evidence", Set.of("release-reactor-tests"));
     }
@@ -184,7 +188,7 @@ class ReactorInventoryTest {
         assertBuilds(PRODUCT_PARITY_PROFILE, ReactorInventory.load(V3_ROOT, "v3-high-level").artifactIds());
         Set<String> verification = new TreeSet<>(artifactIds(RequiredArtifacts.members(ReactorInventory.load(V3_ROOT),
                                                                                        Category.TEST)));
-        verification.remove("sdk-benchmarks");
+        verification.removeAll(BENCHMARKS);
         assertBuilds(PRODUCT_PARITY_PROFILE, verification);
     }
 

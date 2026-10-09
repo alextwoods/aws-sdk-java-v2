@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  The Launch Parity Baseline reference client of the performance harness (task 19.3; Requirements 20.12-20.15, 20.19).
+
+  V2ReferenceMain is the reference arm's forked client process: the harness's SDK-free ClientDriver (the same command
+  line, verification call, steady-state warmup gate, measurement, counters and result record as the V3 arm's
+  ClientMain), compiled here from test/sdk-benchmarks' own sources (ClientDriver.REFERENCE_SHARED_SOURCES), over the
+  released V2 ${v3.v2Baseline.version} DynamoDB clients.
+
+  Layout: target/classes holds only the shared SDK-free driver (its sole dependency is smithy-model); the V2 client
+  code (V2ReferenceMain, V2DynamoDbWorkloads, V2Transports) and its wire test live in src/test, compiled against the
+  released V2 jars at test scope, like every verification module's SDK-specific code (the dependency policy governs
+  compile/runtime edges; released V2 artifacts are never compile/runtime dependencies of a V3 module).
+
+  Isolation: V2 shares V3's package names (software.amazon.awssdk.*), so this module has no V3 dependency at all and
+  never shares a class path with V3. Every software.amazon.awssdk dependency is a released V2
+  ${v3.v2Baseline.version} artifact, and the module does not import bom-internal, whose V3 versions would otherwise
+  manage V2's transitive software.amazon.awssdk artifacts. The V3 release-alignment rule (every software.amazon.awssdk
+  artifact at exactly ${project.version}) is therefore replaced here by the same rule pinned to the V2 baseline: every
+  software.amazon.awssdk artifact at exactly ${v3.v2Baseline.version}, so a V3 artifact on this class path fails the
+  build. The package phase writes target/classpath.txt (the test class path without JUnit: V2 jars, aws-crt and
+  smithy-model), from which the harness (PerformanceReferences) builds the arm's class path: target/classes,
+  target/test-classes and that file. V2ReferenceMain also checks at run time that it runs V2 ${v3.v2Baseline.version}
+  and that no V3 class resolves.
+
+  Like test/sdk-benchmarks it is test tooling (release="false"), built by the v3-benchmarks and v3-tests profiles only,
+  before test/sdk-benchmarks, whose forked smoke runs this reference.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>sdk-benchmarks-v2-reference</artifactId>
+    <name>AWS Java SDK V3 :: Test :: SDK Benchmarks V2 Reference</name>
+    <description>Launch Parity Baseline (released V2) reference client of the performance harness.</description>
+    <properties>
+        <!-- The Launch Parity Baseline: the Parity Manifest's compatibility baseline (tools/parity-manifest
+             v3.v2Baseline.version), as in fleet-differential-tests and v2-migration-tests. -->
+        <v3.v2Baseline.version>2.54.0</v3.v2Baseline.version>
+        <!-- The aws-crt release V2 ${v3.v2Baseline.version} is built with (aws-sdk-java-pom awscrt.version). -->
+        <v3.v2Baseline.awscrt.version>0.48.4</v3.v2Baseline.awscrt.version>
+        <!-- Replaced by v2-baseline-alignment below (see the header). -->
+        <v3.releaseAlignment.skip>true</v3.releaseAlignment.skip>
+        <v3.benchmarks.sharedSources>${project.basedir}/../sdk-benchmarks/src/main/java</v3.benchmarks.sharedSources>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${v3.v2Baseline.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The V2 transports whose classes the cells name (Transport): apache5-sync, apache4-sync,
+             urlconnection-sync, crt-sync, netty-async and crt-async. V2 has no Apache 5 async client. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache5-client</artifactId>
+            <version>${v3.v2Baseline.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+            <version>${v3.v2Baseline.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${v3.v2Baseline.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>netty-nio-client</artifactId>
+            <version>${v3.v2Baseline.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-crt-client</artifactId>
+            <version>${v3.v2Baseline.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk.crt</groupId>
+            <artifactId>aws-crt</artifactId>
+            <version>${v3.v2Baseline.awscrt.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Smithy Node JSON of the shared result record, exactly as the V3 arm's ClientMain writes it. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${v3.smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${v3.junit5.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <!-- The harness's SDK-free client protocol, compiled from test/sdk-benchmarks' sources rather than
+                     copied, so both arms run the identical driver. -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>benchmark-shared-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${v3.benchmarks.sharedSources}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- Exactly ClientDriver.REFERENCE_SHARED_SOURCES of the shared root, plus this module's own
+                         package; ReferenceSharedSourcesTest (test/sdk-benchmarks) checks the list is SDK-free and
+                         matches this one. -->
+                    <includes>
+                        <include>software/amazon/awssdk/benchmark/harness/CellId.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/CellWorkload.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/ClientDriver.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/DynamoDbPutItemFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/LatencyHistogram.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/Outcome.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/PayloadClass.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/ServiceFixture.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/SteadyStateDetector.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/SteadyStatePolicy.java</include>
+                        <include>software/amazon/awssdk/benchmark/harness/WarmupPolicy.java</include>
+                        <include>software/amazon/awssdk/benchmark/reference/v2/**/*.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <!-- The V3 release-alignment rule, pinned to the V2 baseline instead of ${project.version}:
+                             every software.amazon.awssdk artifact in the tree is exactly ${v3.v2Baseline.version}, so
+                             no V3 artifact can reach the reference class path. -->
+                        <id>v2-baseline-alignment</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <fail>true</fail>
+                            <rules>
+                                <bannedDependencies>
+                                    <message>The V2 reference client must run released V2 ${v3.v2Baseline.version} only; every software.amazon.awssdk artifact must be at exactly ${v3.v2Baseline.version} and none may be a V3 artifact.</message>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>software.amazon.awssdk</exclude>
+                                    </excludes>
+                                    <includes>
+                                        <include>software.amazon.awssdk:*:[${v3.v2Baseline.version}]</include>
+                                    </includes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- target/classpath.txt: the reference client's class path besides its own classes (the V2 jars,
+                     aws-crt and smithy-model; JUnit excluded). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>v2-reference-classpath</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>test</includeScope>
+                            <excludeGroupIds>org.junit.jupiter,org.junit.platform,org.opentest4j,org.apiguardian</excludeGroupIds>
+                            <outputFile>${project.build.directory}/classpath.txt</outputFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

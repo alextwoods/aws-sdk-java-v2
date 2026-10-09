@@ -1182,5 +1182,11 @@
             <requiresService module="mediastoredata"/>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="sdk-benchmarks-v2-reference" path="test/sdk-benchmarks-v2-reference" kind="test" release="false">
+            <owns>The Launch Parity Baseline reference client of the performance harness: the harness's SDK-free client driver (compiled from test/sdk-benchmarks' sources) over the released V2 DynamoDB clients and transports, run by the harness as a forked process on its own class path. The V2 client code and every V2 dependency are test scope; it depends on no V3 module: every software.amazon.awssdk dependency is a released V2 artifact at exactly the Parity Manifest's v3.v2Baseline.version (enforced by its v2-baseline-alignment rule, which replaces the V3 release-alignment rule here), so V2 classes, which share V3's package names, never meet V3 classes on one class path.</owns>
+            <!-- smithy-model only, for the Smithy Node JSON of the shared client result record. -->
+            <allowsClass class="smithy-model-toolchain"/>
+            <forbids class="logging-implementation"/>
+        </module>
     </modules>
 </dependencyPolicy>

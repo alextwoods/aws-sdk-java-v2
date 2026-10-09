@@ -16,7 +16,6 @@
 package software.amazon.awssdk.benchmark.harness;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -56,14 +55,14 @@ import software.amazon.smithy.model.shapes.ShapeId;
  */
 final class DynamoDbWorkloads implements WorkloadProvider {
 
-    static final String TABLE = "benchmark-table";
-    static final String KEY = "benchmark-key";
-    static final String TARGET = "DynamoDB_20120810.PutItem";
-    static final String CONTENT_TYPE = "application/x-amz-json-1.0";
+    static final String TABLE = DynamoDbPutItemFixture.TABLE;
+    static final String KEY = DynamoDbPutItemFixture.KEY;
+    static final String TARGET = DynamoDbPutItemFixture.TARGET;
+    static final String CONTENT_TYPE = DynamoDbPutItemFixture.CONTENT_TYPE;
     static final ShapeId SERVICE = ShapeId.from("com.amazonaws.dynamodb#DynamoDB_20120810");
-    static final String NOT_FOUND = "com.amazonaws.dynamodb#ResourceNotFoundException";
+    static final String NOT_FOUND = DynamoDbPutItemFixture.NOT_FOUND;
     /** See {@link Outcome#RETRY}: each attempt of a retry cell fails with probability 1/2. */
-    static final int MAX_ATTEMPTS = 64;
+    static final int MAX_ATTEMPTS = DynamoDbPutItemFixture.MAX_ATTEMPTS;
     /** The default model location relative to the module directory (the build's {@code aws.codegen.modelDirectory}). */
     static final String DEFAULT_MODEL = "../../../.kiro/reference/aws-models/dynamodb/smithy/model.json";
 
@@ -123,103 +122,26 @@ final class DynamoDbWorkloads implements WorkloadProvider {
         }
     }
 
-    /** The wire bytes of one cell; deterministic in the payload class. */
-    static final class Fixture implements ServiceFixture {
-        private final PayloadClass payload;
-        private final String pad;
-        private final byte[] requestJson;
-        private final MockResponse success;
-        private final MockResponse error;
-        private final MockResponse retryable;
+    /** The wire bytes of one cell ({@link DynamoDbPutItemFixture}) plus the V3-typed item. */
+    static final class Fixture extends DynamoDbPutItemFixture {
 
         Fixture(PayloadClass payload) {
-            this.payload = payload;
-            int overhead = requestJson("").length + successJson("").length;
-            this.pad = "x".repeat(Math.max(1, (payload.targetBytes() - overhead) / 2));
-            this.requestJson = requestJson(pad);
-            this.success = new MockResponse(200, CONTENT_TYPE, successJson(pad));
-            this.error = new MockResponse(400, CONTENT_TYPE, utf8("{\"__type\":\"" + NOT_FOUND
-                                                                  + "\",\"message\":\"Requested resource not found\"}"));
-            this.retryable = new MockResponse(500, CONTENT_TYPE, utf8(
-                "{\"__type\":\"com.amazonaws.dynamodb#InternalServerError\",\"message\":\"injected retry\"}"));
-            for (long bytes : new long[] {encodedBytes(), requestJson.length + error.body().length}) {
-                if (!payload.contains(bytes)) {
-                    throw new IllegalStateException("fixture of " + bytes + " encoded bytes is not " + payload.id());
-                }
-            }
-        }
-
-        private static byte[] requestJson(String pad) {
-            return utf8("{\"TableName\":\"" + TABLE + "\",\"Item\":" + itemJson(pad) + ",\"ReturnValues\":\"ALL_OLD\"}");
-        }
-
-        private static byte[] successJson(String pad) {
-            return utf8("{\"Attributes\":" + itemJson(pad) + "}");
-        }
-
-        private static String itemJson(String pad) {
-            return "{\"pk\":{\"S\":\"" + KEY + "\"},\"pad\":{\"S\":\"" + pad + "\"}}";
-        }
-
-        String pad() {
-            return pad;
-        }
-
-        byte[] requestJson() {
-            return requestJson.clone();
-        }
-
-        @Override
-        public boolean matches(String method, String path, String routingHeader) {
-            return "POST".equals(method) && "/".equals(path) && TARGET.equals(routingHeader);
-        }
-
-        @Override
-        public String routingHeaderName() {
-            return "X-Amz-Target";
-        }
-
-        @Override
-        public MockResponse success() {
-            return success;
-        }
-
-        @Override
-        public MockResponse modeledError() {
-            return error;
-        }
-
-        @Override
-        public MockResponse retryableError() {
-            return retryable;
-        }
-
-        @Override
-        public long encodedBytes() {
-            return requestJson.length + (long) success.body().length;
+            super(payload);
         }
 
         Map<String, AttributeValue> item() {
             Map<String, AttributeValue> item = new LinkedHashMap<>();
             item.put("pk", AttributeValue.fromS(KEY));
-            item.put("pad", AttributeValue.fromS(pad));
+            item.put("pad", AttributeValue.fromS(pad()));
             return item;
         }
 
         Document itemDocument() {
             Map<String, Document> item = new LinkedHashMap<>();
             item.put("pk", Document.of(Map.of("S", Document.of(KEY))));
-            item.put("pad", Document.of(Map.of("S", Document.of(pad))));
+            item.put("pad", Document.of(Map.of("S", Document.of(pad()))));
             return Document.of(item);
         }
-
-        PayloadClass payload() {
-            return payload;
-        }
-    }
-
-    private static byte[] utf8(String s) {
-        return s.getBytes(StandardCharsets.UTF_8);
     }
 
     /** Shared outcome checks. */

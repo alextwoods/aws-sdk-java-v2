@@ -485,6 +485,10 @@
                 <module>http-clients</module>
                 <module>codegen</module>
                 <module>services</module>
+                <!-- The Dynamic Client paths of the harness (dynamic-sync, dynamic-async cells). -->
+                <module>dynamic</module>
+                <!-- The Launch Parity Baseline reference client, before the harness that runs it. -->
+                <module>test/sdk-benchmarks-v2-reference</module>
                 <module>test/sdk-benchmarks</module>
             </modules>
         </profile>
