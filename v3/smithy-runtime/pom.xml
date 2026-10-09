@@ -119,6 +119,18 @@
     <build>
         <plugins>
             <plugin>
+                <!-- Task 18.9: the stable JPMS module name (Requirement 16.10; naming rule in v3/parent/pom.xml). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Automatic-Module-Name>software.amazon.awssdk.smithy.runtime</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
                 <!-- Records the resolved runtime (compile + runtime scope) dependency set of this module, which is the
                      Smithy Java runtime closure every generated service client inherits. The boundary tests read
                      these files instead of the test classpath so that test-only dependencies cannot mask or cause a

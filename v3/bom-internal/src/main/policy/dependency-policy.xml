@@ -1131,6 +1131,10 @@
             <owns>Endpoint conformance: every smithy.rules#endpointTests case of every vendored fleet model (services/service-fleet.json) through the V3 endpoint rule evaluator, with a checked-in approved-omission list. Every dependency is test scope.</owns>
             <forbids class="logging-implementation"/>
         </module>
+        <module artifactId="module-path-tests" path="test/module-path-tests" kind="test" release="false">
+            <owns>Module-path and native-image smoke suites: a named JPMS application requiring a generated client and every supported HTTP Implementation by their stable module names, compiled and run on the module path in a forked JVM (and built and run as a GraalVM native executable when native-image is available or required), completing one modeled call per HTTP mode with no split packages and no forbidden dependency class on the module path or in the resolved module graph. Every dependency is test scope.</owns>
+            <forbids class="logging-implementation"/>
+        </module>
         <module artifactId="release-reactor-tests" path="test/release-reactor-tests" kind="test" release="false">
             <owns>Clean-checkout release reactor and aggregate-profile inventory tests.</owns>
             <forbids class="logging-implementation"/>

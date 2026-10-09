@@ -43,6 +43,8 @@
              fixed full-length (40 hex digit) commit ID stands in for the canonical model revision that every real
              service module must pin. It is recorded verbatim in the generated model provenance. -->
         <aws.codegen.modelRevision>c0de9e11fec7c1e0000000000000000000000001</aws.codegen.modelRevision>
+        <!-- Task 18.9: overrides v3-services' service module name, which this artifactId would make invalid. -->
+        <v3.moduleName>software.amazon.awssdk.test.codegenlifecycle</v3.moduleName>
     </properties>
 
     <dependencies>

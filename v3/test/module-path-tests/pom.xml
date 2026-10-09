@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+<!--
+  Module-path and native-image smoke suites (task 18.9; Requirements 16.10, 19.13, 19.14).
+  - The fixture application (src/test/fixture, a named module with module-info.java) requires a generated service
+    (dynamodb), the identity/region modules and every supported HTTP Implementation by their stable module names, and
+    completes one modeled ListTables call per HTTP mode against a loopback fake.
+  - ModulePathSmokeTest compiles it with javac on the module path, runs it in a forked `java -module-path ... -m`
+    JVM (not the class path) and asserts every mode's call, that every V3 artifact has a stable module name, that no
+    package is split, and that no forbidden dependency class of dependency-policy.xml is on the module path or in the
+    resolved module graph.
+  - NativeImageSmokeTest builds the same application with GraalVM native-image and runs the executable. It needs
+    native-image (GRAALVM_HOME, JAVA_HOME or PATH). It fails when native-image is required
+    (-Dv3.nativeImage.required=true, set by the general-availability launch gate) and unavailable, and is otherwise
+    skipped (aborted) without it.
+  The module path is the test-scope closure of the dependencies below, copied in repository layout to
+  target/module-path with the test frameworks excluded. Every dependency is test scope.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>v3-test</artifactId>
+        <version>3.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>module-path-tests</artifactId>
+    <name>AWS Java SDK V3 :: Test :: Module Path Tests</name>
+    <description>Module-path (JPMS) and GraalVM native-image smoke suites.</description>
+    <properties>
+        <!-- Requirement 19.14: the general-availability launch gate requires the native-image smoke run, so a missing
+             native-image fails that build instead of skipping. -->
+        <v3.nativeImage.required>false</v3.nativeImage.required>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <!-- The fixture application's module path: a minimal generated client (awsJson1_0), the modules a caller
+             configures it with, and every supported HTTP Implementation. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-spi</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-providers</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-spi</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache5-client</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>netty-nio-client</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-crt-client</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <!-- The fixture's module path: the test-scope closure without the test frameworks, in repository
+                         layout so that each jar's coordinates are known to the forbidden-dependency check. -->
+                    <execution>
+                        <id>module-path</id>
+                        <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/module-path</outputDirectory>
+                            <includeScope>test</includeScope>
+                            <excludeGroupIds>org.junit.jupiter,org.junit.platform,org.opentest4j,org.apiguardian,org.assertj,net.bytebuddy</excludeGroupIds>
+                            <useRepositoryLayout>true</useRepositoryLayout>
+                            <copyPom>false</copyPom>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- A failure or timeout of a forked smoke run fails the build (Requirement 19.14). -->
+                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                    <systemPropertyVariables>
+                        <v3.modulePath.dir>${project.build.directory}/module-path</v3.modulePath.dir>
+                        <v3.modulePath.fixture>${project.basedir}/src/test/fixture</v3.modulePath.fixture>
+                        <v3.modulePath.work>${project.build.directory}/smoke</v3.modulePath.work>
+                        <v3.modulePath.policy>${project.basedir}/../../bom-internal/src/main/policy/dependency-policy.xml</v3.modulePath.policy>
+                        <v3.nativeImage.required>${v3.nativeImage.required}</v3.nativeImage.required>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <profile>
+            <!-- The general-availability launch gate requires every applicable native-image smoke run. -->
+            <id>native-image-required</id>
+            <activation>
+                <property>
+                    <name>v3.launchGate</name>
+                    <value>general-availability</value>
+                </property>
+            </activation>
+            <properties>
+                <v3.nativeImage.required>true</v3.nativeImage.required>
+            </properties>
+        </profile>
+    </profiles>
+</project>

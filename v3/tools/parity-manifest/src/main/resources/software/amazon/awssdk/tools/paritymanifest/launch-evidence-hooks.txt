@@ -52,6 +52,10 @@ DefaultHttpSelectionPropertyTest behavior:http.default-client-selection
 HttpClientResolverTest behavior:http.default-client-selection
 ApacheProxyTunnelTest behavior:http.proxy-configuration
 UrlConnectionTlsProxyTest behavior:http.proxy-configuration
+# Task 18.9: a named JPMS application on the module path (v3/test/module-path-tests). The packaging stage still checks
+# structurally that every candidate artifact has a module name. behavior:native-image.support has no hook until
+# NativeImageSmokeTest has run with GraalVM native-image.
+ModulePathSmokeTest behavior:module-path.support
 # IAM policy builder (task 14.3; Requirement 16.8): the V2-versus-V3 differential and API comparison suite in
 # v3/test/codegen-generated-classes-test. Its api: entries name it through classification-rules.json.
 IamPolicyBuilderCompatibilityTest artifact:software.amazon.awssdk:iam-policy-builder behavior:iam-policy-builder.policies

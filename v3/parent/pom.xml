@@ -188,6 +188,14 @@
                     <artifactId>maven-install-plugin</artifactId>
                     <version>${maven-install-plugin.version}</version>
                 </plugin>
+                <!-- Task 18.9, JPMS module names (Requirement 16.10): every release jar sets an Automatic-Module-Name
+                     in its own maven-jar-plugin configuration (generated services through v3-services). The name is
+                     the V2 module name of the same artifactId where V2 had one (sdk-core software.amazon.awssdk.core,
+                     aws-json-protocol software.amazon.awssdk.protocols.json, services
+                     software.amazon.awssdk.services.<artifactId>), V2's name for the renamed http-spi
+                     (software.amazon.awssdk.http), and otherwise software.amazon.awssdk.<root API package suffix>
+                     (aws-pipeline software.amazon.awssdk.pipeline, auth-api software.amazon.awssdk.auth.api).
+                     It is not defaulted here: an unset name would ship a literal or empty Automatic-Module-Name. -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>

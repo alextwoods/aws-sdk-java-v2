@@ -226,6 +226,13 @@ test/fleet-differential-tests software.amazon.awssdk.test.fleet.WireDifferential
 # Task 18.3 (P62): intentional wire differences are classified (generated rule sets, known gaps, intentional-delta
 # records and observed deltas against an independent resolution of the Parity Manifest rule precedence).
 test/fleet-differential-tests software.amazon.awssdk.test.fleet.IntentionalDeltaClassificationPropertyTest
+# Task 18.9: module-path smoke (a named JPMS application compiled and run with java --module-path ... -m in a forked JVM
+# builds a generated client over every supported HTTP mode and completes a modeled call; stable module names, no split
+# packages, no forbidden dependency class on the module path or in the resolved graph). NativeImageSmokeTest is not
+# listed: it is skipped without GraalVM native-image and fails when -Dv3.nativeImage.required=true (set by
+# -Dv3.launchGate=general-availability) and native-image is unavailable.
+test/module-path-tests software.amazon.awssdk.test.modulepath.ModulePathSmokeTest
+test/module-path-tests software.amazon.awssdk.test.modulepath.ForbiddenDependenciesTest
 
 # Not listed (the profile still builds and runs them, and any failure still fails the build, but the gate does not
 # require their reports):

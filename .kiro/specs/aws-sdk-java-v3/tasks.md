@@ -511,7 +511,7 @@ All tasks are required for general availability. No task is marked optional beca
     - Compare every generated schema to canonical shapes and compare V3 requests/success/errors with canonical expectations and the frozen V2 baseline across every protocol/binding category.
     - Require intentional differences to carry an adapted/excluded manifest ID.
     - _Requirements: 19.3, 19.4, 19.5, 19.14, 19.15_
-  - [ ] 18.3 Write the property test for classified intentional wire differences
+  - [x] 18.3 Write the property test for classified intentional wire differences
     - **Property 62: Intentional wire differences are classified.** Generate differential expectation records and manifests; assert every intentional delta resolves to an adapted/excluded entry.
     - **Validates: Requirements 19.5**
   - [x] 18.4 Implement generated-versus-dynamic differential matrices
@@ -530,7 +530,7 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 18.8 Implement bounded-memory streaming and Reactive Streams suites
     - Run demand/cancellation TCKs and transfer payloads larger than heap, including the 1 GiB/256 MiB case, with exact byte/order checks, bounded buffers, early close, and no out-of-memory failure.
     - _Requirements: 5.11, 8.4, 8.5, 12.5, 19.11, 19.14, 20.20_
-  - [ ] 18.9 Implement module-path and supported native-image smoke modules
+  - [x] 18.9 Implement module-path and supported native-image smoke modules
     - Build dedicated JPMS and native-image fixtures that resolve minimal generated clients, construct each supported transport mode, and complete a modeled call without forbidden dependencies.
     - _Requirements: 16.10, 19.13, 19.14_
   - [ ] 18.10 Wire release-test discovery, timeout, and omission enforcement

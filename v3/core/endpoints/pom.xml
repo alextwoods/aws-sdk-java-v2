@@ -93,6 +93,18 @@
         </resources>
         <plugins>
             <plugin>
+                <!-- Task 18.9: the stable JPMS module name (Requirement 16.10; naming rule in v3/parent/pom.xml). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Automatic-Module-Name>software.amazon.awssdk.endpoints</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
                 <!-- The canonical partition table of the aws.partition rules function is copied, at build time, from the
                      pinned smithy-aws-endpoints release (the same version aws-codegen reads rule sets with). It is not
                      a runtime dependency: nothing from the Smithy model toolchain enters this module's runtime

@@ -173,6 +173,7 @@
                 <module>test/fault-injection-tests</module>
                 <module>test/fleet-differential-tests</module>
                 <module>test/http-client-tests</module>
+                <module>test/module-path-tests</module>
                 <module>test/protocol-property-tests</module>
                 <module>test/protocol-tests</module>
                 <module>test/endpoint-tests</module>
@@ -237,6 +238,7 @@
                 <module>test/fault-injection-tests</module>
                 <module>test/fleet-differential-tests</module>
                 <module>test/http-client-tests</module>
+                <module>test/module-path-tests</module>
                 <module>test/protocol-property-tests</module>
                 <module>test/protocol-tests</module>
                 <module>test/endpoint-tests</module>
@@ -312,6 +314,7 @@
                 <module>test/fault-injection-tests</module>
                 <module>test/fleet-differential-tests</module>
                 <module>test/http-client-tests</module>
+                <module>test/module-path-tests</module>
                 <module>test/protocol-property-tests</module>
                 <module>test/protocol-tests</module>
                 <module>test/endpoint-tests</module>

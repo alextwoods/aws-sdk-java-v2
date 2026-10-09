@@ -478,6 +478,10 @@
         <!-- Recorded verbatim in every service's model provenance (Requirements 2.12, 22.2). Fixture modules outside
              services/ that inherit this POM (codegen-lifecycle-tests) override it with their own revision. -->
         <aws.codegen.modelRevision>${aws.models.revision}</aws.codegen.modelRevision>
+        <!-- Task 18.9: the stable JPMS module name of every generated service jar, V2's
+             software.amazon.awssdk.services.<artifactId> (Requirement 16.10; naming rule in v3/parent/pom.xml).
+             Fixture modules outside services/ that inherit this POM override it. -->
+        <v3.moduleName>software.amazon.awssdk.services.${project.artifactId}</v3.moduleName>
     </properties>
     <!--
       Every generated service module inherits from this POM and declares only:
@@ -554,6 +558,18 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <!-- Task 18.9: the service's Automatic-Module-Name (Requirement 16.10). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Automatic-Module-Name>${v3.moduleName}</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
             </plugin>
         </plugins>
     </build>
