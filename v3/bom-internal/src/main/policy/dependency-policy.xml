@@ -1137,6 +1137,9 @@
         </module>
         <module artifactId="release-reactor-tests" path="test/release-reactor-tests" kind="test" release="false">
             <owns>Clean-checkout release reactor and aggregate-profile inventory tests.</owns>
+            <!-- smithy-model only, for Smithy Node JSON reading of services/service-fleet.json, the Parity Manifest
+                 rules and the protocol conformance evidence by the release-gate inventory (src/main). -->
+            <allowsClass class="smithy-model-toolchain"/>
             <forbids class="logging-implementation"/>
         </module>
         <module artifactId="v2-migration-tests" path="test/v2-migration-tests" kind="test" release="false">
