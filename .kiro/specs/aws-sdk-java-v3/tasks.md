@@ -544,7 +544,7 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 19.2 Implement interleaving, steady-state, null experiments, and validity checks
     - Run 5–10 interleaved repetitions, JIT stability gates, at least 30-second samples, same-artifact null cells, operation/host-policy validation, and cell invalidation.
     - _Requirements: 20.6, 20.7, 20.8, 20.9, 20.23, 20.24, 20.25, 20.26, 20.27, 20.28_
-  - [ ] 19.3 Implement metrics, statistics, references, and machine-readable reports
+  - [x] 19.3 Implement metrics, statistics, references, and machine-readable reports
     - Collect all required CPU/allocation/latency/throughput/startup/class/artifact/heap metrics; compute equal-weight geometric means and confidence intervals against V2, Racecar, and pinned Smithy Java references.
     - _Requirements: 20.10, 20.11, 20.12, 20.13, 20.14, 20.15, 20.16, 20.17, 20.18, 20.19, 20.23_
   - [ ] 19.4 Implement automated performance and hot-path release gates
