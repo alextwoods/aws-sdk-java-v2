@@ -50,7 +50,12 @@ import java.util.Map;
  * <p>{@code --list} prints the selected cells (and whether each has a fixture); {@code --dry-run} additionally prints
  * the preflight (pinning, coverage, schedule problems) and the exact argv of each process without launching anything.
  * A run writes {@code manifest.json}, {@code results.jsonl} (each record with its {@code validity}),
- * {@code validity.json} ({@link ValiditySink}) and {@code report.json} ({@link PerformanceReport}).
+ * {@code validity.json} ({@link ValiditySink}), {@code report.json} ({@link PerformanceReport}) and {@code gates.json}
+ * ({@link PerformanceGates}).
+ *
+ * <p>{@code HarnessMain --evaluate-gates DIR [--large-stream FILE] [--hot-path FILE]} evaluates the release gates of an
+ * existing output directory from its {@code report.json} and {@code validity.json}, rewrites {@code DIR/gates.json},
+ * and exits 0 only when the release decision allows general availability (1 otherwise).
  */
 public final class HarnessMain {
 
@@ -74,6 +79,12 @@ public final class HarnessMain {
                 System.err.println("bad argument: " + k);
                 System.exit(2);
             }
+        }
+        if (a.containsKey("evaluate-gates")) {
+            System.exit(evaluateGates(Path.of(a.get("evaluate-gates")),
+                                      java.util.Optional.ofNullable(a.get("large-stream")).map(Path::of),
+                                      java.util.Optional.ofNullable(a.get("hot-path")).map(Path::of)));
+            return;
         }
         List<BenchmarkCell> cells = CellMatrix.enumerate(CellMatrix.Selection.parse(
             a.get("protocols"), a.get("paths"), a.get("transports"), a.get("kinds"), a.get("payloads"),
@@ -153,9 +164,8 @@ public final class HarnessMain {
             }
             return;
         }
-        PerformanceReportSink.Chain sinks = PerformanceReportSink.chain(
-            out.resolve("validity.json"), out.resolve("report.json"), references,
-            ResultSink.jsonLines(out.resolve("results.jsonl")));
+        PerformanceGatesSink.Chain sinks = PerformanceGatesSink.chain(
+            out, references, ResultSink.jsonLines(out.resolve("results.jsonl")), PerformanceReport.Basis.VALID);
         java.nio.file.Files.createDirectories(out);
         orchestrator.run(cells, schedule, sinks.validity());
         CollectionValidity.CollectionVerdict verdict = sinks.validity().verdict();
@@ -167,5 +177,26 @@ public final class HarnessMain {
                            + (verdict.valid() ? "valid" : "invalid") + ", " + verdict.invalidCells() + " of "
                            + verdict.cells().size() + " cells invalid, release evidence "
                            + verdict.releaseEvidence() + ")");
+        printGates(out.resolve(PerformanceGatesSink.GATES_FILE), sinks.gates().result());
+    }
+
+    /**
+     * {@code --evaluate-gates DIR [--large-stream FILE] [--hot-path FILE]}: the release gates of an existing output
+     * directory, written to {@code DIR/gates.json}. Exit status 0 only when general availability is allowed.
+     */
+    static int evaluateGates(Path dir, java.util.Optional<Path> largeStream, java.util.Optional<Path> hotPath)
+        throws java.io.IOException {
+        PerformanceGates.Result result = PerformanceGatesSink.evaluateDirectory(dir, largeStream, hotPath);
+        printGates(dir.resolve(PerformanceGatesSink.GATES_FILE), result);
+        return result.decision() == PerformanceGates.Decision.GA_ALLOWED ? 0 : 1;
+    }
+
+    private static void printGates(Path file, PerformanceGates.Result result) {
+        for (PerformanceGates.Gate g : result.gates()) {
+            System.out.println("gate " + g.id() + " (Req " + String.join(", ", g.requirements()) + "): "
+                               + g.status().id() + (g.reasons().isEmpty() ? "" : " - " + String.join("; ",
+                                                                                                     g.reasons())));
+        }
+        System.out.println("gates: " + file + " (release decision " + result.decision().id() + ")");
     }
 }

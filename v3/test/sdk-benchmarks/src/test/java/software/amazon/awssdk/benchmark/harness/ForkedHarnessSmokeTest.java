@@ -134,9 +134,8 @@ class ForkedHarnessSmokeTest {
             List.of(), "unmanaged", Map.of());
         List<ObjectNode> records = new ArrayList<>();
         List<PerformanceReferences.Reference> references = PerformanceReferences.resolveLocal();
-        PerformanceReportSink.Chain chain = PerformanceReportSink.chain(out.resolve("validity.json"),
-                                                                        out.resolve("report.json"), references,
-                                                                        records::add);
+        PerformanceGatesSink.Chain chain = PerformanceGatesSink.chain(out, references, records::add,
+                                                                      PerformanceReport.Basis.VALID);
         ValiditySink sink = chain.validity();
         ObjectNode manifest = new HarnessOrchestrator(config, SystemProbe.live())
             .run(List.of(CELL), RepetitionSchedule.withNullExperiment(List.of(BenchmarkArm.V3), 2), sink);
@@ -206,6 +205,15 @@ class ForkedHarnessSmokeTest {
                              (double) 16 * 1024 * 1024);
             }
         }
+
+        // The gates: gates.json on disk as returned, re-evaluable from the directory with the same result, and an
+        // exploratory collection never allows general availability.
+        PerformanceGates.Result gates = chain.gates().result();
+        assertEquals(PerformanceGates.Decision.GA_BLOCKED, gates.decision());
+        assertEquals(gates.toNode(), Node.parse(Files.readString(out.resolve("gates.json"))));
+        assertEquals(gates.toNode(), PerformanceGatesSink.evaluateDirectory(out, java.util.Optional.empty(),
+                                                                            java.util.Optional.empty()).toNode());
+        assertEquals(PerformanceGates.Status.FAIL, gates.gate(PerformanceGates.COLLECTION).status());
     }
 
     /**
