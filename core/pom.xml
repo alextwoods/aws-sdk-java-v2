@@ -57,6 +57,10 @@
         <module>retries</module>
         <module>checksums-spi</module>
         <module>checksums</module>
+        <module>schema</module>
+        <module>codecs</module>
+        <module>http-binding</module>
+        <module>dynamic-client</module>
     </modules>
 
     <dependencyManagement>

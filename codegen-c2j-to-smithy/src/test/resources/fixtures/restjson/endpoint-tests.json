@@ -1,0 +1,10 @@
+{
+  "testCases": [
+    {
+      "documentation": "The static endpoint",
+      "expect": {"endpoint": {"url": "https://fixture.example.com"}},
+      "params": {"Region": "us-east-1", "UseThing": true, "ThingId": "thing"}
+    }
+  ],
+  "version": "1.0"
+}

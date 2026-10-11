@@ -39,8 +39,18 @@ import software.amazon.awssdk.core.util.SdkAutoConstructList;
 import software.amazon.awssdk.core.util.SdkAutoConstructMap;
 import software.amazon.awssdk.protocols.core.PathMarshaller;
 import software.amazon.awssdk.utils.StringUtils;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 public class MemberModel extends DocumentationModel {
+
+    /**
+     * The absolute Smithy ShapeId of the member, {@code namespace#Shape$member} (Requirement 17.6).
+     *
+     * <p>Set only by the Smithy route ({@code SmithyIntermediateModelBuilder}); null for the legacy C2J route. Not
+     * serialized.
+     */
+    @JsonIgnore
+    private ShapeId memberId;
 
     private String name;
 
@@ -897,5 +907,17 @@ public class MemberModel extends DocumentationModel {
         result = 31 * result + Objects.hashCode(additionalBeanStyleSetterName);
 
         return result;
+    }
+
+    /**
+     * The absolute Smithy ShapeId of the member, {@code namespace#Shape$member} (Requirement 17.6).
+     */
+    public ShapeId memberId() {
+        return memberId;
+    }
+
+    public MemberModel withMemberId(ShapeId memberId) {
+        this.memberId = memberId;
+        return this;
     }
 }

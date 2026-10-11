@@ -20,13 +20,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.codegen.internal.Utils;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
+import software.amazon.awssdk.codegen.model.config.customization.ModifyModelShapeModifier;
+import software.amazon.awssdk.codegen.model.config.customization.ShapeModifier;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.MemberModel;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.validation.ModelInvalidException;
 import software.amazon.awssdk.codegen.validation.ValidationErrorId;
 import software.amazon.smithy.model.Model;
@@ -61,6 +66,36 @@ class SmithyIntermediateModelPostprocessorTest {
 
         assertThat(memberNames(model, "LowerError")).containsExactly("code");
         assertThat(memberNames(model, "UpperError")).containsExactly("Reason");
+    }
+
+    @Test
+    void alternateBeanPropertyName_addsASetterToTheRenamedMember_andSkipsMissingShapes() {
+        // As DynamoDB AttributeValue: the C2J member NULL is renamed NUL by emitPropertyName (in stage 2 of the
+        // pipeline, on the C2J model), so the Smithy member is already NUL.
+        ModifyModelShapeModifier modify = new ModifyModelShapeModifier();
+        modify.setEmitPropertyName("NUL");
+        modify.setAlternateBeanPropertyName("Null");
+        ShapeModifier modifier = new ShapeModifier();
+        modifier.setModify(Collections.singletonList(Collections.singletonMap("NULL", modify)));
+        Map<String, ShapeModifier> modifiers = new HashMap<>();
+        modifiers.put("Value", modifier);
+        modifiers.put("Missing", modifier);
+        CustomizationConfig config = CustomizationConfig.create();
+        config.setShapeModifiers(modifiers);
+
+        IntermediateModel model = build(
+            REST_JSON_SERVICE
+            + "service DemoService { version: \"2024-01-01\", operations: [Op] }\n"
+            + "@http(method: \"POST\", uri: \"/op\")\n"
+            + "operation Op { input: OpRequest, output: OpResponse }\n"
+            + "structure OpRequest { value: Value }\n"
+            + "structure OpResponse {}\n"
+            + "union Value { NUL: Boolean, S: String }\n",
+            config);
+
+        ShapeModel value = Utils.findShapeModelByC2jName(model, "Value");
+        assertThat(value.findMemberModelByC2jName("NUL").getAdditionalBeanStyleSetterName()).isEqualTo("setNull");
+        assertThat(value.findMemberModelByC2jName("S").getAdditionalBeanStyleSetterName()).isNull();
     }
 
     @Test

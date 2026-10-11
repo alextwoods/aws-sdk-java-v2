@@ -19,23 +19,25 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.annotations.SdkInternalApi;
-import software.amazon.awssdk.codegen.CodeGenerator;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
-import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
-import software.amazon.awssdk.codegen.smithy.SmithyIntermediateModelBuilder;
-import software.amazon.awssdk.codegen.smithy.SmithyModels;
+import software.amazon.awssdk.codegen.pipeline.CodegenPipeline;
+import software.amazon.awssdk.codegen.pipeline.PreparedService;
+import software.amazon.awssdk.codegen.pipeline.ServiceInputs;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 import software.amazon.smithy.build.FileManifest;
 import software.amazon.smithy.build.PluginContext;
 import software.amazon.smithy.build.SmithyBuildPlugin;
 import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.shapes.ServiceShape;
 
 /**
- * Generates AWS SDK for Java sources from a Smithy build projection.
+ * Generates AWS SDK for Java sources from a Smithy build projection, through the same {@link CodegenPipeline} as the
+ * Maven plugin. The projection model is native Smithy, so the pipeline starts at stage 4.
  */
 @SdkInternalApi
 public final class AwsSdkJavaCodegenPlugin implements SmithyBuildPlugin {
@@ -61,27 +63,37 @@ public final class AwsSdkJavaCodegenPlugin implements SmithyBuildPlugin {
         AwsSdkJavaCodegenSettings settings = AwsSdkJavaCodegenSettings.fromNode(context.getSettings());
         CustomizationConfig customizationConfig = loadCustomizationConfig(settings);
 
-        IntermediateModel intermediateModel =
-            new SmithyIntermediateModelBuilder(SmithyModels.builder()
-                                                           .model(model)
-                                                           .customizationConfig(customizationConfig)
-                                                           .build())
-                .build();
-
         FileManifest manifest = context.getFileManifest();
         Path base = manifest.getBaseDir();
+        String serviceName = serviceName(model, context);
 
-        CodeGenerator.builder()
-                     .intermediateModel(intermediateModel)
-                     .sourcesDirectory(base.resolve("generated-sources").toString())
-                     .resourcesDirectory(base.resolve("generated-resources").toString())
-                     .testsDirectory(base.resolve("generated-test-sources").toString())
-                     .build()
-                     .execute();
+        // Stages 1 to 3 are skipped for a native model; stage 4 checks the projection's validation events.
+        PreparedService prepared = CodegenPipeline.create().run(
+            ServiceInputs.builder()
+                         .serviceName(serviceName)
+                         .smithyModel(model, context.getEvents())
+                         .customizationConfig(customizationConfig)
+                         .sourcesDirectory(base.resolve("generated-sources"))
+                         .resourcesDirectory(base.resolve("generated-resources"))
+                         .testsDirectory(base.resolve("generated-test-sources"))
+                         .buildDirectory(base)
+                         .build());
 
         registerGeneratedFiles(manifest, base);
         log.info("{} generated {} files for service {}",
-                 NAME, manifest.getFiles().size(), intermediateModel.getMetadata().getServiceName());
+                 NAME, manifest.getFiles().size(), prepared.intermediateModel().getMetadata().getServiceName());
+    }
+
+    /**
+     * The projection's service shape name, or the projection name when the model has no single service; stage 5 then
+     * reports the service count.
+     */
+    private static String serviceName(Model model, PluginContext context) {
+        Set<ServiceShape> services = model.getServiceShapes();
+        if (services.size() == 1) {
+            return services.iterator().next().getId().getName();
+        }
+        return context.getProjectionName();
     }
 
     private CustomizationConfig loadCustomizationConfig(AwsSdkJavaCodegenSettings settings) {
@@ -94,7 +106,9 @@ public final class AwsSdkJavaCodegenPlugin implements SmithyBuildPlugin {
                 "The configured '%s' does not exist: %s",
                 AwsSdkJavaCodegenSettings.CUSTOMIZATION_CONFIG, location.toAbsolutePath()));
         }
-        return ModelLoaderUtils.loadModel(CustomizationConfig.class, location.toFile());
+        CustomizationConfig config = ModelLoaderUtils.loadModel(CustomizationConfig.class, location.toFile());
+        config.resolveProtocolTestSkips(location.toAbsolutePath().getParent());
+        return config;
     }
 
     private void registerGeneratedFiles(FileManifest manifest, Path base) {

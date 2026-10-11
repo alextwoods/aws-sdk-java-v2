@@ -1,0 +1,47 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2010-08-01",
+    "awsQueryCompatible": {},
+    "endpointPrefix": "fixturecbor",
+    "jsonVersion": "1.0",
+    "protocol": "smithy-rpc-v2-cbor",
+    "protocols": ["smithy-rpc-v2-cbor", "json", "query"],
+    "serviceId": "Fixture Cbor",
+    "signatureVersion": "v4",
+    "targetPrefix": "FixtureCborService20100801",
+    "uid": "fixturecbor-2010-08-01",
+    "xmlNamespace": "http://fixturecbor.amazonaws.com/doc/2010-08-01/",
+    "globalEndpoint": "fixturecbor.amazonaws.com",
+    "auth": ["aws.auth#sigv4"]
+  },
+  "operations": {
+    "PutMetric": {
+      "name": "PutMetric",
+      "http": {"method": "POST", "requestUri": "/"},
+      "input": {"shape": "PutMetricInput"},
+      "output": {"shape": "PutMetricOutput", "resultWrapper": "PutMetricResult"},
+      "errors": [{"shape": "LimitExceededFault"}],
+      "requestcompression": {"encodings": ["gzip"]}
+    }
+  },
+  "shapes": {
+    "PutMetricInput": {
+      "type": "structure",
+      "required": ["Name"],
+      "members": {
+        "Name": {"shape": "MetricName"},
+        "Value": {"shape": "Double"}
+      }
+    },
+    "PutMetricOutput": {"type": "structure", "members": {}},
+    "LimitExceededFault": {
+      "type": "structure",
+      "members": {"message": {"shape": "MetricName"}},
+      "error": {"code": "LimitExceeded", "httpStatusCode": 400, "senderFault": true},
+      "exception": true
+    },
+    "MetricName": {"type": "string", "max": 255, "min": 1},
+    "Double": {"type": "double"}
+  }
+}

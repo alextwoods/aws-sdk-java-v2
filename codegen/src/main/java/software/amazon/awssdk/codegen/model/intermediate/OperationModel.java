@@ -31,8 +31,18 @@ import software.amazon.awssdk.codegen.model.service.AuthType;
 import software.amazon.awssdk.codegen.model.service.EndpointTrait;
 import software.amazon.awssdk.codegen.model.service.OperationContextParam;
 import software.amazon.awssdk.codegen.model.service.StaticContextParam;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 public class OperationModel extends DocumentationModel {
+
+    /**
+     * The absolute Smithy ShapeId of the operation (Requirement 17.6).
+     *
+     * <p>Set only by the Smithy route ({@code SmithyIntermediateModelBuilder}); null for the legacy C2J route. Not
+     * serialized.
+     */
+    @JsonIgnore
+    private ShapeId operationId;
 
     private String operationName;
 
@@ -450,5 +460,17 @@ public class OperationModel extends DocumentationModel {
         result = 31 * result + Boolean.hashCode(unsignedPayload);
         result = 31 * result + Boolean.hashCode(longPolling);
         return result;
+    }
+
+    /**
+     * The absolute Smithy ShapeId of the operation (Requirement 17.6).
+     */
+    public ShapeId operationId() {
+        return operationId;
+    }
+
+    public OperationModel withOperationId(ShapeId operationId) {
+        this.operationId = operationId;
+        return this;
     }
 }

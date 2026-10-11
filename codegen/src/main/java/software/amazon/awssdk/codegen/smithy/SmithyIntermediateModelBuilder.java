@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.codegen.IntermediateModelShapeProcessor;
@@ -40,6 +41,8 @@ import software.amazon.awssdk.codegen.model.rules.endpoints.EndpointTestSuiteMod
 import software.amazon.awssdk.codegen.model.service.AuthType;
 import software.amazon.awssdk.codegen.model.service.ClientContextParam;
 import software.amazon.awssdk.codegen.model.service.EndpointRuleSetModel;
+import software.amazon.awssdk.codegen.model.service.PaginatorDefinition;
+import software.amazon.awssdk.codegen.model.service.WaiterDefinition;
 import software.amazon.awssdk.codegen.naming.DefaultSmithyNamingStrategy;
 import software.amazon.awssdk.codegen.naming.NamingStrategy;
 import software.amazon.awssdk.codegen.utils.ProtocolUtils;
@@ -48,17 +51,28 @@ import software.amazon.awssdk.utils.CollectionUtils;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.ServiceIndex;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
+import software.amazon.smithy.model.neighbor.Walker;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
+import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.shapes.ShapeType;
+import software.amazon.smithy.model.traits.EnumTrait;
+import software.amazon.smithy.model.transform.ModelTransformer;
 import software.amazon.smithy.rulesengine.traits.ClientContextParamsTrait;
 
 /**
  * Builds an {@link IntermediateModel} from a Smithy {@link Model}. Smithy counterpart to
  * {@link software.amazon.awssdk.codegen.IntermediateModelBuilder}.
  *
- * <p>Source-model customizations are expected to have been applied to the model as smithy-build
- * transforms. Paginators and waiters are not applied yet.
+ * <p>Every view is built from the Smithy model's standard Smithy and AWS traits; no {@code com.amazonaws.c2j} marker
+ * trait is read (Requirement 17.9). Paginators come from {@code @paginated} ({@link PaginatorTraitTranslator}) and waiters
+ * from {@code smithy.waiters#waitable} ({@link WaiterTraitTranslator}). The intermediate model keeps the Smithy model and
+ * the service ShapeId ({@link IntermediateModel#smithyModel()}, {@link IntermediateModel#serviceId()}).
+ *
+ * <p>Source-model customizations are expected to have been applied before: to the C2J model by the Codegen_Pipeline,
+ * or to the Smithy model as smithy-build transforms. Intermediate-model customizations run in
+ * {@link SmithyIntermediateModelPostprocessor}.
  */
 public final class SmithyIntermediateModelBuilder {
 
@@ -77,7 +91,7 @@ public final class SmithyIntermediateModelBuilder {
     private final List<IntermediateModelShapeProcessor> shapeProcessors;
 
     public SmithyIntermediateModelBuilder(SmithyModels models) {
-        this.model = models.model();
+        this.model = withEnumShapes(models.model(), resolveService(models.model()));
         this.service = resolveService(model);
         this.customConfig = models.customizationConfig();
         this.namingStrategy = new DefaultSmithyNamingStrategy(model, service, customConfig);
@@ -96,6 +110,32 @@ public final class SmithyIntermediateModelBuilder {
                 "Expected exactly one service in the Smithy model but found " + services.size());
         }
         return services.iterator().next();
+    }
+
+    /**
+     * Converts each IDL 1 string shape with the {@code @enum} trait to an IDL 2 {@code enum} shape, so that it is
+     * generated as a Java enum like an {@code enum} shape (and like a C2J {@code enum} string). Native AWS Smithy models
+     * still use {@code @enum} strings (AWS Account); the C2J_Converter emits {@code enum} shapes, so its output is
+     * unchanged. Enum member names are synthesized where the trait has none: the generated Java constant names come
+     * from the values, not from the member names.
+     *
+     * @throws IllegalStateException if an {@code @enum} string in the service closure cannot be converted, which would
+     * otherwise silently drop its Java enum from the generated API
+     */
+    static Model withEnumShapes(Model model, ServiceShape service) {
+        Model converted = ModelTransformer.create().changeStringEnumsToEnumShapes(model, true);
+        List<ShapeId> unconverted = new Walker(converted).walkShapes(service).stream()
+                                                         // isStringShape() is also true for enum shapes
+                                                         .filter(s -> s.getType() == ShapeType.STRING
+                                                                      && s.hasTrait(EnumTrait.class))
+                                                         .map(Shape::getId)
+                                                         .sorted()
+                                                         .collect(Collectors.toList());
+        if (!unconverted.isEmpty()) {
+            throw new IllegalStateException("String shapes with the @enum trait could not be converted to enum shapes: "
+                                            + unconverted);
+        }
+        return converted;
     }
 
     /**
@@ -142,10 +182,15 @@ public final class SmithyIntermediateModelBuilder {
 
         Map<String, ClientContextParam> clientContextParams = clientContextParams();
 
+        Map<String, PaginatorDefinition> paginators = PaginatorTraitTranslator.paginators(model, service);
+        paginators.keySet().removeIf(customConfig.getDeprecatedOperations()::contains);
+        PaginatorTraitTranslator.markPaginatedOperations(operations, paginators);
+        Map<String, WaiterDefinition> waiters = WaiterTraitTranslator.waiters(model, service);
+
         IntermediateModel fullModel = new IntermediateModel(
             AddSmithyMetadata.constructMetadata(model, service, serviceIndex, namingStrategy, customConfig),
             operations, shapes, customConfig, endpointOperation,
-            Collections.emptyMap(), namingStrategy, Collections.emptyMap(),
+            paginators, namingStrategy, waiters,
             endpointRuleSet, endpointTestSuiteModel, clientContextParams);
 
         SmithyIntermediateModelPostprocessor.create(customConfig).postprocess(fullModel);
@@ -166,6 +211,7 @@ public final class SmithyIntermediateModelBuilder {
                                                                endpointRuleSet,
                                                                endpointTestSuiteModel,
                                                                clientContextParams);
+        trimmedModel.withSmithyModel(model, service.getId());
 
         linkMembersToShapes(trimmedModel);
         MemberShapeTargetValidator.validate(trimmedModel);
@@ -225,12 +271,19 @@ public final class SmithyIntermediateModelBuilder {
             }
 
             if (op != null && !UNIT.equals(op.getOutputShape())) {
-                String outputShapeName = op.getOutputShape().getName();
-                ShapeModel outputShape =
-                    model.getShapeByNameAndC2jName(operationModel.getReturnType().getReturnType(), outputShapeName);
-                operationModel.setOutputShape(outputShape);
+                operationModel.setOutputShape(outputShape(model, operationModel.getReturnType().getReturnType(),
+                                                          op.getOutputShape()));
             }
         }
+    }
+
+    private static ShapeModel outputShape(IntermediateModel model, String className, ShapeId outputId) {
+        ShapeModel shape = model.getShapes().get(className);
+        if (shape == null || !outputId.equals(shape.shapeId())) {
+            throw new IllegalArgumentException("Output shape " + outputId + " with class name " + className
+                                               + " does not exist in the intermediate model.");
+        }
+        return shape;
     }
 
     private void linkCustomAuthorizationToRequestShapes(IntermediateModel model) {

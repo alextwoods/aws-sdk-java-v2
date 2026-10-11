@@ -15,6 +15,8 @@
 
 package software.amazon.awssdk.codegen.model.config.customization;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -387,6 +389,34 @@ public class CustomizationConfig {
      * List of specific shape or member names that are allowed to contain underscores.
      */
     private List<String> allowedUnderscoreNames = new ArrayList<>();
+
+    /**
+     * Names of C2J customizations that the Codegen_Pipeline does not apply to this service, for example
+     * {@code "shapeModifiers"}. The names are the keys of
+     * {@code DefaultCustomizationProcessor.namedProcessorsFor}. Used for services whose customizations conflict with
+     * schema codegen (Requirement 17.11).
+     */
+    private List<String> disabledCustomizations = new ArrayList<>();
+
+    /**
+     * Trait ShapeIds added to, or removed from, the traits that generated Schemas carry (Requirement 9.5). Null means no
+     * changes to the default Trait_Inclusion_Policy.
+     */
+    private SchemaTraitsConfig schemaTraits;
+
+    /**
+     * Whether the Protocol_Test_Generator generates JUnit 5 tests from the service's Smithy {@code httpRequestTests} and
+     * {@code httpResponseTests} traits (Requirement 32). Off by default; applies only to services built from a Smithy
+     * model.
+     */
+    private boolean protocolTests;
+
+    /**
+     * The protocol test skip list ({@code [{"id": ..., "reason": ..., "protocol": ...}]}) read when {@link #protocolTests}
+     * is on. A relative path is resolved against the directory of the {@code customization.config} file that sets it
+     * (see {@link #resolveProtocolTestSkips}). Null means no case is skipped.
+     */
+    private String protocolTestSkips;
 
     private CustomizationConfig() {
     }
@@ -1015,5 +1045,50 @@ public class CustomizationConfig {
 
     public void setGenerateDirectUnionConstructors(List<String> generateDirectUnionConstructors) {
         this.generateDirectUnionConstructors = generateDirectUnionConstructors;
+    }
+
+    public List<String> getDisabledCustomizations() {
+        return disabledCustomizations;
+    }
+
+    public void setDisabledCustomizations(List<String> disabledCustomizations) {
+        this.disabledCustomizations = disabledCustomizations;
+    }
+
+    public SchemaTraitsConfig getSchemaTraits() {
+        return schemaTraits;
+    }
+
+    public void setSchemaTraits(SchemaTraitsConfig schemaTraits) {
+        this.schemaTraits = schemaTraits;
+    }
+
+    public boolean isProtocolTests() {
+        return protocolTests;
+    }
+
+    public void setProtocolTests(boolean protocolTests) {
+        this.protocolTests = protocolTests;
+    }
+
+    public String getProtocolTestSkips() {
+        return protocolTestSkips;
+    }
+
+    public void setProtocolTestSkips(String protocolTestSkips) {
+        this.protocolTestSkips = protocolTestSkips;
+    }
+
+    /**
+     * Makes a relative {@link #getProtocolTestSkips()} path absolute, against {@code configDirectory}, the directory of
+     * the configuration file it was read from. Loaders call this once after reading the file.
+     */
+    public void resolveProtocolTestSkips(Path configDirectory) {
+        if (protocolTestSkips != null && configDirectory != null) {
+            Path skips = Paths.get(protocolTestSkips);
+            if (!skips.isAbsolute()) {
+                protocolTestSkips = configDirectory.resolve(skips).toAbsolutePath().normalize().toString();
+            }
+        }
     }
 }

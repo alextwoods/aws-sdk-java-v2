@@ -18,8 +18,7 @@ package software.amazon.awssdk.codegen.smithy;
 import static software.amazon.awssdk.codegen.internal.Utils.unCapitalize;
 
 import com.fasterxml.jackson.core.TreeNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.TextNode;
+import com.fasterxml.jackson.jr.stree.JrsString;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -30,6 +29,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import software.amazon.awssdk.codegen.checksum.HttpChecksum;
 import software.amazon.awssdk.codegen.compression.RequestCompression;
+import software.amazon.awssdk.codegen.internal.Jackson;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.EndpointDiscovery;
 import software.amazon.awssdk.codegen.model.intermediate.ExceptionModel;
@@ -78,7 +78,6 @@ import software.amazon.smithy.rulesengine.traits.StaticContextParamsTrait;
 final class AddSmithyOperations {
 
     private static final ShapeId UNIT = ShapeId.from("smithy.api#Unit");
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final Model model;
     private final ServiceShape service;
@@ -111,7 +110,7 @@ final class AddSmithyOperations {
         for (OperationShape op : topDownIndex.getContainedOperations(service)) {
             String operationName = op.getId().getName();
 
-            OperationModel operationModel = new OperationModel();
+            OperationModel operationModel = new OperationModel().withOperationId(op.getId());
             operationModel.setOperationName(operationName);
             operationModel.setServiceProtocol(protocol);
             translateDeprecated(op, operationModel);
@@ -265,7 +264,8 @@ final class AddSmithyOperations {
             Map<String, OperationContextParam> params = new LinkedHashMap<>();
             trait.getParameters().forEach((name, definition) -> {
                 OperationContextParam param = new OperationContextParam();
-                param.setPath(TextNode.valueOf(definition.getPath()));
+                // A jackson-jr tree, as the C2J loader produces and the endpoint generators expect.
+                param.setPath(new JrsString(definition.getPath()));
                 params.put(name, param);
             });
             return params;
@@ -307,10 +307,13 @@ final class AddSmithyOperations {
         return shape.getTrait(DocumentationTrait.class).map(DocumentationTrait::getValue).orElse(null);
     }
 
-    // Smithy Node -> Jackson TreeNode (the type the C2J context-param POJOs hold), via JSON text.
+    /**
+     * Smithy Node to the jackson-jr tree the C2J context-param POJOs hold, via JSON text. The endpoint generators cast
+     * these values to jackson-jr types, as the C2J loader produces them.
+     */
     private static TreeNode nodeToTreeNode(Node node) {
         try {
-            return JSON.readTree(Node.printJson(node));
+            return Jackson.readJrsValue(Node.printJson(node));
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to convert Smithy node to a JSON tree", e);
         }

@@ -37,6 +37,12 @@
         <module>aws-xml-protocol</module>
         <module>smithy-rpcv2-protocol</module>
         <module>protocol-core</module>
+        <module>http-client-protocol</module>
+        <module>rpcv2-cbor-client-protocol</module>
+        <module>aws-json-client-protocol</module>
+        <module>rest-json-client-protocol</module>
+        <module>rest-xml-client-protocol</module>
+        <module>aws-query-client-protocol</module>
     </modules>
 
 </project>

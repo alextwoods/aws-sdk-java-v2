@@ -182,8 +182,9 @@
             <groupId>software.amazon.awssdk</groupId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- Schema-serde branch: the generated Smithy protocol tests replace the C2J-based protocol-tests module. -->
         <dependency>
-            <artifactId>protocol-tests</artifactId>
+            <artifactId>smithy-protocol-tests</artifactId>
             <groupId>software.amazon.awssdk</groupId>
             <version>${awsjavasdk.version}</version>
         </dependency>

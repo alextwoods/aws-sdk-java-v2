@@ -23,10 +23,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.maven.plugin.AbstractMojo;
@@ -35,18 +37,13 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
-import software.amazon.awssdk.codegen.C2jModels;
-import software.amazon.awssdk.codegen.CodeGenerator;
-import software.amazon.awssdk.codegen.IntermediateModelBuilder;
 import software.amazon.awssdk.codegen.internal.Jackson;
-import software.amazon.awssdk.codegen.internal.Utils;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
-import software.amazon.awssdk.codegen.model.rules.endpoints.EndpointTestSuiteModel;
-import software.amazon.awssdk.codegen.model.service.EndpointRuleSetModel;
-import software.amazon.awssdk.codegen.model.service.Paginators;
-import software.amazon.awssdk.codegen.model.service.ServiceModel;
-import software.amazon.awssdk.codegen.model.service.Waiters;
+import software.amazon.awssdk.codegen.pipeline.CodegenPipeline;
+import software.amazon.awssdk.codegen.pipeline.CodegenPipelineException;
+import software.amazon.awssdk.codegen.pipeline.PreparedService;
+import software.amazon.awssdk.codegen.pipeline.ServiceInputs;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 import software.amazon.awssdk.codegen.validation.ModelInvalidException;
 import software.amazon.awssdk.codegen.validation.ModelValidationReport;
@@ -54,6 +51,15 @@ import software.amazon.awssdk.utils.StringUtils;
 
 /**
  * The Maven mojo to generate Java client code using software.amazon.awssdk:codegen module.
+ *
+ * <p>A module is generated in one of three ways:
+ * <ul>
+ *     <li>with a {@code smithy-build.json}: through smithy-build and the {@code aws-sdk-java-v2-codegen} plugin;</li>
+ *     <li>with Smithy model files in {@code smithyModelDirectory}: through the {@link CodegenPipeline}, from stage 4;</li>
+ *     <li>otherwise, for each {@code service-2.json} under {@code codeGenResources}: through all six stages of the
+ *     {@link CodegenPipeline} (C2J load, customizations, C2J to Smithy conversion, Smithy validation, intermediate
+ *     model, generation).</li>
+ * </ul>
  */
 @Mojo(name = "generate", requiresDependencyResolution = ResolutionScope.COMPILE)
 public class GenerationMojo extends AbstractMojo {
@@ -61,14 +67,17 @@ public class GenerationMojo extends AbstractMojo {
     private static final String SMITHY_BUILD_FILE = "smithy-build.json";
     private static final String SMITHY_PROJECTIONS_DIR = "smithyprojections";
     private static final String CUSTOMIZATION_CONFIG_FILE = "customization.config";
-    private static final String WAITERS_FILE = "waiters-2.json";
-    private static final String PAGINATORS_FILE = "paginators-1.json";
-    private static final String ENDPOINT_RULE_SET_FILE = "endpoint-rule-set.json";
-    private static final String ENDPOINT_TESTS_FILE = "endpoint-tests.json";
-
 
     @Parameter(property = "codeGenResources", defaultValue = "${basedir}/src/main/resources/codegen-resources/")
     private File codeGenResources;
+
+    /**
+     * Native Smithy model files. When this directory holds {@code .smithy} or {@code .json} files, the module is
+     * generated from them instead of from the C2J model in {@code codeGenResources}; its {@code customization.config}
+     * is still read from {@code codeGenResources}.
+     */
+    @Parameter(property = "smithyModelDirectory", defaultValue = "${basedir}/model")
+    private File smithyModelDirectory;
 
     @Parameter(property = "outputDirectory", defaultValue = "${project.build.directory}")
     private String outputDirectory;
@@ -88,87 +97,150 @@ public class GenerationMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        this.sourcesDirectory = Paths.get(outputDirectory).resolve("generated-sources").resolve("sdk");
-        this.resourcesDirectory = Paths.get(outputDirectory).resolve("generated-resources").resolve("sdk-resources");
-        this.testsDirectory = Paths.get(outputDirectory).resolve("generated-test-sources").resolve("sdk-tests");
+        Path buildDirectory = Paths.get(outputDirectory);
+        this.sourcesDirectory = buildDirectory.resolve("generated-sources").resolve("sdk");
+        this.resourcesDirectory = buildDirectory.resolve("generated-resources").resolve("sdk-resources");
+        this.testsDirectory = buildDirectory.resolve("generated-test-sources").resolve("sdk-tests");
 
         Path smithyBuildFile = project.getBasedir().toPath().resolve(SMITHY_BUILD_FILE);
         if (Files.exists(smithyBuildFile)) {
             new SmithyBuildGenerator(project, getLog())
-                .generate(smithyBuildFile, Paths.get(outputDirectory).resolve(SMITHY_PROJECTIONS_DIR));
+                .generate(smithyBuildFile, buildDirectory.resolve(SMITHY_PROJECTIONS_DIR));
             return;
         }
 
-        generateFromC2jModels();
-    }
-
-    private void generateFromC2jModels() throws MojoExecutionException {
-        List<GenerationParams> generationParams;
-
-        try {
-            generationParams = initGenerationParams();
-        } catch (ModelInvalidException e) {
-            if (writeValidationReport) {
-                ModelValidationReport report = new ModelValidationReport();
-                report.setValidationEntries(e.validationEntries());
-                emitValidationReport(report);
-            }
-            throw e;
-        }
-
-        Map<String, IntermediateModel> serviceNameToModelMap = new HashMap<>();
-
-        generationParams.forEach(
-            params -> {
-                IntermediateModel model = params.intermediateModel;
-                String lowercaseServiceName = StringUtils.lowerCase(model.getMetadata().getServiceName());
-                IntermediateModel previous = serviceNameToModelMap.put(lowercaseServiceName, model);
-                if (previous != null) {
-                    String warning = String.format("Multiple service models found with service name %s. Model validation "
-                                                   + "will likely be incorrect", lowercaseServiceName);
-                    getLog().warn(warning);
-                }
-            });
-
-        // Update each param with the intermediate model it shares models with, if any
-        generationParams.forEach(params -> {
-            CustomizationConfig customizationConfig = params.intermediateModel.getCustomizationConfig();
-
-            if (customizationConfig.getShareModelConfig() != null) {
-                String shareModelWithName = customizationConfig.getShareModelConfig().getShareModelWith();
-                params.withShareModelsTarget(serviceNameToModelMap.get(shareModelWithName));
-            }
-        });
-
-        generationParams.forEach(this::generateCode);
+        List<ServiceInputs> services = hasNativeSmithyModel() ? nativeSmithyInputs(buildDirectory)
+                                                              : c2jInputs(buildDirectory);
+        generate(services);
 
         project.addCompileSourceRoot(sourcesDirectory.toFile().getAbsolutePath());
         project.addTestCompileSourceRoot(testsDirectory.toFile().getAbsolutePath());
     }
 
-    private List<GenerationParams> initGenerationParams() throws MojoExecutionException {
-        List<ModelRoot> modelRoots = findModelRoots().collect(Collectors.toList());
+    /**
+     * Runs the Codegen_Pipeline for every service. Stages 1 to 5 run for all services first, so that a service that
+     * shares model classes with another (shareModelConfig) is generated with that service's intermediate model.
+     */
+    private void generate(List<ServiceInputs> services) throws MojoExecutionException {
+        CodegenPipeline pipeline = CodegenPipeline.create();
+        List<PreparedService> prepared = new ArrayList<>();
+        for (ServiceInputs service : services) {
+            prepared.add(run(() -> pipeline.prepare(service)));
+        }
 
-        return modelRoots.stream().map(r -> {
+        Map<String, IntermediateModel> serviceNameToModelMap = new HashMap<>();
+        for (PreparedService service : prepared) {
+            IntermediateModel model = service.intermediateModel();
+            String lowercaseServiceName = StringUtils.lowerCase(model.getMetadata().getServiceName());
+            IntermediateModel previous = serviceNameToModelMap.put(lowercaseServiceName, model);
+            if (previous != null) {
+                getLog().warn(String.format("Multiple service models found with service name %s. Model validation "
+                                            + "will likely be incorrect", lowercaseServiceName));
+            }
+        }
+
+        // One stage 6 for the whole module: the services share a staging directory, and nothing is moved into place
+        // unless all of them generate.
+        run(() -> {
+            pipeline.generate(prepared, service -> {
+                CustomizationConfig customizationConfig = service.intermediateModel().getCustomizationConfig();
+                if (customizationConfig.getShareModelConfig() == null) {
+                    return null;
+                }
+                return serviceNameToModelMap.get(customizationConfig.getShareModelConfig().getShareModelWith());
+            });
+            return null;
+        });
+    }
+
+    /**
+     * Runs one pipeline call, writing the validation report for a model validation failure when one was requested.
+     */
+    private <T> T run(Supplier<T> call) throws MojoExecutionException {
+        try {
+            return call.get();
+        } catch (CodegenPipelineException e) {
+            ModelInvalidException invalid = findCause(e, ModelInvalidException.class);
+            if (invalid != null && writeValidationReport) {
+                ModelValidationReport report = new ModelValidationReport();
+                report.setValidationEntries(invalid.validationEntries());
+                emitValidationReport(report);
+            }
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+    }
+
+    private static <T extends Throwable> T findCause(Throwable t, Class<T> type) {
+        for (Throwable cause = t; cause != null; cause = cause.getCause()) {
+            if (type.isInstance(cause)) {
+                return type.cast(cause);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A module with Smithy model files in {@code smithyModelDirectory} is generated from them, even if it also has a
+     * C2J model (Requirement 17.4).
+     */
+    private boolean hasNativeSmithyModel() throws MojoExecutionException {
+        if (smithyModelDirectory == null || !smithyModelDirectory.isDirectory()) {
+            return false;
+        }
+        try (Stream<Path> files = Files.walk(smithyModelDirectory.toPath())) {
+            return files.anyMatch(p -> Files.isRegularFile(p)
+                                       && (p.toString().endsWith(".smithy") || p.toString().endsWith(".json")));
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to list Smithy model files in " + smithyModelDirectory, e);
+        }
+    }
+
+    private List<ServiceInputs> nativeSmithyInputs(Path buildDirectory) {
+        getLog().info("Loading Smithy model from: " + smithyModelDirectory);
+        Path customization = codeGenResources.toPath().resolve(CUSTOMIZATION_CONFIG_FILE);
+        CustomizationConfig customizationConfig = Files.isRegularFile(customization)
+                                                  ? loadCustomizationConfig(codeGenResources.toPath())
+                                                  : CustomizationConfig.create();
+        return Collections.singletonList(
+            inputs(project.getArtifactId(), buildDirectory, customizationConfig)
+                .smithyModelSources(Collections.singletonList(smithyModelDirectory.toPath()))
+                .build());
+    }
+
+    private List<ServiceInputs> c2jInputs(Path buildDirectory) throws MojoExecutionException {
+        return findModelRoots().map(r -> {
             getLog().info("Loading from: " + r.modelRoot.toString());
-            return c2jGenerationParams(r);
+            return inputs(serviceName(r.modelRoot), buildDirectory, r.customizationConfig)
+                .c2jModelDirectory(r.modelRoot)
+                .build();
         }).collect(Collectors.toList());
     }
 
-    private GenerationParams c2jGenerationParams(ModelRoot r) {
-        Path modelRootPath = r.modelRoot;
-        C2jModels c2jModels = C2jModels.builder()
-                                       .customizationConfig(r.customizationConfig)
-                                       .serviceModel(loadServiceModel(modelRootPath))
-                                       .waitersModel(loadWaiterModel(modelRootPath))
-                                       .paginatorsModel(loadPaginatorModel(modelRootPath))
-                                       .endpointRuleSetModel(loadEndpointRuleSetModel(modelRootPath))
-                                       .endpointTestSuiteModel(loadEndpointTestSuiteModel(modelRootPath))
-                                       .build();
-        String intermediateModelFileNamePrefix = intermediateModelFileNamePrefix(c2jModels);
-        IntermediateModel intermediateModel = new IntermediateModelBuilder(c2jModels).build();
-        return new GenerationParams().withIntermediateModel(intermediateModel)
-                                     .withIntermediateModelFileNamePrefix(intermediateModelFileNamePrefix);
+    private ServiceInputs.Builder inputs(String serviceName, Path buildDirectory,
+                                         CustomizationConfig customizationConfig) {
+        return ServiceInputs.builder()
+                            .serviceName(serviceName)
+                            .customizationConfig(customizationConfig)
+                            .sourcesDirectory(sourcesDirectory)
+                            .resourcesDirectory(resourcesDirectory)
+                            .testsDirectory(testsDirectory)
+                            .buildDirectory(buildDirectory)
+                            .writeIntermediateModel(writeIntermediateModel)
+                            .emitValidationReport(writeValidationReport)
+                            .classLoader(CodegenPipeline.class.getClassLoader());
+    }
+
+    /**
+     * The module's artifact ID when {@code service-2.json} is directly in {@code codeGenResources}, otherwise the name
+     * of its directory (for example {@code dynamodbstreams}). Used in messages and for the gap report file name.
+     */
+    private String serviceName(Path modelRoot) {
+        Path directoryName = modelRoot.getFileName();
+        if (directoryName == null
+            || modelRoot.toAbsolutePath().normalize().equals(codeGenResources.toPath().toAbsolutePath().normalize())) {
+            return project.getArtifactId();
+        }
+        return directoryName.toString();
     }
 
     private Stream<ModelRoot> findModelRoots() throws MojoExecutionException {
@@ -190,64 +262,13 @@ public class GenerationMojo extends AbstractMojo {
         return p.toString().endsWith(MODEL_FILE);
     }
 
-    private void generateCode(GenerationParams params) {
-        CodeGenerator.builder()
-                     .intermediateModel(params.intermediateModel)
-                     .shareModelsTarget(params.shareModelsTarget)
-                     .sourcesDirectory(sourcesDirectory.toFile().getAbsolutePath())
-                     .resourcesDirectory(resourcesDirectory.toFile().getAbsolutePath())
-                     .testsDirectory(testsDirectory.toFile().getAbsolutePath())
-                     .intermediateModelFileNamePrefix(params.intermediateModelFileNamePrefix)
-                     .emitValidationReport(writeValidationReport)
-                     .build()
-                     .execute();
-    }
-
-    private String intermediateModelFileNamePrefix(C2jModels models) {
-        return writeIntermediateModel ? Utils.getFileNamePrefix(models.serviceModel()) : null;
-    }
-
     private CustomizationConfig loadCustomizationConfig(Path root) {
-        return ModelLoaderUtils.loadOptionalModel(CustomizationConfig.class,
-                                                  root.resolve(CUSTOMIZATION_CONFIG_FILE).toFile(),
-                                                  true)
-                               .orElse(CustomizationConfig.create());
-    }
-
-    private ServiceModel loadServiceModel(Path root) {
-        return loadRequiredModel(ServiceModel.class, root.resolve(MODEL_FILE));
-    }
-
-    private Waiters loadWaiterModel(Path root) {
-        return loadOptionalModel(Waiters.class, root.resolve(WAITERS_FILE)).orElse(Waiters.none());
-    }
-
-    private Paginators loadPaginatorModel(Path root) {
-        return loadOptionalModel(Paginators.class, root.resolve(PAGINATORS_FILE)).orElse(Paginators.none());
-    }
-
-    private EndpointRuleSetModel loadEndpointRuleSetModel(Path root) {
-        return loadOptionalModel(EndpointRuleSetModel.class, root.resolve(ENDPOINT_RULE_SET_FILE)).orElse(null);
-    }
-
-    private EndpointTestSuiteModel loadEndpointTestSuiteModel(Path root) {
-        return loadOptionalModel(EndpointTestSuiteModel.class, root.resolve(ENDPOINT_TESTS_FILE)).orElse(null);
-    }
-
-    /**
-     * Load required model from the project resources.
-     */
-    private <T> T loadRequiredModel(Class<T> clzz, Path location) {
-        return ModelLoaderUtils.loadModel(clzz, location.toFile());
-    }
-
-    /**
-     * Load an optional model from the project resources.
-     *
-     * @return Model or empty optional if not present.
-     */
-    private <T> Optional<T> loadOptionalModel(Class<T> clzz, Path location) {
-        return ModelLoaderUtils.loadOptionalModel(clzz, location.toFile());
+        CustomizationConfig config = ModelLoaderUtils.loadOptionalModel(CustomizationConfig.class,
+                                                                        root.resolve(CUSTOMIZATION_CONFIG_FILE).toFile(),
+                                                                        true)
+                                                     .orElse(CustomizationConfig.create());
+        config.resolveProtocolTestSkips(root);
+        return config;
     }
 
     private void emitValidationReport(ModelValidationReport report) {
@@ -275,27 +296,6 @@ public class GenerationMojo extends AbstractMojo {
         private ModelRoot(Path modelRoot, CustomizationConfig customizationConfig) {
             this.modelRoot = modelRoot;
             this.customizationConfig = customizationConfig;
-        }
-    }
-
-    private static class GenerationParams {
-        private IntermediateModel intermediateModel;
-        private IntermediateModel shareModelsTarget;
-        private String intermediateModelFileNamePrefix;
-
-        public GenerationParams withIntermediateModel(IntermediateModel intermediateModel) {
-            this.intermediateModel = intermediateModel;
-            return this;
-        }
-
-        public GenerationParams withShareModelsTarget(IntermediateModel shareModelsTarget) {
-            this.shareModelsTarget = shareModelsTarget;
-            return this;
-        }
-
-        public GenerationParams withIntermediateModelFileNamePrefix(String intermediateModelFileNamePrefix) {
-            this.intermediateModelFileNamePrefix = intermediateModelFileNamePrefix;
-            return this;
         }
     }
 }

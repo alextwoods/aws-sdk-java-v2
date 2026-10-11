@@ -18,6 +18,7 @@ package software.amazon.awssdk.codegen.smithy;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 import software.amazon.awssdk.codegen.IntermediateModelShapeProcessor;
 import software.amazon.awssdk.codegen.internal.TypeUtils;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
@@ -61,28 +62,38 @@ final class AddSmithyExceptionShapes extends AddSmithyShapes implements Intermed
         TopDownIndex topDown = TopDownIndex.of(model);
         OperationIndex operationIndex = OperationIndex.of(model);
 
+        // Several error shapes can get the same exception class name (CloudWatch LimitExceededException and
+        // LimitExceededFault). The C2J route builds every exception in shape declaration order, so the last one
+        // wins; C2J models declare shapes in name order, so the error shape whose ShapeId sorts last is used here.
+        Map<String, StructureShape> errorShapes = new TreeMap<>();
         for (OperationShape op : topDown.getContainedOperations(getService())) {
             // Merged (service + operation) errors, matching the source AddSmithyOperations uses for
             // OperationModel.exceptions. Reading op.getErrors() would skip service-level errors and
             // leave the operation referencing an exception class with no shape.
             for (StructureShape errorShape : operationIndex.getErrors(getService(), op)) {
-                ShapeId errorId = errorShape.getId();
-                String javaClassName = naming.getExceptionName(errorId.getName());
-                if (shapes.containsKey(javaClassName) || currentShapes.containsKey(javaClassName)) {
-                    continue;
-                }
-
-                ShapeModel shapeModel = generateShapeModel(javaClassName, errorShape,
-                                                           httpBindingsHonored()
-                                                               ? bindingIndex.getResponseBindings(errorId)
-                                                               : Collections.emptyMap());
-                shapeModel.setType(ShapeType.Exception.getValue());
-                shapeModel.setErrorCode(resolveErrorCode(errorShape));
-                errorShape.getTrait(HttpErrorTrait.class)
-                          .ifPresent(t -> shapeModel.setHttpStatusCode(t.getCode()));
-
-                shapes.put(javaClassName, shapeModel);
+                errorShapes.merge(naming.getExceptionName(errorShape.getId().getName()), errorShape,
+                                  (a, b) -> a.getId().compareTo(b.getId()) >= 0 ? a : b);
             }
+        }
+
+        for (Map.Entry<String, StructureShape> entry : errorShapes.entrySet()) {
+            StructureShape errorShape = entry.getValue();
+            ShapeId errorId = errorShape.getId();
+            String javaClassName = entry.getKey();
+            if (currentShapes.containsKey(javaClassName)) {
+                continue;
+            }
+
+            ShapeModel shapeModel = generateShapeModel(javaClassName, errorShape,
+                                                       httpBindingsHonored()
+                                                           ? bindingIndex.getResponseBindings(errorId)
+                                                           : Collections.emptyMap());
+            shapeModel.setType(ShapeType.Exception.getValue());
+            shapeModel.setErrorCode(resolveErrorCode(errorShape));
+            errorShape.getTrait(HttpErrorTrait.class)
+                      .ifPresent(t -> shapeModel.setHttpStatusCode(t.getCode()));
+
+            shapes.put(javaClassName, shapeModel);
         }
 
         return shapes;

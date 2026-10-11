@@ -120,12 +120,17 @@ final class AddSmithyInputShapes extends AddSmithyShapes implements Intermediate
             .withAction(op.toShapeId().getName())
             .withProtocol(protocol);
 
-        // RPC protocols ignore any @http trait and always POST to "/". For smithy-rpc-v2-cbor the
-        // "/service/{id}/operation/{op}" URI is applied later by the deferred rpcv2Cbor processor.
+        // RPC protocols ignore any @http trait. smithy-rpc-v2-cbor POSTs to
+        // /service/{service shape name}/operation/{operation shape name}, as the protocol specification defines; the
+        // other RPC protocols POST to "/".
         if (httpBindingsHonored() && op.hasTrait(HttpTrait.class)) {
             HttpTrait http = op.expectTrait(HttpTrait.class);
             marshaller.withVerb(http.getMethod());
             marshaller.withRequestUri(http.getUri().toString());
+        } else if (Protocol.SMITHY_RPC_V2_CBOR.getValue().equals(protocol)) {
+            marshaller.withVerb("POST");
+            marshaller.withRequestUri("/service/" + getService().getId().getName() + "/operation/"
+                                      + op.getId().getName());
         } else {
             marshaller.withVerb("POST");
             marshaller.withRequestUri("/");

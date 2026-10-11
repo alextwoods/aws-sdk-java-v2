@@ -1,0 +1,208 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2024-01-01",
+    "endpointPrefix": "fixture-restjson",
+    "protocol": "rest-json",
+    "protocols": ["rest-json"],
+    "serviceAbbreviation": "Fixture",
+    "serviceFullName": "Fixture Rest JSON",
+    "serviceId": "Fixture RestJson",
+    "signatureVersion": "v4",
+    "signingName": "fixture",
+    "uid": "fixture-restjson-2024-01-01"
+  },
+  "documentation": "<p>A rest-json fixture.</p>",
+  "clientContextParams": {
+    "UseThing": {"documentation": "Use the thing.", "type": "boolean"}
+  },
+  "operations": {
+    "GetThing": {
+      "name": "GetThing",
+      "http": {"method": "GET", "requestUri": "/things/{ThingId}", "responseCode": 200},
+      "input": {"shape": "GetThingRequest"},
+      "output": {"shape": "GetThingResponse", "documentation": "The thing."},
+      "errors": [
+        {"shape": "ThingNotFound"},
+        {"shape": "InternalFailure"}
+      ],
+      "documentation": "<p>Gets a thing.</p>",
+      "endpoint": {"hostPrefix": "data-"},
+      "staticContextParams": {"UseThing": {"value": true}}
+    },
+    "PutThing": {
+      "name": "PutThing",
+      "http": {"method": "PUT", "requestUri": "/things/{thing-id}/data"},
+      "input": {"shape": "PutThingRequest"},
+      "authtype": "v4-unsigned-body",
+      "httpChecksum": {"requestAlgorithmMember": "ChecksumAlgorithm", "requestChecksumRequired": true},
+      "deprecated": true,
+      "deprecatedMessage": "Use GetThing."
+    },
+    "SendMetrics": {
+      "name": "SendMetrics",
+      "http": {"method": "POST", "requestUri": "/metrics"},
+      "input": {"shape": "SendMetricsRequest"},
+      "endpoint": {"hostPrefix": "metrics-{AccountId}."},
+      "requestcompression": {"encodings": ["gzip"]}
+    },
+    "ListThings": {
+      "name": "ListThings",
+      "http": {"method": "GET", "requestUri": "/things"},
+      "input": {"shape": "ListThingsRequest"},
+      "output": {"shape": "ListThingsResponse"}
+    },
+    "WatchThings": {
+      "name": "WatchThings",
+      "http": {"method": "POST", "requestUri": "/watch"},
+      "input": {"shape": "WatchThingsRequest"},
+      "output": {"shape": "WatchThingsResponse"},
+      "auth": ["smithy.api#httpBearerAuth"]
+    },
+    "Thing": {
+      "name": "ThingAction",
+      "http": {"method": "POST", "requestUri": "/thing-action"},
+      "authtype": "none",
+      "idempotent": true
+    }
+  },
+  "shapes": {
+    "Thing": {
+      "type": "structure",
+      "members": {
+        "Name": {"shape": "ThingName", "locationName": "name"},
+        "Attributes": {"shape": "AttributeMap"},
+        "Tags": {"shape": "TagList"},
+        "Created": {"shape": "Timestamp", "timestampFormat": "iso8601"},
+        "Choice": {"shape": "ThingChoice"},
+        "Extra": {"shape": "Doc"}
+      },
+      "documentation": "<p>A thing.</p>"
+    },
+    "ThingName": {"type": "string", "min": 1, "max": 64, "sensitive": true, "pattern": "^[a-z0-9-]+$"},
+    "ThingState": {"type": "string", "enum": ["ACTIVE", "DELETED", "in-progress", "1st", "*", "Active"]},
+    "ChecksumAlgorithm": {"type": "string", "enum": ["CRC32", "CRC32C", "SHA1", "SHA256"]},
+    "AttributeMap": {
+      "type": "map",
+      "key": {"shape": "ThingName"},
+      "value": {"shape": "Count"}
+    },
+    "MetadataMap": {
+      "type": "map",
+      "key": {"shape": "ThingName"},
+      "value": {"shape": "ThingName"}
+    },
+    "TagList": {
+      "type": "list",
+      "member": {"shape": "ThingName", "locationName": "Tag"},
+      "max": 10
+    },
+    "Count": {"type": "integer", "box": true, "min": 0, "max": 100},
+    "Timestamp": {"type": "timestamp", "timestampFormat": "unixTimestamp"},
+    "Doc": {"type": "structure", "members": {}, "document": true},
+    "Blob": {"type": "blob", "streaming": true, "requiresLength": true},
+    "ThingChoice": {
+      "type": "structure",
+      "members": {
+        "Small": {"shape": "Count"},
+        "Large": {"shape": "Count"}
+      },
+      "union": true
+    },
+    "GetThingRequest": {
+      "type": "structure",
+      "required": ["ThingId"],
+      "members": {
+        "ThingId": {"shape": "ThingName", "location": "uri", "locationName": "ThingId", "contextParam": {"name": "ThingId"}},
+        "Version": {"shape": "Count", "location": "querystring", "locationName": "version"},
+        "Trace": {"shape": "ThingName", "location": "header", "locationName": "X-Trace"},
+        "Since": {"shape": "Timestamp", "location": "header", "locationName": "X-Since", "timestampFormat": "rfc822"},
+        "Token": {"shape": "ThingName", "location": "querystring", "locationName": "token", "idempotencyToken": true}
+      }
+    },
+    "GetThingResponse": {
+      "type": "structure",
+      "members": {
+        "Thing": {"shape": "Thing"},
+        "Status": {"shape": "Count", "location": "statusCode"},
+        "Meta": {"shape": "MetadataMap", "location": "headers", "locationName": "x-meta-"},
+        "Policy": {"shape": "PolicyText", "location": "header", "locationName": "X-Policy", "jsonvalue": true}
+      },
+      "payload": "Thing"
+    },
+    "PolicyText": {"type": "string"},
+    "PutThingRequest": {
+      "type": "structure",
+      "required": ["ThingId", "Body"],
+      "members": {
+        "ThingId": {"shape": "ThingName", "location": "uri", "locationName": "thing-id"},
+        "ChecksumAlgorithm": {"shape": "ChecksumAlgorithm", "location": "header", "locationName": "x-amz-sdk-checksum-algorithm"},
+        "Body": {"shape": "Blob"}
+      },
+      "payload": "Body"
+    },
+    "SendMetricsRequest": {
+      "type": "structure",
+      "required": ["AccountId"],
+      "members": {
+        "AccountId": {"shape": "AccountId"},
+        "Data": {"shape": "ThingName"},
+        "Agent": {"shape": "ThingName", "location": "header", "locationName": "User-Agent"}
+      }
+    },
+    "AccountId": {"type": "string"},
+    "ListThingsRequest": {
+      "type": "structure",
+      "members": {
+        "NextToken": {"shape": "Token", "location": "querystring", "locationName": "nextToken"},
+        "MaxResults": {"shape": "Count", "location": "querystring", "locationName": "maxResults"}
+      }
+    },
+    "ListThingsResponse": {
+      "type": "structure",
+      "members": {
+        "Things": {"shape": "TagList"},
+        "NextToken": {"shape": "Token"}
+      }
+    },
+    "Token": {"type": "string"},
+    "WatchThingsRequest": {
+      "type": "structure",
+      "members": {"Filter": {"shape": "ThingName"}}
+    },
+    "WatchThingsResponse": {
+      "type": "structure",
+      "members": {"Events": {"shape": "ThingEvents"}},
+      "payload": "Events"
+    },
+    "ThingEvents": {
+      "type": "structure",
+      "members": {
+        "Changed": {"shape": "ThingChanged"},
+        "Failure": {"shape": "InternalFailure"}
+      },
+      "eventstream": true
+    },
+    "ThingChanged": {
+      "type": "structure",
+      "members": {
+        "Name": {"shape": "ThingName", "eventheader": true},
+        "Thing": {"shape": "Thing", "eventpayload": true}
+      },
+      "event": true
+    },
+    "ThingNotFound": {
+      "type": "structure",
+      "members": {"message": {"shape": "ThingName"}},
+      "error": {"code": "ThingNotFound", "httpStatusCode": 404, "senderFault": true},
+      "exception": true
+    },
+    "InternalFailure": {
+      "type": "structure",
+      "members": {"message": {"shape": "ThingName"}},
+      "exception": true,
+      "fault": true,
+      "retryable": {"throttling": false}
+    }
+  }
+}

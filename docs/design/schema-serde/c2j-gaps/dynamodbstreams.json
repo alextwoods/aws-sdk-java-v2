@@ -1,0 +1,24 @@
+{
+  "service" : "dynamodbstreams",
+  "entries" : [ {
+    "property" : "member.alternateBeanPropertyName",
+    "services" : [ "dynamodbstreams" ],
+    "impact" : "The alternate bean property name of a member is only available from this marker.",
+    "occurrences" : 1
+  }, {
+    "property" : "operation.errors",
+    "services" : [ "dynamodbstreams" ],
+    "impact" : "The declared order and duplicates of operation errors. Operation errors are also emitted, so only the order and duplicates are marker-only.",
+    "occurrences" : 4
+  }, {
+    "property" : "operation.http",
+    "services" : [ "dynamodbstreams" ],
+    "impact" : "The verbatim method, requestUri and responseCode of an operation with no @http trait (RPC protocols ignore HTTP bindings).",
+    "occurrences" : 4
+  }, {
+    "property" : "shape.required",
+    "services" : [ "dynamodbstreams" ],
+    "impact" : "The declaration order of required members. @required is also emitted, so only the order is marker-only.",
+    "occurrences" : 4
+  } ]
+}

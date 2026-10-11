@@ -55,6 +55,8 @@ public class ServiceMetadata {
 
     private Map<String, String> protocolSettings;
 
+    private String globalEndpoint;
+
     public String getApiVersion() {
         return apiVersion;
     }
@@ -200,5 +202,16 @@ public class ServiceMetadata {
 
     public void setServiceId(String serviceId) {
         this.serviceId = serviceId;
+    }
+
+    /**
+     * C2J {@code globalEndpoint}. Codegen does not read it; it is kept so that the C2J_Converter sees it.
+     */
+    public String getGlobalEndpoint() {
+        return globalEndpoint;
+    }
+
+    public void setGlobalEndpoint(String globalEndpoint) {
+        this.globalEndpoint = globalEndpoint;
     }
 }

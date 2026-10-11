@@ -1,0 +1,123 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2013-04-01",
+    "endpointPrefix": "fixturexml",
+    "globalEndpoint": "fixturexml.amazonaws.com",
+    "protocol": "rest-xml",
+    "serviceId": "Fixture RestXml",
+    "signatureVersion": "v4",
+    "uid": "fixturexml-2013-04-01"
+  },
+  "operations": {
+    "ChangeRecords": {
+      "name": "ChangeRecords",
+      "http": {
+        "method": "POST",
+        "requestUri": "/2013-04-01/zone/{Id}/rrset/"
+      },
+      "input": {
+        "shape": "ChangeRecordsRequest",
+        "locationName": "ChangeRecordsRequest",
+        "xmlNamespace": {
+          "uri": "https://fixturexml.amazonaws.com/doc/2013-04-01/"
+        }
+      },
+      "output": {
+        "shape": "ChangeRecordsResponse"
+      },
+      "errors": [
+        {
+          "shape": "NoSuchZone"
+        }
+      ]
+    }
+  },
+  "shapes": {
+    "ChangeRecordsRequest": {
+      "type": "structure",
+      "required": [
+        "ZoneId",
+        "Changes"
+      ],
+      "members": {
+        "ZoneId": {
+          "shape": "ResourceId",
+          "location": "uri",
+          "locationName": "Id"
+        },
+        "Changes": {
+          "shape": "Changes"
+        },
+        "Owner": {
+          "shape": "ResourceId",
+          "xmlAttribute": true,
+          "locationName": "owner"
+        },
+        "Typed": {
+          "shape": "ResourceId",
+          "xmlNamespace": {
+            "prefix": "xsi",
+            "uri": "http://www.w3.org/2001/XMLSchema-instance"
+          }
+        }
+      }
+    },
+    "Changes": {
+      "type": "list",
+      "member": {
+        "shape": "Change",
+        "locationName": "Change"
+      }
+    },
+    "FlatChanges": {
+      "type": "list",
+      "member": {
+        "shape": "Change"
+      },
+      "flattened": true
+    },
+    "Change": {
+      "type": "structure",
+      "members": {
+        "Action": {
+          "shape": "ResourceId"
+        },
+        "More": {
+          "shape": "FlatChanges",
+          "flattened": true
+        }
+      }
+    },
+    "ChangeRecordsResponse": {
+      "type": "structure",
+      "members": {
+        "Status": {
+          "shape": "ResourceId"
+        },
+        "SubmittedAt": {
+          "shape": "TimeStamp"
+        }
+      }
+    },
+    "NoSuchZone": {
+      "type": "structure",
+      "members": {
+        "message": {
+          "shape": "ResourceId"
+        }
+      },
+      "error": {
+        "httpStatusCode": 404
+      },
+      "exception": true
+    },
+    "ResourceId": {
+      "type": "string",
+      "max": 32
+    },
+    "TimeStamp": {
+      "type": "timestamp"
+    }
+  }
+}

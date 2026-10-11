@@ -46,6 +46,12 @@
     </build>
 
     <dependencies>
+        <!-- Generated Schema classes (<Svc>Schemas, <Svc>SchemaIndex, <Svc>ServiceSchemas; task 1.31). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-query-protocol</artifactId>

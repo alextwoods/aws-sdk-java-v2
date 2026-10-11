@@ -28,6 +28,18 @@
     <artifactId>architecture-tests</artifactId>
     <name>AWS Java SDK :: Test :: Architecture Testing</name>
     <description>Test SDK architecture</description>
+    <properties>
+        <!-- Java 8 port-compliance check (PortComplianceTest, task 1.19) -->
+        <port-compliance.asm.version>9.7</port-compliance.asm.version>
+        <port-compliance.animal-sniffer.version>1.24</port-compliance.animal-sniffer.version>
+        <port-compliance.java18-signature.version>1.0</port-compliance.java18-signature.version>
+        <!--
+          Schema-serde branch (OD-7): without -P fleet-services the non-prototype service classes are not on the
+          classpath, and ArchUnit would prune their frozen violations from the committed archunit_store. The
+          default build therefore freezes against a copy in target/; -P fleet-services uses the committed store.
+        -->
+        <archtests.freeze.storePath>${project.build.directory}/archunit_store</archtests.freeze.storePath>
+    </properties>
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -67,52 +79,12 @@
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
-            <artifactId>s3</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
             <artifactId>sqs</artifactId>
             <groupId>software.amazon.awssdk</groupId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
-            <artifactId>sts</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>rds</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>iam</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
             <artifactId>dynamodb</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>kinesis</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>transcribestreaming</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>glacier</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>s3-transfer-manager</artifactId>
             <groupId>software.amazon.awssdk</groupId>
             <version>${awsjavasdk.version}</version>
         </dependency>
@@ -124,16 +96,6 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sns-message-manager</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>sso</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <artifactId>cloudfront</artifactId>
-            <groupId>software.amazon.awssdk</groupId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
@@ -191,6 +153,127 @@
             <artifactId>archunit-junit5</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!--
+          Java 8 port-compliance check (PortComplianceTest, task 1.19). Every module listed in
+          PortComplianceTest.PORTED_MODULES must be a test dependency here.
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codec-commons</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>json-codec</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cbor-codec</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>xml-codec</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-binding</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rpcv2-cbor-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-xml-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-query-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamic-client</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>client-mock-plugin</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>message-payloads</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>${port-compliance.asm.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-commons</artifactId>
+            <version>${port-compliance.asm.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>animal-sniffer</artifactId>
+            <version>${port-compliance.animal-sniffer.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The Java 8 API signature. Not a classpath artifact; its path is passed to the test (see surefire below). -->
+        <dependency>
+            <groupId>org.codehaus.mojo.signature</groupId>
+            <artifactId>java18</artifactId>
+            <version>${port-compliance.java18-signature.version}</version>
+            <type>signature</type>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -204,10 +287,67 @@
                             <goal>analyze-only</goal>
                         </goals>
                     </execution>
+                    <execution>
+                        <!-- Sets ${org.codehaus.mojo.signature:java18:signature} for PortComplianceTest -->
+                        <id>port-compliance-signature-path</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                        <configuration>
+                            <skip>false</skip>
+                        </configuration>
+                    </execution>
                 </executions>
                 <configuration>
                     <!-- Skipping maven dependencies analysis to speed up the build -->
                     <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <!-- Working copy of the frozen violations for the default (prototype-only) build -->
+                        <id>copy-archunit-store</id>
+                        <phase>process-test-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/archunit_store</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/archunit_store</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <port.compliance.java18.signature>${org.codehaus.mojo.signature:java18:signature}</port.compliance.java18.signature>
+                        <!-- Overrides archunit.properties (ArchUnit reads "archunit."-prefixed system properties) -->
+                        <archunit.freeze.store.default.path>${archtests.freeze.storePath}</archunit.freeze.store.default.path>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!--
+                      Schema-serde branch (OD-7): these tests reference classes of non-prototype services
+                      (S3), which the default reactor no longer builds. They compile and run with -P fleet-services.
+                    -->
+                    <testExcludes>
+                        <testExclude>**/archtests/CodingConventionWithSuppressionTest.java</testExclude>
+                        <testExclude>**/archtests/NamingConventionWithSuppressionTest.java</testExclude>
+                    </testExcludes>
                 </configuration>
             </plugin>
             <plugin>
@@ -220,4 +360,79 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <!--
+          Schema-serde branch (OD-7): non-prototype services are only built with -P fleet-services
+          (see services/pom.xml). Their dependencies, and the tests that reference their classes, live here.
+        -->
+        <profile>
+            <id>fleet-services</id>
+            <properties>
+                <archtests.freeze.storePath>${project.basedir}/archunit_store</archtests.freeze.storePath>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <artifactId>s3</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>sts</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>rds</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>iam</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>kinesis</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>transcribestreaming</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>glacier</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>s3-transfer-manager</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>sso</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+                <dependency>
+                    <artifactId>cloudfront</artifactId>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <version>${awsjavasdk.version}</version>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <testExcludes combine.self="override"/>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

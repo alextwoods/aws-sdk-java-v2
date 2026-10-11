@@ -36,6 +36,7 @@ import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
+import software.amazon.awssdk.codegen.pipeline.SmithyModelDiscovery;
 import software.amazon.awssdk.codegen.smithy.build.AwsSdkJavaCodegenPlugin;
 import software.amazon.smithy.build.ProjectionResult;
 import software.amazon.smithy.build.SmithyBuild;
@@ -156,7 +157,8 @@ final class SmithyBuildGenerator {
      */
     private Model assembleModel(Path smithyBuildFile, List<Path> sources, List<Path> imports, ClassLoader classLoader)
             throws MojoExecutionException {
-        ModelAssembler assembler = Model.assembler(classLoader).discoverModels(classLoader);
+        // Discovery leaves out the protocol test models on the plugin class path; see SmithyModelDiscovery.
+        ModelAssembler assembler = SmithyModelDiscovery.discoverModels(Model.assembler(classLoader), classLoader);
         for (Path source : sources) {
             requireExists(smithyBuildFile, source, "sources");
             assembler.addImport(source);

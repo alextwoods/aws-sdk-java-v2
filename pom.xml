@@ -60,6 +60,7 @@
         <module>http-client-spi</module>
         <module>http-clients</module>
         <module>codegen-maven-plugin</module>
+        <module>codegen-c2j-to-smithy</module>
         <module>bundle</module>
         <module>bundle-sdk</module>
         <module>bundle-logging-bridge</module>
@@ -74,8 +75,10 @@
         <module>third-party</module>
         <module>v2-migration</module>
         <module>test/http-client-tests</module>
-        <module>test/protocol-tests</module>
-        <module>test/protocol-tests-core</module>
+        <!-- Schema-serde branch (Requirement 32.9): the C2J-based test/protocol-tests and test/protocol-tests-core
+             are no longer built; their sources stay on disk for the legacy disposition tool. -->
+        <module>test/smithy-protocol-tests-core</module>
+        <module>test/smithy-protocol-tests</module>
         <module>test/service-test-utils</module>
         <module>test/test-utils</module>
         <module>test/codegen-generated-classes-test</module>
@@ -97,6 +100,7 @@
         <module>test/crt-unavailable-tests</module>
         <module>test/architecture-tests</module>
         <module>test/s3-tests</module>
+        <module>test/client-mock-plugin</module>
     </modules>
     <scm>
         <url>${scm.github.url}</url>
@@ -152,6 +156,7 @@
         <jetty.version>9.4.45.v20220203</jetty.version>
         <bytebuddy.version>1.17.5</bytebuddy.version>
         <archunit.version>1.3.0</archunit.version>
+        <jqwik.version>1.8.5</jqwik.version>
         <json-schema-validator.version>1.5.4</json-schema-validator.version>
 
         <!-- build plugin dependencies-->
@@ -891,6 +896,39 @@
             <properties>
                 <spotbugs.skip>true</spotbugs.skip>
             </properties>
+        </profile>
+
+        <profile>
+            <!--
+              Schema-serde branch (task 1.19, Requirement 1.9): run unit tests on a Java 8 runtime. Off by default.
+              Compilation is unchanged (release 8 through jdk-11-plus); only Surefire's forked test JVM comes from a
+              JDK 8 toolchain, so ~/.m2/toolchains.xml (or -t <file>) needs a jdk toolchain with <version>1.8</version>.
+              Ported modules (keep in sync with PortComplianceTest.PORTED_MODULES):
+                mvn test -P jdk8 -pl :schema,:codec-commons,:json-codec,:cbor-codec,:xml-codec,:http-binding,
+                  :http-client-protocol,:rpcv2-cbor-client-protocol,:aws-json-client-protocol,:rest-json-client-protocol,
+                  :rest-xml-client-protocol,:aws-query-client-protocol,:dynamic-client,:client-mock-plugin,:message-payloads
+            -->
+            <id>jdk8</id>
+            <properties>
+                <!-- jdk-13-plus sets JVM flags that a Java 8 test JVM rejects -->
+                <argLine></argLine>
+            </properties>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.apache.maven.plugins</groupId>
+                            <artifactId>maven-surefire-plugin</artifactId>
+                            <version>${maven.surefire.version}</version>
+                            <configuration>
+                                <jdkToolchain>
+                                    <version>[1.8,1.9)</version>
+                                </jdkToolchain>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
         </profile>
 
         <profile>

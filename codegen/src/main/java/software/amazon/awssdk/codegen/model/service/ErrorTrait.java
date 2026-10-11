@@ -24,6 +24,8 @@ public class ErrorTrait {
 
     private Integer httpStatusCode;
 
+    private Boolean senderFault;
+
     public String getCode() {
         return code;
     }
@@ -38,5 +40,16 @@ public class ErrorTrait {
 
     public void setHttpStatusCode(Integer httpStatusCode) {
         this.httpStatusCode = httpStatusCode;
+    }
+
+    /**
+     * C2J {@code senderFault}: whether the error is the caller's fault. Null when the model does not say.
+     */
+    public Boolean getSenderFault() {
+        return senderFault;
+    }
+
+    public void setSenderFault(Boolean senderFault) {
+        this.senderFault = senderFault;
     }
 }

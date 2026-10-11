@@ -17,7 +17,8 @@ package software.amazon.awssdk.codegen.smithy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.jr.stree.JrsBoolean;
+import com.fasterxml.jackson.jr.stree.JrsString;
 import java.util.Arrays;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -309,11 +310,12 @@ class AddSmithyOperationsTest {
         OperationModel op = op(model, "rest-json");
 
         assertThat(op.getStaticContextParams()).containsKey("UseFips");
-        assertThat(op.getStaticContextParams().get("UseFips").getValue().toString()).isEqualTo("true");
+        assertThat(op.getStaticContextParams().get("UseFips").getValue()).isInstanceOf(JrsBoolean.class);
+        assertThat(((JrsBoolean) op.getStaticContextParams().get("UseFips").getValue()).booleanValue()).isTrue();
     }
 
     @Test
-    void operationContextParams_pathConvertedToTextNode() {
+    void operationContextParams_pathConvertedToJrsString() {
         Model model = modelOf(
             "@smithy.rules#operationContextParams(Keys: { path: \"keys[*]\" })\n"
             + "@http(method: \"POST\", uri: \"/op\")\n"
@@ -324,7 +326,8 @@ class AddSmithyOperationsTest {
         OperationModel op = op(model, "rest-json");
 
         assertThat(op.getOperationContextParams()).containsKey("Keys");
-        assertThat(((JsonNode) op.getOperationContextParams().get("Keys").getPath()).asText()).isEqualTo("keys[*]");
+        // The endpoint generators cast the path to JrsString, as the C2J loader produces it.
+        assertThat(((JrsString) op.getOperationContextParams().get("Keys").getPath()).getValue()).isEqualTo("keys[*]");
     }
 
     // ---- Auth (parity-first: operation-explicit only) ---------------------

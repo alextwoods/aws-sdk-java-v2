@@ -1,0 +1,49 @@
+{
+  "service" : "dynamodb",
+  "entries" : [ {
+    "property" : "endpointdiscovery.error",
+    "services" : [ "dynamodb" ],
+    "impact" : "C2J does not name the invalid-endpoint error, and no InvalidEndpoint* error is declared by every discovered operation, so aws.api#clientEndpointDiscovery has no error.",
+    "occurrences" : 1
+  }, {
+    "property" : "member.alternateBeanPropertyName",
+    "services" : [ "dynamodb" ],
+    "impact" : "The alternate bean property name of a member is only available from this marker.",
+    "occurrences" : 1
+  }, {
+    "property" : "metadata",
+    "services" : [ "dynamodb" ],
+    "impact" : "C2J metadata properties with no standard trait (for example globalEndpoint, checksumFormat, resultWrapped, or a targetPrefix that cannot be the service shape name) are only available from this marker, which holds just those properties.",
+    "occurrences" : 1
+  }, {
+    "property" : "operation.errors",
+    "services" : [ "dynamodb" ],
+    "impact" : "The declared order and duplicates of operation errors. Operation errors are also emitted, so only the order and duplicates are marker-only.",
+    "occurrences" : 56
+  }, {
+    "property" : "operation.http",
+    "services" : [ "dynamodb" ],
+    "impact" : "The verbatim method, requestUri and responseCode of an operation with no @http trait (RPC protocols ignore HTTP bindings).",
+    "occurrences" : 57
+  }, {
+    "property" : "paginator.input_token(unresolvable)",
+    "services" : [ "dynamodb" ],
+    "impact" : "The input_token does not name a member that Smithy accepts for it (missing, wrong target type, a path for an input member, or a required input token). The operation gets no @paginated trait, so no paginator is generated from standard traits.",
+    "occurrences" : 1
+  }, {
+    "property" : "shape.required",
+    "services" : [ "dynamodb" ],
+    "impact" : "The declaration order of required members. @required is also emitted, so only the order is marker-only.",
+    "occurrences" : 99
+  }, {
+    "property" : "shape.synthetic",
+    "services" : [ "dynamodb" ],
+    "impact" : "The SDK-synthesized shape flag is only available from this marker.",
+    "occurrences" : 1
+  }, {
+    "property" : "waiter.maxAttempts",
+    "services" : [ "dynamodb" ],
+    "impact" : "Smithy waiters bound waiting by maxWaitTime, not by attempt count. A waiter generated from standard traits does not get the C2J maxAttempts.",
+    "occurrences" : 6
+  } ]
+}

@@ -73,6 +73,23 @@
             <version>${smithy.version}</version>
         </dependency>
         <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codegen-c2j-to-smithy</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- Protocol test traits and models for the Protocol_Test_Generator (Requirement 32). The models are not
+             discovered by default; see software.amazon.awssdk.codegen.pipeline.SmithyModelDiscovery. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-test-traits</artifactId>
+            <version>${smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-protocol-tests</artifactId>
+            <version>${smithy.version}</version>
+        </dependency>
+        <dependency>
             <artifactId>maven-model</artifactId>
             <groupId>org.apache.maven</groupId>
         </dependency>
@@ -89,6 +106,11 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <artifactId>maven-plugin-api</artifactId>
@@ -110,6 +132,18 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <configuration>
+                    <ignoredUnusedDeclaredDependencies combine.children="append">
+                        <!-- On the plugin class path for the Codegen_Pipeline and smithy-build, not referenced. -->
+                        <ignoredUnusedDeclaredDependency>software.amazon.awssdk:codegen-c2j-to-smithy</ignoredUnusedDeclaredDependency>
+                        <ignoredUnusedDeclaredDependency>software.amazon.smithy:smithy-protocol-test-traits</ignoredUnusedDeclaredDependency>
+                        <ignoredUnusedDeclaredDependency>software.amazon.smithy:smithy-aws-protocol-tests</ignoredUnusedDeclaredDependency>
+                    </ignoredUnusedDeclaredDependencies>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-plugin-plugin</artifactId>

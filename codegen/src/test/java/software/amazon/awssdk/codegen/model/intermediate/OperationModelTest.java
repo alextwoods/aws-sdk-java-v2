@@ -28,6 +28,8 @@ public class OperationModelTest {
 
         EqualsVerifier.simple()
                       .forClass(OperationModel.class)
+                      // The Smithy ShapeId records where the model came from; it is not part of its value.
+                      .withIgnoredFields("operationId")
                       .withPrefabValues(MemberModel.class, blueMemberModel, redMemberModel)
                       .usingGetClass()
                       .verify();

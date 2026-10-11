@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "parameters": {
+    "Region": {"builtIn": "AWS::Region", "required": false, "documentation": "The AWS region.", "type": "String"},
+    "UseThing": {"required": false, "documentation": "Use the thing.", "type": "Boolean"},
+    "ThingId": {"required": false, "documentation": "The thing ID.", "type": "String"}
+  },
+  "rules": [
+    {
+      "conditions": [],
+      "endpoint": {"url": "https://fixture.example.com", "properties": {}, "headers": {}},
+      "type": "endpoint"
+    }
+  ]
+}

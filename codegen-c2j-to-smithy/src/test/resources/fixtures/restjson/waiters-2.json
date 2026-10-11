@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "waiters": {
+    "ThingExists": {
+      "description": "Waits until the thing exists.",
+      "operation": "GetThing",
+      "delay": 5,
+      "maxAttempts": 20,
+      "acceptors": [
+        {"matcher": "path", "argument": "Thing.Name", "expected": "ready", "state": "success"},
+        {"matcher": "pathAny", "argument": "Thing.Tags", "expected": "broken", "state": "failure"},
+        {"matcher": "error", "expected": "ThingNotFound", "state": "retry"}
+      ]
+    },
+    "ThingGone": {
+      "operation": "GetThing",
+      "delay": 300,
+      "maxAttempts": 3,
+      "acceptors": [
+        {"matcher": "status", "expected": 200, "state": "retry"},
+        {"matcher": "error", "expected": true, "state": "success"}
+      ]
+    },
+    "ThingReady": {
+      "operation": "GetThing",
+      "delay": 5,
+      "maxAttempts": 3,
+      "acceptors": [
+        {"matcher": "status", "expected": 404, "state": "retry"},
+        {"matcher": "status", "expected": 200, "state": "success"}
+      ]
+    }
+  }
+}

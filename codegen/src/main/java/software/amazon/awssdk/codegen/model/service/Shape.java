@@ -53,9 +53,10 @@ public class Shape {
 
     private ErrorTrait error;
 
-    private long min;
+    // Boxed so that an explicit 0 in the C2J file is kept apart from an absent value.
+    private Long min;
 
-    private long max;
+    private Long max;
 
     private String pattern;
 
@@ -230,7 +231,7 @@ public class Shape {
     }
 
     public long getMin() {
-        return min;
+        return min == null ? 0 : min;
     }
 
     public void setMin(long min) {
@@ -238,7 +239,7 @@ public class Shape {
     }
 
     public long getMax() {
-        return max;
+        return max == null ? 0 : max;
     }
 
     public void setMax(long max) {

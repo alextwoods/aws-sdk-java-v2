@@ -1,0 +1,94 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2012-11-05",
+    "awsQueryCompatible": {},
+    "endpointPrefix": "fixturejson",
+    "jsonVersion": "1.0",
+    "protocol": "json",
+    "protocols": ["json"],
+    "serviceFullName": "Fixture JSON 1.0",
+    "serviceId": "Fixture Json10",
+    "signatureVersion": "v4",
+    "targetPrefix": "FixtureJson",
+    "uid": "fixturejson-2012-11-05",
+    "auth": ["aws.auth#sigv4"]
+  },
+  "operations": {
+    "DescribeEndpoints": {
+      "name": "DescribeEndpoints",
+      "http": {"method": "POST", "requestUri": "/"},
+      "input": {"shape": "DescribeEndpointsRequest"},
+      "output": {"shape": "DescribeEndpointsResponse"},
+      "endpointoperation": true
+    },
+    "SendThing": {
+      "name": "SendThing",
+      "http": {"method": "POST", "requestUri": "/"},
+      "input": {"shape": "SendThingRequest"},
+      "output": {"shape": "SendThingResult"},
+      "errors": [{"shape": "QueueMissing"}, {"shape": "QueueMissing"}, {"shape": "InvalidEndpointException"}],
+      "endpointdiscovery": {"required": false},
+      "operationContextParams": {"QueueName": {"path": "QueueName"}}
+    },
+    "Ping": {
+      "name": "Ping",
+      "http": {"method": "POST", "requestUri": "/"},
+      "authtype": "none"
+    }
+  },
+  "shapes": {
+    "DescribeEndpointsRequest": {"type": "structure", "members": {}},
+    "DescribeEndpointsResponse": {
+      "type": "structure",
+      "required": ["Endpoints"],
+      "members": {"Endpoints": {"shape": "Endpoints"}}
+    },
+    "Endpoints": {"type": "list", "member": {"shape": "Endpoint"}},
+    "Endpoint": {
+      "type": "structure",
+      "required": ["Address", "CachePeriodInMinutes"],
+      "members": {
+        "Address": {"shape": "String"},
+        "CachePeriodInMinutes": {"shape": "Long"}
+      }
+    },
+    "SendThingRequest": {
+      "type": "structure",
+      "required": ["QueueName", "Body"],
+      "members": {
+        "QueueName": {"shape": "String", "endpointdiscoveryid": true},
+        "Body": {"shape": "String"},
+        "Delay": {"shape": "Long"},
+        "Score": {"shape": "Double"},
+        "Flag": {"shape": "Boolean"},
+        "Raw": {"shape": "Binary"},
+        "Old": {"shape": "String", "deprecated": true},
+        "Attributes": {"shape": "String", "jsonvalue": true},
+        "Policy": {"shape": "PolicyDocument", "jsonvalue": true}
+      }
+    },
+    "SendThingResult": {
+      "type": "structure",
+      "members": {"MessageId": {"shape": "String"}}
+    },
+    "QueueMissing": {
+      "type": "structure",
+      "members": {"message": {"shape": "String"}},
+      "error": {"code": "AWS.SimpleQueueService.NonExistentQueue", "httpStatusCode": 400, "senderFault": true},
+      "exception": true
+    },
+    "InvalidEndpointException": {
+      "type": "structure",
+      "members": {"Message": {"shape": "String"}},
+      "error": {"httpStatusCode": 421},
+      "exception": true
+    },
+    "PolicyDocument": {"type": "string"},
+    "String": {"type": "string"},
+    "Long": {"type": "long"},
+    "Double": {"type": "double"},
+    "Boolean": {"type": "boolean"},
+    "Binary": {"type": "blob"}
+  }
+}

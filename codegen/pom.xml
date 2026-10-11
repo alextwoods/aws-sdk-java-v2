@@ -179,6 +179,12 @@
             <version>${smithy.version}</version>
         </dependency>
         <dependency>
+            <!-- CaseUtils, for schema field names (Schema_Generator); already a dependency of smithy-model. -->
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-utils</artifactId>
+            <version>${smithy.version}</version>
+        </dependency>
+        <dependency>
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-build</artifactId>
             <version>${smithy.version}</version>
@@ -192,6 +198,45 @@
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-rules-engine</artifactId>
             <version>${smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-waiters</artifactId>
+            <version>${smithy.version}</version>
+        </dependency>
+        <!-- Protocol_Test_Generator: the httpRequestTests and httpResponseTests trait classes. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-test-traits</artifactId>
+            <version>${smithy.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codegen-c2j-to-smithy</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- Codegen_Pipeline stage 4: validating converted models needs the AWS rule-set built-ins and functions
+             (AWS::Region, aws.partition, ...), which are discovered at assembly time. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-endpoints</artifactId>
+            <version>${smithy.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Codegen_Pipeline stage 4 for native AWS Smithy models (Secrets Manager): they carry smithy.test#smokeTests
+             with aws.test#AwsVendorParams vendor parameters, whose definitions must be discovered to validate.
+             Nothing is generated from them. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-smoke-test-traits</artifactId>
+            <version>${smithy.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-smoke-test-model</artifactId>
+            <version>${smithy.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
@@ -239,6 +284,23 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>compile</scope>
+        </dependency>
+        <!-- Runtime schema module, test scope only: the trait initializer tests compile and evaluate the rendered
+             expressions against the runtime trait classes. Generated code references them by name
+             (SchemaRuntimeType), so codegen does not need them at compile time. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Protocol test runtime support, test scope only: the protocol test generator tests compile the generated
+             tests against it. Generated code references its types by name (ProtocolTestRuntimeTypes). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-protocol-tests-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.vintage</groupId>

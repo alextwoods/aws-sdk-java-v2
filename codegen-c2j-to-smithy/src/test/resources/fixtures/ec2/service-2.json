@@ -1,0 +1,36 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2016-11-15",
+    "endpointPrefix": "fixtureec2",
+    "protocol": "ec2",
+    "protocols": ["ec2"],
+    "serviceId": "Fixture EC2",
+    "signatureVersion": "v4",
+    "uid": "fixtureec2-2016-11-15"
+  },
+  "operations": {
+    "DescribeThings": {
+      "name": "DescribeThings",
+      "http": {"method": "POST", "requestUri": "/"},
+      "input": {"shape": "DescribeThingsRequest"},
+      "output": {"shape": "DescribeThingsResult"}
+    }
+  },
+  "shapes": {
+    "DescribeThingsRequest": {
+      "type": "structure",
+      "members": {
+        "ThingIds": {"shape": "ThingIdList", "locationName": "ThingId", "queryName": "ThingId"},
+        "DryRun": {"shape": "Boolean", "locationName": "dryRun"}
+      }
+    },
+    "DescribeThingsResult": {
+      "type": "structure",
+      "members": {"Things": {"shape": "ThingIdList", "locationName": "thingSet"}}
+    },
+    "ThingIdList": {"type": "list", "member": {"shape": "String", "locationName": "item"}},
+    "String": {"type": "string"},
+    "Boolean": {"type": "boolean"}
+  }
+}

@@ -51,6 +51,11 @@
                 <artifactId>codegen</artifactId>
                 <version>${awsjavasdk.version}</version>
             </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>codegen-c2j-to-smithy</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
             <!-- Non-Services -->
             <dependency>
                 <groupId>software.amazon.awssdk</groupId>
@@ -120,6 +125,77 @@
             <dependency>
                 <groupId>software.amazon.awssdk</groupId>
                 <artifactId>protocol-core</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <!-- Schema-based serde -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>schema</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>codec-commons</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>json-codec</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>cbor-codec</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>xml-codec</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>http-binding</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>http-client-protocol</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>rpcv2-cbor-client-protocol</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>aws-json-client-protocol</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>rest-json-client-protocol</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>rest-xml-client-protocol</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>aws-query-client-protocol</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>dynamic-client</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>client-mock-plugin</artifactId>
                 <version>${awsjavasdk.version}</version>
             </dependency>
             <dependency>
@@ -240,6 +316,11 @@
             <dependency>
                 <groupId>software.amazon.awssdk</groupId>
                 <artifactId>sns-message-manager</artifactId>
+                <version>${awsjavasdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>message-payloads</artifactId>
                 <version>${awsjavasdk.version}</version>
             </dependency>
             <dependency>

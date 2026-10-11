@@ -1,0 +1,43 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2017-10-17",
+    "endpointPrefix": "fixturejson11",
+    "jsonVersion": "1.1",
+    "protocol": "json",
+    "serviceId": "Fixture Json11",
+    "signatureVersion": "v4",
+    "targetPrefix": "fixturejson11",
+    "uid": "fixturejson11-2017-10-17"
+  },
+  "operations": {
+    "GetSecret": {
+      "name": "GetSecret",
+      "http": {"method": "POST", "requestUri": "/"},
+      "input": {"shape": "GetSecretRequest"},
+      "output": {"shape": "GetSecretResponse"}
+    }
+  },
+  "shapes": {
+    "GetSecretRequest": {
+      "type": "structure",
+      "required": ["SecretId"],
+      "members": {
+        "SecretId": {"shape": "SecretId"},
+        "ClientRequestToken": {"shape": "SecretId", "idempotencyToken": true}
+      }
+    },
+    "GetSecretResponse": {
+      "type": "structure",
+      "members": {
+        "SecretString": {"shape": "SecretString"},
+        "CreatedDate": {"shape": "CreatedDate"},
+        "Stages": {"shape": "StageList"}
+      }
+    },
+    "SecretId": {"type": "string", "max": 2048, "min": 1},
+    "SecretString": {"type": "string", "sensitive": true},
+    "CreatedDate": {"type": "timestamp"},
+    "StageList": {"type": "list", "member": {"shape": "SecretId"}, "min": 1}
+  }
+}

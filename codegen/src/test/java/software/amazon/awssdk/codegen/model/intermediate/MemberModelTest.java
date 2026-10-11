@@ -32,6 +32,8 @@ public class MemberModelTest {
         blueMemberModel.setC2jName("BlueC2jName");
 
         EqualsVerifier.simple().forClass(MemberModel.class)
+            // The Smithy ShapeId records where the model came from; it is not part of its value.
+            .withIgnoredFields("memberId")
             .withPrefabValues(ListModel.class, redListModel, blueListModel)
             .withPrefabValues(MemberModel.class, redMemberModel, blueMemberModel)
             .usingGetClass()

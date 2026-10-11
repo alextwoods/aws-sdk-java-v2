@@ -33,6 +33,8 @@ import software.amazon.awssdk.codegen.model.service.PaginatorDefinition;
 import software.amazon.awssdk.codegen.model.service.WaiterDefinition;
 import software.amazon.awssdk.codegen.naming.NamingStrategy;
 import software.amazon.awssdk.utils.IoUtils;
+import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 public final class IntermediateModel {
     private static final String FILE_HEADER;
@@ -61,6 +63,12 @@ public final class IntermediateModel {
     private NamingStrategy namingStrategy;
 
     private Map<String, ClientContextParam> clientContextParams;
+
+    @JsonIgnore
+    private Model smithyModel;
+
+    @JsonIgnore
+    private ShapeId serviceId;
 
     static {
         FILE_HEADER = loadDefaultFileHeader();
@@ -137,7 +145,54 @@ public final class IntermediateModel {
     }
 
     /**
+     * The assembled, validated Smithy model this intermediate model was built from (Requirement 17.5), or null for an
+     * intermediate model built from C2J by the legacy {@code IntermediateModelBuilder}. Not serialized.
+     */
+    public Model smithyModel() {
+        return smithyModel;
+    }
+
+    /**
+     * The absolute ShapeId of the service shape in {@link #smithyModel()} being generated, or null for an intermediate
+     * model built from C2J. Not serialized.
+     */
+    public ShapeId serviceId() {
+        return serviceId;
+    }
+
+    /**
+     * Sets the Smithy model and the ShapeId of its service shape being generated.
+     *
+     * @throws IllegalArgumentException if {@code serviceId} does not name a service shape in {@code smithyModel}
+     */
+    public IntermediateModel withSmithyModel(Model smithyModel, ShapeId serviceId) {
+        if (!smithyModel.getShape(serviceId).filter(s -> s.isServiceShape()).isPresent()) {
+            throw new IllegalArgumentException(serviceId + " is not a service shape in the Smithy model");
+        }
+        this.smithyModel = smithyModel;
+        this.serviceId = serviceId;
+        return this;
+    }
+
+    /**
+     * The shape whose {@link ShapeModel#shapeId()} is {@code shapeId}, or null if there is none. Only intermediate
+     * models built from Smithy have shape IDs.
+     */
+    public ShapeModel getShape(ShapeId shapeId) {
+        for (ShapeModel shape : getShapes().values()) {
+            if (shapeId.equals(shape.shapeId())) {
+                return shape;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Looks up a shape by name and verifies that the expected C2J name matches
+     *
+     * <p>A view of the legacy C2J route: the Smithy route links shapes by {@link #getShape(ShapeId)}. Removed together
+     * with the C2J IntermediateModel builder (task 5.1).</p>
+     *
      * @param shapeName the name of the shape in the intermediate model
      * @param shapeC2jName C2J's name for the shape
      * @return the ShapeModel
@@ -167,6 +222,10 @@ public final class IntermediateModel {
 
     public Map<String, WaiterDefinition> getWaiters() {
         return waiters;
+    }
+
+    public void setWaiters(Map<String, WaiterDefinition> waiters) {
+        this.waiters = waiters;
     }
 
     public EndpointRuleSetModel getEndpointRuleSetModel() {

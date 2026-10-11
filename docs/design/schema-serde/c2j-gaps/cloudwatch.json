@@ -1,0 +1,59 @@
+{
+  "service" : "cloudwatch",
+  "entries" : [ {
+    "property" : "error.code(duplicate)",
+    "services" : [ "cloudwatch" ],
+    "impact" : "Several bound error shapes share one wire error code, so a query or awsQueryCompatible client resolves that code to only one of them. The QueryErrorCode validation event is suppressed.",
+    "occurrences" : 1
+  }, {
+    "property" : "metadata",
+    "services" : [ "cloudwatch" ],
+    "impact" : "C2J metadata properties with no standard trait (for example globalEndpoint, checksumFormat, resultWrapped, or a targetPrefix that cannot be the service shape name) are only available from this marker, which holds just those properties.",
+    "occurrences" : 1
+  }, {
+    "property" : "operation.errors",
+    "services" : [ "cloudwatch" ],
+    "impact" : "The declared order and duplicates of operation errors. Operation errors are also emitted, so only the order and duplicates are marker-only.",
+    "occurrences" : 42
+  }, {
+    "property" : "operation.http",
+    "services" : [ "cloudwatch" ],
+    "impact" : "The verbatim method, requestUri and responseCode of an operation with no @http trait (RPC protocols ignore HTTP bindings).",
+    "occurrences" : 50
+  }, {
+    "property" : "paginator.input_token(missing)",
+    "services" : [ "cloudwatch" ],
+    "impact" : "A paginator without an input_token cannot be expressed with @paginated. The operation gets no @paginated trait, so no paginator is generated from standard traits.",
+    "occurrences" : 1
+  }, {
+    "property" : "paginator.output_token(missing)",
+    "services" : [ "cloudwatch" ],
+    "impact" : "A paginator without an output_token cannot be expressed with @paginated. The operation gets no @paginated trait, so no paginator is generated from standard traits.",
+    "occurrences" : 1
+  }, {
+    "property" : "paginator.result_key(multiple)",
+    "services" : [ "cloudwatch" ],
+    "impact" : "@paginated has one items member, so a paginator with several result keys gets no items and no per-result-key iterables are generated from standard traits.",
+    "occurrences" : 3
+  }, {
+    "property" : "shape.required",
+    "services" : [ "cloudwatch" ],
+    "impact" : "The declaration order of required members. @required is also emitted, so only the order is marker-only.",
+    "occurrences" : 66
+  }, {
+    "property" : "shape.synthetic",
+    "services" : [ "cloudwatch" ],
+    "impact" : "The SDK-synthesized shape flag is only available from this marker.",
+    "occurrences" : 3
+  }, {
+    "property" : "waiter.acceptor.matcher=status",
+    "services" : [ "cloudwatch" ],
+    "impact" : "Smithy waiters cannot express this acceptor (for example a status other than 200, or a numeric expected value). The waiter is not converted, so it is not generated from standard traits.",
+    "occurrences" : 1
+  }, {
+    "property" : "waiter.maxAttempts",
+    "services" : [ "cloudwatch" ],
+    "impact" : "Smithy waiters bound waiting by maxWaitTime, not by attempt count. A waiter generated from standard traits does not get the C2J maxAttempts.",
+    "occurrences" : 3
+  } ]
+}

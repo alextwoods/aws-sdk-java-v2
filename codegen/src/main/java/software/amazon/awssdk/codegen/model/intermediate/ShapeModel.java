@@ -31,8 +31,18 @@ import java.util.stream.Collectors;
 import software.amazon.awssdk.codegen.model.intermediate.customization.ShapeCustomizationInfo;
 import software.amazon.awssdk.codegen.model.service.XmlNamespace;
 import software.amazon.awssdk.utils.StringUtils;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 public class ShapeModel extends DocumentationModel implements HasDeprecation {
+
+    /**
+     * The absolute Smithy ShapeId of the shape this model represents (Requirement 17.6).
+     *
+     * <p>Set only by the Smithy route ({@code SmithyIntermediateModelBuilder}); null for the legacy C2J route. Not
+     * serialized.
+     */
+    @JsonIgnore
+    private ShapeId shapeId;
 
     private String c2jName;
     // shapeName might be later modified by the customization.
@@ -749,5 +759,17 @@ public class ShapeModel extends DocumentationModel implements HasDeprecation {
         result = 31 * result + Boolean.hashCode(retryable);
         result = 31 * result + Boolean.hashCode(throttling);
         return result;
+    }
+
+    /**
+     * The absolute Smithy ShapeId of the shape this model represents (Requirement 17.6).
+     */
+    public ShapeId shapeId() {
+        return shapeId;
+    }
+
+    public ShapeModel withShapeId(ShapeId shapeId) {
+        this.shapeId = shapeId;
+        return this;
     }
 }

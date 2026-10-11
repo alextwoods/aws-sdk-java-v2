@@ -228,7 +228,7 @@ abstract class AddSmithyShapes {
     protected ShapeModel generateShapeModel(String javaClassName,
                                             Shape smithyShape,
                                             Map<String, HttpBinding> bindings) {
-        ShapeModel shapeModel = new ShapeModel(smithyShape.getId().getName());
+        ShapeModel shapeModel = new ShapeModel(smithyShape.getId().getName()).withShapeId(smithyShape.getId());
         shapeModel.setShapeName(javaClassName);
 
         shapeModel.setDocumentation(
@@ -376,7 +376,7 @@ abstract class AddSmithyShapes {
                                      .map(DocumentationTrait::getValue)
                                      .orElse(null);
 
-        MemberModel memberModel = new MemberModel();
+        MemberModel memberModel = new MemberModel().withMemberId(member.getId());
         memberModel.withC2jName(memberName)
                    .withC2jShape(targetShape.getId().getName())
                    .withName(capitalize(memberName))

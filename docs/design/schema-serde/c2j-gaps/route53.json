@@ -1,0 +1,49 @@
+{
+  "service" : "route53",
+  "entries" : [ {
+    "property" : "member.locationName",
+    "services" : [ "route53" ],
+    "impact" : "The C2J URI label name of a member whose label the converter renamed to the member name. The wire is unchanged; only the original label name is marker-only.",
+    "occurrences" : 17
+  }, {
+    "property" : "metadata",
+    "services" : [ "route53" ],
+    "impact" : "C2J metadata properties with no standard trait (for example globalEndpoint, checksumFormat, resultWrapped, or a targetPrefix that cannot be the service shape name) are only available from this marker, which holds just those properties.",
+    "occurrences" : 1
+  }, {
+    "property" : "operation.errors",
+    "services" : [ "route53" ],
+    "impact" : "The declared order and duplicates of operation errors. Operation errors are also emitted, so only the order and duplicates are marker-only.",
+    "occurrences" : 68
+  }, {
+    "property" : "paginator.input_token(multiple)",
+    "services" : [ "route53" ],
+    "impact" : "@paginated has one input_token; a paginator with several is not converted. The operation gets no @paginated trait, so no paginator is generated from standard traits.",
+    "occurrences" : 1
+  }, {
+    "property" : "paginator.limit_key(unresolvable)",
+    "services" : [ "route53" ],
+    "impact" : "The limit_key is not a top-level input member that targets an integral shape, so @paginated has no pageSize.",
+    "occurrences" : 6
+  }, {
+    "property" : "paginator.more_results",
+    "services" : [ "route53" ],
+    "impact" : "@paginated has no more_results member. Pagination ends when the output token is absent, not when the more_results member is false.",
+    "occurrences" : 3
+  }, {
+    "property" : "paginator.output_token(multiple)",
+    "services" : [ "route53" ],
+    "impact" : "@paginated has one output_token; a paginator with several is not converted. The operation gets no @paginated trait, so no paginator is generated from standard traits.",
+    "occurrences" : 1
+  }, {
+    "property" : "shape.required",
+    "services" : [ "route53" ],
+    "impact" : "The declaration order of required members. @required is also emitted, so only the order is marker-only.",
+    "occurrences" : 139
+  }, {
+    "property" : "waiter.maxAttempts",
+    "services" : [ "route53" ],
+    "impact" : "Smithy waiters bound waiting by maxWaitTime, not by attempt count. A waiter generated from standard traits does not get the C2J maxAttempts.",
+    "occurrences" : 1
+  } ]
+}

@@ -74,13 +74,15 @@ final class SmithyWireNames {
     }
 
     /**
-     * Protocol-appropriate wire-name override, or {@code null} if none. XML protocols (rest-xml, ec2)
-     * use {@code @xmlName}; JSON protocols use {@code @jsonName}. {@code query} is omitted for now: it
-     * also needs C2J's {@code queryName} precedence, which has no Smithy trait wired yet.
+     * Protocol-appropriate wire-name override, or {@code null} if none. XML protocols (rest-xml, ec2) and
+     * {@code query}, whose responses are XML and whose request keys follow the same names, use {@code @xmlName};
+     * JSON protocols use {@code @jsonName}. C2J's {@code queryName} is {@code @ec2QueryName}, which only ec2 reads
+     * (see {@link #deriveEc2MarshallName}).
      */
     private static String memberNameOverride(String protocol, MemberShape member) {
         if (Protocol.REST_XML.getValue().equalsIgnoreCase(protocol)
-            || Protocol.EC2.getValue().equalsIgnoreCase(protocol)) {
+            || Protocol.EC2.getValue().equalsIgnoreCase(protocol)
+            || Protocol.QUERY.getValue().equalsIgnoreCase(protocol)) {
             return member.getTrait(XmlNameTrait.class).map(XmlNameTrait::getValue).orElse(null);
         }
         if (Protocol.REST_JSON.getValue().equalsIgnoreCase(protocol)

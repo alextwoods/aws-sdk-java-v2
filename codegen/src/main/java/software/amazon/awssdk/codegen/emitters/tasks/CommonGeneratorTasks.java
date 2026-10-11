@@ -26,6 +26,8 @@ class CommonGeneratorTasks extends CompositeGeneratorTask {
               new SyncClientGeneratorTasks(params),
               new MarshallerGeneratorTasks(params),
               new ModelClassGeneratorTasks(params),
+              new SchemaGeneratorTasks(params),
+              new ProtocolTestGeneratorTasks(params),
               new PackageInfoGeneratorTasks(params),
               new BaseExceptionClassGeneratorTasks(params),
               new CommonInternalGeneratorTasks(params));

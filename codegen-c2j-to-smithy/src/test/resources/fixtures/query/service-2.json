@@ -1,0 +1,65 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "apiVersion": "2010-03-31",
+    "endpointPrefix": "fixturequery",
+    "protocol": "query",
+    "protocols": ["query"],
+    "serviceAbbreviation": "Fixture Query",
+    "serviceId": "Fixture Query",
+    "signatureVersion": "v4",
+    "uid": "fixturequery-2010-03-31",
+    "xmlNamespace": "http://fixturequery.amazonaws.com/doc/2010-03-31/"
+  },
+  "operations": {
+    "Publish": {
+      "name": "Publish",
+      "http": {"method": "POST", "requestUri": "/"},
+      "input": {"shape": "PublishInput"},
+      "output": {"shape": "PublishResponse", "resultWrapper": "PublishResult"},
+      "errors": [{"shape": "NotFoundException"}]
+    },
+    "Subscribe": {
+      "name": "Subscribe",
+      "http": {"method": "POST", "requestUri": "/"},
+      "input": {"shape": "Endpoint"},
+      "output": {"shape": "PublishResponse", "resultWrapper": "SubscribeOutcome"}
+    }
+  },
+  "shapes": {
+    "PublishInput": {
+      "type": "structure",
+      "required": ["Message"],
+      "members": {
+        "Message": {"shape": "message"},
+        "Attributes": {"shape": "AttributeMap", "locationName": "MessageAttributes"},
+        "Target": {"shape": "endpoint"},
+        "Label": {"shape": "String"},
+        "Note": {"shape": "string"}
+      }
+    },
+    "PublishResponse": {
+      "type": "structure",
+      "members": {"MessageId": {"shape": "message"}}
+    },
+    "AttributeMap": {
+      "type": "map",
+      "key": {"shape": "message", "locationName": "Name"},
+      "value": {"shape": "message", "locationName": "Value"}
+    },
+    "Endpoint": {
+      "type": "structure",
+      "members": {"Arn": {"shape": "endpoint"}}
+    },
+    "NotFoundException": {
+      "type": "structure",
+      "members": {"message": {"shape": "message"}},
+      "error": {"code": "NotFound", "httpStatusCode": 404, "senderFault": true},
+      "exception": true
+    },
+    "String": {"type": "string"},
+    "endpoint": {"type": "string"},
+    "message": {"type": "string"},
+    "string": {"type": "string"}
+  }
+}

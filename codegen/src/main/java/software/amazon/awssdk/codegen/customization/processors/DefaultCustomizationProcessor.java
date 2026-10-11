@@ -15,6 +15,9 @@
 
 package software.amazon.awssdk.codegen.customization.processors;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import software.amazon.awssdk.codegen.customization.CodegenCustomizationProcessor;
 import software.amazon.awssdk.codegen.customization.CodegenCustomizationProcessorChain;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
@@ -28,22 +31,34 @@ public final class DefaultCustomizationProcessor {
             CustomizationConfig config) {
 
         return new CodegenCustomizationProcessorChain(
-                new MetadataModifiersProcessor(config.getCustomServiceMetadata()),
-                new RenameShapesProcessor(config.getRenameShapes()),
-                new ShapeModifiersProcessor(config.getShapeModifiers()),
-                new ShapeSubstitutionsProcessor(config.getShapeSubstitutions()),
-                new CustomSdkShapesProcessor(config.getCustomSdkShapes()),
-                new OperationModifiersProcessor(config.getOperationModifiers()),
-                new SmithyRpcV2CborProtocolProcessor(),
-                new RemoveExceptionMessagePropertyProcessor(),
-                new UseLegacyEventGenerationSchemeProcessor(),
-                new NewAndLegacyEventStreamProcessor(),
-                new EventStreamSharedEventProcessor(config.getDuplicateAndRenameSharedEvents()),
-                new S3RemoveBucketFromUriProcessor(),
-                new S3ControlRemoveAccountIdHostPrefixProcessor(),
-                new ExplicitStringPayloadQueryProtocolProcessor(),
-                new LowercaseShapeValidatorProcessor(),
-                new LongPollingOperationProcessor()
-                );
+            namedProcessorsFor(config).values().toArray(new CodegenCustomizationProcessor[0]));
+    }
+
+    /**
+     * The processors of {@link #getProcessorFor(CustomizationConfig)}, in the order they run, keyed by customization
+     * name. A processor driven by a {@code customization.config} entry is named after that entry; the others are named
+     * after their class, without the {@code Processor} suffix. The Codegen_Pipeline uses these names for
+     * {@code disabledCustomizations} and in its log messages.
+     */
+    public static Map<String, CodegenCustomizationProcessor> namedProcessorsFor(CustomizationConfig config) {
+        Map<String, CodegenCustomizationProcessor> processors = new LinkedHashMap<>();
+        processors.put("customServiceMetadata", new MetadataModifiersProcessor(config.getCustomServiceMetadata()));
+        processors.put("renameShapes", new RenameShapesProcessor(config.getRenameShapes()));
+        processors.put("shapeModifiers", new ShapeModifiersProcessor(config.getShapeModifiers()));
+        processors.put("shapeSubstitutions", new ShapeSubstitutionsProcessor(config.getShapeSubstitutions()));
+        processors.put("customSdkShapes", new CustomSdkShapesProcessor(config.getCustomSdkShapes()));
+        processors.put("operationModifiers", new OperationModifiersProcessor(config.getOperationModifiers()));
+        processors.put("smithyRpcV2CborProtocol", new SmithyRpcV2CborProtocolProcessor());
+        processors.put("removeExceptionMessageProperty", new RemoveExceptionMessagePropertyProcessor());
+        processors.put("useLegacyEventGenerationScheme", new UseLegacyEventGenerationSchemeProcessor());
+        processors.put("newAndLegacyEventStream", new NewAndLegacyEventStreamProcessor());
+        processors.put("duplicateAndRenameSharedEvents",
+                       new EventStreamSharedEventProcessor(config.getDuplicateAndRenameSharedEvents()));
+        processors.put("s3RemoveBucketFromUri", new S3RemoveBucketFromUriProcessor());
+        processors.put("s3ControlRemoveAccountIdHostPrefix", new S3ControlRemoveAccountIdHostPrefixProcessor());
+        processors.put("explicitStringPayloadQueryProtocol", new ExplicitStringPayloadQueryProtocolProcessor());
+        processors.put("lowercaseShapeValidator", new LowercaseShapeValidatorProcessor());
+        processors.put("longPollingOperation", new LongPollingOperationProcessor());
+        return Collections.unmodifiableMap(processors);
     }
 }

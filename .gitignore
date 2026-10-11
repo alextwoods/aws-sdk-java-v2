@@ -35,3 +35,5 @@ bin/
 
 # Other
 .attach_pid*
+# jqwik failure database (property-based tests)
+.jqwik-database

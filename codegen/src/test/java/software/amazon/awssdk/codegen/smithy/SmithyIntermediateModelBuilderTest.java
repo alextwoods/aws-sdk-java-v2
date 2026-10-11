@@ -16,17 +16,21 @@
 package software.amazon.awssdk.codegen.smithy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
+import software.amazon.awssdk.codegen.model.intermediate.EnumModel;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.model.service.EndpointRuleSetModel;
 import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
- * Covers the endpoint models reaching the intermediate model from the service's traits. The Smithy
+ * Covers the endpoint models reaching the intermediate model from the service's traits (the Smithy
  * path takes no sidecar input, so a service without the traits lands on the same defaults the C2J
- * path uses when the sidecar files are absent.
+ * path uses when the sidecar files are absent), and IDL 1 {@code @enum} strings becoming enums.
  */
 class SmithyIntermediateModelBuilderTest {
 
@@ -85,6 +89,58 @@ class SmithyIntermediateModelBuilderTest {
                         .model(model)
                         .customizationConfig(CustomizationConfig.create())
                         .build()).build();
+    }
+
+    private static IntermediateModel buildWithRequestMember(String shapes) {
+        String src =
+            "$version: \"2.0\"\nnamespace demo\n\n"
+            + "use aws.api#service\n"
+            + "use aws.auth#sigv4\n"
+            + "use aws.protocols#restJson1\n"
+            + "@service(sdkId: \"Demo\", arnNamespace: \"demo\")\n"
+            + "@sigv4(name: \"demo\")\n"
+            + "@restJson1\n"
+            + "service DemoService { version: \"2024-01-01\", operations: [Op] }\n\n"
+            + "@http(method: \"POST\", uri: \"/op\")\n"
+            + "operation Op { input: OpRequest, output: OpResponse }\n"
+            + "structure OpRequest { state: State }\n"
+            + "structure OpResponse {}\n"
+            + shapes;
+        Model model = Model.assembler()
+                           .discoverModels(Model.class.getClassLoader())
+                           .addUnparsedModel("test.smithy", src)
+                           .assemble()
+                           .unwrap();
+        return new SmithyIntermediateModelBuilder(
+            SmithyModels.builder()
+                        .model(model)
+                        .customizationConfig(CustomizationConfig.create())
+                        .build()).build();
+    }
+
+    /**
+     * Native AWS Smithy models (AWS Account) still use IDL 1 {@code @enum} strings. They are generated as Java enums,
+     * the same as an {@code enum} shape or a C2J enum, including values that have no enum name.
+     */
+    @Test
+    void enumTraitString_isGeneratedAsAnEnum() {
+        IntermediateModel model = buildWithRequestMember(
+            "@enum([{ value: \"ACTIVE\" }, { value: \"pending-activation\" }])\n"
+            + "string State\n");
+
+        ShapeModel state = model.getShapes().get("State");
+        assertThat(state).isNotNull();
+        assertThat(state.getEnums()).extracting(EnumModel::getValue).containsExactly("ACTIVE", "pending-activation");
+        assertThat(state.getEnums()).extracting(EnumModel::getName).containsExactly("ACTIVE", "PENDING_ACTIVATION");
+        assertThat(model.getShapes().get("OpRequest").findMemberModelByC2jName("state").getEnumType()).isEqualTo("State");
+        assertThat(model.smithyModel().expectShape(ShapeId.from("demo#State")).isEnumShape()).isTrue();
+    }
+
+    @Test
+    void enumTraitStringThatCannotBeConverted_fails() {
+        assertThatThrownBy(() -> buildWithRequestMember("@enum([{ value: \"1x\" }])\nstring State\n"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("demo#State");
     }
 
     @Test

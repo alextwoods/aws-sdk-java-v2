@@ -1,0 +1,235 @@
+--- src/software/amazon/awssdk/services/account/AccountAsyncClient.java
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationRequest;
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationResponse;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberRequest;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberResponse;
++ default CompletableFuture<SendPhoneNumberVerificationResponse> sendPhoneNumberVerification( SendPhoneNumberVerificationRequest sendPhoneNumberVerificationRequest) {
++ throw new UnsupportedOperationException();
++ }
++ default CompletableFuture<SendPhoneNumberVerificationResponse> sendPhoneNumberVerification( Consumer<SendPhoneNumberVerificationRequest.Builder> sendPhoneNumberVerificationRequest) {
++ return sendPhoneNumberVerification(SendPhoneNumberVerificationRequest.builder().applyMutation(sendPhoneNumberVerificationRequest).build());
++ }
++ }
++ default CompletableFuture<VerifyPhoneNumberResponse> verifyPhoneNumber(VerifyPhoneNumberRequest verifyPhoneNumberRequest) {
++ throw new UnsupportedOperationException();
++ }
++ default CompletableFuture<VerifyPhoneNumberResponse> verifyPhoneNumber( Consumer<VerifyPhoneNumberRequest.Builder> verifyPhoneNumberRequest) {
++ return verifyPhoneNumber(VerifyPhoneNumberRequest.builder().applyMutation(verifyPhoneNumberRequest).build());
+--- src/software/amazon/awssdk/services/account/AccountClient.java
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationRequest;
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationResponse;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberRequest;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberResponse;
++ default SendPhoneNumberVerificationResponse sendPhoneNumberVerification( SendPhoneNumberVerificationRequest sendPhoneNumberVerificationRequest) throws AccessDeniedException, AccountException, AwsServiceException, ConflictException, InternalServerException, ResourceNotFoundException, SdkClientException, TooManyRequestsException, ValidationException {
++ throw new UnsupportedOperationException();
++ }
++ default SendPhoneNumberVerificationResponse sendPhoneNumberVerification( Consumer<SendPhoneNumberVerificationRequest.Builder> sendPhoneNumberVerificationRequest) throws AccessDeniedException, AccountException, AwsServiceException, ConflictException, InternalServerException, ResourceNotFoundException, SdkClientException, TooManyRequestsException, ValidationException {
++ return sendPhoneNumberVerification(SendPhoneNumberVerificationRequest.builder().applyMutation(sendPhoneNumberVerificationRequest).build());
++ }
++ }
++ default VerifyPhoneNumberResponse verifyPhoneNumber(VerifyPhoneNumberRequest verifyPhoneNumberRequest) throws AccessDeniedException, AccountException, AwsServiceException, ConflictException, InternalServerException, ResourceNotFoundException, SdkClientException, TooManyRequestsException, ValidationException {
++ throw new UnsupportedOperationException();
++ }
++ default VerifyPhoneNumberResponse verifyPhoneNumber(Consumer<VerifyPhoneNumberRequest.Builder> verifyPhoneNumberRequest) throws AccessDeniedException, AccountException, AwsServiceException, ConflictException, InternalServerException, ResourceNotFoundException, SdkClientException, TooManyRequestsException, ValidationException {
++ return verifyPhoneNumber(VerifyPhoneNumberRequest.builder().applyMutation(verifyPhoneNumberRequest).build());
+--- src/software/amazon/awssdk/services/account/DefaultAccountAsyncClient.java
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationRequest;
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationResponse;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberRequest;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberResponse;
++ import software.amazon.awssdk.services.account.transform.SendPhoneNumberVerificationRequestMarshaller;
++ import software.amazon.awssdk.services.account.transform.VerifyPhoneNumberRequestMarshaller;
++ @Override public CompletableFuture<SendPhoneNumberVerificationResponse> sendPhoneNumberVerification( SendPhoneNumberVerificationRequest sendPhoneNumberVerificationRequest) {
++ SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(sendPhoneNumberVerificationRequest, this.clientConfiguration);
++ List<MetricPublisher> metricPublishers = resolveMetricPublishers(clientConfiguration, sendPhoneNumberVerificationRequest.overrideConfiguration().orElse(null));
++ MetricCollector apiCallMetricCollector = metricPublishers.isEmpty() ? NoOpMetricCollector.create() : MetricCollector.create("ApiCall");
++ try {
++ apiCallMetricCollector.reportMetric(CoreMetric.SERVICE_ID, "Account");
++ apiCallMetricCollector.reportMetric(CoreMetric.OPERATION_NAME, "SendPhoneNumberVerification");
++ JsonOperationMetadata operationMetadata = JsonOperationMetadata.builder().hasStreamingSuccessResponse(false).isPayloadJson(true).build();
++ HttpResponseHandler<SendPhoneNumberVerificationResponse> responseHandler = protocolFactory.createResponseHandler( operationMetadata, SendPhoneNumberVerificationResponse::builder);
++ Function<String, Optional<ExceptionMetadata>> exceptionMetadataMapper = errorCode -> {
++ if (errorCode == null) {
++ return Optional.empty();
++ }
++ switch (errorCode) {
++ case "AccessDeniedException": return Optional.of(ExceptionMetadata.builder().errorCode("AccessDeniedException").httpStatusCode(403).exceptionBuilderSupplier(AccessDeniedException::builder).build());
++ case "ConflictException": return Optional.of(ExceptionMetadata.builder().errorCode("ConflictException").httpStatusCode(409).exceptionBuilderSupplier(ConflictException::builder).build());
++ case "ResourceNotFoundException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceNotFoundException").httpStatusCode(404).exceptionBuilderSupplier(ResourceNotFoundException::builder).build());
++ case "ResourceUnavailableException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceUnavailableException").httpStatusCode(424).exceptionBuilderSupplier(ResourceUnavailableException::builder).build());
++ case "ValidationException": return Optional.of(ExceptionMetadata.builder().errorCode("ValidationException").httpStatusCode(400).exceptionBuilderSupplier(ValidationException::builder).build());
++ case "InternalServerException": return Optional.of(ExceptionMetadata.builder().errorCode("InternalServerException").httpStatusCode(500).exceptionBuilderSupplier(InternalServerException::builder).build());
++ case "TooManyRequestsException": return Optional.of(ExceptionMetadata.builder().errorCode("TooManyRequestsException").httpStatusCode(429).exceptionBuilderSupplier(TooManyRequestsException::builder).build());
++ default: return Optional.empty();
++ }
++ };
++ HttpResponseHandler<AwsServiceException> errorResponseHandler = createErrorResponseHandler(protocolFactory, operationMetadata, exceptionMetadataMapper);
++ CompletableFuture<SendPhoneNumberVerificationResponse> executeFuture = clientHandler.execute(new ClientExecutionParams<SendPhoneNumberVerificationRequest, SendPhoneNumberVerificationResponse>().withOperationName("SendPhoneNumberVerification").withProtocolMetadata(protocolMetadata).withMarshaller(new SendPhoneNumberVerificationRequestMarshaller(protocolFactory)).withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler).withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector).withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions).withEndpointResolver(this::resolveEndpoint).withInput(sendPhoneNumberVerificationRequest));
++ CompletableFuture<SendPhoneNumberVerificationResponse> whenCompleted = executeFuture.whenComplete((r, e) -> {
++ metricPublishers.forEach(p -> p.publish(apiCallMetricCollector.collect()));
++ });
++ executeFuture = CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
++ return executeFuture;
++ }
++ catch (Throwable t) {
++ metricPublishers.forEach(p -> p.publish(apiCallMetricCollector.collect()));
++ return CompletableFutureUtils.failedFuture(t);
++ }
++ }
++ metricPublishers.forEach(p -> p.publish(apiCallMetricCollector.collect()));
++ });
++ executeFuture = CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
++ return executeFuture;
++ }
++ catch (Throwable t) {
++ metricPublishers.forEach(p -> p.publish(apiCallMetricCollector.collect()));
++ return CompletableFutureUtils.failedFuture(t);
++ }
++ }
++ @Override public CompletableFuture<VerifyPhoneNumberResponse> verifyPhoneNumber(VerifyPhoneNumberRequest verifyPhoneNumberRequest) {
++ SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(verifyPhoneNumberRequest, this.clientConfiguration);
++ List<MetricPublisher> metricPublishers = resolveMetricPublishers(clientConfiguration, verifyPhoneNumberRequest.overrideConfiguration().orElse(null));
++ MetricCollector apiCallMetricCollector = metricPublishers.isEmpty() ? NoOpMetricCollector.create() : MetricCollector.create("ApiCall");
++ try {
++ apiCallMetricCollector.reportMetric(CoreMetric.SERVICE_ID, "Account");
++ apiCallMetricCollector.reportMetric(CoreMetric.OPERATION_NAME, "VerifyPhoneNumber");
++ JsonOperationMetadata operationMetadata = JsonOperationMetadata.builder().hasStreamingSuccessResponse(false).isPayloadJson(true).build();
++ HttpResponseHandler<VerifyPhoneNumberResponse> responseHandler = protocolFactory.createResponseHandler( operationMetadata, VerifyPhoneNumberResponse::builder);
++ Function<String, Optional<ExceptionMetadata>> exceptionMetadataMapper = errorCode -> {
++ if (errorCode == null) {
++ return Optional.empty();
++ }
++ switch (errorCode) {
++ case "AccessDeniedException": return Optional.of(ExceptionMetadata.builder().errorCode("AccessDeniedException").httpStatusCode(403).exceptionBuilderSupplier(AccessDeniedException::builder).build());
++ case "ConflictException": return Optional.of(ExceptionMetadata.builder().errorCode("ConflictException").httpStatusCode(409).exceptionBuilderSupplier(ConflictException::builder).build());
++ case "ResourceNotFoundException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceNotFoundException").httpStatusCode(404).exceptionBuilderSupplier(ResourceNotFoundException::builder).build());
++ case "ResourceUnavailableException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceUnavailableException").httpStatusCode(424).exceptionBuilderSupplier(ResourceUnavailableException::builder).build());
++ case "ValidationException": return Optional.of(ExceptionMetadata.builder().errorCode("ValidationException").httpStatusCode(400).exceptionBuilderSupplier(ValidationException::builder).build());
++ case "InternalServerException": return Optional.of(ExceptionMetadata.builder().errorCode("InternalServerException").httpStatusCode(500).exceptionBuilderSupplier(InternalServerException::builder).build());
++ case "TooManyRequestsException": return Optional.of(ExceptionMetadata.builder().errorCode("TooManyRequestsException").httpStatusCode(429).exceptionBuilderSupplier(TooManyRequestsException::builder).build());
++ default: return Optional.empty();
++ }
++ };
++ HttpResponseHandler<AwsServiceException> errorResponseHandler = createErrorResponseHandler(protocolFactory, operationMetadata, exceptionMetadataMapper);
++ CompletableFuture<VerifyPhoneNumberResponse> executeFuture = clientHandler.execute(new ClientExecutionParams<VerifyPhoneNumberRequest, VerifyPhoneNumberResponse>().withOperationName("VerifyPhoneNumber").withProtocolMetadata(protocolMetadata).withMarshaller(new VerifyPhoneNumberRequestMarshaller(protocolFactory)).withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler).withRequestConfiguration(clientConfiguration).withMetricCollector(apiCallMetricCollector).withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions).withEndpointResolver(this::resolveEndpoint).withInput(verifyPhoneNumberRequest));
++ CompletableFuture<VerifyPhoneNumberResponse> whenCompleted = executeFuture.whenComplete((r, e) -> {
+--- src/software/amazon/awssdk/services/account/DefaultAccountClient.java
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationRequest;
++ import software.amazon.awssdk.services.account.model.SendPhoneNumberVerificationResponse;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberRequest;
++ import software.amazon.awssdk.services.account.model.VerifyPhoneNumberResponse;
++ import software.amazon.awssdk.services.account.transform.SendPhoneNumberVerificationRequestMarshaller;
++ import software.amazon.awssdk.services.account.transform.VerifyPhoneNumberRequestMarshaller;
++ @Override public SendPhoneNumberVerificationResponse sendPhoneNumberVerification( SendPhoneNumberVerificationRequest sendPhoneNumberVerificationRequest) throws AccessDeniedException, AccountException, AwsServiceException, ConflictException, InternalServerException, ResourceNotFoundException, SdkClientException, TooManyRequestsException, ValidationException {
++ JsonOperationMetadata operationMetadata = JsonOperationMetadata.builder().hasStreamingSuccessResponse(false).isPayloadJson(true).build();
++ HttpResponseHandler<SendPhoneNumberVerificationResponse> responseHandler = protocolFactory.createResponseHandler( operationMetadata, SendPhoneNumberVerificationResponse::builder);
++ Function<String, Optional<ExceptionMetadata>> exceptionMetadataMapper = errorCode -> {
++ if (errorCode == null) {
++ return Optional.empty();
++ }
++ switch (errorCode) {
++ case "AccessDeniedException": return Optional.of(ExceptionMetadata.builder().errorCode("AccessDeniedException").httpStatusCode(403).exceptionBuilderSupplier(AccessDeniedException::builder).build());
++ case "ConflictException": return Optional.of(ExceptionMetadata.builder().errorCode("ConflictException").httpStatusCode(409).exceptionBuilderSupplier(ConflictException::builder).build());
++ case "ResourceNotFoundException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceNotFoundException").httpStatusCode(404).exceptionBuilderSupplier(ResourceNotFoundException::builder).build());
++ case "ResourceUnavailableException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceUnavailableException").httpStatusCode(424).exceptionBuilderSupplier(ResourceUnavailableException::builder).build());
++ case "ValidationException": return Optional.of(ExceptionMetadata.builder().errorCode("ValidationException").httpStatusCode(400).exceptionBuilderSupplier(ValidationException::builder).build());
++ case "InternalServerException": return Optional.of(ExceptionMetadata.builder().errorCode("InternalServerException").httpStatusCode(500).exceptionBuilderSupplier(InternalServerException::builder).build());
++ case "TooManyRequestsException": return Optional.of(ExceptionMetadata.builder().errorCode("TooManyRequestsException").httpStatusCode(429).exceptionBuilderSupplier(TooManyRequestsException::builder).build());
++ default: return Optional.empty();
++ }
++ };
++ HttpResponseHandler<AwsServiceException> errorResponseHandler = createErrorResponseHandler(protocolFactory, operationMetadata, exceptionMetadataMapper);
++ SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(sendPhoneNumberVerificationRequest, this.clientConfiguration);
++ List<MetricPublisher> metricPublishers = resolveMetricPublishers(clientConfiguration, sendPhoneNumberVerificationRequest.overrideConfiguration().orElse(null));
++ MetricCollector apiCallMetricCollector = metricPublishers.isEmpty() ? NoOpMetricCollector.create() : MetricCollector.create("ApiCall");
++ try {
++ apiCallMetricCollector.reportMetric(CoreMetric.SERVICE_ID, "Account");
++ apiCallMetricCollector.reportMetric(CoreMetric.OPERATION_NAME, "SendPhoneNumberVerification");
++ return clientHandler.execute(new ClientExecutionParams<SendPhoneNumberVerificationRequest, SendPhoneNumberVerificationResponse>().withOperationName("SendPhoneNumberVerification").withProtocolMetadata(protocolMetadata).withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler).withRequestConfiguration(clientConfiguration).withInput(sendPhoneNumberVerificationRequest).withMetricCollector(apiCallMetricCollector).withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions).withEndpointResolver(this::resolveEndpoint).withMarshaller(new SendPhoneNumberVerificationRequestMarshaller(protocolFactory)));
++ }
++ finally {
++ metricPublishers.forEach(p -> p.publish(apiCallMetricCollector.collect()));
++ }
++ }
++ }
++ finally {
++ metricPublishers.forEach(p -> p.publish(apiCallMetricCollector.collect()));
++ }
++ }
++ @Override public VerifyPhoneNumberResponse verifyPhoneNumber(VerifyPhoneNumberRequest verifyPhoneNumberRequest) throws AccessDeniedException, AccountException, AwsServiceException, ConflictException, InternalServerException, ResourceNotFoundException, SdkClientException, TooManyRequestsException, ValidationException {
++ JsonOperationMetadata operationMetadata = JsonOperationMetadata.builder().hasStreamingSuccessResponse(false).isPayloadJson(true).build();
++ HttpResponseHandler<VerifyPhoneNumberResponse> responseHandler = protocolFactory.createResponseHandler(operationMetadata, VerifyPhoneNumberResponse::builder);
++ Function<String, Optional<ExceptionMetadata>> exceptionMetadataMapper = errorCode -> {
++ if (errorCode == null) {
++ return Optional.empty();
++ }
++ switch (errorCode) {
++ case "AccessDeniedException": return Optional.of(ExceptionMetadata.builder().errorCode("AccessDeniedException").httpStatusCode(403).exceptionBuilderSupplier(AccessDeniedException::builder).build());
++ case "ConflictException": return Optional.of(ExceptionMetadata.builder().errorCode("ConflictException").httpStatusCode(409).exceptionBuilderSupplier(ConflictException::builder).build());
++ case "ResourceNotFoundException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceNotFoundException").httpStatusCode(404).exceptionBuilderSupplier(ResourceNotFoundException::builder).build());
++ case "ResourceUnavailableException": return Optional.of(ExceptionMetadata.builder().errorCode("ResourceUnavailableException").httpStatusCode(424).exceptionBuilderSupplier(ResourceUnavailableException::builder).build());
++ case "ValidationException": return Optional.of(ExceptionMetadata.builder().errorCode("ValidationException").httpStatusCode(400).exceptionBuilderSupplier(ValidationException::builder).build());
++ case "InternalServerException": return Optional.of(ExceptionMetadata.builder().errorCode("InternalServerException").httpStatusCode(500).exceptionBuilderSupplier(InternalServerException::builder).build());
++ case "TooManyRequestsException": return Optional.of(ExceptionMetadata.builder().errorCode("TooManyRequestsException").httpStatusCode(429).exceptionBuilderSupplier(TooManyRequestsException::builder).build());
++ default: return Optional.empty();
++ }
++ };
++ HttpResponseHandler<AwsServiceException> errorResponseHandler = createErrorResponseHandler(protocolFactory, operationMetadata, exceptionMetadataMapper);
++ SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(verifyPhoneNumberRequest, this.clientConfiguration);
++ List<MetricPublisher> metricPublishers = resolveMetricPublishers(clientConfiguration, verifyPhoneNumberRequest.overrideConfiguration().orElse(null));
++ MetricCollector apiCallMetricCollector = metricPublishers.isEmpty() ? NoOpMetricCollector.create() : MetricCollector.create("ApiCall");
++ try {
++ apiCallMetricCollector.reportMetric(CoreMetric.SERVICE_ID, "Account");
++ apiCallMetricCollector.reportMetric(CoreMetric.OPERATION_NAME, "VerifyPhoneNumber");
++ return clientHandler.execute(new ClientExecutionParams<VerifyPhoneNumberRequest, VerifyPhoneNumberResponse>().withOperationName("VerifyPhoneNumber").withProtocolMetadata(protocolMetadata).withResponseHandler(responseHandler).withErrorResponseHandler(errorResponseHandler).withRequestConfiguration(clientConfiguration).withInput(verifyPhoneNumberRequest).withMetricCollector(apiCallMetricCollector).withAuthSchemeOptionsResolver(this::resolveAuthSchemeOptions).withEndpointResolver(this::resolveEndpoint).withMarshaller(new VerifyPhoneNumberRequestMarshaller(protocolFactory)));
+--- src/software/amazon/awssdk/services/account/model/GetContactInformationResponse.java
+- private static final List<SdkField<?>> SDK_FIELDS = Collections.unmodifiableList(Arrays.asList(CONTACT_INFORMATION_FIELD));
++ private static final SdkField<String> VERIFICATION_STATUS_FIELD = SdkField.<String> builder(MarshallingType.STRING).memberName("VerificationStatus").getter(getter(GetContactInformationResponse::verificationStatusAsString)).setter(setter(Builder::verificationStatus)).traits(LocationTrait.builder().location(MarshallLocation.PAYLOAD).locationName("VerificationStatus").build()).build();
++ private static final List<SdkField<?>> SDK_FIELDS = Collections.unmodifiableList(Arrays.asList(CONTACT_INFORMATION_FIELD, VERIFICATION_STATUS_FIELD));
++ private final String verificationStatus;
++ this.verificationStatus = builder.verificationStatus;
++ public final PhoneNumberVerificationStatus verificationStatus() {
++ return PhoneNumberVerificationStatus.fromValue(verificationStatus);
++ }
++ public final String verificationStatusAsString() {
++ return verificationStatus;
++ }
++ hashCode = 31 * hashCode + Objects.hashCode(verificationStatusAsString());
+- return Objects.equals(contactInformation(), other.contactInformation());
++ return Objects.equals(contactInformation(), other.contactInformation()) && Objects.equals(verificationStatusAsString(), other.verificationStatusAsString());
+- return ToString.builder("GetContactInformationResponse").add("ContactInformation", contactInformation()).build();
++ return ToString.builder("GetContactInformationResponse").add("ContactInformation", contactInformation()).add("VerificationStatus", verificationStatusAsString()).build();
++ case "VerificationStatus": return Optional.ofNullable(clazz.cast(verificationStatusAsString()));
++ map.put("VerificationStatus", VERIFICATION_STATUS_FIELD);
++ Builder verificationStatus(String verificationStatus);
++ Builder verificationStatus(PhoneNumberVerificationStatus verificationStatus);
++ private String verificationStatus;
++ verificationStatus(model.verificationStatus);
++ return this;
++ }
++ public final String getVerificationStatus() {
++ return verificationStatus;
++ }
++ public final void setVerificationStatus(String verificationStatus) {
++ this.verificationStatus = verificationStatus;
++ }
++ @Override public final Builder verificationStatus(String verificationStatus) {
++ this.verificationStatus = verificationStatus;
++ return this;
++ }
++ @Override public final Builder verificationStatus(PhoneNumberVerificationStatus verificationStatus) {
++ this.verificationStatus(verificationStatus == null ? null : verificationStatus.toString());
+--- src/software/amazon/awssdk/services/account/model/PhoneNumberVerificationStatus.java
+only generated by the pipeline
+--- src/software/amazon/awssdk/services/account/model/SendPhoneNumberVerificationRequest.java
+only generated by the pipeline
+--- src/software/amazon/awssdk/services/account/model/SendPhoneNumberVerificationResponse.java
+only generated by the pipeline
+--- src/software/amazon/awssdk/services/account/model/VerifyPhoneNumberRequest.java
+only generated by the pipeline
+--- src/software/amazon/awssdk/services/account/model/VerifyPhoneNumberResponse.java
+only generated by the pipeline
+--- src/software/amazon/awssdk/services/account/transform/SendPhoneNumberVerificationRequestMarshaller.java
+only generated by the pipeline
+--- src/software/amazon/awssdk/services/account/transform/VerifyPhoneNumberRequestMarshaller.java
+only generated by the pipeline
