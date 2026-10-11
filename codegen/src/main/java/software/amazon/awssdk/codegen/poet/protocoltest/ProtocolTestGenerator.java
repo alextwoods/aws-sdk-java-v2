@@ -138,7 +138,9 @@ public final class ProtocolTestGenerator {
                                             "Protocol tests are generated only for services built from a Smithy model");
         this.service = model.expectShape(Objects.requireNonNull(intermediateModel.serviceId(), "serviceId"),
                                          ServiceShape.class);
-        this.skips = builder.skips == null ? ProtocolTestSkipList.empty() : builder.skips;
+        // One skip file can serve several services; entries limited to another service are ignored here.
+        this.skips = (builder.skips == null ? ProtocolTestSkipList.empty() : builder.skips)
+            .forService(service.getId().toString());
         if (builder.maxTestsPerClass < 1) {
             throw new IllegalArgumentException("maxTestsPerClass must be positive: " + builder.maxTestsPerClass);
         }
@@ -562,7 +564,7 @@ public final class ProtocolTestGenerator {
 
     private CodeBlock responseBody(HttpResponseTestCase testCase, OperationShape operationShape, OperationModel operation) {
         CodeBlock.Builder code = CodeBlock.builder();
-        ShapeModel output = operation.getOutputShape();
+        ShapeModel output = outputShapeModel(operation);
         Shape outputShape = model.expectShape(operationShape.getOutputShape());
         ClassName outputClass = literals.modelClass(output);
         code.addStatement("$T expected = $L", outputClass,
@@ -586,6 +588,22 @@ public final class ProtocolTestGenerator {
             code.addStatement("$T.outputEquals(expected, actual)", ProtocolTestRuntimeTypes.PROTOCOL_ASSERTS);
         }
         return code.build();
+    }
+
+    /**
+     * The operation's output shape. An operation whose output is {@code smithy.api#Unit} has no linked output shape
+     * (as in C2J), but its client method still returns the synthesized empty {@code <Op>Response}.
+     */
+    private ShapeModel outputShapeModel(OperationModel operation) {
+        if (operation.getOutputShape() != null) {
+            return operation.getOutputShape();
+        }
+        ShapeModel synthesized = intermediateModel.getShapes().get(operation.getReturnType().getReturnType());
+        if (synthesized == null) {
+            throw new UngeneratableCaseException("operation " + operation.getOperationName()
+                                                 + " has no generated output class");
+        }
+        return synthesized;
     }
 
     private CodeBlock errorBody(HttpResponseTestCase testCase, StructureShape errorShape, OperationShape operationShape,

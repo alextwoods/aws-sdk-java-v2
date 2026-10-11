@@ -237,6 +237,11 @@ final class AddSmithyMetadata {
     /**
      * C2J's {@code metadata.auth} is the service's effective auth, so the fallback matters: reading
      * only {@code @auth} would leave this empty for services that never declare it, such as EC2.
+     *
+     * <p>A service with no {@code @auth} trait and no supported auth definition trait has the effective auth
+     * {@code smithy.api#noAuth}, so that is returned instead of an empty list, which leaves the auth scheme generators
+     * with no service default. C2J models always declare a signature version, so this applies only to native Smithy
+     * models such as the protocol test services. An explicit {@code @auth([])} is still returned as an empty list.
      */
     private static List<AuthType> auth(ServiceShape service) {
         List<AuthType> auth = new ArrayList<>();
@@ -250,6 +255,8 @@ final class AddSmithyMetadata {
             auth.add(AuthType.V4);
         } else if (service.hasTrait(HttpBearerAuthTrait.class)) {
             auth.add(AuthType.BEARER);
+        } else {
+            auth.add(AuthType.NONE);
         }
         return auth;
     }

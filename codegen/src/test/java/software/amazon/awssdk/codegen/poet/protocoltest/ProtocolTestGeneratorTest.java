@@ -170,7 +170,7 @@ class ProtocolTestGeneratorTest {
             ".data(software.amazon.awssdk.core.SdkBytes.fromUtf8String(\"blob \\\"quoted\\\"\"))",
             ".color(\"red\")",
             ".colorsWithStrings(java.util.Arrays.<java.lang.String>asList(\"red\", \"green\"))",
-            ".tags(java.util.Arrays.<java.lang.String>asList(\"a\", null, \"b\"))",
+            ".tags(java.util.Arrays.<java.lang.String>asList(\"a\", (java.lang.String) null, \"b\"))",
             ".empty(java.util.Collections.<java.lang.String>emptyList())",
             ".attributes(software.amazon.awssdk.protocol.smithytests.ProtocolTestValues.<java.lang.String>mapOf(\"k1\", "
             + "\"v1\", \"k2\", \"v2\"))",
@@ -336,6 +336,51 @@ class ProtocolTestGeneratorTest {
                 .isInstanceOf(ProtocolTestCodegenException.class)
                 .hasMessageContaining("skips.json");
         }
+    }
+
+    @Test
+    void responseCaseOfAnOperationWithUnitOutput_expectsTheSynthesizedResponse() throws IOException {
+        // An operation with no output has no linked output shape in the intermediate model (as in C2J), but its
+        // client method returns the synthesized empty <Op>Response.
+        String model = resource(DEMO).replace("operations: [PutThing, GetThing, WatchThings]",
+                                              "operations: [PutThing, GetThing, WatchThings, PingThing]")
+                       + "\n@httpResponseTests([{ id: \"PingThingNoOutput\", protocol: awsJson1_0, code: 200 }])\n"
+                       + "@http(method: \"POST\", uri: \"/ping\")\noperation PingThing {}\n";
+        IntermediateModel intermediateModel = CodegenPipeline.create().prepare(inputs(dir, model, null).build())
+                                                             .intermediateModel();
+        List<ClassSpec> specs = ProtocolTestGenerator.builder().model(intermediateModel)
+                                                     .skips(ProtocolTestSkipList.parse(SKIP_EVENT_STREAM, "skips.json"))
+                                                     .build()
+                                                     .classSpecs();
+        String code = method(specs.get(1), "response_PingThingNoOutput").code.toString();
+        assertThat(code).contains("PingThingResponse expected = software.amazon.awssdk.services.protodemo.model"
+                                  + ".PingThingResponse.builder().build()",
+                                  "c -> c.pingThing(software.amazon.awssdk.services.protodemo.model.PingThingRequest"
+                                  + ".builder().build())");
+    }
+
+    @Test
+    void skipEntriesForAnotherService_areIgnored() throws IOException {
+        // One skip file can serve several services (test/smithy-protocol-tests); entries limited to another service
+        // neither fail validation nor skip this service's cases.
+        String skips = "[{\"id\": \"WatchThingsEventStream\", \"reason\": \"no sync method\","
+                       + " \"service\": \"demo.protocoltests#ProtoDemo\"},"
+                       + " {\"id\": \"NotACaseHere\", \"reason\": \"other service\", \"service\": \"other#Service\"},"
+                       + " {\"id\": \"GetThingOutput\", \"reason\": \"other service\", \"service\": \"other#Service\"}]";
+        List<ClassSpec> specs = generator(skips, 150).classSpecs();
+        assertThat(method(specs.get(1), "response_GetThingOutput").annotations.toString()).doesNotContain("Disabled");
+        assertThat(method(specs.get(0), "request_WatchThingsEventStream").annotations.toString())
+            .contains("@org.junit.jupiter.api.Disabled(\"no sync method\")");
+
+        ProtocolTestSkipList parsed = ProtocolTestSkipList.parse(skips, "skips.json");
+        assertThat(parsed.forService("other#Service").entries()).extracting(ProtocolTestSkipList.Entry::reason)
+                                                                .containsExactly("other service", "other service");
+        assertThat(parsed.entries().get(0).service()).isEqualTo("demo.protocoltests#ProtoDemo");
+        assertThatThrownBy(() -> ProtocolTestSkipList.parse(
+            "[{\"id\": \"A\", \"reason\": \"r\", \"service\": \"s#S\"}, {\"id\": \"A\", \"reason\": \"t\", \"service\": \"s#S\"}]",
+            "skips.json"))
+            .isInstanceOf(ProtocolTestCodegenException.class)
+            .hasMessageContaining("repeats the skip for id \"A\" and service s#S");
     }
 
     // ---------------------------------------------------------------------------------------------------------------

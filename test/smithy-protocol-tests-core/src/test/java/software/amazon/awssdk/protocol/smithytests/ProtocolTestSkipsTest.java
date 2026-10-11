@@ -99,6 +99,40 @@ class ProtocolTestSkipsTest {
     }
 
     @Test
+    void serviceLimitsEntriesToOneService() {
+        String json = "[\n"
+                      + "  {\"id\": \"CaseA\", \"reason\": \"everywhere\"},\n"
+                      + "  {\"id\": \"CaseB\", \"reason\": \"one\", \"service\": \"ns#One\"},\n"
+                      + "  {\"id\": \"CaseB\", \"reason\": \"two\", \"service\": \"ns#Two\"}\n"
+                      + "]";
+        ProtocolTestSkips skips = ProtocolTestSkips.fromJson(json);
+        assertThat(skips.entries().get(1)).isEqualTo(ProtocolTestSkip.create("CaseB", "one", null, "ns#One"));
+        assertThat(skips.entries().get(1).service()).hasValue("ns#One");
+        assertThat(skips.entries().get(0).service()).isEmpty();
+
+        ProtocolTestSkips one = skips.forService("ns#One");
+        assertThat(one.entries()).extracting(ProtocolTestSkip::reason).containsExactly("everywhere", "one");
+        assertThat(one.find("CaseB", REST_JSON).map(ProtocolTestSkip::reason)).hasValue("one");
+        assertThat(skips.forService("ns#Other").entries()).extracting(ProtocolTestSkip::reason)
+                                                         .containsExactly("everywhere");
+    }
+
+    @Test
+    void sameIdAndProtocolIsAllowedForDifferentServices() {
+        String json = "[{\"id\": \"A\", \"reason\": \"r\", \"service\": \"ns#One\"},"
+                      + " {\"id\": \"A\", \"reason\": \"r\", \"service\": \"ns#Two\"}]";
+        assertThat(ProtocolTestSkips.fromJson(json).entries()).hasSize(2);
+        assertThatThrownBy(() -> ProtocolTestSkips.fromJson(
+            "[{\"id\": \"A\", \"reason\": \"r\", \"service\": \"ns#One\"},"
+            + " {\"id\": \"A\", \"reason\": \"s\", \"service\": \"ns#One\"}]"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("entry 1 repeats the skip for id \"A\" and service ns#One");
+        assertThatThrownBy(() -> ProtocolTestSkips.fromJson("[{\"id\": \"A\", \"reason\": \"r\", \"service\": \"\"}]"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("has an empty \"service\"");
+    }
+
+    @Test
     void validateAgainstAcceptsKnownCases() {
         Map<String, List<String>> known = new HashMap<>();
         known.put("CaseA", Arrays.asList(REST_JSON, AWS_JSON_10));

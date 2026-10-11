@@ -21,28 +21,42 @@ import software.amazon.awssdk.utils.Validate;
 
 /**
  * One entry of {@code protocol-test-skips.json}: a protocol test case {@code id}, the non-empty reason it is skipped,
- * and optionally the protocol ShapeId (for example {@code aws.protocols#restJson1}) the skip is limited to. An entry
- * without a protocol applies to the case id under every protocol.
+ * optionally the protocol ShapeId (for example {@code aws.protocols#restJson1}) the skip is limited to, and optionally
+ * the absolute ShapeId of the service the skip is limited to. An entry without a protocol applies to the case id under
+ * every protocol; one without a service applies to every service whose tests use the file.
  */
 public final class ProtocolTestSkip {
     private final String id;
     private final String reason;
     private final String protocol;
+    private final String service;
 
-    private ProtocolTestSkip(String id, String reason, String protocol) {
+    private ProtocolTestSkip(String id, String reason, String protocol, String service) {
         this.id = Validate.paramNotBlank(id, "id");
         this.reason = Validate.paramNotBlank(reason, "reason");
         this.protocol = protocol;
+        this.service = service;
     }
 
     /**
      * Create an entry. {@code id} and {@code reason} must be non-blank; {@code protocol} may be null.
      */
     public static ProtocolTestSkip create(String id, String reason, String protocol) {
+        return create(id, reason, protocol, null);
+    }
+
+    /**
+     * Create an entry limited to a service. {@code id} and {@code reason} must be non-blank; {@code protocol} and
+     * {@code service} may be null.
+     */
+    public static ProtocolTestSkip create(String id, String reason, String protocol, String service) {
         if (protocol != null) {
             Validate.paramNotBlank(protocol, "protocol");
         }
-        return new ProtocolTestSkip(id, reason, protocol);
+        if (service != null) {
+            Validate.paramNotBlank(service, "service");
+        }
+        return new ProtocolTestSkip(id, reason, protocol, service);
     }
 
     public String id() {
@@ -61,6 +75,13 @@ public final class ProtocolTestSkip {
     }
 
     /**
+     * The absolute service ShapeId this skip is limited to, or empty when it applies to every service.
+     */
+    public Optional<String> service() {
+        return Optional.ofNullable(service);
+    }
+
+    /**
      * Whether this entry applies to the case {@code id} run under {@code protocol}.
      */
     public boolean appliesTo(String caseId, String caseProtocol) {
@@ -76,18 +97,21 @@ public final class ProtocolTestSkip {
             return false;
         }
         ProtocolTestSkip that = (ProtocolTestSkip) o;
-        return id.equals(that.id) && reason.equals(that.reason) && Objects.equals(protocol, that.protocol);
+        return id.equals(that.id) && reason.equals(that.reason) && Objects.equals(protocol, that.protocol)
+               && Objects.equals(service, that.service);
     }
 
     @Override
     public int hashCode() {
         int result = id.hashCode();
         result = 31 * result + reason.hashCode();
-        return 31 * result + Objects.hashCode(protocol);
+        result = 31 * result + Objects.hashCode(protocol);
+        return 31 * result + Objects.hashCode(service);
     }
 
     @Override
     public String toString() {
-        return "{id=" + id + (protocol == null ? "" : ", protocol=" + protocol) + ", reason=" + reason + "}";
+        return "{id=" + id + (protocol == null ? "" : ", protocol=" + protocol)
+               + (service == null ? "" : ", service=" + service) + ", reason=" + reason + "}";
     }
 }

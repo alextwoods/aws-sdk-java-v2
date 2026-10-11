@@ -26,14 +26,21 @@
     <artifactId>smithy-protocol-tests</artifactId>
     <name>AWS Java SDK :: Test :: Smithy Protocol Tests</name>
     <description>Protocol compliance tests generated from the Smithy httpRequestTests and httpResponseTests traits of the
-        Smithy protocol test models. Replaces the C2J-based protocol-tests module. The generated tests are added in
-        task 1.33.
+        Smithy protocol test models. Replaces the C2J-based protocol-tests module.
     </description>
     <url>https://aws.amazon.com/sdkforjava</url>
     <properties>
-        <!-- Nothing to document or analyze until the generated sources are added. -->
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-        <mdep.analyze.skip>true</mdep.analyze.skip>
+        <!--
+          Supported_Protocols whose generated protocol tests Surefire runs, as a comma-separated list of protocol
+          ShapeIds, for example
+            -DprotocolTests.enabledProtocols=smithy.protocols#rpcv2Cbor,aws.protocols#awsJson1_0
+          Each generated test class is tagged @Tag("protocol:<protocol ShapeId>"); the list is turned into the JUnit tag
+          expression "none() | protocol:<id> | ..." below, so untagged tests (this module's own unit tests) always run.
+          Empty in phase 1, because no ProtocolTestHarnessFactory is registered until task 3.33. Task 3.34 adds
+          smithy.protocols#rpcv2Cbor and task 7.21 adds the remaining Supported_Protocols.
+        -->
+        <protocolTests.enabledProtocols/>
+        <protocol-test-models.directory>${project.build.directory}/protocol-test-models</protocol-test-models.directory>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -47,6 +54,113 @@
         </dependencies>
     </dependencyManagement>
     <dependencies>
+        <!-- Generated clients: the current (legacy) marshallers and the generated Schemas. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>protocol-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-query-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-xml-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>smithy-rpcv2-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>annotations</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>utils</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-client-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-auth-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-auth</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-auth-aws</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>metrics-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>retries-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>json-utils</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>smithy-protocol-tests-core</artifactId>
@@ -54,13 +168,119 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>test-utils</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Log binding so ProtocolTestSummaryExtension's per-protocol pass/fail/skip counts are printed. -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
     <build>
         <plugins>
+            <!--
+              Copies the Smithy protocol test model JARs where smithy-build.json imports them. They are not added to
+              the codegen plugin's model discovery (SmithyModelDiscovery leaves them out), so each projection gets
+              exactly the services it selects.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-protocol-test-models</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${protocol-test-models.directory}</outputDirectory>
+                            <stripVersion>true</stripVersion>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-aws-protocol-tests</artifactId>
+                                    <version>${smithy.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-protocol-tests</artifactId>
+                                    <version>${smithy.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>codegen-maven-plugin</artifactId>
+                <version>${awsjavasdk.version}</version>
+                <executions>
+                    <execution>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Builds the Surefire tag expression from protocolTests.enabledProtocols. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>protocol-test-groups</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>regex-property</goal>
+                        </goals>
+                        <configuration>
+                            <name>protocolTests.tagExpression</name>
+                            <value>none() ${protocolTests.enabledProtocols}</value>
+                            <!-- Each list item follows a space or comma; the leading none() does not. -->
+                            <regex>[\s,]+([^\s,()]+)</regex>
+                            <replacement> | protocol:$1</replacement>
+                            <failIfNoMatch>false</failIfNoMatch>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes combine.children="append">
+                        <!-- Generated classes are <Svc>RequestTests<N> and <Svc>ResponseTests<N>. -->
+                        <include>**/protocoltests/*Tests*.java</include>
+                    </includes>
+                    <groups>${protocolTests.tagExpression}</groups>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>

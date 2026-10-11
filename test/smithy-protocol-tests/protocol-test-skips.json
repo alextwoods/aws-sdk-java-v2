@@ -1,0 +1,8 @@
+[
+    {
+        "id": "RestJsonSerializeRenamedStructureUnionValue",
+        "protocol": "aws.protocols#restJson1",
+        "service": "aws.protocoltests.restjson#RestJson",
+        "reason": "The Smithy IntermediateModel builder does not apply the service shape's rename property, so aws.protocoltests.restjson.nested#GreetingStruct (renamed RenamedGreeting) has no generated class and the union member uses aws.protocoltests.restjson#GreetingStruct instead"
+    }
+]

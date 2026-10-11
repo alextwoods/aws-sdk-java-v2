@@ -159,7 +159,10 @@ class ShapeInfoTest {
     }
 
     @Test
-    void ofSmithy_intEnumIsAlsoOrContainsEnum() {
+    void ofSmithy_intEnumIsNotAnEnum() {
+        // The intermediate model treats an intEnum as a plain Integer with no enum class (C2J has no int enums), so
+        // no enum-typed accessor names may be derived for it. Union members targeting an intEnum otherwise got two
+        // from<Member>(Integer) factories (JsonRpc10 MyUnion in test/smithy-protocol-tests).
         Model model = smithyModel(
             "intEnum Priority {\n"
             + "    LOW = 1\n"
@@ -168,8 +171,8 @@ class ShapeInfoTest {
             + "list Priorities { member: Priority }\n");
 
         assertThat(ShapeInfo.ofSmithy(model.expectShape(ShapeId.from("demo#Priority")), model).isOrContainsEnum())
-            .isTrue();
+            .isFalse();
         assertThat(ShapeInfo.ofSmithy(model.expectShape(ShapeId.from("demo#Priorities")), model).isOrContainsEnum())
-            .isTrue();
+            .isFalse();
     }
 }

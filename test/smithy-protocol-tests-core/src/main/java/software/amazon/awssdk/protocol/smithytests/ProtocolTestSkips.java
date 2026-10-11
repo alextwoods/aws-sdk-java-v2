@@ -45,14 +45,15 @@ import software.amazon.awssdk.utils.Validate;
  * }</pre>
  *
  * <p>Each entry needs a non-blank {@code id} and {@code reason}; {@code protocol} is optional and limits the skip to one
- * protocol. Loading fails with an {@link IllegalArgumentException} naming the entry if an entry is malformed, has an
- * unknown property, or repeats an earlier {@code (id, protocol)} pair. Use {@link #validateAgainst} to reject entries
- * whose case does not exist.
+ * protocol, and {@code service} is optional and limits it to the service with that absolute ShapeId, so that one file
+ * can serve every service of a module. Loading fails with an {@link IllegalArgumentException} naming the entry if an
+ * entry is malformed, has an unknown property, or repeats an earlier {@code (service, id, protocol)} triple. Use
+ * {@link #validateAgainst} to reject entries whose case does not exist.
  */
 public final class ProtocolTestSkips {
     private static final String FILE_NAME = "protocol-test-skips.json";
     private static final JsonNodeParser PARSER = JsonNodeParser.create();
-    private static final Set<String> KNOWN_PROPERTIES = new HashSet<>(Arrays.asList("id", "reason", "protocol"));
+    private static final Set<String> KNOWN_PROPERTIES = new HashSet<>(Arrays.asList("id", "reason", "protocol", "service"));
     private static final ProtocolTestSkips EMPTY = new ProtocolTestSkips(Collections.emptyList());
 
     private final List<ProtocolTestSkip> entries;
@@ -126,10 +127,11 @@ public final class ProtocolTestSkips {
         List<JsonNode> elements = root.asArray();
         for (int i = 0; i < elements.size(); i++) {
             ProtocolTestSkip entry = parseEntry(elements.get(i), i, source);
-            String key = entry.id() + "|" + entry.protocol().orElse("");
+            String key = entry.service().orElse("") + "|" + entry.id() + "|" + entry.protocol().orElse("");
             if (!seen.add(key)) {
                 throw new IllegalArgumentException(source + " entry " + i + " repeats the skip for id \"" + entry.id() + "\""
-                                                   + entry.protocol().map(p -> " and protocol " + p).orElse(""));
+                                                   + entry.protocol().map(p -> " and protocol " + p).orElse("")
+                                                   + entry.service().map(s -> " and service " + s).orElse(""));
             }
             entries.add(entry);
         }
@@ -145,7 +147,7 @@ public final class ProtocolTestSkips {
         for (String name : fields.keySet()) {
             if (!KNOWN_PROPERTIES.contains(name)) {
                 throw new IllegalArgumentException(where + " has unknown property \"" + name
-                                                   + "\"; allowed properties are id, reason and protocol");
+                                                   + "\"; allowed properties are id, reason, protocol and service");
             }
         }
         String id = requiredString(fields, "id", where);
@@ -154,7 +156,11 @@ public final class ProtocolTestSkips {
         if (fields.containsKey("protocol")) {
             protocol = requiredString(fields, "protocol", where + " (id \"" + id + "\")");
         }
-        return ProtocolTestSkip.create(id, reason, protocol);
+        String service = null;
+        if (fields.containsKey("service")) {
+            service = requiredString(fields, "service", where + " (id \"" + id + "\")");
+        }
+        return ProtocolTestSkip.create(id, reason, protocol, service);
     }
 
     private static String requiredString(Map<String, JsonNode> fields, String name, String where) {
@@ -174,6 +180,22 @@ public final class ProtocolTestSkips {
      */
     public List<ProtocolTestSkip> entries() {
         return entries;
+    }
+
+    /**
+     * The entries that apply to the service with absolute ShapeId {@code serviceId}: those limited to it and those with
+     * no {@code service}. {@link #find} and {@link #validateAgainst} do not look at {@code service}, so call them on the
+     * result of this method when the file serves several services.
+     */
+    public ProtocolTestSkips forService(String serviceId) {
+        Validate.paramNotBlank(serviceId, "serviceId");
+        List<ProtocolTestSkip> applicable = new ArrayList<>();
+        for (ProtocolTestSkip entry : entries) {
+            if (entry.service().map(serviceId::equals).orElse(true)) {
+                applicable.add(entry);
+            }
+        }
+        return new ProtocolTestSkips(applicable);
     }
 
     /**

@@ -15,6 +15,7 @@
 
 package software.amazon.awssdk.codegen.maven.plugin;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,7 +28,13 @@ import static software.amazon.awssdk.codegen.maven.plugin.SmithyTestModule.conta
 import static software.amazon.awssdk.codegen.maven.plugin.SmithyTestModule.project;
 import static software.amazon.awssdk.codegen.maven.plugin.SmithyTestModule.write;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
@@ -109,6 +116,38 @@ class SmithyBuildGeneratorTest {
 
         assertTrue(containsFileEndingWith(outputDirectory(), "Client.java"));
         assertNull(System.getProperty("AWS_SDK_JAVA_VERSION"));
+    }
+
+    @Test
+    void severalProjections_mergeTheirServiceFiles() throws Exception {
+        // Two services, one per projection, both write META-INF/services/...SchemaIndex. Maven would keep one of the two
+        // registrations, so they are merged into one resource directory.
+        write(moduleDir.resolve("model.smithy"), SERVICE + REQUEST
+                                                 + "@service(sdkId: \"Other\")\n@sigv4(name: \"other\")\n@restJson1\n"
+                                                 + "service OtherService { version: \"2024-01-01\", operations: [Op] }\n");
+        String projection = "{ \"transforms\": [{\"name\": \"includeServices\", \"args\": {\"services\": [\"%s\"]}},"
+                            + " {\"name\": \"removeUnusedShapes\", \"args\": {}}],"
+                            + " \"plugins\": { \"" + PLUGIN + "\": {} } }";
+        Path configFile = write(moduleDir.resolve("smithy-build.json"),
+                                "{ \"version\": \"1.0\", " + SOURCES + ", \"projections\": { "
+                                + "\"demo\": " + String.format(projection, "demo#DemoService") + ", "
+                                + "\"other\": " + String.format(projection, "demo#OtherService") + " } }");
+        MavenProject project = project(moduleDir);
+
+        generate(project, configFile);
+
+        Path merged = moduleDir.resolve("target/smithyprojections-merged-resources/META-INF/services/"
+                                        + "software.amazon.awssdk.schema.SchemaIndex");
+        List<String> lines = Files.readAllLines(merged, StandardCharsets.UTF_8);
+        assertEquals(Arrays.asList("software.amazon.awssdk.services.demo.model.DemoSchemaIndex",
+                                   "software.amazon.awssdk.services.other.model.OtherSchemaIndex"), lines);
+        List<Resource> resources = project.getResources();
+        assertEquals(3, resources.size());
+        for (Resource resource : resources) {
+            boolean isMerged = resource.getDirectory().endsWith("smithyprojections-merged-resources");
+            assertEquals(isMerged ? Collections.emptyList() : Collections.singletonList("META-INF/services/**"),
+                         resource.getExcludes(), resource.getDirectory());
+        }
     }
 
     private void generate(MavenProject project, Path configFile) throws MojoExecutionException {

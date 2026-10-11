@@ -18,10 +18,12 @@ package software.amazon.awssdk.codegen.smithy;
 import static software.amazon.awssdk.codegen.internal.Utils.capitalize;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import software.amazon.awssdk.codegen.internal.TypeUtils;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.EnumModel;
@@ -52,6 +54,7 @@ import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.shapes.StructureShape;
 import software.amazon.smithy.model.shapes.UnionShape;
 import software.amazon.smithy.model.traits.DeprecatedTrait;
 import software.amazon.smithy.model.traits.DocumentationTrait;
@@ -164,6 +167,18 @@ abstract class AddSmithyShapes {
         }
     }
 
+    /**
+     * The error structures that are members of an event stream reachable from the service (modeled exception
+     * events), in ShapeId order. An operation does not have to list them in its {@code errors}.
+     */
+    protected final List<StructureShape> eventStreamErrors() {
+        return eventStructures.stream()
+                              .map(id -> model.getShape(id).flatMap(Shape::asStructureShape).orElse(null))
+                              .filter(s -> s != null && s.hasTrait(ErrorTrait.class))
+                              .sorted(Comparator.comparing(Shape::getId))
+                              .collect(Collectors.toList());
+    }
+
     protected final Model getModel() {
         return model;
     }
@@ -254,7 +269,9 @@ abstract class AddSmithyShapes {
 
         boolean isEventStream = smithyShape.isUnionShape() && smithyShape.hasTrait(StreamingTrait.class);
         shapeModel.withIsEventStream(isEventStream);
-        shapeModel.withIsEvent(eventStructures.contains(smithyShape.getId()));
+        // An error structure in an event stream is a modeled exception event, not an event (C2J marks it
+        // "exception", not "event"); EventStreamUtils.getErrorMembers relies on the difference.
+        shapeModel.withIsEvent(eventStructures.contains(smithyShape.getId()) && !smithyShape.hasTrait(ErrorTrait.class));
 
         smithyShape.getTrait(XmlNamespaceTrait.class)
                    .ifPresent(ns -> shapeModel.withXmlNamespace(adaptXmlNamespace(ns)));
@@ -610,7 +627,9 @@ abstract class AddSmithyShapes {
         String unmarshallLocationName =
             SmithyWireNames.unmarshallLocationName(protocol, member, memberName, bindingLocationName);
 
-        boolean streaming = targetShape.hasTrait(StreamingTrait.class);
+        // Only a streaming blob is a streaming payload. An event stream (a @streaming union) is not: C2J marks its
+        // structure "eventstream", not "streaming", and the client generators treat the two differently.
+        boolean streaming = targetShape.isBlobShape() && targetShape.hasTrait(StreamingTrait.class);
         boolean requiresLength = targetShape.hasTrait(RequiresLengthTrait.class)
                                  || member.hasTrait(RequiresLengthTrait.class);
         boolean flattened = member.hasTrait(XmlFlattenedTrait.class)

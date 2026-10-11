@@ -320,7 +320,11 @@ final class ShapeValueLiteralGenerator {
         CodeBlock.Builder code = CodeBlock.builder().add("$T.<$T>asList(", Arrays.class, elementType);
         List<Node> elements = array.getElements();
         for (int i = 0; i < elements.size(); i++) {
-            CodeBlock value = value(elementShape, elements.get(i), path + "[" + i + "]");
+            // A sparse list's null element is cast to the element type: a lone uncast null would be passed to asList
+            // as the varargs array itself.
+            Node element = elements.get(i);
+            CodeBlock value = element.isNullNode() ? CodeBlock.of("($T) null", elementType)
+                                                   : value(elementShape, element, path + "[" + i + "]");
             code.add(i == 0 ? "$L" : ", $L", value);
         }
         return code.add(")").build();

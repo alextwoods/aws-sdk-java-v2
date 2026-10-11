@@ -206,6 +206,14 @@ class AddSmithyMetadataTest {
         assertThat(metadata.getAuthType()).isNull();
     }
 
+    // No auth trait at all (Smithy protocol test services such as RpcV2Protocol): the effective auth is noAuth.
+    @Test
+    void noAuthAtAll_isNoAuth() {
+        Metadata metadata = metadataOf(modelWithoutSigV4(""));
+        assertThat(metadata.getAuth()).containsExactly(AuthType.NONE);
+        assertThat(metadata.getAuthType()).isNull();
+    }
+
     private static Model modelWithoutSigV4(String serviceTraits) {
         String src =
             "$version: \"2.0\"\nnamespace demo\n\n"

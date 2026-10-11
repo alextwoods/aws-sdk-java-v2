@@ -26,6 +26,7 @@ import software.amazon.awssdk.codegen.model.intermediate.MemberModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
 import software.amazon.awssdk.codegen.model.intermediate.ReturnTypeModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.model.intermediate.VariableModel;
 
 /**
@@ -85,6 +86,12 @@ public final class RemoveUnusedShapes {
 
         ShapeModel shape = in.get(shapeName);
         if (shape == null) {
+            // A structure member that targets an error shape (a modeled exception event in an event stream) has the
+            // error's shape name as its type, but the exception is keyed by its exception class name.
+            shapeName = exceptionKeyForShapeName(shapeName, in);
+            shape = shapeName == null ? null : in.get(shapeName);
+        }
+        if (shape == null) {
             return;
         }
 
@@ -104,6 +111,16 @@ public final class RemoveUnusedShapes {
                 }
             }
         }
+    }
+
+    private static String exceptionKeyForShapeName(String shapeName, Map<String, ShapeModel> in) {
+        for (Map.Entry<String, ShapeModel> entry : in.entrySet()) {
+            ShapeModel candidate = entry.getValue();
+            if (ShapeType.Exception.getValue().equals(candidate.getType()) && shapeName.equals(candidate.getC2jName())) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     /**

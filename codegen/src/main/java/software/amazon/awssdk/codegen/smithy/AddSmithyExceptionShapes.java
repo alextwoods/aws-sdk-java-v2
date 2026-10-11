@@ -75,6 +75,11 @@ final class AddSmithyExceptionShapes extends AddSmithyShapes implements Intermed
                                   (a, b) -> a.getId().compareTo(b.getId()) >= 0 ? a : b);
             }
         }
+        // Modeled exception events need an exception class too, even when no operation lists them in its errors.
+        // The C2J route builds every "exception" shape.
+        for (StructureShape errorShape : eventStreamErrors()) {
+            errorShapes.putIfAbsent(naming.getExceptionName(errorShape.getId().getName()), errorShape);
+        }
 
         for (Map.Entry<String, StructureShape> entry : errorShapes.entrySet()) {
             StructureShape errorShape = entry.getValue();

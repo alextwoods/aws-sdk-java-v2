@@ -25,10 +25,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.maven.artifact.Artifact;
@@ -65,6 +68,7 @@ final class SmithyBuildGenerator {
     private static final String SOURCES_DIR = "generated-sources";
     private static final String RESOURCES_DIR = "generated-resources";
     private static final String TESTS_DIR = "generated-test-sources";
+    private static final String SERVICES_DIR = "META-INF/services";
 
     private static final String SDK_VERSION_PLACEHOLDER = "${AWS_SDK_JAVA_VERSION}";
 
@@ -115,7 +119,7 @@ final class SmithyBuildGenerator {
                                                  + ":\n" + describeFailures(result));
             }
 
-            registerOutputDirectories(result);
+            registerOutputDirectories(result, outputDirectory);
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to close the Smithy build classpath for " + smithyBuildFile, e);
         }
@@ -266,7 +270,8 @@ final class SmithyBuildGenerator {
     /**
      * Registers the codegen plugin's output directories. Unlike the C2J output, the root POM does not add them.
      */
-    private void registerOutputDirectories(SmithyBuildResult result) throws MojoExecutionException {
+    private void registerOutputDirectories(SmithyBuildResult result, Path outputDirectory)
+            throws MojoExecutionException {
         List<Path> pluginOutputs = new ArrayList<>();
         for (ProjectionResult projection : result.getProjectionResults()) {
             projection.getPluginManifest(AwsSdkJavaCodegenPlugin.NAME)
@@ -277,10 +282,95 @@ final class SmithyBuildGenerator {
                 "smithy-build completed without running the '" + AwsSdkJavaCodegenPlugin.NAME + "' plugin. Add it to "
                 + "the 'plugins' block of smithy-build.json.");
         }
+        List<Path> resourceDirectories = new ArrayList<>();
         for (Path pluginOutput : pluginOutputs) {
             addCompileSourceRoot(pluginOutput.resolve(SOURCES_DIR));
             addTestCompileSourceRoot(pluginOutput.resolve(TESTS_DIR));
-            addResource(pluginOutput.resolve(RESOURCES_DIR));
+            resourceDirectories.add(pluginOutput.resolve(RESOURCES_DIR));
+        }
+        addResources(resourceDirectories, outputDirectory);
+    }
+
+    /**
+     * Registers the projections' resource directories. With more than one projection, every projection writes its own
+     * {@code META-INF/services} files (for example the generated {@code SchemaIndex} registration), and Maven would
+     * keep only one of each; those files are merged into one directory instead, keeping each distinct line once, sorted.
+     */
+    private void addResources(List<Path> resourceDirectories, Path outputDirectory) throws MojoExecutionException {
+        List<Path> withFiles = new ArrayList<>();
+        for (Path directory : resourceDirectories) {
+            if (containsFiles(directory)) {
+                withFiles.add(directory);
+            }
+        }
+        if (withFiles.size() < 2) {
+            for (Path directory : withFiles) {
+                addResource(directory, Collections.emptyList());
+            }
+            return;
+        }
+
+        Map<Path, Set<String>> serviceFiles = new TreeMap<>();
+        for (Path directory : withFiles) {
+            collectServiceFiles(directory, serviceFiles);
+            addResource(directory, Collections.singletonList(SERVICES_DIR + "/**"));
+        }
+        if (serviceFiles.isEmpty()) {
+            return;
+        }
+        Path merged = mergedResourcesDirectory(outputDirectory);
+        try {
+            deleteRecursively(merged);
+            for (Map.Entry<Path, Set<String>> file : serviceFiles.entrySet()) {
+                Path target = merged.resolve(file.getKey());
+                Path parent = target.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
+                Files.write(target, file.getValue(), StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to write merged service files to " + merged, e);
+        }
+        addResource(merged, Collections.emptyList());
+    }
+
+    private static void collectServiceFiles(Path resourceDirectory, Map<Path, Set<String>> serviceFiles)
+            throws MojoExecutionException {
+        Path services = resourceDirectory.resolve(SERVICES_DIR);
+        if (!Files.isDirectory(services)) {
+            return;
+        }
+        try (Stream<Path> files = Files.walk(services)) {
+            for (Path file : files.filter(Files::isRegularFile).sorted().collect(Collectors.toList())) {
+                Set<String> lines = serviceFiles.computeIfAbsent(resourceDirectory.relativize(file),
+                                                                 f -> new TreeSet<>());
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    if (!line.trim().isEmpty()) {
+                        lines.add(line);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to read generated service files in " + services, e);
+        }
+    }
+
+    /**
+     * A directory next to the smithy-build output directory, so that it is not mistaken for a projection.
+     */
+    private static Path mergedResourcesDirectory(Path outputDirectory) {
+        return outputDirectory.resolveSibling(outputDirectory.getFileName() + "-merged-resources");
+    }
+
+    private static void deleteRecursively(Path directory) throws IOException {
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(directory)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).collect(Collectors.toList())) {
+                Files.delete(path);
+            }
         }
     }
 
@@ -296,12 +386,13 @@ final class SmithyBuildGenerator {
         }
     }
 
-    private void addResource(Path directory) throws MojoExecutionException {
-        if (containsFiles(directory)) {
-            Resource resource = new Resource();
-            resource.setDirectory(directory.toAbsolutePath().toString());
-            project.addResource(resource);
+    private void addResource(Path directory, List<String> excludes) {
+        Resource resource = new Resource();
+        resource.setDirectory(directory.toAbsolutePath().toString());
+        for (String exclude : excludes) {
+            resource.addExclude(exclude);
         }
+        project.addResource(resource);
     }
 
     // The plugin always creates all three output directories; empty ones are not registered.

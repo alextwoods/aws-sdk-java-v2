@@ -48,6 +48,8 @@ import software.amazon.smithy.model.traits.XmlFlattenedTrait;
  */
 final class AddSmithyModelShapes extends AddSmithyShapes implements IntermediateModelShapeProcessor {
 
+    private static final ShapeId UNIT = ShapeId.from("smithy.api#Unit");
+
     AddSmithyModelShapes(Model model,
                          ServiceShape service,
                          NamingStrategy namingStrategy,
@@ -74,6 +76,7 @@ final class AddSmithyModelShapes extends AddSmithyShapes implements Intermediate
             queue.addAll(op.getErrorsSet());
         }
         queue.addAll(getService().getErrorsSet());
+        boolean unionTargetsUnit = false;
 
         while (!queue.isEmpty()) {
             ShapeId shapeId = queue.poll();
@@ -92,6 +95,7 @@ final class AddSmithyModelShapes extends AddSmithyShapes implements Intermediate
 
             for (MemberShape m : shape.members()) {
                 queue.add(m.getTarget());
+                unionTargetsUnit |= shape.isUnionShape() && UNIT.equals(m.getTarget());
             }
             if (shape.isListShape() || shape.isMapShape()) {
                 continue;
@@ -118,6 +122,18 @@ final class AddSmithyModelShapes extends AddSmithyShapes implements Intermediate
             shapeModel.setUnmarshaller(unmarshaller);
 
             newShapes.put(javaClassName, shapeModel);
+        }
+
+        // A union member targeting smithy.api#Unit needs a member type. C2J models declare an empty "Unit" structure
+        // for it, which becomes a model class; synthesize the same class from the prelude Unit structure.
+        if (unionTargetsUnit) {
+            String javaClassName = naming.getShapeClassName(UNIT.getName());
+            if (!currentShapes.containsKey(javaClassName) && !newShapes.containsKey(javaClassName)) {
+                ShapeModel shapeModel = generateShapeModel(javaClassName, model.expectShape(UNIT), null);
+                shapeModel.setType(ShapeType.Model.getValue());
+                shapeModel.setUnmarshaller(new ShapeUnmarshaller());
+                newShapes.put(javaClassName, shapeModel);
+            }
         }
 
         return newShapes;

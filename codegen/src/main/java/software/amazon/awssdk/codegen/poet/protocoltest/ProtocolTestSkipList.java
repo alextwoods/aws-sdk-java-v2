@@ -37,17 +37,18 @@ import software.amazon.smithy.model.node.StringNode;
 
 /**
  * The protocol test skip list, read at codegen time: a JSON array of
- * {@code {"id": ..., "reason": ..., "protocol": ...}} entries, where {@code protocol} is optional and limits the
- * entry to cases of that protocol.
+ * {@code {"id": ..., "reason": ..., "protocol": ..., "service": ...}} entries, where {@code protocol} is optional and
+ * limits the entry to cases of that protocol, and {@code service} is optional and limits the entry to the service with
+ * that absolute ShapeId, so that one file can serve every service of a module.
  *
  * <p>The format and the validation rules are those of the runtime loader
  * {@code software.amazon.awssdk.protocol.smithytests.ProtocolTestSkips} in {@code smithy-protocol-tests-core}, which
  * codegen cannot depend on. Both reject a missing or blank {@code id} or {@code reason}, unknown properties and repeated
- * {@code (id, protocol)} pairs; this class parses with the Smithy {@link Node} parser that codegen already uses.
+ * {@code (service, id, protocol)} triples; this class parses with the Smithy {@link Node} parser that codegen already uses.
  */
 @SdkInternalApi
 public final class ProtocolTestSkipList {
-    private static final List<String> PROPERTIES = Arrays.asList("id", "reason", "protocol");
+    private static final List<String> PROPERTIES = Arrays.asList("id", "reason", "protocol", "service");
     private static final ProtocolTestSkipList EMPTY = new ProtocolTestSkipList(Collections.emptyList());
 
     private final List<Entry> entries;
@@ -97,10 +98,11 @@ public final class ProtocolTestSkipList {
         List<Node> elements = array.get().getElements();
         for (int i = 0; i < elements.size(); i++) {
             Entry entry = parseEntry(elements.get(i), source + " entry " + i);
-            if (!seen.add(entry.id + "|" + nullToEmpty(entry.protocol))) {
+            if (!seen.add(nullToEmpty(entry.service) + "|" + entry.id + "|" + nullToEmpty(entry.protocol))) {
                 throw new ProtocolTestCodegenException(source + " entry " + i + " repeats the skip for id \"" + entry.id
                                                        + "\"" + (entry.protocol == null ? "" : " and protocol "
-                                                                                              + entry.protocol));
+                                                                                              + entry.protocol)
+                                                       + (entry.service == null ? "" : " and service " + entry.service));
             }
             entries.add(entry);
         }
@@ -116,7 +118,7 @@ public final class ProtocolTestSkipList {
             String name = key.getValue();
             if (!PROPERTIES.contains(name)) {
                 throw new ProtocolTestCodegenException(where + " has unknown property \"" + name
-                                                       + "\"; allowed properties are id, reason and protocol");
+                                                       + "\"; allowed properties are id, reason, protocol and service");
             }
         }
         String id = requiredString(object.get(), "id", where);
@@ -124,7 +126,10 @@ public final class ProtocolTestSkipList {
         String protocol = object.get().getMember("protocol").isPresent()
                           ? requiredString(object.get(), "protocol", where + " (id \"" + id + "\")")
                           : null;
-        return new Entry(id, reason, protocol);
+        String service = object.get().getMember("service").isPresent()
+                         ? requiredString(object.get(), "service", where + " (id \"" + id + "\")")
+                         : null;
+        return new Entry(id, reason, protocol, service);
     }
 
     private static String nullToEmpty(String value) {
@@ -145,6 +150,20 @@ public final class ProtocolTestSkipList {
 
     public List<Entry> entries() {
         return entries;
+    }
+
+    /**
+     * The entries that apply to the service with absolute ShapeId {@code serviceId}: those limited to it and those with
+     * no {@code service}.
+     */
+    public ProtocolTestSkipList forService(String serviceId) {
+        List<Entry> applicable = new ArrayList<>();
+        for (Entry entry : entries) {
+            if (entry.service == null || entry.service.equals(serviceId)) {
+                applicable.add(entry);
+            }
+        }
+        return applicable.size() == entries.size() ? this : new ProtocolTestSkipList(applicable);
     }
 
     /**
@@ -193,11 +212,13 @@ public final class ProtocolTestSkipList {
         private final String id;
         private final String reason;
         private final String protocol;
+        private final String service;
 
-        private Entry(String id, String reason, String protocol) {
+        private Entry(String id, String reason, String protocol, String service) {
             this.id = id;
             this.reason = reason;
             this.protocol = protocol;
+            this.service = service;
         }
 
         public String id() {
@@ -215,6 +236,13 @@ public final class ProtocolTestSkipList {
             return protocol;
         }
 
+        /**
+         * The absolute service ShapeId this entry is limited to, or null when it applies to every service.
+         */
+        public String service() {
+            return service;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) {
@@ -224,19 +252,22 @@ public final class ProtocolTestSkipList {
                 return false;
             }
             Entry that = (Entry) o;
-            return id.equals(that.id) && reason.equals(that.reason) && Objects.equals(protocol, that.protocol);
+            return id.equals(that.id) && reason.equals(that.reason) && Objects.equals(protocol, that.protocol)
+                   && Objects.equals(service, that.service);
         }
 
         @Override
         public int hashCode() {
             int result = id.hashCode();
             result = 31 * result + reason.hashCode();
-            return 31 * result + Objects.hashCode(protocol);
+            result = 31 * result + Objects.hashCode(protocol);
+            return 31 * result + Objects.hashCode(service);
         }
 
         @Override
         public String toString() {
-            return "{id=" + id + (protocol == null ? "" : ", protocol=" + protocol) + ", reason=" + reason + "}";
+            return "{id=" + id + (protocol == null ? "" : ", protocol=" + protocol)
+                   + (service == null ? "" : ", service=" + service) + ", reason=" + reason + "}";
         }
     }
 }
