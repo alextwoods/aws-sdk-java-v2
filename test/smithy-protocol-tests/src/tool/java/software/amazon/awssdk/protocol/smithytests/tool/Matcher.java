@@ -16,6 +16,7 @@
 package software.amazon.awssdk.protocol.smithytests.tool;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -27,7 +28,10 @@ import software.amazon.smithy.model.node.Node;
  * Finds the Smithy case equivalent to a legacy case. A Smithy equivalent (Requirement 32.10) is a case for the same
  * protocol with equivalent input or response that asserts the same properties. Matching tries, in order:
  * <ol>
- *     <li>{@link Strategy#ID}: the legacy case carries the Smithy case id (copied Smithy cases).</li>
+ *     <li>{@link Strategy#ID}: the legacy case carries the Smithy case id (copied Smithy cases). The id alone decides
+ *     the match; {@link ContentCheck} then compares the content and records any difference in
+ *     {@link Result#contentDifferences}, so an edited copy is flagged. A legacy case with an id that a later strategy
+ *     matches gets the same check.</li>
  *     <li>{@link Strategy#DOCUMENTATION}: same operation (or error shape) name and the legacy description equals the
  *     Smithy documentation.</li>
  *     <li>{@link Strategy#PARAMS}: same operation name and equal params.</li>
@@ -83,11 +87,18 @@ final class Matcher {
         final Strategy strategy;
         /** Best feature candidates, for review output. */
         final List<Candidate> candidates;
+        /** For a match of a legacy case that carries an id (a copy), how it differs from the match; otherwise empty. */
+        final List<String> contentDifferences;
 
         Result(SmithyCase match, Strategy strategy, List<Candidate> candidates) {
+            this(match, strategy, candidates, Collections.emptyList());
+        }
+
+        Result(SmithyCase match, Strategy strategy, List<Candidate> candidates, List<String> contentDifferences) {
             this.match = match;
             this.strategy = strategy;
             this.candidates = candidates;
+            this.contentDifferences = contentDifferences;
         }
     }
 
@@ -115,7 +126,7 @@ final class Matcher {
         if (legacy.id != null) {
             for (SmithyCase c : sameKind) {
                 if (c.id.equals(legacy.id)) {
-                    return new Result(c, Strategy.ID, candidates);
+                    return new Result(c, Strategy.ID, candidates, ContentCheck.differences(legacy.raw, c.testCase));
                 }
             }
         }
@@ -134,7 +145,10 @@ final class Matcher {
             }
         }
         if (byDoc != null) {
-            return new Result(byDoc, Strategy.DOCUMENTATION, candidates);
+            // A legacy case that carries an id is a copy even when the id names no case of this protocol.
+            List<String> differences = legacy.id == null ? Collections.emptyList()
+                                                          : ContentCheck.differences(legacy.raw, byDoc.testCase);
+            return new Result(byDoc, Strategy.DOCUMENTATION, candidates, differences);
         }
         List<SmithyCase> byParams = new ArrayList<>();
         for (SmithyCase c : sameShape) {

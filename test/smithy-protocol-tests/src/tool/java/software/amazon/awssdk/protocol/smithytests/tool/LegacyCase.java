@@ -43,7 +43,7 @@ final class LegacyCase {
     final ObjectNode raw;
     final LegacySuites.Suite suite;
 
-    private LegacyCase(String file, int index, ObjectNode raw, LegacySuites.Suite suite) {
+    LegacyCase(String file, int index, ObjectNode raw, LegacySuites.Suite suite) {
         this.file = file;
         this.index = index;
         this.raw = raw;

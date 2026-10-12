@@ -39,7 +39,9 @@ import software.amazon.smithy.model.node.StringNode;
  *     <li>A review entry for the row (protocol-specific, then file-wide) decides it.</li>
  *     <li>{@code api-gateway-*} cases are retired: API Gateway behavior is customization-driven, not a Supported_Protocol
  *     behavior, and no legacy runner loads {@code apigateway-suite.json}.</li>
- *     <li>An automatic match ({@link Matcher}) makes the row {@code equivalent}.</li>
+ *     <li>An automatic match ({@link Matcher}) makes the row {@code equivalent}. A fingerprint match, and a copied
+ *     Smithy case whose content differs from the case it copies ({@link ContentCheck}), stay flagged for human
+ *     review.</li>
  *     <li>Anything else is {@code unresolved}: the reviewer must port it to an SDK-owned Smithy case or retire it with
  *     a reason. The tool fails while unresolved rows remain.</li>
  * </ol>
@@ -50,11 +52,15 @@ final class Dispositions {
     static final String PORTED = "ported";
     static final String RETIRED = "retired";
     static final String UNRESOLVED = "unresolved";
+    static final String MOVED_TO_HANDWRITTEN = "moved-to-handwritten";
 
-    /** Reason categories, used for the summary counts. */
+    /**
+     * Reason categories, used for the summary counts. {@code moved-to-handwritten} retires a case that no Smithy case
+     * can express; its reason names the hand-written test that takes over the coverage and the task that adds it.
+     */
     static final Set<String> CATEGORIES = new HashSet<>(java.util.Arrays.asList(
         "core", "copied-smithy", "apigateway", "contenttype", "querycompatible", "customization", "runtime-feature",
-        "sdk-only-serialization", "unsupported-protocol-feature", "unresolved"));
+        "sdk-only-serialization", "unsupported-protocol-feature", MOVED_TO_HANDWRITTEN, "unresolved"));
 
     /** One CSV row. */
     static final class Row {
@@ -127,6 +133,10 @@ final class Dispositions {
             if (r.reason == null || r.reason.trim().isEmpty()) {
                 throw new IllegalArgumentException("Review " + k + " has an empty reason");
             }
+            if (MOVED_TO_HANDWRITTEN.equals(r.category) && !RETIRED.equals(r.disposition)) {
+                throw new IllegalArgumentException("Review " + k + ": " + MOVED_TO_HANDWRITTEN
+                                                   + " is a retired reason");
+            }
         }
         for (SmithyCase c : smithyCases) {
             casesById.put(c.protocol + "|" + c.id, c);
@@ -159,10 +169,16 @@ final class Dispositions {
                          ? String.format(Locale.ROOT, "behavior fingerprint, coverage 1.00, jaccard %.2f",
                                          result.candidates.get(0).jaccard)
                          : result.strategy.name().toLowerCase(Locale.ROOT) + " match";
-            // A fingerprint match is coarse (it sees member kinds and traits, not values), so it stays flagged until a
-            // review entry confirms or corrects it.
+            String reason = "Automatic " + how + ".";
+            // A fingerprint match is coarse (it sees member kinds and traits, not values), and a copied Smithy case
+            // with different content was edited, so both stay flagged until a review entry confirms or corrects them.
             boolean flagged = result.strategy == Matcher.Strategy.FEATURES;
-            return new Row(legacy, result.match.id, EQUIVALENT, category, "Automatic " + how + ".", flagged);
+            if (!result.contentDifferences.isEmpty()) {
+                reason += " The legacy copy differs from the Smithy case: "
+                          + String.join("; ", result.contentDifferences) + ".";
+                flagged = true;
+            }
+            return new Row(legacy, result.match.id, EQUIVALENT, category, reason, flagged);
         }
         return new Row(legacy, null, UNRESOLVED, "unresolved", unresolvedHint(legacy), true);
     }

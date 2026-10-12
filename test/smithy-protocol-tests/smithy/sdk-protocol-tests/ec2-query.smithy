@@ -86,7 +86,7 @@ structure SdkTimestampsInput {
     timestampMember: Timestamp
 }
 
-/// A flattened list of structures in the output.
+/// Flattened lists in the output.
 operation SdkXmlLists {
     output: SdkXmlListsOutput
 }
@@ -114,12 +114,36 @@ apply SdkXmlLists @httpResponseTests([
             flattenedStructList: [{ stringMember: "foo" }, { stringMember: "bar" }]
         }
     }
+    {
+        id: "SdkEc2SingleElementFlattenedList"
+        documentation: "Parses a flattened list that holds exactly one element"
+        protocol: ec2Query
+        code: 200
+        headers: { "Content-Type": "text/xml;charset=UTF-8" }
+        body: """
+            <SdkXmlListsResponse xmlns="https://example.com/">
+                <flattenedStringList>val1</flattenedStringList>
+                <requestId>requestid</requestId>
+            </SdkXmlListsResponse>
+            """
+        bodyMediaType: "application/xml"
+        params: {
+            flattenedStringList: ["val1"]
+        }
+    }
 ])
 
 @output
 structure SdkXmlListsOutput {
     @xmlFlattened
     flattenedStructList: StructList
+
+    @xmlFlattened
+    flattenedStringList: StringList
+}
+
+list StringList {
+    member: String
 }
 
 list StructList {

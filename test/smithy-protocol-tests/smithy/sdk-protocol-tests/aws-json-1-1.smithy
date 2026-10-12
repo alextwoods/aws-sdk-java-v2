@@ -263,24 +263,11 @@ apply SdkDocuments @httpResponseTests([
             arrayDocument: [false, "One", 2, { key: "Three" }]
         }
     }
-    {
-        id: "SdkAwsJson11NullDocumentResponse"
-        documentation: "Parses a document member whose JSON value is null"
-        protocol: awsJson1_1
-        code: 200
-        headers: { "Content-Type": "application/x-amz-json-1.1" }
-        body: "{\"documentValue\": null}"
-        bodyMediaType: "application/json"
-        params: {
-            documentValue: null
-        }
-    }
 ])
 
 structure SdkDocumentsInputOutput {
     stringDocument: Document
     arrayDocument: Document
-    documentValue: Document
 }
 
 /// An idempotency token member.

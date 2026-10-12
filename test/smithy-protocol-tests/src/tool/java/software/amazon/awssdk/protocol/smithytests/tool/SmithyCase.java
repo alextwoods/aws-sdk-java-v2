@@ -46,17 +46,20 @@ final class SmithyCase {
     final Set<String> features;
     /** True for a case defined in the SDK-owned model rather than the upstream protocol test models. */
     final boolean sdkOwned;
+    /** The test case itself, for {@link ContentCheck}. */
+    final HttpMessageTestCase testCase;
 
-    private SmithyCase(String id, String protocol, String kind, String shapeName, String documentation,
-                       ObjectNode params, Set<String> features, boolean sdkOwned) {
-        this.id = id;
-        this.protocol = protocol;
+    private SmithyCase(HttpMessageTestCase testCase, String kind, String shapeName, Set<String> features,
+                       boolean sdkOwned) {
+        this.id = testCase.getId();
+        this.protocol = testCase.getProtocol().toString();
         this.kind = kind;
         this.shapeName = shapeName;
-        this.documentation = documentation;
-        this.params = params;
+        this.documentation = doc(testCase);
+        this.params = testCase.getParams();
         this.features = features;
         this.sdkOwned = sdkOwned;
+        this.testCase = testCase;
     }
 
     @Override
@@ -78,18 +81,16 @@ final class SmithyCase {
             op.getTrait(HttpRequestTestsTrait.class).ifPresent(t -> {
                 for (HttpRequestTestCase c : t.getTestCases()) {
                     if (applies(c)) {
-                        out.add(new SmithyCase(c.getId(), c.getProtocol().toString(), "request", op.getId().getName(),
-                                               doc(c), c.getParams(), FeatureExtractor.request(
-                                                   view, c.getParams(), bindings(c), requestFacts(c)), sdkOwned));
+                        out.add(new SmithyCase(c, "request", op.getId().getName(), FeatureExtractor.request(
+                            view, c.getParams(), bindings(c), requestFacts(c)), sdkOwned));
                     }
                 }
             });
             op.getTrait(HttpResponseTestsTrait.class).ifPresent(t -> {
                 for (HttpResponseTestCase c : t.getTestCases()) {
                     if (applies(c)) {
-                        out.add(new SmithyCase(c.getId(), c.getProtocol().toString(), "response", op.getId().getName(),
-                                               doc(c), c.getParams(), FeatureExtractor.response(
-                                                   view, c.getParams(), bindings(c), responseFacts(c)), sdkOwned));
+                        out.add(new SmithyCase(c, "response", op.getId().getName(), FeatureExtractor.response(
+                            view, c.getParams(), bindings(c), responseFacts(c)), sdkOwned));
                     }
                 }
             });
@@ -102,9 +103,8 @@ final class SmithyCase {
             boolean sdkOwned = isSdkOwned(error, sdkOwnedNamespacePrefix);
             for (HttpResponseTestCase c : error.expectTrait(HttpResponseTestsTrait.class).getTestCases()) {
                 if (applies(c)) {
-                    out.add(new SmithyCase(c.getId(), c.getProtocol().toString(), "error", error.getId().getName(),
-                                           doc(c), c.getParams(), FeatureExtractor.error(
-                                               view, c.getParams(), bindings(c), responseFacts(c)), sdkOwned));
+                    out.add(new SmithyCase(c, "error", error.getId().getName(), FeatureExtractor.error(
+                        view, c.getParams(), bindings(c), responseFacts(c)), sdkOwned));
                 }
             }
         }

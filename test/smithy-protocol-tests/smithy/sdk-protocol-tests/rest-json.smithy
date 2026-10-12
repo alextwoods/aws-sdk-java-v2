@@ -26,6 +26,8 @@ service SdkRestJson {
         SdkGreedyLabel
         SdkNoOutput
         SdkBlobPayload
+        SdkMultiLocation
+        SdkMixedLocation
     ]
 }
 
@@ -184,14 +186,16 @@ apply SdkCollections @httpResponseTests([
     }
     {
         id: "SdkRestJsonNumberIntoStringMember"
-        documentation: "Reads a JSON number sent for a string member as the text of the number"
+        documentation: """
+            Reads a JSON number sent for a string member as the literal text of the number. The value has more
+            precision than a double, so the test fails if the number is parsed and formatted again."""
         protocol: restJson1
         code: 200
         headers: { "Content-Type": "application/json" }
-        body: "{\"stringValue\": 1177.61699999}"
+        body: "{\"stringValue\": 123456789012345678901.000000000000000001}"
         bodyMediaType: "application/json"
         params: {
-            stringValue: "1177.61699999"
+            stringValue: "123456789012345678901.000000000000000001"
         }
     }
     {
@@ -254,8 +258,7 @@ list SparseMapList {
 /// Document values.
 @http(uri: "/SdkDocuments", method: "POST")
 operation SdkDocuments {
-    input: SdkDocumentsInputOutput
-    output: SdkDocumentsInputOutput
+    input: SdkDocumentsInput
 }
 
 apply SdkDocuments @httpRequestTests([
@@ -274,22 +277,8 @@ apply SdkDocuments @httpRequestTests([
     }
 ])
 
-apply SdkDocuments @httpResponseTests([
-    {
-        id: "SdkRestJsonNullDocumentResponse"
-        documentation: "Parses a document member whose JSON value is null"
-        protocol: restJson1
-        code: 200
-        headers: { "Content-Type": "application/json" }
-        body: "{\"documentValue\": null}"
-        bodyMediaType: "application/json"
-        params: {
-            documentValue: null
-        }
-    }
-])
-
-structure SdkDocumentsInputOutput {
+@input
+structure SdkDocumentsInput {
     documentValue: Document
 }
 
@@ -458,4 +447,97 @@ apply SdkBlobPayload @httpResponseTests([
 structure SdkBlobPayloadOutput {
     @httpPayload
     data: Blob
+}
+
+/// Members bound to a URI label, query parameters, a header and the body of one request.
+@http(uri: "/SdkMultiLocation/{pathParam}", method: "POST")
+operation SdkMultiLocation {
+    input: SdkMultiLocationInput
+}
+
+apply SdkMultiLocation @httpRequestTests([
+    {
+        id: "SdkRestJsonMultiLocationRequest"
+        documentation: "Serializes a URI label, two query parameters, a header and a body structure in one request"
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkMultiLocation/pathParamValue"
+        queryParams: ["QueryParamOne=valueOne", "QueryParamTwo=valueTwo"]
+        headers: { "x-amz-header-string": "headerVal" }
+        body: """
+            {
+                "payloadStructParam": {
+                    "payloadMemberOne": "payloadValueOne",
+                    "payloadMemberTwo": "payloadValueTwo"
+                }
+            }"""
+        bodyMediaType: "application/json"
+        params: {
+            pathParam: "pathParamValue"
+            queryParamOne: "valueOne"
+            queryParamTwo: "valueTwo"
+            stringHeaderMember: "headerVal"
+            payloadStructParam: { payloadMemberOne: "payloadValueOne", payloadMemberTwo: "payloadValueTwo" }
+        }
+    }
+])
+
+@input
+structure SdkMultiLocationInput {
+    @required
+    @httpLabel
+    pathParam: String
+
+    @httpQuery("QueryParamOne")
+    queryParamOne: String
+
+    @httpQuery("QueryParamTwo")
+    queryParamTwo: String
+
+    @httpHeader("x-amz-header-string")
+    stringHeaderMember: String
+
+    payloadStructParam: PayloadStruct
+}
+
+structure PayloadStruct {
+    payloadMemberOne: String
+    payloadMemberTwo: String
+}
+
+/// The status code, a header and body members of one response.
+@http(uri: "/SdkMixedLocation", method: "POST")
+operation SdkMixedLocation {
+    output: SdkMixedLocationOutput
+}
+
+apply SdkMixedLocation @httpResponseTests([
+    {
+        id: "SdkRestJsonMixedLocationResponse"
+        documentation: "Parses the status code, a header and body members of one response"
+        protocol: restJson1
+        code: 201
+        headers: { "x-amz-string": "header member value" }
+        body: "{\"stringMember\": \"string member value\", \"integerMember\": 123}"
+        bodyMediaType: "application/json"
+        params: {
+            statusCodeMember: 201
+            stringHeaderMember: "header member value"
+            stringMember: "string member value"
+            integerMember: 123
+        }
+    }
+])
+
+@output
+structure SdkMixedLocationOutput {
+    @httpResponseCode
+    statusCodeMember: Integer
+
+    @httpHeader("x-amz-string")
+    stringHeaderMember: String
+
+    stringMember: String
+
+    integerMember: Integer
 }

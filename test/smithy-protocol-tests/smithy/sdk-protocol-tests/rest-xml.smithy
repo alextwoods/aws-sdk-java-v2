@@ -143,6 +143,22 @@ apply SdkXmlBody @httpResponseTests([
         body: ""
         params: {}
     }
+    {
+        id: "SdkRestXmlSingleElementFlattenedList"
+        documentation: "Parses a flattened list that holds exactly one element"
+        protocol: restXml
+        code: 200
+        headers: { "Content-Type": "application/xml" }
+        body: """
+            <SdkXmlBodyResponse>
+                <flattenedStringList>val1</flattenedStringList>
+            </SdkXmlBodyResponse>
+            """
+        bodyMediaType: "application/xml"
+        params: {
+            flattenedStringList: ["val1"]
+        }
+    }
 ])
 
 @input
@@ -154,6 +170,9 @@ structure SdkXmlBodyRequest {
 @output
 structure SdkXmlBodyResponse {
     stringMember: String
+
+    @xmlFlattened
+    flattenedStringList: StringList
 }
 
 structure SimpleStruct {
