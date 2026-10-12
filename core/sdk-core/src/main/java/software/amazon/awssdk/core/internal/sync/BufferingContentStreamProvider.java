@@ -21,6 +21,7 @@ import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import software.amazon.awssdk.annotations.NotThreadSafe;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.http.ContentStreamProvider;
@@ -59,6 +60,15 @@ public final class BufferingContentStreamProvider implements ContentStreamProvid
 
         invokeSafely(bufferedStream::reset);
         return bufferedStream;
+    }
+
+    /**
+     * Returns the delegate's buffer: buffering does not change the bytes, and a delegate that already holds its content in
+     * memory needs no buffering.
+     */
+    @Override
+    public ByteBuffer contentAsByteBufferOrNull() {
+        return delegate.contentAsByteBufferOrNull();
     }
 
     @Override

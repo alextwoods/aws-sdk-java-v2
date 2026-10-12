@@ -28,14 +28,18 @@ import org.apache.hc.client5.http.impl.auth.BasicAuthCache;
 import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
 import org.apache.hc.client5.http.impl.auth.BasicScheme;
 import org.apache.hc.client5.http.protocol.HttpClientContext;
+import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.io.entity.BufferedHttpEntity;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.http.apache5.ProxyConfiguration;
+import software.amazon.awssdk.utils.Logger;
 
 @SdkInternalApi
 public final class Apache5Utils {
+    private static final Logger log = Logger.loggerFor(Apache5Utils.class);
+
     private Apache5Utils() {
     }
 
@@ -50,6 +54,21 @@ public final class Apache5Utils {
             return new BufferedHttpEntity(entity);
         } catch (IOException e) {
             throw new UncheckedIOException("Unable to create HTTP entity: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Parses a {@code Content-Type} header value, returning {@code null} (and logging a warning) if it cannot be parsed.
+     */
+    public static ContentType parseContentTypeOrNull(String contentTypeValue) {
+        if (contentTypeValue == null) {
+            return null;
+        }
+        try {
+            return ContentType.parse(contentTypeValue);
+        } catch (Exception e) {
+            log.warn(() -> "Unable to parse content type: " + contentTypeValue);
+            return null;
         }
     }
 

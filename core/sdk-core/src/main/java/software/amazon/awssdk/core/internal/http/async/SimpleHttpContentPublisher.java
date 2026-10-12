@@ -22,6 +22,7 @@ import java.util.Optional;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.async.SdkHttpContentPublisher;
 import software.amazon.awssdk.utils.IoUtils;
@@ -33,13 +34,26 @@ import software.amazon.awssdk.utils.IoUtils;
 @SdkInternalApi
 public final class SimpleHttpContentPublisher implements SdkHttpContentPublisher {
 
-    private final byte[] content;
+    private final ByteBuffer content;
     private final int length;
 
     public SimpleHttpContentPublisher(SdkHttpFullRequest request) {
-        this.content = request.contentStreamProvider().map(p -> invokeSafely(() -> IoUtils.toByteArray(p.newStream())))
-                                                      .orElseGet(() -> new byte[0]);
-        this.length = content.length;
+        this.content = request.contentStreamProvider()
+                              .map(SimpleHttpContentPublisher::readContent)
+                              .orElseGet(() -> ByteBuffer.wrap(new byte[0]));
+        this.length = content.remaining();
+    }
+
+    /**
+     * Uses the provider's in-memory buffer when it has one, so the body is published without copying. Otherwise reads the
+     * stream into memory.
+     */
+    private static ByteBuffer readContent(ContentStreamProvider provider) {
+        ByteBuffer buffer = provider.contentAsByteBufferOrNull();
+        if (buffer != null) {
+            return buffer;
+        }
+        return ByteBuffer.wrap(invokeSafely(() -> IoUtils.toByteArray(provider.newStream())));
     }
 
     @Override
@@ -67,7 +81,8 @@ public final class SimpleHttpContentPublisher implements SdkHttpContentPublisher
                 if (n <= 0) {
                     s.onError(new IllegalArgumentException("Demand must be positive"));
                 } else {
-                    s.onNext(ByteBuffer.wrap(content));
+                    // A new view per subscription, so a subscriber consuming the buffer does not affect a later one.
+                    s.onNext(content.duplicate());
                     s.onComplete();
                 }
             }

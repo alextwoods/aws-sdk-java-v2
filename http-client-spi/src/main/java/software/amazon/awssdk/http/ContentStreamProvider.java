@@ -19,6 +19,7 @@ import static software.amazon.awssdk.utils.FunctionalUtils.invokeSafely;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -65,6 +66,12 @@ public interface ContentStreamProvider {
             @Override
             public InputStream newStream() {
                 return new ByteArrayInputStream(bytes);
+            }
+
+            @Override
+            public ByteBuffer contentAsByteBufferOrNull() {
+                // A new view per call, so position and limit changes by one caller do not affect another.
+                return ByteBuffer.wrap(bytes);
             }
 
             @Override
@@ -165,6 +172,33 @@ public interface ContentStreamProvider {
      * @return The content stream.
      */
     InputStream newStream();
+
+    /**
+     * Returns the complete content as a single {@link ByteBuffer}, if this provider already holds the content in memory, or
+     * {@code null} otherwise. HTTP clients may use a non-null result to send the body without copying it. They must fall back
+     * to {@link #newStream()} when the result is {@code null}.
+     * <p>
+     * A non-null result:
+     * <ul>
+     *     <li>contains the complete body, from its {@link ByteBuffer#position() position} to its
+     *     {@link ByteBuffer#limit() limit}, and is positioned at the start of the body;</li>
+     *     <li>is a new view (for example from {@link ByteBuffer#wrap(byte[])}, {@link ByteBuffer#duplicate()} or
+     *     {@link ByteBuffer#asReadOnlyBuffer()}) on each call, so a caller may change its position, limit and mark without
+     *     affecting later calls or retries;</li>
+     *     <li>may share its content with this provider, so callers must not modify the content. A view may be read-only, in
+     *     which case it has no accessible backing array, and callers that need one must use {@link #newStream()}
+     *     instead.</li>
+     * </ul>
+     * <p>
+     * Providers that wrap another provider and send its bytes unchanged may return the delegate's buffer. Providers that
+     * transform the content (for example compression or chunked encoding), or that need to observe the stream as it is read,
+     * must return {@code null}.
+     *
+     * @return The complete content as a {@link ByteBuffer}, or {@code null} if it is not available as a single buffer.
+     */
+    default ByteBuffer contentAsByteBufferOrNull() {
+        return null;
+    }
 
     /**
      * Each ContentStreamProvider should return a well-formed name that can be used to identify the implementation.

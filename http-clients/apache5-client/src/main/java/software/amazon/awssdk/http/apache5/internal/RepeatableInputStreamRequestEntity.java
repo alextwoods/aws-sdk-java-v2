@@ -29,6 +29,7 @@ import org.apache.hc.core5.http.io.entity.InputStreamEntity;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.HttpExecuteRequest;
+import software.amazon.awssdk.http.apache5.internal.utils.Apache5Utils;
 import software.amazon.awssdk.utils.Logger;
 
 /**
@@ -105,7 +106,7 @@ public class RepeatableInputStreamRequestEntity extends HttpEntityWrapper {
                                     .orElse(-1L);
 
         ContentType contentType = request.httpRequest().firstMatchingHeader("Content-Type")
-                                         .map(RepeatableInputStreamRequestEntity::parseContentType)
+                                         .map(Apache5Utils::parseContentTypeOrNull)
                                          .orElse(null);
 
         InputStreamEntity entity = contentLength >= 0
@@ -120,18 +121,6 @@ public class RepeatableInputStreamRequestEntity extends HttpEntityWrapper {
         } catch (NumberFormatException nfe) {
             log.warn(() -> "Unable to parse content length from request. Buffering contents in memory.");
             return -1;
-        }
-    }
-
-    private static ContentType parseContentType(String contentTypeValue) {
-        if (contentTypeValue == null) {
-            return null;
-        }
-        try {
-            return ContentType.parse(contentTypeValue);
-        } catch (Exception e) {
-            log.warn(() -> "Unable to parse content type: " + contentTypeValue);
-            return null;
         }
     }
 

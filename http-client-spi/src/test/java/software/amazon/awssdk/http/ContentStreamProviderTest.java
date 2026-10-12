@@ -21,11 +21,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import software.amazon.awssdk.utils.BinaryUtils;
 import software.amazon.awssdk.utils.IoUtils;
 import software.amazon.awssdk.utils.StringInputStream;
 
@@ -76,6 +78,59 @@ class ContentStreamProviderTest {
         assertArrayEquals(bytes, IoUtils.toByteArray(provider.newStream()));
         bytes[0] = 'b';
         assertArrayEquals(bytes, IoUtils.toByteArray(provider.newStream()));
+    }
+
+    @Test
+    void contentAsByteBufferOrNull_defaultsToNull() {
+        ContentStreamProvider provider = () -> new ByteArrayInputStream("foo".getBytes(StandardCharsets.UTF_8));
+        assertNull(provider.contentAsByteBufferOrNull());
+    }
+
+    @Test
+    void contentAsByteBufferOrNull_streamAndStringProviders_returnNull() {
+        assertNull(ContentStreamProvider.fromUtf8String("foo").contentAsByteBufferOrNull());
+        assertNull(ContentStreamProvider.fromInputStream(new StringInputStream("foo")).contentAsByteBufferOrNull());
+        assertNull(ContentStreamProvider.fromInputStreamSupplier(() -> new StringInputStream("foo"))
+                                        .contentAsByteBufferOrNull());
+    }
+
+    @Test
+    void fromByteArrayUnsafe_contentAsByteBuffer_isBackedByTheSameArray() {
+        byte[] bytes = "foo".getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buffer = ContentStreamProvider.fromByteArrayUnsafe(bytes).contentAsByteBufferOrNull();
+
+        assertNotNull(buffer);
+        assertTrue(buffer.hasArray());
+        assertSame(bytes, buffer.array());
+        assertEquals(0, buffer.arrayOffset());
+        assertEquals(0, buffer.position());
+        assertEquals(bytes.length, buffer.remaining());
+    }
+
+    @Test
+    void fromByteArray_contentAsByteBuffer_isBackedByTheCopy() throws IOException {
+        byte[] bytes = "foo".getBytes(StandardCharsets.UTF_8);
+        ContentStreamProvider provider = ContentStreamProvider.fromByteArray(bytes);
+        ByteBuffer buffer = provider.contentAsByteBufferOrNull();
+
+        assertNotNull(buffer);
+        assertNotSame(bytes, buffer.array());
+        assertArrayEquals(bytes, BinaryUtils.copyRemainingBytesFrom(buffer));
+        bytes[0] = 'b';
+        assertEquals('f', provider.contentAsByteBufferOrNull().get(0));
+    }
+
+    @Test
+    void fromByteArray_contentAsByteBuffer_returnsIndependentViews() {
+        ContentStreamProvider provider = ContentStreamProvider.fromByteArray("foo".getBytes(StandardCharsets.UTF_8));
+        ByteBuffer first = provider.contentAsByteBufferOrNull();
+        first.position(first.limit());
+
+        ByteBuffer second = provider.contentAsByteBufferOrNull();
+        assertNotSame(first, second);
+        assertSame(first.array(), second.array());
+        assertEquals(0, second.position());
+        assertEquals(3, second.remaining());
     }
 
     @Test

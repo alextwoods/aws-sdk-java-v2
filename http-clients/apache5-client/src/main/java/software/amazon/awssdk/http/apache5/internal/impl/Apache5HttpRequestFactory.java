@@ -15,9 +15,12 @@
 
 package software.amazon.awssdk.http.apache5.internal.impl;
 
+import static software.amazon.awssdk.http.Header.CHUNKED;
+import static software.amazon.awssdk.http.Header.TRANSFER_ENCODING;
 import static software.amazon.awssdk.utils.NumericUtils.saturatedCast;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -31,9 +34,12 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.HttpHeaders;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.HttpExecuteRequest;
 import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.http.SdkHttpRequest;
@@ -146,6 +152,12 @@ public class Apache5HttpRequestFactory {
          * return incorrect validation result.
          */
         if (request.contentStreamProvider().isPresent()) {
+            HttpEntity byteArrayEntity = byteArrayEntityOrNull(request);
+            if (byteArrayEntity != null) {
+                entityEnclosingRequest.setEntity(byteArrayEntity);
+                return entityEnclosingRequest;
+            }
+
             HttpEntity entity = new RepeatableInputStreamRequestEntity(request);
             if (!request.httpRequest().firstMatchingHeader(HttpHeaders.CONTENT_LENGTH).isPresent() && !entity.isChunked()) {
                 entity = Apache5Utils.newBufferedHttpEntity(entity);
@@ -154,6 +166,45 @@ public class Apache5HttpRequestFactory {
         }
 
         return entityEnclosingRequest;
+    }
+
+    /**
+     * Returns a {@link ByteArrayEntity} over the backing array of the content's in-memory buffer, so the body is sent without
+     * copying, or {@code null} to fall back to {@link RepeatableInputStreamRequestEntity}. The fallback is used when the
+     * provider has no buffer, the buffer has no accessible backing array, the request uses chunked transfer encoding, or the
+     * {@code Content-Length} header is present and does not match the buffer's length.
+     */
+    private static HttpEntity byteArrayEntityOrNull(HttpExecuteRequest request) {
+        ByteBuffer buffer = request.contentStreamProvider()
+                                   .map(ContentStreamProvider::contentAsByteBufferOrNull)
+                                   .orElse(null);
+        if (buffer == null || !buffer.hasArray()) {
+            return null;
+        }
+
+        SdkHttpRequest httpRequest = request.httpRequest();
+        if (httpRequest.matchingHeaders(TRANSFER_ENCODING).contains(CHUNKED)) {
+            return null;
+        }
+
+        int length = buffer.remaining();
+        Optional<String> contentLength = httpRequest.firstMatchingHeader(HttpHeaders.CONTENT_LENGTH);
+        if (contentLength.isPresent() && !contentLengthMatches(contentLength.get(), length)) {
+            return null;
+        }
+
+        ContentType contentType = httpRequest.firstMatchingHeader(HttpHeaders.CONTENT_TYPE)
+                                             .map(Apache5Utils::parseContentTypeOrNull)
+                                             .orElse(null);
+        return new ByteArrayEntity(buffer.array(), buffer.arrayOffset() + buffer.position(), length, contentType);
+    }
+
+    private static boolean contentLengthMatches(String contentLength, int length) {
+        try {
+            return Long.parseLong(contentLength.trim()) == length;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     /**

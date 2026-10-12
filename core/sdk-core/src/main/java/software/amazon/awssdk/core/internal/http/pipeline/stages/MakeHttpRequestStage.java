@@ -110,6 +110,8 @@ public class MakeHttpRequestStage
         RequestBodyMetrics metrics = context.executionAttributes()
                                             .getAttribute(InternalCoreExecutionAttribute.REQUEST_BODY_METRICS);
 
+        // This wrapper does not expose the delegate's contentAsByteBufferOrNull(): the HTTP client must read the stream so
+        // that bytes written are tracked and the content length is validated.
         ContentStreamProvider wrapped = () -> {
             InputStream stream = contentStreamProvider.get().newStream();
             stream = new BytesWrittenTrackingInputStream(stream, metrics);

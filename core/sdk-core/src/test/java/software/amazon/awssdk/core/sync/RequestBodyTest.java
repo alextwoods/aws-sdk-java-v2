@@ -39,6 +39,7 @@ import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
 import software.amazon.awssdk.checksums.SdkChecksum;
 import software.amazon.awssdk.core.internal.sync.BufferingContentStreamProvider;
 import software.amazon.awssdk.core.internal.util.Mimetype;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.testutils.RandomInputStream;
 import software.amazon.awssdk.utils.BinaryUtils;
 import software.amazon.awssdk.utils.IoUtils;
@@ -57,6 +58,54 @@ public class RequestBodyTest {
         final String multibyteChars = "Ωω";
         RequestBody rb = RequestBody.fromString(multibyteChars);
         assertThat(rb.contentLength()).isEqualTo(4L);
+    }
+
+    @Test
+    public void inMemoryFactories_exposeCompleteBodyAsByteBuffer() {
+        byte[] bytes = "hello world".getBytes(StandardCharsets.UTF_8);
+        ByteBuffer positioned = ByteBuffer.wrap(bytes);
+        positioned.position(6);
+
+        assertContentAsByteBuffer(RequestBody.fromBytes(bytes), bytes);
+        assertContentAsByteBuffer(RequestBody.fromString("hello world"), bytes);
+        assertContentAsByteBuffer(RequestBody.fromByteBuffer(positioned), bytes);
+        assertContentAsByteBuffer(RequestBody.fromRemainingByteBuffer(positioned), "world".getBytes(StandardCharsets.UTF_8));
+        assertContentAsByteBuffer(RequestBody.empty(), new byte[0]);
+    }
+
+    @Test
+    public void inMemoryFactories_copyInputs_soByteBufferIsNotBackedByCallerArray() {
+        byte[] bytes = "hello world".getBytes(StandardCharsets.UTF_8);
+
+        assertThat(RequestBody.fromBytes(bytes).contentStreamProvider().contentAsByteBufferOrNull().array())
+            .isNotSameAs(bytes);
+        assertThat(RequestBody.fromByteBuffer(ByteBuffer.wrap(bytes)).contentStreamProvider().contentAsByteBufferOrNull()
+                              .array())
+            .isNotSameAs(bytes);
+    }
+
+    @Test
+    public void streamFactories_doNotExposeByteBuffer() {
+        StringInputStream inputStream = new StringInputStream("hello world");
+        assertThat(RequestBody.fromInputStream(inputStream, 11).contentStreamProvider().contentAsByteBufferOrNull()).isNull();
+        IoUtils.closeQuietly(inputStream, null);
+    }
+
+    @Test
+    public void fromContentProviderWithoutLength_propagatesDelegateByteBuffer() {
+        byte[] bytes = "hello world".getBytes(StandardCharsets.UTF_8);
+        RequestBody requestBody =
+            RequestBody.fromContentProvider(ContentStreamProvider.fromByteArrayUnsafe(bytes), Mimetype.MIMETYPE_OCTET_STREAM);
+
+        assertThat(requestBody.contentStreamProvider().contentAsByteBufferOrNull().array()).isSameAs(bytes);
+    }
+
+    private static void assertContentAsByteBuffer(RequestBody requestBody, byte[] expected) {
+        ByteBuffer buffer = requestBody.contentStreamProvider().contentAsByteBufferOrNull();
+        assertThat(buffer).isNotNull();
+        assertThat(buffer.hasArray()).isTrue();
+        assertThat(BinaryUtils.copyRemainingBytesFrom(buffer)).isEqualTo(expected);
+        assertThat(requestBody.optionalContentLength()).hasValue((long) expected.length);
     }
 
     @Test
