@@ -182,6 +182,40 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          LegacyDispositionTool (src/tool/java, compiled as a test source root) and its tests: the Smithy model, the
+          protocol test traits, and the upstream protocol test models it matches legacy cases against.
+        -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-traits</artifactId>
+            <version>${smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-test-traits</artifactId>
+            <version>${smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-protocol-tests</artifactId>
+            <version>${smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-protocol-tests</artifactId>
+            <version>${smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Log binding so ProtocolTestSummaryExtension's per-protocol pass/fail/skip counts are printed. -->
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
@@ -268,7 +302,31 @@
                             <failIfNoMatch>false</failIfNoMatch>
                         </configuration>
                     </execution>
+                    <!-- LegacyDispositionTool (task 1.34) is built and tested with the module's tests. -->
+                    <execution>
+                        <id>legacy-disposition-tool</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>add-test-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>src/tool/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <configuration>
+                    <ignoredUnusedDeclaredDependencies combine.children="append">
+                        <!-- Protocol test models LegacyDispositionTool loads by model discovery; not referenced. -->
+                        <ignoredUnusedDeclaredDependency>software.amazon.smithy:smithy-aws-protocol-tests</ignoredUnusedDeclaredDependency>
+                        <ignoredUnusedDeclaredDependency>software.amazon.smithy:smithy-protocol-tests</ignoredUnusedDeclaredDependency>
+                    </ignoredUnusedDeclaredDependencies>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -1,0 +1,461 @@
+// SDK-owned restJson1 protocol tests for SDK serialization behavior that the upstream Smithy protocol tests do not
+// cover, ported from the legacy json-core, rest-core and rest-json suites (task 1.34, design D.1, Requirement 32.10).
+// legacy-disposition.csv maps each legacy case to its test case id.
+$version: "2.0"
+
+namespace software.amazon.awssdk.protocoltests.restjson
+
+use aws.api#service
+use aws.auth#sigv4
+use aws.protocols#restJson1
+use smithy.test#httpRequestTests
+use smithy.test#httpResponseTests
+
+@service(sdkId: "Sdk Rest Json Protocol")
+@sigv4(name: "sdkrestjson")
+@restJson1
+@title("SDK Rest Json Protocol Test Service")
+service SdkRestJson {
+    version: "2016-03-11"
+    operations: [
+        SdkTimestamps
+        SdkCollections
+        SdkDocuments
+        SdkHeaders
+        SdkQuery
+        SdkGreedyLabel
+        SdkNoOutput
+        SdkBlobPayload
+    ]
+}
+
+/// Timestamps in the body and the query string.
+@http(uri: "/SdkTimestamps", method: "POST")
+operation SdkTimestamps {
+    input: SdkTimestampsInput
+    output: SdkTimestampsOutput
+}
+
+apply SdkTimestamps @httpRequestTests([
+    {
+        id: "SdkRestJsonTimestampMillisecondPrecision"
+        documentation: """
+            Serializes timestamps with millisecond precision: epoch seconds in the body (top level, list and map
+            values), date-time in the body and in the query string."""
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkTimestamps"
+        queryParams: ["Timestamp=2015-01-25T08%3A00%3A00.123Z"]
+        headers: { "Content-Type": "application/json" }
+        body: """
+            {
+                "epochMember": 1422172801.123,
+                "dateTimeMember": "2014-04-29T18:30:38.123Z",
+                "epochList": [1422172801.123],
+                "epochMap": { "key1": 1422172801.123 }
+            }"""
+        bodyMediaType: "application/json"
+        params: {
+            epochMember: 1422172801.123
+            dateTimeMember: 1398796238.123
+            epochList: [1422172801.123]
+            epochMap: { key1: 1422172801.123 }
+            queryMember: 1422172800.123
+        }
+    }
+])
+
+apply SdkTimestamps @httpResponseTests([
+    {
+        id: "SdkRestJsonFractionalEpochSecondsResponse"
+        documentation: "Parses epoch-seconds timestamps with fractional seconds at the top level, nested, and in lists and maps"
+        protocol: restJson1
+        code: 200
+        headers: { "Content-Type": "application/json" }
+        body: """
+            {
+                "epochMember": 1398796238.123,
+                "nested": { "epochMember": 1398796238.123 },
+                "epochList": [1398796238.123],
+                "epochMap": { "key1": 1398796238.123 }
+            }"""
+        bodyMediaType: "application/json"
+        params: {
+            epochMember: 1398796238.123
+            nested: { epochMember: 1398796238.123 }
+            epochList: [1398796238.123]
+            epochMap: { key1: 1398796238.123 }
+        }
+    }
+])
+
+@input
+structure SdkTimestampsInput {
+    epochMember: Timestamp
+
+    @timestampFormat("date-time")
+    dateTimeMember: Timestamp
+
+    epochList: TimestampList
+
+    epochMap: TimestampMap
+
+    @httpQuery("Timestamp")
+    queryMember: Timestamp
+}
+
+@output
+structure SdkTimestampsOutput {
+    epochMember: Timestamp
+
+    nested: TimestampHolder
+
+    epochList: TimestampList
+
+    epochMap: TimestampMap
+}
+
+structure TimestampHolder {
+    epochMember: Timestamp
+}
+
+list TimestampList {
+    member: Timestamp
+}
+
+map TimestampMap {
+    key: String
+    value: Timestamp
+}
+
+/// Collections with null and empty elements, and a string member.
+@http(uri: "/SdkCollections", method: "POST")
+operation SdkCollections {
+    input: SdkCollectionsInputOutput
+    output: SdkCollectionsInputOutput
+}
+
+apply SdkCollections @httpRequestTests([
+    {
+        id: "SdkRestJsonEmptyMap"
+        documentation: "Serializes an empty map as an empty JSON object"
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkCollections"
+        headers: { "Content-Type": "application/json" }
+        body: "{\"stringMap\": {}}"
+        bodyMediaType: "application/json"
+        params: {
+            stringMap: {}
+        }
+    }
+    {
+        id: "SdkRestJsonListOfEnumsWithNull"
+        documentation: "Serializes a null element of an enum list as JSON null"
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkCollections"
+        headers: { "Content-Type": "application/json" }
+        body: "{\"sparseEnumList\": [\"EnumValue1\", null, \"EnumValue2\"]}"
+        bodyMediaType: "application/json"
+        params: {
+            sparseEnumList: ["EnumValue1", null, "EnumValue2"]
+        }
+    }
+])
+
+apply SdkCollections @httpResponseTests([
+    {
+        id: "SdkRestJsonListsWithNullAndEmptyElements"
+        documentation: "Keeps null and empty structure and map elements of lists"
+        protocol: restJson1
+        code: 200
+        headers: { "Content-Type": "application/json" }
+        body: """
+            {
+                "sparseStructList": [{ "stringMember": "foo" }, null, {}],
+                "sparseMapList": [{ "keyOne": "valOne", "keyTwo": "valTwo" }, null, {}]
+            }"""
+        bodyMediaType: "application/json"
+        params: {
+            sparseStructList: [{ stringMember: "foo" }, null, {}]
+            sparseMapList: [{ keyOne: "valOne", keyTwo: "valTwo" }, null, {}]
+        }
+    }
+    {
+        id: "SdkRestJsonNumberIntoStringMember"
+        documentation: "Reads a JSON number sent for a string member as the text of the number"
+        protocol: restJson1
+        code: 200
+        headers: { "Content-Type": "application/json" }
+        body: "{\"stringValue\": 1177.61699999}"
+        bodyMediaType: "application/json"
+        params: {
+            stringValue: "1177.61699999"
+        }
+    }
+    {
+        id: "SdkRestJsonIgnoresUnknownMembers"
+        documentation: "Ignores JSON members the output structure does not define"
+        protocol: restJson1
+        code: 200
+        headers: { "Content-Type": "application/json" }
+        body: "{\"foo\": \"bar\"}"
+        bodyMediaType: "application/json"
+        params: {}
+    }
+    {
+        id: "SdkRestJsonNoContentWithOutput"
+        documentation: "Unmarshalls a 204 No Content response with no body as an output with no members set"
+        protocol: restJson1
+        code: 204
+        body: ""
+        params: {}
+    }
+])
+
+structure SdkCollectionsInputOutput {
+    stringValue: String
+    stringMap: StringMap
+    sparseEnumList: SparseEnumList
+    sparseStructList: SparseStructList
+    sparseMapList: SparseMapList
+}
+
+enum SdkEnum {
+    ENUM_VALUE_1 = "EnumValue1"
+    ENUM_VALUE_2 = "EnumValue2"
+}
+
+@sparse
+list SparseEnumList {
+    member: SdkEnum
+}
+
+map StringMap {
+    key: String
+    value: String
+}
+
+structure SimpleStruct {
+    stringMember: String
+}
+
+@sparse
+list SparseStructList {
+    member: SimpleStruct
+}
+
+@sparse
+list SparseMapList {
+    member: StringMap
+}
+
+/// Document values.
+@http(uri: "/SdkDocuments", method: "POST")
+operation SdkDocuments {
+    input: SdkDocumentsInputOutput
+    output: SdkDocumentsInputOutput
+}
+
+apply SdkDocuments @httpRequestTests([
+    {
+        id: "SdkRestJsonDocumentArrayWithNull"
+        documentation: "Serializes a document array that holds a null element"
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkDocuments"
+        headers: { "Content-Type": "application/json" }
+        body: "{\"documentValue\": [false, \"One\", 2, {\"key\": \"Three\"}, null]}"
+        bodyMediaType: "application/json"
+        params: {
+            documentValue: [false, "One", 2, { key: "Three" }, null]
+        }
+    }
+])
+
+apply SdkDocuments @httpResponseTests([
+    {
+        id: "SdkRestJsonNullDocumentResponse"
+        documentation: "Parses a document member whose JSON value is null"
+        protocol: restJson1
+        code: 200
+        headers: { "Content-Type": "application/json" }
+        body: "{\"documentValue\": null}"
+        bodyMediaType: "application/json"
+        params: {
+            documentValue: null
+        }
+    }
+])
+
+structure SdkDocumentsInputOutput {
+    documentValue: Document
+}
+
+/// List header members with null and empty elements.
+@http(uri: "/SdkHeaders", method: "POST")
+operation SdkHeaders {
+    input: SdkHeadersInput
+}
+
+apply SdkHeaders @httpRequestTests([
+    {
+        id: "SdkRestJsonHeaderListSkipsNullAndEmptyElements"
+        documentation: "Leaves null and empty string elements of a list header member out of the header"
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkHeaders"
+        headers: { "x-amz-string-list": "listValue1, listValue6" }
+        body: ""
+        params: {
+            stringList: ["listValue1", null, "", "", "listValue6"]
+        }
+    }
+    {
+        id: "SdkRestJsonHeaderListWithOnlyNullIsOmitted"
+        documentation: "Sends no header for a list header member that holds only null"
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkHeaders"
+        forbidHeaders: ["x-amz-string-list"]
+        body: ""
+        params: {
+            stringList: [null]
+        }
+    }
+    {
+        id: "SdkRestJsonNoTargetHeader"
+        documentation: "Does not send X-Amz-Target, which only the JSON RPC protocols use"
+        protocol: restJson1
+        method: "POST"
+        uri: "/SdkHeaders"
+        forbidHeaders: ["X-Amz-Target"]
+        body: ""
+        params: {}
+    }
+])
+
+@input
+structure SdkHeadersInput {
+    @httpHeader("x-amz-string-list")
+    stringList: SparseStringList
+}
+
+@sparse
+list SparseStringList {
+    member: String
+}
+
+/// A list query member.
+@http(uri: "/SdkQuery", method: "GET")
+@readonly
+operation SdkQuery {
+    input: SdkQueryInput
+}
+
+apply SdkQuery @httpRequestTests([
+    {
+        id: "SdkRestJsonQueryListWithEmptyString"
+        documentation: "Sends a query list holding one empty string as a parameter with an empty value"
+        protocol: restJson1
+        method: "GET"
+        uri: "/SdkQuery"
+        queryParams: ["item="]
+        body: ""
+        params: {
+            items: [""]
+        }
+    }
+])
+
+@input
+structure SdkQueryInput {
+    @httpQuery("item")
+    items: StringList
+}
+
+list StringList {
+    member: String
+}
+
+/// A greedy label.
+@http(uri: "/SdkGreedyLabel/{prefix}/{suffix+}", method: "GET")
+@readonly
+operation SdkGreedyLabel {
+    input: SdkGreedyLabelInput
+}
+
+apply SdkGreedyLabel @httpRequestTests([
+    {
+        id: "SdkRestJsonGreedyLabelLeadingSlashRemoved"
+        documentation: "Removes the leading slash of a greedy label value"
+        protocol: restJson1
+        method: "GET"
+        uri: "/SdkGreedyLabel/pathParamValue/foo/bar/baz"
+        body: ""
+        params: {
+            prefix: "pathParamValue"
+            suffix: "/foo/bar/baz"
+        }
+    }
+])
+
+@input
+structure SdkGreedyLabelInput {
+    @required
+    @httpLabel
+    prefix: String
+
+    @required
+    @httpLabel
+    suffix: String
+}
+
+/// An operation with no input or output.
+@http(uri: "/SdkNoOutput", method: "DELETE")
+@idempotent
+operation SdkNoOutput {}
+
+apply SdkNoOutput @httpResponseTests([
+    {
+        id: "SdkRestJsonNoContentWithNoOutput"
+        documentation: "Accepts a 204 No Content response for an operation with no output"
+        protocol: restJson1
+        code: 204
+        body: ""
+    }
+    {
+        id: "SdkRestJsonNoOutputIgnoresNonJsonBody"
+        documentation: "Ignores a body that is not JSON for an operation with no output"
+        protocol: restJson1
+        code: 200
+        body: "THIS ISN'T JSON!!!"
+        bodyMediaType: "text/plain"
+    }
+])
+
+/// A blob payload in the output.
+@http(uri: "/SdkBlobPayload", method: "POST")
+operation SdkBlobPayload {
+    output: SdkBlobPayloadOutput
+}
+
+apply SdkBlobPayload @httpResponseTests([
+    {
+        id: "SdkRestJsonNoContentWithBlobPayload"
+        documentation: "Unmarshalls an empty 204 No Content body as an empty blob payload"
+        protocol: restJson1
+        code: 204
+        body: ""
+        params: {
+            data: ""
+        }
+    }
+])
+
+@output
+structure SdkBlobPayloadOutput {
+    @httpPayload
+    data: Blob
+}

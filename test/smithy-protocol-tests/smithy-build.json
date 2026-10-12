@@ -4,12 +4,16 @@
 // module's pom copies into target/protocol-test-models before code generation. They are imported explicitly because
 // SmithyModelDiscovery leaves the protocol test JARs out of model discovery. Each projection keeps one service and
 // the shapes it uses, so the codegen plugin sees a single service per projection.
+//
+// smithy/sdk-protocol-tests holds SDK-owned protocol test services (software.amazon.awssdk.protocoltests*) with cases
+// ported from the legacy C2J protocol tests (task 1.34); legacy-disposition.csv maps each legacy case to them.
 {
     "version": "1.0",
     "imports": [
         "target/protocol-test-models/smithy-aws-protocol-tests.jar",
         "target/protocol-test-models/smithy-protocol-tests.jar",
-        "smithy/protocol-test-service-overlays.smithy"
+        "smithy/protocol-test-service-overlays.smithy",
+        "smithy/sdk-protocol-tests"
     ],
     "projections": {
         "awsJson1_0-JsonRpc10": {
@@ -92,6 +96,41 @@
         "rpcv2Cbor-NonQueryCompatibleRpcV2Protocol": {
             "transforms": [
                 {"name": "includeServices", "args": {"services": ["aws.protocoltests.rpcv2cbor#NonQueryCompatibleRpcV2Protocol"]}},
+                {"name": "removeUnusedShapes", "args": {}}
+            ],
+            "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
+        },
+        "awsJson1_1-SdkJsonProtocol": {
+            "transforms": [
+                {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.json#SdkJsonProtocol"]}},
+                {"name": "removeUnusedShapes", "args": {}}
+            ],
+            "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
+        },
+        "restJson1-RestJsonContentType": {
+            "transforms": [
+                {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests#RestJsonContentType"]}},
+                {"name": "removeUnusedShapes", "args": {}}
+            ],
+            "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
+        },
+        "restJson1-SdkRestJson": {
+            "transforms": [
+                {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.restjson#SdkRestJson"]}},
+                {"name": "removeUnusedShapes", "args": {}}
+            ],
+            "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
+        },
+        "restXml-SdkRestXml": {
+            "transforms": [
+                {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.restxml#SdkRestXml"]}},
+                {"name": "removeUnusedShapes", "args": {}}
+            ],
+            "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
+        },
+        "ec2Query-SdkEc2": {
+            "transforms": [
+                {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.ec2#SdkEc2"]}},
                 {"name": "removeUnusedShapes", "args": {}}
             ],
             "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
