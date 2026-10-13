@@ -29,6 +29,7 @@ import software.amazon.awssdk.core.ServiceConfiguration;
 import software.amazon.awssdk.core.checksums.Algorithm;
 import software.amazon.awssdk.core.checksums.ChecksumSpecs;
 import software.amazon.awssdk.core.checksums.ChecksumValidation;
+import software.amazon.awssdk.core.client.protocol.ClientProtocol;
 import software.amazon.awssdk.core.signer.Signer;
 import software.amazon.awssdk.endpoints.EndpointProvider;
 import software.amazon.awssdk.http.SdkHttpRequest;
@@ -42,6 +43,8 @@ import software.amazon.awssdk.http.auth.spi.signer.SignedRequest;
 import software.amazon.awssdk.identity.spi.Identity;
 import software.amazon.awssdk.metrics.MetricCollector;
 import software.amazon.awssdk.profiles.ProfileFile;
+import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.serde.TypeRegistry;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
 
 /**
@@ -166,6 +169,24 @@ public class SdkExecutionAttribute {
      */
     public static final ExecutionAttribute<ChecksumValidation> HTTP_RESPONSE_CHECKSUM_VALIDATION = new ExecutionAttribute<>(
         "HttpResponseChecksumValidation");
+
+    /**
+     * The {@link ApiOperation} being called. Set only for calls of clients that use schema-based serialization; it is
+     * the same instance the {@link #CLIENT_PROTOCOL} serializes the call with.
+     */
+    public static final ExecutionAttribute<ApiOperation<?, ?>> API_OPERATION = new ExecutionAttribute<>("ApiOperation");
+
+    /**
+     * The {@link ClientProtocol} that serializes the request and deserializes the response of the call. Set only for
+     * calls of clients that use schema-based serialization.
+     */
+    public static final ExecutionAttribute<ClientProtocol<?, ?>> CLIENT_PROTOCOL = new ExecutionAttribute<>("ClientProtocol");
+
+    /**
+     * The registry the {@link #CLIENT_PROTOCOL} creates the call's modeled errors with. Set only for calls of clients
+     * that use schema-based serialization; for generated clients it is the service's error registry.
+     */
+    public static final ExecutionAttribute<TypeRegistry> ERROR_REGISTRY = new ExecutionAttribute<>("ErrorRegistry");
 
     protected SdkExecutionAttribute() {
     }

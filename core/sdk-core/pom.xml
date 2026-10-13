@@ -43,6 +43,17 @@
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- ClientProtocol.payloadCodec() returns the codec-commons Codec. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codec-commons</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
             <artifactId>metrics-spi</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>

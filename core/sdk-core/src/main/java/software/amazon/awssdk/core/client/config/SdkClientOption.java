@@ -30,6 +30,10 @@ import software.amazon.awssdk.core.SdkClient;
 import software.amazon.awssdk.core.ServiceConfiguration;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
+import software.amazon.awssdk.core.client.protocol.AsyncClientTransport;
+import software.amazon.awssdk.core.client.protocol.ClientProtocol;
+import software.amazon.awssdk.core.client.protocol.ClientProtocolFactory;
+import software.amazon.awssdk.core.client.protocol.ClientTransport;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.internal.useragent.SdkClientUserAgentProperties;
@@ -395,6 +399,33 @@ public final class SdkClientOption<T> extends ClientOption<T> {
      * Option to specify a reference to the SDK client in use.
      */
     public static final SdkClientOption<SdkClient> SDK_CLIENT = new SdkClientOption<>(SdkClient.class);
+
+    /**
+     * The {@link ClientProtocol} configured as an override on the client builder. Null means no override is configured,
+     * and the client creates its protocol from {@link #CLIENT_PROTOCOL_FACTORY}.
+     */
+    public static final SdkClientOption<ClientProtocol<?, ?>> CLIENT_PROTOCOL =
+        new SdkClientOption<>(new UnsafeValueType(ClientProtocol.class));
+
+    /**
+     * The factory of the client's default {@link ClientProtocol}, used when {@link #CLIENT_PROTOCOL} is not set.
+     */
+    public static final SdkClientOption<ClientProtocolFactory<?>> CLIENT_PROTOCOL_FACTORY =
+        new SdkClientOption<>(new UnsafeValueType(ClientProtocolFactory.class));
+
+    /**
+     * The {@link ClientTransport} that a synchronous client using schema-based serialization sends its requests
+     * through.
+     */
+    public static final SdkClientOption<ClientTransport<?, ?>> CLIENT_TRANSPORT =
+        new SdkClientOption<>(new UnsafeValueType(ClientTransport.class));
+
+    /**
+     * The {@link AsyncClientTransport} that an asynchronous client using schema-based serialization sends its requests
+     * through.
+     */
+    public static final SdkClientOption<AsyncClientTransport<?, ?>> ASYNC_CLIENT_TRANSPORT =
+        new SdkClientOption<>(new UnsafeValueType(AsyncClientTransport.class));
 
     private SdkClientOption(Class<T> valueClass) {
         super(valueClass);
