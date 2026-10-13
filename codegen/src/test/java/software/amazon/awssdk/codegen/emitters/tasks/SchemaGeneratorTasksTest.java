@@ -71,6 +71,9 @@ class SchemaGeneratorTasksTest {
         Path modelDir = dir.resolve("src/software/amazon/awssdk/services/demo/model");
         assertThat(modelDir.resolve("DemoSchemas.java")).exists();
         assertThat(modelDir.resolve("DemoSchemaIndex.java")).exists();
+        assertThat(new String(Files.readAllBytes(modelDir.resolve("DemoOperations.java")), StandardCharsets.UTF_8))
+            .contains("public static final ErrorRegistry ERROR_REGISTRY",
+                      "public static final ApiOperation<SerializableStruct, SerializableStruct> OP");
         assertThat(dir.resolve("src/software/amazon/awssdk/services/demo/internal/DemoServiceSchemas.java")).exists();
         assertThat(new String(Files.readAllBytes(resources.resolve(SERVICE_FILE)), StandardCharsets.UTF_8))
             .isEqualTo("other.Index\nsoftware.amazon.awssdk.services.demo.model.DemoSchemaIndex\n");

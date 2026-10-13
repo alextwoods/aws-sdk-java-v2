@@ -40,6 +40,11 @@ public final class SchemaRuntimeType {
     public static final ClassName SCHEMA_BUILDER = ClassName.get(SCHEMA_PACKAGE, "SchemaBuilder");
     public static final ClassName PRELUDE_SCHEMAS = ClassName.get(SCHEMA_PACKAGE, "PreludeSchemas");
     public static final ClassName SCHEMA_INDEX = ClassName.get(SCHEMA_PACKAGE, "SchemaIndex");
+    public static final ClassName SERIALIZABLE_STRUCT = ClassName.get(SCHEMA_PACKAGE, "SerializableStruct");
+    public static final ClassName API_OPERATION = ClassName.get(SCHEMA_PACKAGE, "ApiOperation");
+    public static final ClassName API_SERVICE = ClassName.get(SCHEMA_PACKAGE, "ApiService");
+    public static final ClassName SIMPLE_API_OPERATION = ClassName.get(SCHEMA_PACKAGE, "SimpleApiOperation");
+    public static final ClassName ERROR_REGISTRY = ClassName.get(SCHEMA_PACKAGE + ".serde", "ErrorRegistry");
 
     private SchemaRuntimeType() {
     }

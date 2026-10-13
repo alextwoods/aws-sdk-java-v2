@@ -33,7 +33,8 @@ import software.amazon.awssdk.codegen.schema.TraitInitializers;
 
 /**
  * Generates the schema classes of a service built from a Smithy model (design A.17): the {@code <Svc>Schemas}
- * partitions, {@code <Svc>SchemaIndex} with its {@code META-INF/services} entry, and {@code <Svc>ServiceSchemas}. Has
+ * partitions, {@code <Svc>SchemaIndex} with its {@code META-INF/services} entry, {@code <Svc>ServiceSchemas}, and
+ * {@code <Svc>Operations} with the service's {@code ApiOperation}s and Error_Registry (design A.18). Has
  * no tasks for an intermediate model built from C2J, so the legacy route's output is unchanged.
  *
  * <p>The trait inclusion policy, the trait initializer registry and every class are prepared in the constructor,

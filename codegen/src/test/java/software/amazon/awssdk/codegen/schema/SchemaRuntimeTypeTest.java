@@ -18,11 +18,16 @@ package software.amazon.awssdk.codegen.schema;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.ApiService;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SchemaBuilder;
 import software.amazon.awssdk.schema.SchemaIndex;
+import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.SimpleApiOperation;
+import software.amazon.awssdk.schema.serde.ErrorRegistry;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.GenericTrait;
 import software.amazon.awssdk.schema.traits.Trait;
@@ -40,5 +45,11 @@ class SchemaRuntimeTypeTest {
         assertThat(SchemaRuntimeType.SCHEMA_BUILDER.reflectionName()).isEqualTo(SchemaBuilder.class.getName());
         assertThat(SchemaRuntimeType.PRELUDE_SCHEMAS.reflectionName()).isEqualTo(PreludeSchemas.class.getName());
         assertThat(SchemaRuntimeType.SCHEMA_INDEX.reflectionName()).isEqualTo(SchemaIndex.class.getName());
+        assertThat(SchemaRuntimeType.SERIALIZABLE_STRUCT.reflectionName()).isEqualTo(SerializableStruct.class.getName());
+        assertThat(SchemaRuntimeType.API_OPERATION.reflectionName()).isEqualTo(ApiOperation.class.getName());
+        assertThat(SchemaRuntimeType.API_SERVICE.reflectionName()).isEqualTo(ApiService.class.getName());
+        assertThat(SchemaRuntimeType.SIMPLE_API_OPERATION.reflectionName())
+            .isEqualTo(SimpleApiOperation.class.getName());
+        assertThat(SchemaRuntimeType.ERROR_REGISTRY.reflectionName()).isEqualTo(ErrorRegistry.class.getName());
     }
 }

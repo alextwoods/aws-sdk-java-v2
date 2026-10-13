@@ -19,13 +19,20 @@ import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeSpec;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.Metadata;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
+import software.amazon.awssdk.codegen.naming.NamingStrategy;
 import software.amazon.awssdk.codegen.poet.ClassSpec;
 import software.amazon.awssdk.codegen.schema.SchemaCodegenException;
 import software.amazon.awssdk.codegen.schema.TraitInclusionPolicy;
@@ -33,6 +40,7 @@ import software.amazon.awssdk.codegen.schema.TraitInitializers;
 import software.amazon.awssdk.codegen.schema.TraitRenderContext;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.shapes.ServiceShape;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
  * The Schema_Generator (design A.17): generates a service's schema classes from its Smithy model.
@@ -42,6 +50,8 @@ import software.amazon.smithy.model.shapes.ServiceShape;
  *     <li>{@code <Svc>SchemaIndex} in the model package, and its {@code META-INF/services} entry
  *     ({@link SchemaIndexGenerator})</li>
  *     <li>{@code <Svc>ServiceSchemas} in the client's {@code internal} package ({@link ServiceSchemasGenerator})</li>
+ *     <li>{@code <Svc>Operations}, with every operation's {@code ApiOperation} and the Error_Registry, in the model
+ *     package ({@link OperationsClassSpec}, design A.18)</li>
  * </ul>
  *
  * <p>Everything is computed and rendered when the instance is created, so an invalid trait inclusion configuration, a
@@ -59,6 +69,7 @@ public final class SchemaCodegen {
     private final SchemasGenerator schemas;
     private final SchemaIndexGenerator index;
     private final ServiceSchemasGenerator serviceSchemas;
+    private final OperationsClassSpec operations;
     private final List<ClassSpec> classSpecs;
 
     private SchemaCodegen(Builder builder) {
@@ -75,6 +86,8 @@ public final class SchemaCodegen {
                                             builder.partitionBudget);
         this.index = new SchemaIndexGenerator(schemas, service.getId(), modelPackage, serviceName);
         this.serviceSchemas = new ServiceSchemasGenerator(model, service, traits, internalPackage, serviceName);
+        this.operations = new OperationsClassSpec(model, service, schemas, serviceSchemas, modelPackage, serviceName,
+                                                  builder.errorShapeOwner);
 
         List<ClassSpec> specs = new ArrayList<>();
         for (TypeSpec partition : schemas.partitionSpecs()) {
@@ -82,6 +95,7 @@ public final class SchemaCodegen {
         }
         specs.add(new GeneratedClassSpec(index.className(), index.spec()));
         specs.add(new GeneratedClassSpec(serviceSchemas.className(), serviceSchemas.spec()));
+        specs.add(new GeneratedClassSpec(operations.className(), operations.spec()));
         checkNoConflicts(specs, builder.reservedNames);
         this.classSpecs = Collections.unmodifiableList(specs);
     }
@@ -118,7 +132,35 @@ public final class SchemaCodegen {
                         .internalPackage(metadata.getFullInternalPackageName())
                         .serviceName(metadata.getServiceName())
                         .reservedNames(model.getShapes().keySet())
+                        .errorShapeOwner(errorShapeOwners(model))
                         .build();
+    }
+
+    /**
+     * Maps each error shape to the error shape that owns its generated exception class. The intermediate model
+     * generates one exception class per class name; when several error shapes get the same name (CloudWatch
+     * {@code LimitExceededException} and {@code LimitExceededFault}), the others are mapped to the one it kept.
+     *
+     * @param model the intermediate model
+     * @return the owner of an error shape's class: itself if the model has an exception class for it, else the error
+     *     shape with that class name, else null
+     */
+    static Function<ShapeId, ShapeId> errorShapeOwners(IntermediateModel model) {
+        Set<ShapeId> kept = new HashSet<>();
+        Map<String, ShapeId> byClassName = new HashMap<>();
+        for (ShapeModel shape : model.getShapes().values()) {
+            if (shape.getShapeType() == ShapeType.Exception && shape.shapeId() != null) {
+                kept.add(shape.shapeId());
+                byClassName.put(shape.getShapeName(), shape.shapeId());
+            }
+        }
+        NamingStrategy naming = model.getNamingStrategy();
+        return id -> {
+            if (kept.contains(id)) {
+                return id;
+            }
+            return naming == null ? null : byClassName.get(naming.getExceptionName(id.getName()));
+        };
     }
 
     public static Builder builder() {
@@ -126,7 +168,7 @@ public final class SchemaCodegen {
     }
 
     /**
-     * @return the partition classes, the schema index and the service schemas, in that order
+     * @return the partition classes, the schema index, the service schemas and the operations, in that order
      */
     public List<ClassSpec> classSpecs() {
         return classSpecs;
@@ -160,6 +202,13 @@ public final class SchemaCodegen {
         return serviceSchemas.className();
     }
 
+    /**
+     * @return the operations class generator
+     */
+    public OperationsClassSpec operations() {
+        return operations;
+    }
+
     private static void checkNoConflicts(List<ClassSpec> specs, Set<String> reservedNames) {
         List<String> conflicts = new ArrayList<>();
         for (ClassSpec spec : specs) {
@@ -186,6 +235,7 @@ public final class SchemaCodegen {
         private String serviceName;
         private Set<String> reservedNames = Collections.emptySet();
         private int partitionBudget = DEFAULT_PARTITION_BUDGET;
+        private Function<ShapeId, ShapeId> errorShapeOwner = Function.identity();
 
         private Builder() {
         }
@@ -251,6 +301,16 @@ public final class SchemaCodegen {
                 throw new IllegalArgumentException("partitionBudget must be positive");
             }
             this.partitionBudget = partitionBudget;
+            return this;
+        }
+
+        /**
+         * @param errorShapeOwner maps an error shape to the error shape that owns its generated exception class:
+         *     itself (the default for every shape), another error shape whose class it shares, or null if no class is
+         *     generated for it. Only owners get an Error_Registry entry.
+         */
+        public Builder errorShapeOwner(Function<ShapeId, ShapeId> errorShapeOwner) {
+            this.errorShapeOwner = Objects.requireNonNull(errorShapeOwner, "errorShapeOwner");
             return this;
         }
 
