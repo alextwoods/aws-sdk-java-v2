@@ -24,17 +24,10 @@
     <modelVersion>4.0.0</modelVersion>
     <artifactId>codec-commons</artifactId>
     <name>AWS Java SDK :: Core :: Codecs :: Codec Commons</name>
-    <description>The AWS SDK for Java - Codec Commons module holds the number, timestamp and buffer helpers shared by
-        the schema-based codecs.
+    <description>The AWS SDK for Java - Codec Commons module holds the Codec interface, the Codec settings base, and
+        the timestamp, blob and buffer helpers shared by the schema-based codecs.
     </description>
     <url>https://aws.amazon.com/sdkforjava</url>
-    <properties>
-        <!-- Skeleton module with no classes yet (schema-decoupling-serde task 1.2). Remove both skips once
-             sources land: javadoc fails when a module has no public classes, and dependency analysis reports
-             every declared dependency as unused. -->
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-        <mdep.analyze.skip>true</mdep.analyze.skip>
-    </properties>
     <dependencies>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
@@ -44,6 +37,17 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- ByteBufferOutputStream.toContentStreamProvider() returns the http-client-spi ContentStreamProvider. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-client-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>utils</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>

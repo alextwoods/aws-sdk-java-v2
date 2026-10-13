@@ -14,6 +14,8 @@
  */
 
 /**
- * Number, timestamp and buffer helpers shared by the schema-based codecs.
+ * The {@link software.amazon.awssdk.codecs.commons.Codec} interface and {@link
+ * software.amazon.awssdk.codecs.commons.CodecSettings} base shared by the schema-based codecs, with the timestamp, blob
+ * and buffer helpers they use.
  */
 package software.amazon.awssdk.codecs.commons;
