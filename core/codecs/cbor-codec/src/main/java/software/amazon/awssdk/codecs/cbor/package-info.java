@@ -14,6 +14,7 @@
  */
 
 /**
- * Schema-based RPCv2 CBOR codec, settings and documents.
+ * Schema-based RPCv2 CBOR codec ({@link software.amazon.awssdk.codecs.cbor.Rpcv2CborCodec}), its settings and its
+ * serde provider SPI.
  */
 package software.amazon.awssdk.codecs.cbor;
