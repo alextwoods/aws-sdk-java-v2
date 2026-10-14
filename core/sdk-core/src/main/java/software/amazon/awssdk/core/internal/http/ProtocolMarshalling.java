@@ -18,6 +18,7 @@ package software.amazon.awssdk.core.internal.http;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.function.UnaryOperator;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.SdkRequest;
 import software.amazon.awssdk.core.SdkStandardLogger;
@@ -28,6 +29,7 @@ import software.amazon.awssdk.core.http.ExecutionContext;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
+import software.amazon.awssdk.core.internal.util.MetricUtils;
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.ContentStreamProvider;
@@ -46,9 +48,10 @@ import software.amazon.awssdk.utils.io.LengthAwareInputStream;
  * <p>{@link #marshall(ExecutionContext)} is the counterpart of the marshalling part of the legacy
  * {@code BaseClientHandler.finalizeSdkHttpFullRequest}: it runs {@code beforeMarshalling}, serializes the input
  * through the call's {@link ClientProtocol}, records the request in the interceptor context and runs
- * {@code afterMarshalling}. The steps the legacy method runs afterwards ({@code modifyHttpRequest}/{@code
- * modifyHttpContent}, the URI snapshot for endpoint resolution, host prefix) are separate pipeline steps, because the
- * new path applies the endpoint and the host prefix after serialization (tasks 3.25, 3.26).
+ * {@code afterMarshalling}. Addressing the request to the client endpoint and host prefix before {@code afterMarshalling}
+ * is passed in by the caller ({@link #marshall(ExecutionContext, UnaryOperator)}), and the steps the legacy method runs
+ * afterwards ({@code modifyHttpRequest}/{@code modifyHttpContent}, the URI snapshot for endpoint resolution) are in
+ * {@link RequestMutationStages#marshall}.
  *
  * <p>The class references no generated marshaller type (Requirement 37.2): the operation comes from
  * {@link SdkExecutionAttribute#API_OPERATION}, so the protocol serializes the same {@link ApiOperation} instance that
@@ -96,6 +99,21 @@ public final class ProtocolMarshalling {
      *     protocol cannot serialize it
      */
     public static SdkHttpFullRequest marshall(ExecutionContext executionContext) {
+        return marshall(executionContext, UnaryOperator.identity());
+    }
+
+    /**
+     * Same as {@link #marshall(ExecutionContext)}, with the serialized request passed through {@code addressing} before
+     * it is set on the interceptor context and {@code afterMarshalling} runs. The new pipeline path uses it to address
+     * the request to the client endpoint (with the host prefix), so {@code afterMarshalling} and
+     * {@code modifyHttpRequest} see the same host as with a legacy marshaller ({@link RequestMutationStages#marshall}).
+     *
+     * @param executionContext the call's execution context
+     * @param addressing applied to the request {@link ClientProtocol#serializeRequest} returns
+     * @return the serialized and addressed request
+     */
+    public static SdkHttpFullRequest marshall(ExecutionContext executionContext,
+                                              UnaryOperator<SdkHttpFullRequest> addressing) {
         ExecutionAttributes attributes = executionContext.executionAttributes();
         ApiOperation<?, ?> operation = operation(attributes);
         ClientProtocol<SdkHttpFullRequest, SdkHttpFullResponse> protocol = httpProtocol(attributes);
@@ -107,9 +125,14 @@ public final class ProtocolMarshalling {
         executionContext.interceptorChain().beforeMarshalling(executionContext.interceptorContext(), attributes);
 
         SdkRequest input = executionContext.interceptorContext().request();
-        long start = System.nanoTime();
+        MetricCollector metricCollector = executionContext.metricCollector();
+        boolean measure = MetricUtils.collectsMetrics(metricCollector);
+        long start = measure ? System.nanoTime() : 0L;
         SdkHttpFullRequest request = serialize(protocol, operation, input, attributes);
-        reportDuration(executionContext.metricCollector(), start);
+        if (measure) {
+            metricCollector.reportMetric(CoreMetric.MARSHALLING_DURATION, Duration.ofNanos(System.nanoTime() - start));
+        }
+        request = addressing.apply(request);
 
         executionContext.interceptorContext(withHttpRequest(executionContext.interceptorContext(), request));
         executionContext.interceptorChain().afterMarshalling(executionContext.interceptorContext(), attributes);
@@ -162,12 +185,6 @@ public final class ProtocolMarshalling {
                                                                            + " is not a schema-based request"));
         }
         return protocol.serializeRequest(operation, (SerializableStruct) input, attributes, UNRESOLVED_URI);
-    }
-
-    private static void reportDuration(MetricCollector metricCollector, long startNanos) {
-        if (metricCollector != null) {
-            metricCollector.reportMetric(CoreMetric.MARSHALLING_DURATION, Duration.ofNanos(System.nanoTime() - startNanos));
-        }
     }
 
     /**

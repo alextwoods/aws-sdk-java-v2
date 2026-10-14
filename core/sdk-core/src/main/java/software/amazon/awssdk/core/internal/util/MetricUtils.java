@@ -54,6 +54,18 @@ public final class MetricUtils {
     }
 
     /**
+     * Returns whether metrics reported to the given collector are collected: false for null and for a
+     * {@link NoOpMetricCollector}, which drops every metric. Callers use it to skip measuring a value that would be
+     * dropped (racecar H8, re-implemented in the schema-based request pipeline).
+     *
+     * @param metricCollector the collector, may be null
+     * @return true if the collector keeps reported metrics
+     */
+    public static boolean collectsMetrics(MetricCollector metricCollector) {
+        return metricCollector != null && !(metricCollector instanceof NoOpMetricCollector);
+    }
+
+    /**
      * Measure the duration of the given callable.
      *
      * @param c The callable to measure.

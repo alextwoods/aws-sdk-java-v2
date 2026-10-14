@@ -56,6 +56,14 @@ public class MetricUtilsTest {
     }
 
     @Test
+    public void collectsMetrics_isFalseOnlyForNullAndNoOpCollectors() {
+        assertThat(MetricUtils.collectsMetrics(null)).isFalse();
+        assertThat(MetricUtils.collectsMetrics(software.amazon.awssdk.metrics.NoOpMetricCollector.create())).isFalse();
+        assertThat(MetricUtils.collectsMetrics(MetricCollector.create("ApiCall"))).isTrue();
+        assertThat(MetricUtils.collectsMetrics(mock(MetricCollector.class))).isTrue();
+    }
+
+    @Test
     public void measureDuration_returnsCallableReturnValue() {
         String result = "foo";
 

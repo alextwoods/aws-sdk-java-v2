@@ -44,7 +44,12 @@ class ProtocolStepsNoGeneratedSerdeTest {
 
     static List<Class<?>> protocolStepClasses() {
         List<Class<?>> classes = new ArrayList<>();
-        for (Class<?> type : Arrays.asList(ProtocolMarshalling.class, ProtocolResponseHandling.class)) {
+        // The protocol steps (task 3.24) and the shared stages (task 3.25).
+        for (Class<?> type : Arrays.asList(ProtocolMarshalling.class, ProtocolResponseHandling.class,
+                                           RequestMutationStages.class, EndpointResolution.class,
+                                           AuthSchemeResolutionCache.class, UserAgentHeaderCache.class,
+                                           RequestSigning.class, RetryDecisions.class,
+                                           ExecutionAttributesTemplate.class)) {
             classes.add(type);
             classes.addAll(Arrays.asList(type.getDeclaredClasses()));
         }

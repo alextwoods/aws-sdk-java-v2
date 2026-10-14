@@ -32,6 +32,7 @@ import software.amazon.awssdk.core.http.ExecutionContext;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
+import software.amazon.awssdk.core.internal.util.MetricUtils;
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.http.AbortableInputStream;
@@ -198,7 +199,9 @@ public final class ProtocolResponseHandling {
         ClientProtocol<SdkHttpFullRequest, SdkHttpFullResponse> protocol = ProtocolMarshalling.httpProtocol(attributes);
 
         O output;
-        long start = System.nanoTime();
+        MetricCollector attemptCollector = attributes.getAttribute(SdkExecutionAttribute.API_CALL_ATTEMPT_METRIC_COLLECTOR);
+        boolean measure = MetricUtils.collectsMetrics(attemptCollector);
+        long start = measure ? System.nanoTime() : 0L;
         try {
             output = protocol.deserializeResponse(operation, attributes, errorRegistry, request, response);
         } catch (SdkServiceException e) {
@@ -213,7 +216,9 @@ public final class ProtocolResponseHandling {
             throw unmarshallFailure(response.isSuccessful() ? "Unable to unmarshall response"
                                                             : "Unable to unmarshall error response", e, response);
         }
-        reportUnmarshallingDuration(attributes, start);
+        if (measure) {
+            attemptCollector.reportMetric(CoreMetric.UNMARSHALLING_DURATION, Duration.ofNanos(System.nanoTime() - start));
+        }
 
         if (!(output instanceof SdkResponse)) {
             throw new IllegalStateException("Protocol " + protocol.id() + " returned an output for "
@@ -310,13 +315,6 @@ public final class ProtocolResponseHandling {
                        .response(output)
                        .isSuccess(true)
                        .build();
-    }
-
-    private static void reportUnmarshallingDuration(ExecutionAttributes attributes, long startNanos) {
-        MetricCollector collector = attributes.getAttribute(SdkExecutionAttribute.API_CALL_ATTEMPT_METRIC_COLLECTOR);
-        if (collector != null) {
-            collector.reportMetric(CoreMetric.UNMARSHALLING_DURATION, Duration.ofNanos(System.nanoTime() - startNanos));
-        }
     }
 
     private static void closeBody(SdkHttpFullResponse response) {
