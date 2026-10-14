@@ -44,12 +44,14 @@ class ProtocolStepsNoGeneratedSerdeTest {
 
     static List<Class<?>> protocolStepClasses() {
         List<Class<?>> classes = new ArrayList<>();
-        // The protocol steps (task 3.24), the shared stages (task 3.25) and the sync pipeline (task 3.26).
+        // The protocol steps (task 3.24), the shared stages (task 3.25) and the sync and async pipelines (tasks 3.26,
+        // 3.27).
         for (Class<?> type : Arrays.asList(ProtocolMarshalling.class, ProtocolResponseHandling.class,
                                            RequestMutationStages.class, EndpointResolution.class,
                                            AuthSchemeResolutionCache.class, UserAgentHeaderCache.class,
                                            RequestSigning.class, RetryDecisions.class,
-                                           ExecutionAttributesTemplate.class, SyncApiCallPipeline.class)) {
+                                           ExecutionAttributesTemplate.class, SyncApiCallPipeline.class,
+                                           AsyncApiCallPipeline.class)) {
             classes.add(type);
             classes.addAll(Arrays.asList(type.getDeclaredClasses()));
         }

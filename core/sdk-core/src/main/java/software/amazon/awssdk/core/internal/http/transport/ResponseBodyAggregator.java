@@ -38,9 +38,12 @@ import software.amazon.awssdk.utils.Validate;
  * <p>The subscriber requests all elements on subscription, since it keeps every byte anyway. {@link #cancel()} may be
  * called from any thread, before or after subscription; it cancels the subscription and later signals are ignored.
  * {@code onNext}, {@code onError} and {@code onComplete} are serialized by the publisher (Reactive Streams rule 1.3).
+ *
+ * <p>Used by {@link SdkAsyncHttpClientTransport} for the bodies it buffers, and by the asynchronous request pipeline
+ * for a response body that an interceptor replaced in {@code modifyAsyncHttpResponseContent}.
  */
 @SdkInternalApi
-class ResponseBodyAggregator implements Subscriber<ByteBuffer> {
+public class ResponseBodyAggregator implements Subscriber<ByteBuffer> {
     static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
     private static final int MIN_UNKNOWN_LENGTH_CAPACITY = 1024;
     private static final byte[] EMPTY = new byte[0];
@@ -53,21 +56,21 @@ class ResponseBodyAggregator implements Subscriber<ByteBuffer> {
     /**
      * @param expectedLength the declared body length, or a negative value if it is unknown
      */
-    ResponseBodyAggregator(long expectedLength) {
+    public ResponseBodyAggregator(long expectedLength) {
         this.body = new GrowableArray(expectedLength >= 0 && expectedLength <= MAX_ARRAY_SIZE ? (int) expectedLength : -1);
     }
 
     /**
      * Completed with the body when the publisher completes, or exceptionally with the publisher's error.
      */
-    CompletableFuture<OwnedResponseBody> result() {
+    public CompletableFuture<OwnedResponseBody> result() {
         return result;
     }
 
     /**
      * Cancels the subscription, now or as soon as it arrives, and ignores any later signal.
      */
-    void cancel() {
+    public void cancel() {
         cancelled.set(true);
         Subscription s = subscription.get();
         if (s != null) {
