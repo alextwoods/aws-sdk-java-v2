@@ -38,6 +38,7 @@ import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.client.protocol.AsyncResponseHandoff;
 import software.amazon.awssdk.core.client.protocol.HttpMessageExchange;
+import software.amazon.awssdk.core.client.protocol.OwnedResponseBody;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;

@@ -23,8 +23,8 @@ import java.util.Arrays;
 import java.util.Optional;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.codecs.commons.Codec;
+import software.amazon.awssdk.core.client.protocol.OwnedResponseBody;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
-import software.amazon.awssdk.core.internal.http.transport.OwnedResponseBody;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 

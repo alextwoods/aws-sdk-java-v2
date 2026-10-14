@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.core.client.protocol.OwnedResponseBody;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.utils.Validate;
 

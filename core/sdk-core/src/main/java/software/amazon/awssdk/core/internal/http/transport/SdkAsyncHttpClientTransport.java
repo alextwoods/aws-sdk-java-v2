@@ -31,6 +31,7 @@ import software.amazon.awssdk.core.async.EmptyPublisher;
 import software.amazon.awssdk.core.client.protocol.AsyncClientTransport;
 import software.amazon.awssdk.core.client.protocol.AsyncResponseHandoff;
 import software.amazon.awssdk.core.client.protocol.HttpMessageExchange;
+import software.amazon.awssdk.core.client.protocol.OwnedResponseBody;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.SdkInternalExecutionAttribute;

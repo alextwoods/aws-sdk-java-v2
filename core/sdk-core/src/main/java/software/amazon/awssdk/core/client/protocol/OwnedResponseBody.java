@@ -13,10 +13,11 @@
  * permissions and limitations under the License.
  */
 
-package software.amazon.awssdk.core.internal.http.transport;
+package software.amazon.awssdk.core.client.protocol;
 
 import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
+import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.core.interceptor.ExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
@@ -24,7 +25,8 @@ import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 
 /**
- * A response body that {@link SdkAsyncHttpClientTransport} aggregated into an array that nothing else references.
+ * A response body that the SDK's asynchronous HTTP client transport aggregated into an array that nothing else
+ * references.
  *
  * <p>The transport copies the received body once into that array, sets the response content to a stream over it, and
  * records the body in the call's {@link ExecutionAttributes}. A protocol reading the body (for example
@@ -34,6 +36,8 @@ import software.amazon.awssdk.http.SdkHttpFullResponse;
  * <p>{@link #ownedBuffer} only returns the buffer while the response still carries the transport's content stream and
  * nothing has been read from it. If an interceptor replaced or consumed the content, the caller reads the stream as
  * usual.
+ *
+ * <p>Only {@link #ownedBuffer} is for protocols; the other methods are for the transport.
  */
 @SdkProtectedApi
 public final class OwnedResponseBody {
@@ -52,7 +56,15 @@ public final class OwnedResponseBody {
         this.content = AbortableInputStream.create(stream);
     }
 
-    static OwnedResponseBody of(byte[] bytes, int length) {
+    /**
+     * Creates the body of an array the caller hands over: nothing else may read or write {@code bytes} afterwards.
+     *
+     * @param bytes the array holding the body from index 0
+     * @param length the body length
+     * @return the body
+     */
+    @SdkInternalApi
+    public static OwnedResponseBody of(byte[] bytes, int length) {
         return new OwnedResponseBody(bytes, length);
     }
 
@@ -79,22 +91,24 @@ public final class OwnedResponseBody {
     /**
      * Records this body as the call's owned body, replacing the body of an earlier attempt.
      */
-    void attach(ExecutionAttributes context) {
+    @SdkInternalApi
+    public void attach(ExecutionAttributes context) {
         context.putAttribute(OWNED_RESPONSE_BODY, this);
     }
 
     /**
      * Clears the call's owned body, for an attempt whose body the transport did not aggregate.
      */
-    static void detach(ExecutionAttributes context) {
+    @SdkInternalApi
+    public static void detach(ExecutionAttributes context) {
         context.putAttribute(OWNED_RESPONSE_BODY, null);
     }
 
-    AbortableInputStream content() {
+    /**
+     * @return the stream over the body that the transport sets as the response content
+     */
+    @SdkInternalApi
+    public AbortableInputStream content() {
         return content;
-    }
-
-    int length() {
-        return length;
     }
 }
