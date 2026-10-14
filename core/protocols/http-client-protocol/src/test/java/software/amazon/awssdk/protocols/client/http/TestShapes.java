@@ -17,11 +17,15 @@ package software.amazon.awssdk.protocols.client.http;
 
 import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import software.amazon.awssdk.awscore.AwsResponse;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.codecs.cbor.Rpcv2CborCodec;
 import software.amazon.awssdk.codecs.commons.Codec;
+import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.schema.ApiService;
@@ -292,6 +296,80 @@ final class TestShapes {
         @SuppressWarnings("unchecked")
         public <T> T getMemberValue(Schema member) {
             return (T) message;
+        }
+    }
+
+    /**
+     * An operation output shaped like a generated response class: an {@link AwsResponse} whose builder is also a
+     * {@link ShapeBuilder}.
+     */
+    static final class GreetingResponse extends AwsResponse implements SerializableStruct {
+        static final ShapeId ID = ShapeId.fromParts(NS, "GreetingResponse");
+        static final Schema SCHEMA = Schema.structureBuilder(ID)
+                                           .putMember("message", PreludeSchemas.STRING)
+                                           .builderSupplier(GreetingResponseBuilder::new)
+                                           .shapeClass(GreetingResponse.class)
+                                           .build();
+
+        private final String message;
+
+        private GreetingResponse(GreetingResponseBuilder builder) {
+            super(builder);
+            this.message = builder.message;
+        }
+
+        String message() {
+            return message;
+        }
+
+        @Override
+        public GreetingResponseBuilder toBuilder() {
+            throw new UnsupportedOperationException("Outputs are built once");
+        }
+
+        @Override
+        public List<SdkField<?>> sdkFields() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public Schema sdkSchema() {
+            return SCHEMA;
+        }
+
+        @Override
+        public void serializeMembers(ShapeSerializer serializer) {
+            if (message != null) {
+                serializer.writeString(SCHEMA.member("message"), message);
+            }
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T getMemberValue(Schema member) {
+            return (T) message;
+        }
+
+        static final class GreetingResponseBuilder extends AwsResponse.BuilderImpl
+            implements ShapeBuilder<GreetingResponse> {
+            private String message;
+
+            @Override
+            public GreetingResponse build() {
+                return new GreetingResponse(this);
+            }
+
+            @Override
+            public GreetingResponseBuilder deserialize(ShapeDeserializer decoder) {
+                decoder.readStruct(GreetingResponse.SCHEMA, this,
+                                   (builder, member, d) -> builder.message = d.readString(member));
+                return this;
+            }
+
+            @Override
+            public Schema sdkSchema() {
+                return GreetingResponse.SCHEMA;
+            }
         }
     }
 

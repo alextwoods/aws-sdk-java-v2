@@ -46,9 +46,12 @@ import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.protocols.client.http.TestShapes.ExampleServiceException;
 import software.amazon.awssdk.protocols.client.http.TestShapes.FooError;
 import software.amazon.awssdk.protocols.client.http.TestShapes.Greeting;
+import software.amazon.awssdk.protocols.client.http.TestShapes.GreetingResponse;
 import software.amazon.awssdk.protocols.client.http.internal.MarshallBufferSizeTracker;
 import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.SimpleApiOperation;
 import software.amazon.awssdk.schema.serde.SerializationException;
@@ -187,6 +190,29 @@ class HttpClientProtocolTest {
     }
 
     @Test
+    void buildOutputAttachesTheHttpResponseAndResponseMetadata() {
+        SimpleApiOperation<Greeting, GreetingResponse> operation =
+            SimpleApiOperation.<Greeting, GreetingResponse>builder()
+                              .schema(Schema.createOperation(ShapeId.fromParts(TestShapes.NS, "GreetResponse")))
+                              .inputSchema(() -> Greeting.SCHEMA)
+                              .outputSchema(() -> GreetingResponse.SCHEMA)
+                              .errorRegistry(ERRORS)
+                              .service(TestShapes.SERVICE)
+                              .build();
+        SdkHttpFullResponse response = response(200, cbor("message", "hi")).putHeader("x-amzn-RequestId", "req-1")
+                                                                           .putHeader("X-Other", "a")
+                                                                           .build();
+
+        GreetingResponse output = new TestProtocol().deserializeResponse(operation, new ExecutionAttributes(), ERRORS,
+                                                                         null, response);
+
+        assertThat(output.message()).isEqualTo("hi");
+        assertThat(output.sdkHttpResponse()).isSameAs(response);
+        assertThat(output.responseMetadata().requestId()).isEqualTo("req-1");
+        assertThat(output.responseMetadata().toString()).contains("X-Other");
+    }
+
+    @Test
     void unparseableSuccessBodyBecomesAClientExceptionNamingTheOperation() {
         SdkHttpFullResponse response = response(200, new byte[] {(byte) 0xbf, 0x63}).build();
 
@@ -284,7 +310,9 @@ class HttpClientProtocolTest {
         protected <I extends SerializableStruct, O extends SerializableStruct> O deserializeOutput(
             ApiOperation<I, O> operation, ExecutionAttributes context, SdkHttpFullRequest request,
             SdkHttpFullResponse response) {
-            return CODEC.deserializeShape(ResponseBodies.asByteBuffer(context, response), operation.outputBuilder());
+            ShapeBuilder<O> builder = operation.outputBuilder();
+            builder.deserialize(CODEC.createDeserializer(ResponseBodies.asByteBuffer(context, response)));
+            return buildOutput(builder, response);
         }
 
         @Override

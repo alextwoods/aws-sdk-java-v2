@@ -17,23 +17,34 @@ package software.amazon.awssdk.protocols.client.http;
 
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.annotations.ThreadSafe;
+import software.amazon.awssdk.awscore.AwsResponse;
+import software.amazon.awssdk.awscore.AwsResponseMetadata;
+import software.amazon.awssdk.awscore.DefaultAwsResponseMetadata;
+import software.amazon.awssdk.awscore.util.AwsHeader;
 import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
+import software.amazon.awssdk.core.SdkResponse;
 import software.amazon.awssdk.core.client.protocol.ClientProtocol;
 import software.amazon.awssdk.core.client.protocol.HttpMessageExchange;
 import software.amazon.awssdk.core.client.protocol.MessageExchange;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.exception.SdkServiceException;
+import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.schema.SchemaSerdeSupport;
 import software.amazon.awssdk.endpoints.Endpoint;
 import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.protocols.client.http.internal.MarshallBufferSizeTracker;
 import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.serde.TypeRegistry;
 import software.amazon.awssdk.utils.Validate;
@@ -56,15 +67,16 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
  *
  * <p>Subclasses that serialize a body into a {@link ByteBufferOutputStream} create it with
  * {@link #newRequestBodyBuffer} and finish it with {@link #finishRequestBody}, so each operation's next buffer starts at
- * the size of its last body.
+ * the size of its last body. They build outputs with {@link #buildOutput}, which attaches the HTTP response and the
+ * response metadata.
  *
  * <p>Instances are created once per client and must be immutable after construction, apart from the internal buffer
  * size hints, and safe to use from multiple threads.
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.client.http.HttpClientProtocol}. The SDK adds the template
- * methods above, the client-side failure wrapping and the buffer size hints. {@link #updateServiceEndpoint} keeps the
- * request headers unchanged; it does not add endpoint headers as smithy-java's {@code setServiceEndpoint} does, because
- * the SDK request pipeline applies them.
+ * methods above, the client-side failure wrapping, the buffer size hints and {@link #buildOutput}.
+ * {@link #updateServiceEndpoint} keeps the request headers unchanged; it does not add endpoint headers as smithy-java's
+ * {@code setServiceEndpoint} does, because the SDK request pipeline applies them.
  */
 @SdkPublicApi
 @ThreadSafe
@@ -239,6 +251,44 @@ public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRe
     protected final ContentStreamProvider finishRequestBody(ApiOperation<?, ?> operation, ByteBufferOutputStream body) {
         bufferSizeHints.record(operation, body.size());
         return body.toContentStreamProvider();
+    }
+
+    /**
+     * Builds an operation output from its deserialized builder, attaching the HTTP response the way earlier SDK clients
+     * attach it to every response:
+     * <ul>
+     *     <li>an {@link AwsResponse.Builder} receives {@link AwsResponseMetadata} holding the first value of every
+     *     response header, and the request ID ({@code x-amzn-RequestId} or {@code x-amz-request-id}) under
+     *     {@link AwsHeader#AWS_REQUEST_ID};</li>
+     *     <li>an {@link SdkResponse.Builder} receives the {@link SdkResponse#sdkHttpResponse() HTTP response}, set on
+     *     the builder before it is built so the output is not copied to attach it;</li>
+     *     <li>any other builder, such as a document builder of the Dynamic_Client, is built as is.</li>
+     * </ul>
+     *
+     * @param builder the output builder, already deserialized
+     * @param response the HTTP response
+     * @param <O> the output type
+     * @return the built output
+     */
+    protected final <O extends SerializableStruct> O buildOutput(ShapeBuilder<O> builder, SdkHttpFullResponse response) {
+        if (builder instanceof AwsResponse.Builder) {
+            ((AwsResponse.Builder) builder).responseMetadata(responseMetadata(response));
+        }
+        if (builder instanceof SdkResponse.Builder) {
+            return SchemaSerdeSupport.buildResponse(builder, response);
+        }
+        return builder.build();
+    }
+
+    /**
+     * Same metadata as {@code AwsJsonResponseHandler} and {@code AwsXmlResponseHandler}.
+     */
+    private static AwsResponseMetadata responseMetadata(SdkHttpResponse response) {
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put(AwsHeader.AWS_REQUEST_ID,
+                     response.firstMatchingHeader(HttpResponseHandler.X_AMZN_REQUEST_ID_HEADERS).orElse(null));
+        response.forEachHeader((key, value) -> metadata.put(key, value.get(0)));
+        return DefaultAwsResponseMetadata.create(metadata);
     }
 
     private static SdkClientException clientFailure(String action, ApiOperation<?, ?> operation, RuntimeException e) {
