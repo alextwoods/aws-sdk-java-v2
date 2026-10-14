@@ -85,6 +85,12 @@
             <artifactId>smithy-rpcv2-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The default client protocol of the rpcv2Cbor projections, referenced by their generated base builders (task 3.23). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rpcv2-cbor-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>annotations</artifactId>
