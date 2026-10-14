@@ -60,11 +60,16 @@ import software.amazon.smithy.model.shapes.ShapeId;
  *     carry.</li>
  * </ul>
  * Request and response classes the IntermediateModel synthesizes for a {@code smithy.api#Unit} input or output get a
- * schema of their own ({@link Entry#isSynthetic()}).
+ * schema of their own ({@link Entry#isSynthetic()}). So does the {@code Unit} class it synthesizes for union members
+ * that target {@code smithy.api#Unit} ({@link Entry#isUnit()}): the prelude shape has no partition field, and
+ * {@code PreludeSchemas.UNIT} has no builder, so the class's schema is {@code smithy.api#Unit} with its builder, and
+ * members that target {@code smithy.api#Unit} reference it ({@link #unitSchemaReference()}), as smithy-java's do
+ * {@code Unit.SCHEMA}.
  */
 @SdkInternalApi
 public final class SchemaSerdeModel {
     private static final SchemaSerdeModel NONE = new SchemaSerdeModel();
+    private static final ShapeId UNIT = ShapeId.from("smithy.api#Unit");
 
     private final Map<String, Entry> entries;
     private final Map<ShapeId, Entry> byShapeId;
@@ -453,10 +458,11 @@ public final class SchemaSerdeModel {
 
     /**
      * @param entry a class
-     * @return the expression of its Root_Schema in its own class: a partition field, or for a synthetic class null
+     * @return the expression of its Root_Schema in its own class: a partition field, or null for a class that holds its
+     *     own schema ({@link Entry#hasOwnSchema()})
      */
     public CodeBlock schemaReference(Entry entry) {
-        if (entry.isSynthetic()) {
+        if (entry.hasOwnSchema()) {
             return null;
         }
         SchemaField field = schemas.order().field(entry.shapeId());
@@ -464,6 +470,15 @@ public final class SchemaSerdeModel {
             throw new IllegalStateException("Shape " + entry.shapeId() + " has no schema");
         }
         return schemas.fieldReference(field);
+    }
+
+    /**
+     * @return the target schema of members that target {@code smithy.api#Unit}: {@code Unit.SCHEMA} of the generated
+     *     {@code Unit} class if it has schema serde members, else null ({@code PreludeSchemas.UNIT})
+     */
+    public CodeBlock unitSchemaReference() {
+        ClassName unitClass = builderClass(UNIT);
+        return unitClass == null ? null : CodeBlock.of("$T.$L", unitClass, "SCHEMA");
     }
 
     /**
@@ -517,6 +532,22 @@ public final class SchemaSerdeModel {
          */
         public boolean isSynthetic() {
             return shapeId == null;
+        }
+
+        /**
+         * @return whether the class is the {@code Unit} class the IntermediateModel synthesizes from the prelude
+         *     {@code smithy.api#Unit} for union members that target it, so the class holds its own schema
+         */
+        public boolean isUnit() {
+            return UNIT.equals(shapeId);
+        }
+
+        /**
+         * @return whether the class holds its own schema rather than referencing a partition field: a synthetic
+         *     class or the {@code Unit} class
+         */
+        public boolean hasOwnSchema() {
+            return isSynthetic() || isUnit();
         }
     }
 

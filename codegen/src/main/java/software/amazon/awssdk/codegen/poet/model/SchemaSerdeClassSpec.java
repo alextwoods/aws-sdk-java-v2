@@ -123,14 +123,20 @@ final class SchemaSerdeClassSpec {
         return fields;
     }
 
+    /**
+     * The partition field of the class's Root_Schema, or for a class that holds its own schema a member-less structure
+     * schema with the {@code unitType} trait: {@code smithy.api#Unit} for the {@code Unit} class, else the class name
+     * in the service namespace.
+     */
     private CodeBlock schemaInitializer() {
-        if (!entry.isSynthetic()) {
+        if (!entry.hasOwnSchema()) {
             return serde.schemaReference(entry);
         }
+        String namespace = entry.isUnit() ? entry.shapeId().getNamespace() : serde.serviceNamespace();
+        String name = entry.isUnit() ? entry.shapeId().getName() : className.simpleName();
         return CodeBlock.builder()
                         .add("$T.structureBuilder($T.fromParts($S, $S), $T.INSTANCE)", SchemaRuntimeType.SCHEMA,
-                             SchemaRuntimeType.SHAPE_ID, serde.serviceNamespace(), className.simpleName(),
-                             SchemaRuntimeType.UNIT_TYPE_TRAIT)
+                             SchemaRuntimeType.SHAPE_ID, namespace, name, SchemaRuntimeType.UNIT_TYPE_TRAIT)
                         .add(".builderSupplier($T::newShapeBuilder).shapeClass($T.class).build()", className, className)
                         .build();
     }

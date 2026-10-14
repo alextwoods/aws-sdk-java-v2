@@ -92,7 +92,7 @@ class SchemaSerdeModelClassTest {
         + "list NameList { member: String }\n"
         + "map TagMap { key: String, value: NameList }\n"
         + "enum Color { RED, GREEN }\n"
-        + "union Choice { Text: String, Number: Integer }\n"
+        + "union Choice { Text: String, Number: Integer, Nothing: Unit }\n"
         + "@error(\"client\") @httpError(404) structure ThingNotFound { message: String, Reason: String }\n";
 
     private static IntermediateModel model;
@@ -129,8 +129,15 @@ class SchemaSerdeModelClassTest {
     void everyStructureEnumAndSyntheticClassHasSchemaSerdeMembers() {
         assertThat(codegen.serde().entries().keySet())
             .containsExactlyInAnyOrder("GetThingRequest", "GetThingResponse", "DeleteThingRequest", "DeleteThingResponse",
-                                       "Thing", "Choice", "ThingNotFoundException");
+                                       "Thing", "Choice", "Unit", "ThingNotFoundException");
         assertThat(codegen.serde().entry("DeleteThingResponse").isSynthetic()).isTrue();
+        assertThat(codegen.serde().entry("Unit").isUnit()).isTrue();
+        assertThat(codegen.serde().entry("Unit").hasOwnSchema()).isTrue();
+    }
+
+    @Test
+    void unit_matchesGoldenFile() {
+        MatcherAssert.assertThat(modelClass("Unit"), generatesTo("schemaserde/unit.java"));
     }
 
     @Test
@@ -248,7 +255,44 @@ class SchemaSerdeModelClassTest {
             SmithyEnum red = (SmithyEnum) colorClass.getMethod("fromValue", String.class).invoke(null, "RED");
             assertThat(red.getValue()).isEqualTo("RED");
             assertThat(red.sdkSchema()).isSameAs(colorClass.getField("SCHEMA").get(null));
+
+            assertUnitUnionMember(loader);
         }
+    }
+
+    /**
+     * A union member that targets {@code smithy.api#Unit} targets the generated {@code Unit} class's schema, which,
+     * unlike {@code PreludeSchemas.UNIT}, builds a {@code Unit}: for schema deserializers and for the derived
+     * {@code SdkField} constructor that the legacy unmarshallers call.
+     */
+    private static void assertUnitUnionMember(URLClassLoader loader) throws Exception {
+        Class<?> unitClass = loader.loadClass(PACKAGE + ".Unit");
+        Class<?> choiceClass = loader.loadClass(PACKAGE + ".Choice");
+        Schema unitSchema = (Schema) unitClass.getField("SCHEMA").get(null);
+        Schema choiceSchema = (Schema) choiceClass.getField("SCHEMA").get(null);
+        assertThat(unitSchema.id().toString()).isEqualTo("smithy.api#Unit");
+        assertThat(unitSchema.shapeClass()).isSameAs(unitClass);
+        assertThat(choiceSchema.member("Nothing").memberTarget()).isSameAs(unitSchema);
+
+        Object unit = unitSchema.shapeBuilder().build();
+        assertThat(unit).isInstanceOf(unitClass);
+        ShapeBuilder<?> choiceBuilder = choiceSchema.shapeBuilder();
+        choiceBuilder.setMemberValue(choiceSchema.member("Nothing"), unit);
+        SerializableStruct choice = (SerializableStruct) choiceBuilder.build();
+        assertThat((Object) choice.getMemberValue(choiceSchema.member("Nothing"))).isSameAs(unit);
+        assertThat(choice.toString()).isEqualTo("Choice(Nothing=Unit())");
+
+        List<String> written = new ArrayList<>();
+        choice.serializeMembers(new SpecificShapeSerializer() {
+            @Override
+            public void writeStruct(Schema schema, SerializableStruct struct) {
+                written.add(schema.memberName() + "=" + struct.sdkSchema().id());
+            }
+        });
+        assertThat(written).containsExactly("Nothing=smithy.api#Unit");
+
+        SdkField<?> nothing = ((SdkPojo) choice).sdkFieldNameToField().get("Nothing");
+        assertThat(((SdkBuilder<?, ?>) nothing.constructor().get()).build()).isInstanceOf(unitClass);
     }
 
     private static void invoke(Class<?> builderType, Object target, String name, Class<?> type, Object value)

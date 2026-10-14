@@ -63,11 +63,14 @@ import software.amazon.smithy.model.traits.UnitTypeTrait;
  * and merged at runtime. A structure or union whose generated class has schema serde members ({@link SchemaSerdeModel})
  * gets {@code .builderSupplier(X::newShapeBuilder).shapeClass(X.class)}: a method reference to a package-private static
  * method, which initializes neither the class nor a builder until a builder is requested. An enum with a generated enum
- * class passes the class to {@code createEnum}.
+ * class passes the class to {@code createEnum}. A member that targets {@code smithy.api#Unit} (a union member) targets
+ * {@code Unit.SCHEMA} of the generated {@code Unit} class when that class has schema serde members, else
+ * {@code PreludeSchemas.UNIT}.
  */
 @SdkInternalApi
 public final class SchemasGenerator {
     private static final Map<String, String> PRELUDE_FIELDS = preludeFields();
+    private static final ShapeId UNIT = ShapeId.from("smithy.api#Unit");
 
     private final ServiceShape service;
     private final SchemaTraits traits;
@@ -237,6 +240,10 @@ public final class SchemasGenerator {
 
     private CodeBlock target(SchemaField from, MemberShape member, ClassName self) {
         ShapeId targetId = member.getTarget();
+        if (UNIT.equals(targetId) && serde.unitSchemaReference() != null) {
+            // The generated Unit class's schema, which has the builder that PreludeSchemas.UNIT lacks.
+            return serde.unitSchemaReference();
+        }
         if (Prelude.isPreludeShape(targetId)) {
             return CodeBlock.of("$T.$L", SchemaRuntimeType.PRELUDE_SCHEMAS, preludeField(targetId));
         }
