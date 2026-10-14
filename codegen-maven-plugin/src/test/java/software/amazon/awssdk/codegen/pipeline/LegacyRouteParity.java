@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,14 +38,21 @@ import java.util.stream.Stream;
 import software.amazon.awssdk.codegen.C2jModels;
 import software.amazon.awssdk.codegen.CodeGenerator;
 import software.amazon.awssdk.codegen.IntermediateModelBuilder;
+import software.amazon.awssdk.codegen.emitters.GeneratorPathProvider;
+import software.amazon.awssdk.codegen.emitters.PoetGeneratorTask;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.model.rules.endpoints.EndpointTestSuiteModel;
 import software.amazon.awssdk.codegen.model.service.EndpointRuleSetModel;
 import software.amazon.awssdk.codegen.model.service.Paginators;
 import software.amazon.awssdk.codegen.model.service.ServiceMetadata;
 import software.amazon.awssdk.codegen.model.service.ServiceModel;
 import software.amazon.awssdk.codegen.model.service.Waiters;
+import software.amazon.awssdk.codegen.poet.ClassSpec;
+import software.amazon.awssdk.codegen.poet.common.EnumClass;
+import software.amazon.awssdk.codegen.poet.model.AwsServiceModel;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 
 /**
@@ -53,7 +61,9 @@ import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
  * generated files.
  *
  * <p>Files only the pipeline generates because they need the Smithy model, the Schema_Generator's schema classes and
- * their {@code ServiceLoader} entry, are not compared ({@link #isSchemaGeneratorOutput}).
+ * their {@code ServiceLoader} entry, are not compared ({@link #isSchemaGeneratorOutput}). The pipeline's model classes
+ * with schema serde members are compared as the generator renders them without those members
+ * ({@link #withoutSchemaSerdeMembers}).
  *
  * <p>The comparison ignores layout and the one known documentation-only difference, so that what it reports is a
  * change in generated code: whitespace and Javadoc line breaks are collapsed, and the service's
@@ -79,9 +89,13 @@ final class LegacyRouteParity {
     private static final Pattern JAVADOC_LINE_BREAK = Pattern.compile("\\s*\\R\\s*\\*(?!/) ?");
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
     private static final Pattern SCHEMA_GENERATOR_OUTPUT = Pattern.compile(
-        "(.*/model/[A-Za-z0-9]+(Schemas\\d*|SchemaIndex|Operations)\\.java)"
+        "(.*/model/[A-Za-z0-9]+(Schemas\\d*|SchemaIndex|Operations|SharedSerde)\\.java)"
         + "|(.*/internal/[A-Za-z0-9]+ServiceSchemas\\.java)"
         + "|(.*META-INF/services/software\\.amazon\\.awssdk\\.schema\\.SchemaIndex)");
+    /**
+     * The {@code sdkSchema()} method that the model classes and enums with schema serde members (task 3.7) declare.
+     */
+    private static final String SCHEMA_SERDE_MARKER = "public Schema sdkSchema()";
     private static final Pattern SPACE_BEFORE_DOT = Pattern.compile(" \\.");
     private static final Pattern STATEMENT_END = Pattern.compile("(?<=[;{}])(?= )|(?<=\\*/)");
     private static final Pattern THROWS_CLAUSE = Pattern.compile("^(.*\\) throws )([A-Za-z0-9_., ]+?)( ?[{;])$");
@@ -244,6 +258,45 @@ final class LegacyRouteParity {
             byName.put(model.getMetadata().getServiceName().toLowerCase(), model);
         }
         pipeline.generate(prepared, s -> shareTarget(s.intermediateModel(), byName));
+        withoutSchemaSerdeMembers(prepared, out);
+    }
+
+    /**
+     * Re-renders the pipeline's model classes that have schema serde members (task 3.7) the way the model class
+     * generators render a class without them, from the same IntermediateModel. Only the pipeline route generates those
+     * members, from the Smithy model, so comparing them with the legacy route would report every model class; what
+     * the comparison checks is that the pipeline's IntermediateModel produces the legacy route's model classes. The
+     * schema serde members themselves are covered by the codegen golden files and the modules' tests.
+     *
+     * <p>A class is re-rendered for every service that has the shape, in generation order, as the legacy route writes
+     * a class that a model sharer also generates.
+     */
+    private static void withoutSchemaSerdeMembers(List<PreparedService> services, Path out) {
+        Map<Path, Boolean> hasSchemaSerde = new HashMap<>();
+        for (PreparedService service : services) {
+            IntermediateModel model = service.intermediateModel();
+            String modelDirectory = new GeneratorPathProvider(model, out.resolve("src").toString(),
+                                                              out.resolve("tests").toString(),
+                                                              out.resolve("resources").toString()).getModelDirectory();
+            for (ShapeModel shape : new TreeMap<>(model.getShapes()).values()) {
+                Path file = Paths.get(modelDirectory, shape.getShapeName() + ".java");
+                boolean schemaSerde = hasSchemaSerde.computeIfAbsent(
+                    file, f -> Files.exists(f) && read(f).contains(SCHEMA_SERDE_MARKER));
+                if (!schemaSerde) {
+                    continue;
+                }
+                ClassSpec spec = shape.getShapeType() == ShapeType.Enum
+                                 ? new EnumClass(model.getMetadata().getFullModelPackageName(), shape)
+                                 : new AwsServiceModel(model, shape);
+                try {
+                    // The generator's writer refuses to overwrite a file with other content.
+                    Files.deleteIfExists(file);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                new PoetGeneratorTask(modelDirectory, model.getFileHeader(), spec).compute();
+            }
+        }
     }
 
     private static IntermediateModel shareTarget(IntermediateModel model, Map<String, IntermediateModel> byName) {

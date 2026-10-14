@@ -45,6 +45,21 @@ public final class SchemaRuntimeType {
     public static final ClassName API_SERVICE = ClassName.get(SCHEMA_PACKAGE, "ApiService");
     public static final ClassName SIMPLE_API_OPERATION = ClassName.get(SCHEMA_PACKAGE, "SimpleApiOperation");
     public static final ClassName ERROR_REGISTRY = ClassName.get(SCHEMA_PACKAGE + ".serde", "ErrorRegistry");
+    public static final ClassName SHAPE_BUILDER = ClassName.get(SCHEMA_PACKAGE, "ShapeBuilder");
+    public static final ClassName SMITHY_ENUM = ClassName.get(SCHEMA_PACKAGE, "SmithyEnum");
+    public static final ClassName SCHEMA_UTILS = ClassName.get(SCHEMA_PACKAGE, "SchemaUtils");
+    public static final ClassName SHAPE_SERIALIZER = ClassName.get(SCHEMA_PACKAGE + ".serde", "ShapeSerializer");
+    public static final ClassName SHAPE_DESERIALIZER = ClassName.get(SCHEMA_PACKAGE + ".serde", "ShapeDeserializer");
+    public static final ClassName MAP_SERIALIZER = ClassName.get(SCHEMA_PACKAGE + ".serde", "MapSerializer");
+    public static final ClassName TO_STRING_SERIALIZER = ClassName.get(SCHEMA_PACKAGE + ".serde", "ToStringSerializer");
+
+    /**
+     * {@code sdk-core} types that generated schema serde code uses (design A.6).
+     */
+    public static final ClassName SDK_FIELDS_FROM_SCHEMA = ClassName.get("software.amazon.awssdk.core.schema",
+                                                                         "SdkFieldsFromSchema");
+    public static final ClassName SCHEMA_SERDE_SUPPORT = ClassName.get("software.amazon.awssdk.core.schema",
+                                                                       "SchemaSerdeSupport");
 
     private SchemaRuntimeType() {
     }

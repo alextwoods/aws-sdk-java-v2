@@ -60,6 +60,7 @@ import software.amazon.awssdk.codegen.poet.PoetExtension;
 import software.amazon.awssdk.codegen.poet.PoetUtils;
 import software.amazon.awssdk.codegen.poet.eventstream.EventStreamUtils;
 import software.amazon.awssdk.codegen.poet.model.TypeProvider.TypeNameOptions;
+import software.amazon.awssdk.codegen.poet.schema.SchemaSerdeModel;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.SdkPojo;
 import software.amazon.awssdk.utils.StringUtils;
@@ -79,10 +80,20 @@ public class AwsServiceModel implements ClassSpec {
     private final ModelBuilderSpecs modelBuilderSpecs;
     private final ServiceModelCopiers serviceModelCopiers;
     private final ModelMethodOverrides modelMethodOverrides;
+    private final SchemaSerdeClassSpec schemaSerde;
 
     public AwsServiceModel(IntermediateModel intermediateModel, ShapeModel shapeModel) {
+        this(intermediateModel, shapeModel, null);
+    }
+
+    /**
+     * @param schemaSerde the schema serde classes of the service, or null; when the shape's class is one of them, the
+     *     class implements {@code SerializableStruct} and its builder {@code ShapeBuilder} (task 3.7)
+     */
+    public AwsServiceModel(IntermediateModel intermediateModel, ShapeModel shapeModel, SchemaSerdeModel schemaSerde) {
         this.intermediateModel = intermediateModel;
         this.shapeModel = shapeModel;
+        this.schemaSerde = SchemaSerdeClassSpec.forShape(intermediateModel, schemaSerde, shapeModel);
         this.poetExtensions = new PoetExtension(intermediateModel);
         this.typeProvider = new TypeProvider(intermediateModel);
         this.shapeModelSpec = new ShapeModelSpec(this.shapeModel,
@@ -107,13 +118,22 @@ public class AwsServiceModel implements ClassSpec {
                                                .addSuperinterfaces(modelSuperInterfaces())
                                                .superclass(modelSuperClass())
                                                .addMethods(modelClassMethods())
-                                               .addFields(fields)
-                                               .addFields(shapeModelSpec.staticFields())
-                                               .addMethod(addModifier(sdkFieldsMethod(), FINAL))
-                                               .addMethod(addModifier(sdkFieldNameToFieldMethod(), FINAL))
-                                               .addTypes(nestedModelClassTypes());
+                                               .addFields(fields);
+        if (schemaSerde != null) {
+            specBuilder.addFields(schemaSerde.staticFields())
+                       .addMethod(addModifier(schemaSerde.sdkFieldsMethod(), FINAL))
+                       .addMethod(addModifier(schemaSerde.sdkFieldNameToFieldMethod(), FINAL))
+                       .addMethods(schemaSerde.classMethods());
+        } else {
+            specBuilder.addFields(shapeModelSpec.staticFields())
+                       .addMethod(addModifier(sdkFieldsMethod(), FINAL))
+                       .addMethod(addModifier(sdkFieldNameToFieldMethod(), FINAL));
+        }
+        specBuilder.addTypes(nestedModelClassTypes());
 
-        shapeModelSpec.additionalMethods().forEach(specBuilder::addMethod);
+        if (schemaSerde == null) {
+            shapeModelSpec.additionalMethods().forEach(specBuilder::addMethod);
+        }
 
         if (shapeModel.isUnion()) {
             specBuilder.addField(unionTypeField());
@@ -135,7 +155,7 @@ public class AwsServiceModel implements ClassSpec {
                                           .build());
         }
 
-        if (!fields.isEmpty()) {
+        if (!fields.isEmpty() && schemaSerde == null) {
             specBuilder
                 .addMethod(getterCreator())
                 .addMethod(setterCreator());
@@ -153,7 +173,7 @@ public class AwsServiceModel implements ClassSpec {
     }
 
     private ModelBuilderSpecs resolveBuilderSpecs() {
-        return new ModelBuilderSpecs(intermediateModel, shapeModel, typeProvider);
+        return new ModelBuilderSpecs(intermediateModel, shapeModel, typeProvider, schemaSerde);
     }
 
     private TypeSpec eventStreamInterfaceSpec() {
@@ -406,6 +426,10 @@ public class AwsServiceModel implements ClassSpec {
                 break;
         }
 
+        if (schemaSerde != null) {
+            interfaces.add(schemaSerde.serializableStruct());
+        }
+
         return interfaces;
     }
 
@@ -466,7 +490,9 @@ public class AwsServiceModel implements ClassSpec {
                 methodSpecs.add(addModifier(modelMethodOverrides.hashCodeMethod(shapeModel), FINAL));
                 methodSpecs.add(addModifier(modelMethodOverrides.equalsMethod(shapeModel), FINAL));
                 methodSpecs.add(addModifier(modelMethodOverrides.equalsBySdkFieldsMethod(shapeModel), FINAL));
-                methodSpecs.add(addModifier(modelMethodOverrides.toStringMethod(shapeModel), FINAL));
+                methodSpecs.add(addModifier(schemaSerde != null && schemaSerde.usesToStringSerializer()
+                                            ? modelMethodOverrides.toStringMethod(schemaSerde.toStringBody())
+                                            : modelMethodOverrides.toStringMethod(shapeModel), FINAL));
                 methodSpecs.add(getValueForField());
                 methodSpecs.addAll(unionMembers());
                 break;

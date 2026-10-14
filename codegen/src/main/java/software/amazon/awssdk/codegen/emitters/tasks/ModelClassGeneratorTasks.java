@@ -38,15 +38,21 @@ import software.amazon.awssdk.codegen.poet.model.EventModelSpec;
 import software.amazon.awssdk.codegen.poet.model.EventStreamSpecHelper;
 import software.amazon.awssdk.codegen.poet.model.ResponseMetadataSpec;
 import software.amazon.awssdk.codegen.poet.model.ServiceModelCopiers;
+import software.amazon.awssdk.codegen.poet.schema.SchemaCodegen;
+import software.amazon.awssdk.codegen.poet.schema.SchemaSerdeModel;
 
 class ModelClassGeneratorTasks extends BaseGeneratorTasks {
     private final String modelClassDir;
     private final IntermediateModel intermediateModel;
+    private final IntermediateModel shareModelsTarget;
+    private final GeneratorTaskParams params;
 
     ModelClassGeneratorTasks(GeneratorTaskParams dependencies) {
         super(dependencies);
         this.modelClassDir = dependencies.getPathProvider().getModelDirectory();
         this.intermediateModel = dependencies.getModel();
+        this.shareModelsTarget = dependencies.getShareModelsTarget();
+        this.params = dependencies;
     }
 
     @Override
@@ -77,18 +83,41 @@ class ModelClassGeneratorTasks extends BaseGeneratorTasks {
             info("Skip generating class " + shapeModel.getShapeName());
             return false;
         }
+        if (isGeneratedBySchemaShareTarget(shapeModel)) {
+            info("Skip generating class " + shapeModel.getShapeName() + ", which the shared model's service generates");
+            return false;
+        }
         return true;
+    }
+
+    /**
+     * Whether the service shares the model package of a service that gets schemas and generates the same class. The
+     * shared definitions are identical ({@code SharedModelsValidator}); the target's class may have schema serde members
+     * (task 3.7), which this service's model has no schemas for, so its class is kept.
+     */
+    private boolean isGeneratedBySchemaShareTarget(ShapeModel shapeModel) {
+        IntermediateModel target = shareModelsTarget;
+        return target != null
+               && SchemaCodegen.isApplicable(target)
+               && target.getShapes().containsKey(shapeModel.getShapeName());
     }
 
     private GeneratorTask createTask(ShapeModel shapeModel) {
         Metadata metadata = model.getMetadata();
+        SchemaCodegen schemaCodegen = schemaCodegen();
+        SchemaSerdeModel serde = schemaCodegen == null ? null : schemaCodegen.serde();
         ClassSpec classSpec;
         if (shapeModel.getShapeType() == ShapeType.Enum) {
-            classSpec = new EnumClass(metadata.getFullModelPackageName(), shapeModel);
+            classSpec = new EnumClass(metadata.getFullModelPackageName(), shapeModel,
+                                      serde == null ? null : serde.enumSchemaReference(shapeModel));
         } else {
-            classSpec = new AwsServiceModel(model, shapeModel);
+            classSpec = new AwsServiceModel(model, shapeModel, serde);
         }
         return new PoetGeneratorTask(modelClassDir, model.getFileHeader(), classSpec);
+    }
+
+    private SchemaCodegen schemaCodegen() {
+        return params.getSchemaCodegen();
     }
 
     private List<GeneratorTask> eventModelGenerationTasks() {

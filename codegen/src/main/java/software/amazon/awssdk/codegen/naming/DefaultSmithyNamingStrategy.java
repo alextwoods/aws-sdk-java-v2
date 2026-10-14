@@ -86,7 +86,9 @@ public class DefaultSmithyNamingStrategy implements NamingStrategy {
 
         Set<String> reservedJavaPojoMethodNames = new HashSet<>(reservedJavaMethodNames);
         Collections.addAll(reservedJavaPojoMethodNames,
-                           "builder", "sdkFields", "toBuilder");
+                           "builder", "sdkFields", "toBuilder",
+                           // SerializableStruct and the schema serde members of generated classes (OD-1, task 3.7)
+                           "sdkSchema", "serialize", "serializeMembers", "getMemberValue", "newShapeBuilder");
 
         Set<String> reservedExceptionMethodNames = new HashSet<>(reservedJavaPojoMethodNames);
         Collections.addAll(reservedExceptionMethodNames,

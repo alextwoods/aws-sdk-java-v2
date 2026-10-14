@@ -62,10 +62,19 @@ class ModelBuilderSpecs {
     private final PoetExtension poetExtensions;
     private final AccessorsFactory accessorsFactory;
     private final ShapeModelSpec shapeModelSpec;
+    private final SchemaSerdeClassSpec schemaSerde;
 
     ModelBuilderSpecs(IntermediateModel intermediateModel,
                       ShapeModel shapeModel,
                       TypeProvider typeProvider) {
+        this(intermediateModel, shapeModel, typeProvider, null);
+    }
+
+    ModelBuilderSpecs(IntermediateModel intermediateModel,
+                      ShapeModel shapeModel,
+                      TypeProvider typeProvider,
+                      SchemaSerdeClassSpec schemaSerde) {
+        this.schemaSerde = schemaSerde;
         this.intermediateModel = intermediateModel;
         this.shapeModel = shapeModel;
         this.typeProvider = typeProvider;
@@ -145,8 +154,16 @@ class ModelBuilderSpecs {
         builderClassBuilder.addMethod(modelCopyConstructor());
         builderClassBuilder.addMethods(accessors());
         builderClassBuilder.addMethod(buildMethod());
-        builderClassBuilder.addMethod(sdkFieldsMethod());
-        builderClassBuilder.addMethod(sdkFieldNameToFieldMethod());
+        if (schemaSerde != null) {
+            builderClassBuilder.addSuperinterface(schemaSerde.shapeBuilder());
+            builderClassBuilder.addMethod(schemaSerde.sdkFieldsMethod());
+            builderClassBuilder.addMethod(schemaSerde.sdkFieldNameToFieldMethod());
+            builderClassBuilder.addMethods(schemaSerde.builderMethods());
+            builderClassBuilder.addType(schemaSerde.innerDeserializer());
+        } else {
+            builderClassBuilder.addMethod(sdkFieldsMethod());
+            builderClassBuilder.addMethod(sdkFieldNameToFieldMethod());
+        }
 
         if (shapeModel.isUnion()) {
             builderClassBuilder.addMethod(handleUnionValueChangeMethod());
@@ -201,8 +218,11 @@ class ModelBuilderSpecs {
     private List<FieldSpec> fields() {
         List<FieldSpec> fields = new ArrayList<>();
 
+        // Schema serde builders keep their fields package-private, so that the class constructor and the builder's
+        // InnerDeserializer access them without synthetic accessors.
+        Modifier[] modifiers = schemaSerde != null ? new Modifier[0] : new Modifier[] {Modifier.PRIVATE};
         for (MemberModel member : shapeModel.getNonStreamingMembers()) {
-            FieldSpec fieldSpec = typeProvider.asField(member, Modifier.PRIVATE);
+            FieldSpec fieldSpec = typeProvider.asField(member, modifiers);
             if (member.isList()) {
                 fieldSpec = fieldSpec.toBuilder()
                                      .initializer("$T.getInstance()", DefaultSdkAutoConstructList.class)

@@ -31,6 +31,10 @@ import software.amazon.awssdk.utils.ToString;
  * Creates the method specs for common method overrides for service models.
  */
 public class ModelMethodOverrides {
+    private static final String TO_STRING_JAVADOC = "Returns a string representation of this object. This is useful for "
+                                                    + "testing and debugging. Sensitive data will be redacted from this "
+                                                    + "string using a placeholder value. ";
+
     private final ClassName className;
     private final PoetExtension poetExtensions;
 
@@ -106,15 +110,11 @@ public class ModelMethodOverrides {
     }
 
     public MethodSpec toStringMethod(ShapeModel shapeModel) {
-        String javadoc = "Returns a string representation of this object. This is useful for testing and " +
-                         "debugging. Sensitive data will be redacted from this string using a placeholder " +
-                         "value. ";
-
         MethodSpec.Builder toStringMethod = MethodSpec.methodBuilder("toString")
                                                       .returns(String.class)
                                                       .addAnnotation(Override.class)
                                                       .addModifiers(Modifier.PUBLIC)
-                                                      .addJavadoc(javadoc);
+                                                      .addJavadoc(TO_STRING_JAVADOC);
 
         toStringMethod.addCode("return $T.builder($S)", ToString.class, shapeModel.getShapeName());
         shapeModel.getNonStreamingMembers()
@@ -124,6 +124,19 @@ public class ModelMethodOverrides {
         toStringMethod.addCode(".build();");
 
         return toStringMethod.build();
+    }
+
+    /**
+     * The {@code toString} method with the Javadoc of {@link #toStringMethod(ShapeModel)} and the given body.
+     */
+    public MethodSpec toStringMethod(CodeBlock body) {
+        return MethodSpec.methodBuilder("toString")
+                         .returns(String.class)
+                         .addAnnotation(Override.class)
+                         .addModifiers(Modifier.PUBLIC)
+                         .addJavadoc(TO_STRING_JAVADOC)
+                         .addCode(body)
+                         .build();
     }
 
     public CodeBlock toStringValue(MemberModel member) {

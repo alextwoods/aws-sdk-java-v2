@@ -52,15 +52,18 @@ public final class ToStringPlanExtension implements SchemaExtensionProvider<ToSt
     @Override
     public Plan provide(Schema schema) {
         if (schema.isMember() && schema.hasTrait(TraitKey.STREAMING_TRAIT)) {
-            return Plan.OMIT;
+            return Plan.member(false, true, schema.memberName());
         }
         if (!schema.isMember() && (schema.type() == ShapeType.STRUCTURE || schema.type() == ShapeType.UNION)) {
-            return Plan.WRITE;
+            Class<?> shapeClass = schema.shapeClass();
+            return shapeClass == null ? Plan.structure(schema.id().getName(), false)
+                                      : Plan.structure(shapeClass.getSimpleName(), true);
         }
         Schema target = schema.isMember() ? schema.memberTarget() : schema;
         boolean redact = schema.hasTrait(TraitKey.SENSITIVE_TRAIT)
                          || holdsSensitive(target, Collections.newSetFromMap(new IdentityHashMap<>()));
-        return redact ? Plan.REDACT : Plan.WRITE;
+        return schema.isMember() ? Plan.member(redact, false, schema.memberName())
+                                 : redact ? Plan.REDACT : Plan.WRITE;
     }
 
     /**
@@ -98,16 +101,67 @@ public final class ToStringPlanExtension implements SchemaExtensionProvider<ToSt
      * How a value is written.
      */
     public static final class Plan {
-        static final Plan WRITE = new Plan(false, false);
-        static final Plan REDACT = new Plan(true, false);
-        static final Plan OMIT = new Plan(false, true);
+        static final Plan WRITE = new Plan(false, false, null, false, null, null);
+        static final Plan REDACT = new Plan(true, false, null, false, null, null);
 
         private final boolean redact;
         private final boolean omit;
+        private final String structureName;
+        private final boolean usesSdkNames;
+        private final String memberName;
+        private final String sdkMemberName;
 
-        private Plan(boolean redact, boolean omit) {
+        private Plan(boolean redact, boolean omit, String structureName, boolean usesSdkNames, String memberName,
+                     String sdkMemberName) {
             this.redact = redact;
             this.omit = omit;
+            this.structureName = structureName;
+            this.usesSdkNames = usesSdkNames;
+            this.memberName = memberName;
+            this.sdkMemberName = sdkMemberName;
+        }
+
+        static Plan structure(String name, boolean usesSdkNames) {
+            return new Plan(false, false, name, usesSdkNames, null, null);
+        }
+
+        static Plan member(boolean redact, boolean omit, String memberName) {
+            return new Plan(redact, omit, null, false, memberName, capitalize(memberName));
+        }
+
+        private static String capitalize(String name) {
+            if (name.isEmpty() || Character.isUpperCase(name.charAt(0))) {
+                return name;
+            }
+            return Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        }
+
+        /**
+         * For a root structure or union schema, the name written before the members: the simple name of the schema's
+         * {@linkplain Schema#shapeClass() shape class} (the generated class name, as the SDK's previous generated
+         * {@code toString} methods wrote it), or the shape name when there is no class.
+         */
+        public String structureName() {
+            return structureName;
+        }
+
+        /**
+         * For a root structure or union schema, whether its members are written with the SDK's generated-class names
+         * ({@link #memberName(boolean)}): true when the schema has a shape class.
+         */
+        public boolean usesSdkNames() {
+            return usesSdkNames;
+        }
+
+        /**
+         * For a member schema, the name written before its value: the member name, or for a member of a generated
+         * class the member name with its first character upper-cased, as the SDK's previous generated
+         * {@code toString} methods wrote it.
+         *
+         * @param sdkNames whether the containing structure {@linkplain #usesSdkNames() uses SDK names}
+         */
+        public String memberName(boolean sdkNames) {
+            return sdkNames ? sdkMemberName : memberName;
         }
 
         /**

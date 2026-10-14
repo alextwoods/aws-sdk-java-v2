@@ -29,6 +29,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.SensitiveTrait;
@@ -443,9 +444,38 @@ class ToStringSerializerTest {
         assertThat(serializer.toString()).isEmpty();
     }
 
+    // A schema with a shape class is a generated SDK class: its toString used the class name and capitalized member
+    // names (ToString.builder("ClassName").add("MemberName", ...)), at every nesting depth.
+    @Test
+    void generatedClassSchemaUsesClassNameAndCapitalizedMemberNames() {
+        Schema inner = Schema.structureBuilder(id("innerShape"))
+                             .putMember("accountId", PreludeSchemas.STRING)
+                             .shapeClass(InnerClass.class)
+                             .build();
+        Schema outer = Schema.structureBuilder(id("OuterInput"))
+                             .putMember("nested", inner)
+                             .putMember("Name", PreludeSchemas.STRING)
+                             .shapeClass(OuterRequest.class)
+                             .build();
+        SerializableStruct innerValue = TestHelper.create(inner, (s, ser) -> ser.writeString(s.member("accountId"), "1"));
+
+        String str = ToStringSerializer.serialize(TestHelper.create(outer, (s, ser) -> {
+            ser.writeStruct(s.member("nested"), innerValue);
+            ser.writeString(s.member("Name"), "n");
+        }));
+
+        assertThat(str).isEqualTo("OuterRequest(Nested=InnerClass(AccountId=1), Name=n)");
+    }
+
     @Test
     void redactionPlaceholderMatchesTheSdkCodeGenerator() {
         assertThat(ToStringSerializer.REDACTED).isEqualTo(REDACTED);
+    }
+
+    private static final class OuterRequest {
+    }
+
+    private static final class InnerClass {
     }
 
     private static void writeTwoEntries(Schema struct, ShapeSerializer ser, Schema mapSchema) {

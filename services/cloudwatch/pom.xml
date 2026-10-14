@@ -72,5 +72,12 @@
             <artifactId>http-auth-aws</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- CBOR round trips of generated model classes (task 3.7). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cbor-codec</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

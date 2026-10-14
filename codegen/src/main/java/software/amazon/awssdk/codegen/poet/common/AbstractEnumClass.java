@@ -61,6 +61,7 @@ public abstract class AbstractEnumClass implements ClassSpec {
         addEnumConstants(enumBuilder);
 
         enumBuilder.addEnumConstant(UNKNOWN_TO_SDK_VERSION, TypeSpec.anonymousClassBuilder("null").build());
+        addSchemaSupport(enumBuilder, VALUE);
 
         return enumBuilder.build();
     }
@@ -74,6 +75,15 @@ public abstract class AbstractEnumClass implements ClassSpec {
     protected abstract void addJavadoc(Builder enumBuilder);
 
     protected abstract void addEnumConstants(Builder enumBuilder);
+
+    /**
+     * Adds members that make the enum a schema serde enum. The default adds none.
+     *
+     * @param enumBuilder the enum
+     * @param valueField the name of the field that holds the wire value
+     */
+    protected void addSchemaSupport(Builder enumBuilder, String valueField) {
+    }
     
     private FieldSpec valueMapField() {
         ParameterizedTypeName mapType = ParameterizedTypeName.get(ClassName.get(Map.class),

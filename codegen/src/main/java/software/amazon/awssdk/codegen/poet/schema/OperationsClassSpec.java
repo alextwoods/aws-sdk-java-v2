@@ -76,8 +76,11 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * </ul>
  *
  * <p>The class is public and {@code @SdkInternalApi}, and lives in the model package because the partition fields it
- * reads are package-private. Until generated model classes implement {@code SerializableStruct} (task 3.7), the
- * operations are typed {@code ApiOperation<SerializableStruct, SerializableStruct>}.
+ * reads are package-private. An operation whose input and output classes have schema serde members
+ * ({@link SchemaSerdeModel}, task 3.7) is typed with those classes, {@code ApiOperation<GetQueueUrlRequest,
+ * GetQueueUrlResponse>}, and its schemas are their {@code SCHEMA} constants; the supplier initializes the class only
+ * when the schema is first requested. Other operations are typed {@code ApiOperation<SerializableStruct,
+ * SerializableStruct>} and read the partition fields.
  */
 @SdkInternalApi
 public final class OperationsClassSpec {
@@ -92,10 +95,12 @@ public final class OperationsClassSpec {
     private final ErrorRegistrySpec errorRegistry;
     private final Map<ShapeId, List<ShapeId>> authSchemes;
     private final Map<ShapeId, String> authConstants;
+    private final SchemaSerdeModel serde;
 
     OperationsClassSpec(Model model, ServiceShape service, SchemasGenerator schemas,
                         ServiceSchemasGenerator serviceSchemas, String modelPackage, String serviceName,
-                        Function<ShapeId, ShapeId> errorShapeOwner) {
+                        Function<ShapeId, ShapeId> errorShapeOwner, SchemaSerdeModel serde) {
+        this.serde = serde;
         this.model = model;
         this.service = service;
         this.schemas = schemas;
@@ -226,12 +231,24 @@ public final class OperationsClassSpec {
     private FieldSpec operationField(OperationShape operation, String fieldName) {
         TypeName input = SERIALIZABLE_STRUCT;
         TypeName output = SERIALIZABLE_STRUCT;
+        CodeBlock inputSchema;
+        CodeBlock outputSchema;
+        SchemaSerdeModel.OperationClasses classes = serde.operation(operation.getId());
+        if (classes != null) {
+            input = classes.input().className();
+            output = classes.output().className();
+            inputSchema = CodeBlock.of("$T.SCHEMA", input);
+            outputSchema = CodeBlock.of("$T.SCHEMA", output);
+        } else {
+            inputSchema = structureSchema(operation.getInputShape());
+            outputSchema = structureSchema(operation.getOutputShape());
+        }
         CodeBlock.Builder init = CodeBlock.builder()
                                           .add("$T.<$T, $T>builder()$>", SchemaRuntimeType.SIMPLE_API_OPERATION, input,
                                                output)
                                           .add("\n.schema($T.$L)", serviceSchemas.className(), fieldName)
-                                          .add("\n.inputSchema(() -> $L)", structureSchema(operation.getInputShape()))
-                                          .add("\n.outputSchema(() -> $L)", structureSchema(operation.getOutputShape()));
+                                          .add("\n.inputSchema(() -> $L)", inputSchema)
+                                          .add("\n.outputSchema(() -> $L)", outputSchema);
         List<ShapeId> errors = new ArrayList<>(operation.getErrors());
         errors.addAll(service.getErrors());
         List<String> errorIds = errorRegistry.errorConstants(errors);

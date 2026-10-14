@@ -56,8 +56,9 @@ import software.amazon.smithy.model.shapes.ShapeId;
  *
  * <p>Everything is computed and rendered when the instance is created, so an invalid trait inclusion configuration, a
  * conflicting trait initializer, a trait that cannot be rendered or a name conflict fails with a
- * {@link SchemaCodegenException} before any code is written. The generator writes schema classes only; it does not
- * change generated model classes.
+ * {@link SchemaCodegenException} before any code is written. When created from an IntermediateModel, it also decides
+ * which model classes get schema serde members ({@link #serde()}, task 3.7) and generates their
+ * {@code <Svc>SharedSerde} ({@link SharedSerdeSpec}); the model class generators read {@link #serde()}.
  */
 @SdkInternalApi
 public final class SchemaCodegen {
@@ -70,6 +71,7 @@ public final class SchemaCodegen {
     private final SchemaIndexGenerator index;
     private final ServiceSchemasGenerator serviceSchemas;
     private final OperationsClassSpec operations;
+    private final SchemaSerdeModel serde;
     private final List<ClassSpec> classSpecs;
 
     private SchemaCodegen(Builder builder) {
@@ -81,13 +83,19 @@ public final class SchemaCodegen {
         String internalPackage = Objects.requireNonNull(builder.internalPackage, "internalPackage");
         String serviceName = Objects.requireNonNull(builder.serviceName, "serviceName");
         SchemaTraits traits = new SchemaTraits(policy, initializers, TraitRenderContext.defaultContext());
+        this.serde = builder.intermediateModel == null
+                     ? SchemaSerdeModel.none()
+                     : SchemaSerdeModel.create(builder.intermediateModel, modelPackage, serviceName);
 
         this.schemas = new SchemasGenerator(model, service, traits, modelPackage, serviceName, builder.reservedNames,
-                                            builder.partitionBudget);
+                                            builder.partitionBudget, serde);
+        if (serde.isEnabled()) {
+            serde.attach(schemas);
+        }
         this.index = new SchemaIndexGenerator(schemas, service.getId(), modelPackage, serviceName);
         this.serviceSchemas = new ServiceSchemasGenerator(model, service, traits, internalPackage, serviceName);
         this.operations = new OperationsClassSpec(model, service, schemas, serviceSchemas, modelPackage, serviceName,
-                                                  builder.errorShapeOwner);
+                                                  builder.errorShapeOwner, serde);
 
         List<ClassSpec> specs = new ArrayList<>();
         for (TypeSpec partition : schemas.partitionSpecs()) {
@@ -96,6 +104,10 @@ public final class SchemaCodegen {
         specs.add(new GeneratedClassSpec(index.className(), index.spec()));
         specs.add(new GeneratedClassSpec(serviceSchemas.className(), serviceSchemas.spec()));
         specs.add(new GeneratedClassSpec(operations.className(), operations.spec()));
+        if (serde.isEnabled()) {
+            SharedSerdeSpec sharedSerde = new SharedSerdeSpec(serde, builder.intermediateModel);
+            specs.add(new GeneratedClassSpec(sharedSerde.className(), sharedSerde.spec()));
+        }
         checkNoConflicts(specs, builder.reservedNames);
         this.classSpecs = Collections.unmodifiableList(specs);
     }
@@ -133,6 +145,7 @@ public final class SchemaCodegen {
                         .serviceName(metadata.getServiceName())
                         .reservedNames(model.getShapes().keySet())
                         .errorShapeOwner(errorShapeOwners(model))
+                        .intermediateModel(model)
                         .build();
     }
 
@@ -209,6 +222,14 @@ public final class SchemaCodegen {
         return operations;
     }
 
+    /**
+     * @return the model classes with schema serde members; none when the generator was not created from an
+     *     IntermediateModel
+     */
+    public SchemaSerdeModel serde() {
+        return serde;
+    }
+
     private static void checkNoConflicts(List<ClassSpec> specs, Set<String> reservedNames) {
         List<String> conflicts = new ArrayList<>();
         for (ClassSpec spec : specs) {
@@ -236,8 +257,18 @@ public final class SchemaCodegen {
         private Set<String> reservedNames = Collections.emptySet();
         private int partitionBudget = DEFAULT_PARTITION_BUDGET;
         private Function<ShapeId, ShapeId> errorShapeOwner = Function.identity();
+        private IntermediateModel intermediateModel;
 
         private Builder() {
+        }
+
+        /**
+         * @param intermediateModel the IntermediateModel whose model classes get schema serde members (task 3.7); when
+         *     absent, schemas reference no generated class
+         */
+        public Builder intermediateModel(IntermediateModel intermediateModel) {
+            this.intermediateModel = intermediateModel;
+            return this;
         }
 
         public Builder model(Model model) {

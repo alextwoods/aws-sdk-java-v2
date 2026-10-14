@@ -60,8 +60,10 @@ import software.amazon.smithy.model.traits.UnitTypeTrait;
  * }</pre>
  *
  * <p>Member traits are emitted on {@code putMember}, apart from the target's traits, which are on the target's schema
- * and merged at runtime. Schemas carry no builder supplier or shape class yet: generated model classes implement
- * {@code ShapeBuilder} in task 3.7, which adds them.
+ * and merged at runtime. A structure or union whose generated class has schema serde members ({@link SchemaSerdeModel})
+ * gets {@code .builderSupplier(X::newShapeBuilder).shapeClass(X.class)}: a method reference to a package-private static
+ * method, which initializes neither the class nor a builder until a builder is requested. An enum with a generated enum
+ * class passes the class to {@code createEnum}.
  */
 @SdkInternalApi
 public final class SchemasGenerator {
@@ -72,9 +74,11 @@ public final class SchemasGenerator {
     private final String modelPackage;
     private final String classPrefix;
     private final SchemaFieldOrder order;
+    private final SchemaSerdeModel serde;
 
     SchemasGenerator(Model model, ServiceShape service, SchemaTraits traits, String modelPackage, String serviceName,
-                     Set<String> reservedNames, int partitionBudget) {
+                     Set<String> reservedNames, int partitionBudget, SchemaSerdeModel serde) {
+        this.serde = serde;
         this.service = service;
         this.traits = traits;
         this.modelPackage = modelPackage;
@@ -180,16 +184,17 @@ public final class SchemasGenerator {
             case MAP:
                 return aggregate(field, self, id, traitArgs);
             case ENUM:
-                return CodeBlock.of("$T.createEnum($L, $L$L)", SchemaRuntimeType.SCHEMA, id,
-                                    stringSet(enumValues(shape)), traitArgs);
+                return CodeBlock.of("$T.createEnum($L, $L$L$L)", SchemaRuntimeType.SCHEMA, id,
+                                    stringSet(enumValues(shape)), enumClassArgument(shape), traitArgs);
             case INT_ENUM:
                 return CodeBlock.of("$T.createIntEnum($L, $L$L)", SchemaRuntimeType.SCHEMA, id,
                                     intSet(intEnumValues(shape)), traitArgs);
             case STRING:
                 Optional<EnumTrait> legacyEnum = shape.getTrait(EnumTrait.class);
                 if (legacyEnum.isPresent()) {
-                    return CodeBlock.of("$T.createEnum($L, $L$L)", SchemaRuntimeType.SCHEMA, id,
-                                        stringSet(legacyEnum.get().getEnumDefinitionValues()), traitArgs);
+                    return CodeBlock.of("$T.createEnum($L, $L$L$L)", SchemaRuntimeType.SCHEMA, id,
+                                        stringSet(legacyEnum.get().getEnumDefinitionValues()), enumClassArgument(shape),
+                                        traitArgs);
                 }
                 return CodeBlock.of("$T.createString($L$L)", SchemaRuntimeType.SCHEMA, id, traitArgs);
             default:
@@ -209,12 +214,25 @@ public final class SchemasGenerator {
             code.add("\n.putMember($S, $L$L)", member.getMemberName(), target(field, member, self),
                      SchemaTraits.arguments(traits.forShape(member)));
         }
+        ClassName shapeClass = serde.builderClass(field.shape().getId());
+        if (shapeClass != null) {
+            code.add("\n.builderSupplier($T::newShapeBuilder)", shapeClass)
+                .add("\n.shapeClass($T.class)", shapeClass);
+        }
         code.add("\n.build()");
         if (field.hasDeferredMember()) {
             code.add("\n.resolve()");
         }
         code.add("$<");
         return code.build();
+    }
+
+    /**
+     * {@code , X.class} for an enum with a generated enum class, else nothing.
+     */
+    private CodeBlock enumClassArgument(Shape shape) {
+        ClassName enumClass = serde.enumClass(shape.getId());
+        return enumClass == null ? CodeBlock.of("") : CodeBlock.of(", $T.class", enumClass);
     }
 
     private CodeBlock target(SchemaField from, MemberShape member, ClassName self) {
@@ -272,6 +290,9 @@ public final class SchemasGenerator {
                     size += 3 * BytecodeEstimate.INSTRUCTION + BytecodeEstimate.traitArray(traits.forShape(member));
                 }
                 size += BytecodeEstimate.INSTRUCTION;
+                if (serde.builderClass(shape.getId()) != null) {
+                    size += 4 * BytecodeEstimate.INSTRUCTION;
+                }
                 if (field.hasDeferredMember()) {
                     size += BytecodeEstimate.INSTRUCTION;
                 }
@@ -283,6 +304,9 @@ public final class SchemasGenerator {
             case INT_ENUM:
             case STRING:
                 size = head + setSize(shape);
+                if (serde.enumClass(shape.getId()) != null) {
+                    size += BytecodeEstimate.INSTRUCTION;
+                }
                 break;
             default:
                 size = head;

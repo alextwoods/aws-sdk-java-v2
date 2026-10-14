@@ -65,11 +65,18 @@ public final class RuntimeCompiler {
      * compiled classes. Load them with {@link #classLoader(Path)}, once or several times in isolated class loaders.
      */
     public static Path compileAll(List<JavaFile> files, Path dir) {
+        return compileAll(files, dir, Collections.emptyList());
+    }
+
+    /**
+     * Compiles files against the runtime schema module and the modules of the given classes.
+     */
+    public static Path compileAll(List<JavaFile> files, Path dir, List<Class<?>> classPathOf) {
         try {
             Path sources = dir.resolve("src");
             Path classes = dir.resolve("classes");
             classes.toFile().mkdirs();
-            List<String> args = new ArrayList<>(Arrays.asList("--release", "8", "-proc:none", "-classpath", classPath(),
+            List<String> args = new ArrayList<>(Arrays.asList("--release", "8", "-proc:none", "-classpath", classPath(classPathOf),
                                                               "-d", classes.toString()));
             StringBuilder all = new StringBuilder();
             for (JavaFile file : files) {
@@ -102,9 +109,12 @@ public final class RuntimeCompiler {
         }
     }
 
-    private static String classPath() {
+    private static String classPath(List<Class<?>> extra) {
         Set<String> entries = new LinkedHashSet<>();
         for (Class<?> type : Arrays.asList(Trait.class, Validate.class, SdkPublicApi.class, Publisher.class)) {
+            entries.add(location(type));
+        }
+        for (Class<?> type : extra) {
             entries.add(location(type));
         }
         return String.join(File.pathSeparator, entries);

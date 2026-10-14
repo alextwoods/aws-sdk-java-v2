@@ -206,7 +206,8 @@ public class CodeGenerator {
         return new AwsGeneratorTasks(GeneratorTaskParams.create(intermediateModel,
                                                                 sourcesDirectory,
                                                                 testsDirectory,
-                                                                resourcesDirectory));
+                                                                resourcesDirectory,
+                                                                shareModelsTarget));
 
     }
 

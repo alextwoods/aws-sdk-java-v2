@@ -29,7 +29,6 @@ import software.amazon.awssdk.codegen.emitters.GeneratorTaskParams;
 import software.amazon.awssdk.codegen.poet.ClassSpec;
 import software.amazon.awssdk.codegen.poet.schema.SchemaCodegen;
 import software.amazon.awssdk.codegen.poet.schema.SchemaIndexGenerator;
-import software.amazon.awssdk.codegen.schema.TraitInitializers;
 
 /**
  * Generates the schema classes of a service built from a Smithy model (design A.17): the {@code <Svc>Schemas}
@@ -49,17 +48,10 @@ public final class SchemaGeneratorTasks extends BaseGeneratorTasks {
     SchemaGeneratorTasks(GeneratorTaskParams dependencies) {
         super(dependencies);
         this.resourcesDirectory = dependencies.getPathProvider().getResourcesDirectory();
-        this.schemaCodegen = SchemaCodegen.isApplicable(model)
-                             ? SchemaCodegen.create(model, TraitInitializers.load(classLoader()))
-                             : null;
-    }
-
-    /**
-     * The codegen class loader: in the Maven plugin it also holds the plugin's dependencies, where a
-     * {@code SchemaCodegenExtension} would be.
-     */
-    private static ClassLoader classLoader() {
-        return SchemaGeneratorTasks.class.getClassLoader();
+        // Prepared once per service and shared with the model class tasks; trait initializers are loaded from the codegen
+        // class loader, which in the Maven plugin also holds the plugin's dependencies (where a SchemaCodegenExtension
+        // would be).
+        this.schemaCodegen = dependencies.getSchemaCodegen();
     }
 
     @Override

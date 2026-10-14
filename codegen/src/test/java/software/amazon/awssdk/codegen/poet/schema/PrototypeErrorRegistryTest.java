@@ -16,11 +16,9 @@
 package software.amazon.awssdk.codegen.poet.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.squareup.javapoet.JavaFile;
 import java.io.IOException;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -44,8 +42,7 @@ import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.pipeline.CodegenPipeline;
 import software.amazon.awssdk.codegen.pipeline.ServiceInputs;
-import software.amazon.awssdk.codegen.poet.ClassSpec;
-import software.amazon.awssdk.codegen.poet.PoetUtils;
+import software.amazon.awssdk.codegen.poet.model.ModelPackageCompiler;
 import software.amazon.awssdk.codegen.schema.RuntimeCompiler;
 import software.amazon.awssdk.codegen.schema.TraitInitializers;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
@@ -137,11 +134,8 @@ class PrototypeErrorRegistryTest {
         assertThat(operations.errorCodes()).containsEntry("ResourceNotFound", id("DashboardNotFoundError"))
                                            .containsEntry("LimitExceeded", id("LimitExceededFault"));
 
-        List<JavaFile> files = new ArrayList<>();
-        for (ClassSpec spec : codegen.classSpecs()) {
-            files.add(PoetUtils.buildJavaFile(spec));
-        }
-        Path classes = RuntimeCompiler.compileAll(files, tmp.resolve("compile"));
+        // The schemas reference the model classes (task 3.7), so the whole model package is compiled.
+        Path classes = ModelPackageCompiler.compile(model, codegen, tmp.resolve("compile"));
         try (URLClassLoader loader = RuntimeCompiler.classLoader(classes)) {
             ErrorRegistry registry = (ErrorRegistry) Class.forName(operations.className().reflectionName(), true, loader)
                                                           .getField("ERROR_REGISTRY").get(null);
@@ -149,10 +143,12 @@ class PrototypeErrorRegistryTest {
             assertThat(registry.resolveCode("LimitExceeded")).hasToString(CLOUDWATCH_NS + "#LimitExceededFault");
             assertThat(registry.contains(runtimeId("ResourceNotFound"))).isFalse();
             assertThat(registry.contains(runtimeId("LimitExceededException"))).isFalse();
-            // The supplied schema's ID is checked before its shape class, which generated model classes add in task 3.7.
-            assertThatThrownBy(() -> registry.getSchema(runtimeId("DashboardNotFoundError")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(CLOUDWATCH_NS + "#DashboardNotFoundError has no shape class");
+            // The schemas carry the generated exception classes and their builders (task 3.7).
+            software.amazon.awssdk.schema.Schema schema = registry.getSchema(runtimeId("DashboardNotFoundError"));
+            assertThat(schema.shapeClass().getSimpleName()).isEqualTo("DashboardNotFoundErrorException");
+            assertThat(registry.getShapeClass(runtimeId("DashboardNotFoundError"))).isSameAs(schema.shapeClass());
+            assertThat(registry.createBuilder(runtimeId("DashboardNotFoundError")).build())
+                .isInstanceOf(schema.shapeClass());
         }
     }
 

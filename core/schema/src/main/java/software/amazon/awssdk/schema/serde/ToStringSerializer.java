@@ -37,7 +37,10 @@ import software.amazon.awssdk.schema.serde.internal.ToStringPlanExtension;
  * <ul>
  *     <li>structures and unions: {@code ShapeName(Member=value, Member2=value2)}, with the Smithy member names in the
  *     order the shape writes them (schema member order for generated shapes). Members written as null, and members
- *     targeting a streaming blob or an event stream, are left out; a streaming member's value is never read.</li>
+ *     targeting a streaming blob or an event stream, are left out; a streaming member's value is never read. For a
+ *     schema with a {@linkplain Schema#shapeClass() shape class} (a generated SDK class), the name is the class's simple
+ *     name and each member name has its first character upper-cased, which is the output of the SDK's previous
+ *     generated {@code toString} methods.</li>
  *     <li>lists: {@code [a, b]}; maps: {@code {key=value, key2=value2}}; null elements and values: {@code null}.</li>
  *     <li>blobs: {@code SdkBytes(bytes=0x<lowercase hex>)}; timestamps: {@link Instant#toString()}; strings, enums
  *     and numbers: their value.</li>
@@ -105,9 +108,10 @@ public final class ToStringSerializer implements ShapeSerializer {
             builder.append(REDACTED);
             return;
         }
-        String name = schema.isMember() ? schema.memberTarget().id().getName() : schema.id().getName();
-        builder.append(name).append('(');
-        struct.serializeMembers(new StructureWriter(this));
+        Schema root = schema.isMember() ? schema.memberTarget() : schema;
+        ToStringPlanExtension.Plan structure = ToStringPlanExtension.plan(root);
+        builder.append(structure.structureName() != null ? structure.structureName() : root.id().getName()).append('(');
+        struct.serializeMembers(new StructureWriter(this, structure.usesSdkNames()));
         builder.append(')');
     }
 
@@ -304,14 +308,17 @@ public final class ToStringSerializer implements ShapeSerializer {
      */
     private static final class StructureWriter implements ShapeSerializer {
         private final ToStringSerializer parent;
+        private final boolean sdkNames;
         private boolean isFirst = true;
 
-        private StructureWriter(ToStringSerializer parent) {
+        private StructureWriter(ToStringSerializer parent, boolean sdkNames) {
             this.parent = parent;
+            this.sdkNames = sdkNames;
         }
 
         private boolean begin(Schema member) {
-            if (ToStringPlanExtension.plan(member).omit()) {
+            ToStringPlanExtension.Plan plan = ToStringPlanExtension.plan(member);
+            if (plan.omit()) {
                 return false;
             }
             if (isFirst) {
@@ -319,7 +326,7 @@ public final class ToStringSerializer implements ShapeSerializer {
             } else {
                 parent.builder.append(", ");
             }
-            parent.builder.append(member.memberName()).append('=');
+            parent.builder.append(plan.memberName(sdkNames)).append('=');
             return true;
         }
 
