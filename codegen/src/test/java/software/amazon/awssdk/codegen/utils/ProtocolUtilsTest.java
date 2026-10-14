@@ -16,6 +16,7 @@
 package software.amazon.awssdk.codegen.utils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -29,6 +30,7 @@ import software.amazon.awssdk.codegen.model.service.ServiceMetadata;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.ServiceIndex;
 import software.amazon.smithy.model.shapes.ServiceShape;
+import software.amazon.smithy.model.shapes.ShapeId;
 
 public class ProtocolUtilsTest {
 
@@ -101,10 +103,55 @@ public class ProtocolUtilsTest {
             Arguments.of("@awsQuery", "query"));
     }
 
+    @ParameterizedTest
+    @MethodSource("defaultClientProtocolValues")
+    public void defaultClientProtocolSelection_followsThePriorityOrder(String protocolTraits, String expectedProtocol) {
+        Model model = smithyModel(protocolTraits);
+        ServiceShape service = model.getServiceShapes().iterator().next();
+        ShapeId selected = ProtocolUtils.resolveDefaultClientProtocol(ServiceIndex.of(model), service);
+        assertThat(selected).isEqualTo(ShapeId.from(expectedProtocol));
+    }
+
+    private static Stream<Arguments> defaultClientProtocolValues() {
+        return Stream.of(
+            // CloudWatch: rpcv2Cbor, awsJson1_0 and awsQuery.
+            Arguments.of("@awsQuery\n@awsJson1_0\n@rpcv2Cbor", "smithy.protocols#rpcv2Cbor"),
+            Arguments.of("@awsJson1_1\n@awsJson1_0", "aws.protocols#awsJson1_0"),
+            Arguments.of("@restJson1\n@awsJson1_1", "aws.protocols#awsJson1_1"),
+            Arguments.of("@restXml\n@restJson1", "aws.protocols#restJson1"),
+            Arguments.of("@awsQuery\n@restXml", "aws.protocols#restXml"),
+            Arguments.of("@ec2Query\n@awsQuery", "aws.protocols#awsQuery"),
+            Arguments.of("@ec2Query", "aws.protocols#ec2Query"));
+    }
+
+    @Test
+    public void defaultClientProtocolSelection_withoutASupportedProtocol_namesTheServiceAndTheTraitsFound() {
+        Model model = smithyModel("@customProtocol");
+        ServiceShape service = model.getServiceShapes().iterator().next();
+
+        assertThatThrownBy(() -> ProtocolUtils.resolveDefaultClientProtocol(ServiceIndex.of(model), service))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Service demo#DemoService declares no supported protocol; found: [demo#customProtocol]");
+        assertThatThrownBy(() -> ProtocolUtils.resolveProtocol(ServiceIndex.of(model), service))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Service demo#DemoService declares no supported protocol; found: [demo#customProtocol]");
+    }
+
+    @Test
+    public void defaultClientProtocolSelection_withoutAnyProtocol_reportsAnEmptyList() {
+        Model model = smithyModel("");
+        ServiceShape service = model.getServiceShapes().iterator().next();
+
+        assertThatThrownBy(() -> ProtocolUtils.resolveDefaultClientProtocol(ServiceIndex.of(model), service))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Service demo#DemoService declares no supported protocol; found: []");
+    }
+
     private static Model smithyModel(String protocolTraits) {
         String src =
             "$version: \"2.0\"\n"
             + "namespace demo\n\n"
+            + "use smithy.protocols#rpcv2Cbor\n"
             + "use aws.api#service\n"
             + "use aws.auth#sigv4\n"
             + "use aws.protocols#restJson1\n"
@@ -118,7 +165,9 @@ public class ProtocolUtilsTest {
             // awsQuery / ec2Query selectors require the service to carry @xmlNamespace.
             + "@xmlNamespace(uri: \"https://demo.example.com\")\n"
             + protocolTraits + "\n"
-            + "service DemoService { version: \"2024-01-01\" }\n";
+            + "service DemoService { version: \"2024-01-01\" }\n"
+            // A protocol definition the SDK does not support.
+            + "@protocolDefinition\n@trait(selector: \"service\")\nstructure customProtocol {}\n";
         return Model.assembler()
                     .discoverModels(Model.class.getClassLoader())
                     .addUnparsedModel("test.smithy", src)

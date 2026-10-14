@@ -38,17 +38,22 @@ import software.amazon.awssdk.codegen.poet.PoetUtils;
 import software.amazon.awssdk.codegen.poet.auth.scheme.AuthSchemeSpecUtils;
 import software.amazon.awssdk.codegen.poet.rules.EndpointParamsKnowledgeIndex;
 import software.amazon.awssdk.codegen.poet.rules.EndpointRulesSpecUtils;
+import software.amazon.awssdk.codegen.poet.schema.ClientProtocolSelection;
 import software.amazon.awssdk.codegen.utils.AuthUtils;
 import software.amazon.awssdk.core.SdkSystemSetting;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
+import software.amazon.awssdk.core.client.protocol.ClientProtocol;
 import software.amazon.awssdk.http.auth.aws.signer.RegionSet;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.TokenIdentity;
 import software.amazon.awssdk.utils.internal.CodegenNamingUtils;
 
 public class BaseClientBuilderInterface implements ClassSpec {
+    static final ParameterizedTypeName PROTOCOL_TYPE_NAME =
+        ParameterizedTypeName.get(ClassName.get(ClientProtocol.class), WildcardTypeName.subtypeOf(Object.class),
+                                  WildcardTypeName.subtypeOf(Object.class));
     private static final ParameterizedTypeName TOKEN_IDENTITY_PROVIDER_TYPE_NAME =
         ParameterizedTypeName.get(ClassName.get(IdentityProvider.class), WildcardTypeName.subtypeOf(TokenIdentity.class));
 
@@ -122,7 +127,29 @@ public class BaseClientBuilderInterface implements ClassSpec {
             builder.addMethod(sigv4aSigningRegionSetMethod());
         }
 
+        ClientProtocolSelection.forModel(model).ifPresent(p -> builder.addMethod(protocolMethod()));
+
         return builder.build();
+    }
+
+    /**
+     * The runtime protocol override (Requirements 12.1, 16.3): a default method, so that existing implementations of
+     * the interface still compile.
+     */
+    private MethodSpec protocolMethod() {
+        return MethodSpec.methodBuilder("protocol")
+                         .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+                         .addParameter(PROTOCOL_TYPE_NAME, "protocol")
+                         .addJavadoc("Set the {@link $T} the client serializes requests and deserializes responses and errors "
+                                     + "with. This is optional; if none is provided, or it is set to null, the client uses the "
+                                     + "service's default protocol.\n"
+                                     + "<p>\n"
+                                     + "The protocol's message exchange must match the client transport's; otherwise building "
+                                     + "the client fails with an {@link $T}.",
+                                     ClientProtocol.class, IllegalStateException.class)
+                         .returns(TypeVariableName.get("B"))
+                         .addStatement("throw new $T()", UnsupportedOperationException.class)
+                         .build();
     }
 
     private CodeBlock getJavadoc() {

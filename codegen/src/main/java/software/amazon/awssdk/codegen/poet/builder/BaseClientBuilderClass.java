@@ -44,6 +44,7 @@ import software.amazon.awssdk.auth.token.credentials.StaticTokenProvider;
 import software.amazon.awssdk.auth.token.credentials.aws.DefaultAwsTokenProvider;
 import software.amazon.awssdk.awscore.auth.AuthSchemePreferenceResolver;
 import software.amazon.awssdk.awscore.client.builder.AwsDefaultClientBuilder;
+import software.amazon.awssdk.awscore.client.builder.ClientProtocolSupport;
 import software.amazon.awssdk.awscore.client.config.AwsClientOption;
 import software.amazon.awssdk.awscore.endpoint.AwsClientEndpointProvider;
 import software.amazon.awssdk.codegen.internal.Utils;
@@ -59,6 +60,7 @@ import software.amazon.awssdk.codegen.poet.client.ClientClassUtils;
 import software.amazon.awssdk.codegen.poet.model.ServiceClientConfigurationUtils;
 import software.amazon.awssdk.codegen.poet.rules.EndpointParamsKnowledgeIndex;
 import software.amazon.awssdk.codegen.poet.rules.EndpointRulesSpecUtils;
+import software.amazon.awssdk.codegen.poet.schema.ClientProtocolSelection;
 import software.amazon.awssdk.codegen.utils.AuthUtils;
 import software.amazon.awssdk.codegen.validation.ModelInvalidException;
 import software.amazon.awssdk.codegen.validation.ValidationEntry;
@@ -71,6 +73,7 @@ import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidationResolver;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
+import software.amazon.awssdk.core.client.protocol.ProtocolSettings;
 import software.amazon.awssdk.core.endpointdiscovery.providers.DefaultEndpointDiscoveryProviderChain;
 import software.amazon.awssdk.core.interceptor.ClasspathInterceptorChainFactory;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
@@ -106,7 +109,10 @@ public class BaseClientBuilderClass implements ClassSpec {
     private final ServiceClientConfigurationUtils configurationUtils;
     private final EndpointParamsKnowledgeIndex endpointParamsKnowledgeIndex;
     private final PoetExtension poetExtensions;
-
+    /**
+     * The runtime protocol selection (task 3.23), or null if the client does not have one.
+     */
+    private final ClientProtocolSelection protocolSelection;
 
     public BaseClientBuilderClass(IntermediateModel model) {
         this.model = model;
@@ -118,6 +124,7 @@ public class BaseClientBuilderClass implements ClassSpec {
         this.configurationUtils = new ServiceClientConfigurationUtils(model);
         this.endpointParamsKnowledgeIndex = EndpointParamsKnowledgeIndex.of(model);
         this.poetExtensions = new PoetExtension(model);
+        this.protocolSelection = ClientProtocolSelection.forModel(model).orElse(null);
     }
 
     @Override
@@ -216,6 +223,11 @@ public class BaseClientBuilderClass implements ClassSpec {
             builder.addMethod(sigv4aSigningRegionSetMethod());
         }
 
+        if (protocolSelection != null) {
+            builder.addMethod(protocolMethod());
+            builder.addMethod(protocolSettingsMethod());
+        }
+
         return builder.build();
     }
 
@@ -270,6 +282,12 @@ public class BaseClientBuilderClass implements ClassSpec {
         builder.addCode(".option($T.AUTH_SCHEMES, authSchemes())", SdkClientOption.class);
         builder.addCode(".option($T.CRC32_FROM_COMPRESSED_DATA_ENABLED, $L)\n",
                         SdkClientOption.class, crc32FromCompressedDataEnabled);
+
+        if (protocolSelection != null) {
+            // The one line that names the default protocol (Requirements 10.8, 12.3).
+            builder.addCode(".option($T.CLIENT_PROTOCOL_FACTORY, $T.INSTANCE)\n",
+                            SdkClientOption.class, protocolSelection.factoryClass());
+        }
 
         String clientConfigClassName = model.getCustomizationConfig().getServiceConfig().getClassName();
         if (StringUtils.isNotBlank(clientConfigClassName)) {
@@ -544,8 +562,39 @@ public class BaseClientBuilderClass implements ClassSpec {
             }
         }
 
+        if (protocolSelection != null) {
+            // No override configured: create the protocol from the (default or plugin-replaced) factory.
+            builder.addStatement("builder.lazyOptionIfAbsent($1T.CLIENT_PROTOCOL, c -> $2T.createProtocol("
+                                 + "c.get($1T.CLIENT_PROTOCOL_FACTORY), protocolSettings()))",
+                                 SdkClientOption.class, ClientProtocolSupport.class);
+        }
+
         builder.addStatement("return builder.build()");
         return builder.build();
+    }
+
+    private MethodSpec protocolMethod() {
+        // No @Override: the base class does not implement the builder interface; the sync and async builders that
+        // extend it do, and inherit this implementation of the interface's default method.
+        return MethodSpec.methodBuilder("protocol")
+                         .addModifiers(Modifier.PUBLIC)
+                         .returns(TypeVariableName.get("B"))
+                         .addParameter(BaseClientBuilderInterface.PROTOCOL_TYPE_NAME, "protocol")
+                         .addStatement("clientConfiguration.option($T.CLIENT_PROTOCOL, protocol)", SdkClientOption.class)
+                         .addStatement("return thisBuilder()")
+                         .build();
+    }
+
+    private MethodSpec protocolSettingsMethod() {
+        return MethodSpec.methodBuilder("protocolSettings")
+                         .addModifiers(PRIVATE, Modifier.STATIC)
+                         .returns(ProtocolSettings.class)
+                         .addCode("return $T.builder()", ProtocolSettings.class)
+                         .addCode(".serviceSchema($L)", protocolSelection.serviceSchema())
+                         .addCode(".serviceVersion($S)", protocolSelection.serviceVersion())
+                         .addCode(".baseExceptionBuilder($T::builder)", protocolSelection.baseExceptionClass())
+                         .addStatement(".build()")
+                         .build();
     }
 
     private void mergeServiceConfiguration(MethodSpec.Builder builder, String clientConfigClassName) {
@@ -1064,6 +1113,11 @@ public class BaseClientBuilderClass implements ClassSpec {
                                  Validate.class,
                                  AwsClientOption.class,
                                  "The 'tokenProvider' must be configured in the client builder.");
+        }
+
+        if (protocolSelection != null) {
+            // Requirements 12.5, 13.3: the build fails before any request is sent.
+            builder.addStatement("$T.validateMessageExchange(c)", ClientProtocolSupport.class);
         }
 
         return builder.build();

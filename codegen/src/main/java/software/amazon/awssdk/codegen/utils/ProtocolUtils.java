@@ -15,11 +15,13 @@
 
 package software.amazon.awssdk.codegen.utils;
 
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import software.amazon.awssdk.codegen.model.service.ServiceMetadata;
 import software.amazon.smithy.model.knowledge.ServiceIndex;
 import software.amazon.smithy.model.shapes.ServiceShape;
@@ -29,6 +31,19 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * Resolves the protocol from the service model {@code protocol} and {@code protocols} fields.
  */
 public final class ProtocolUtils {
+
+    /**
+     * The protocol definition traits a schema-based client can use, in default-selection priority order
+     * (Requirement 12.3).
+     */
+    public static final List<ShapeId> CLIENT_PROTOCOL_PRIORITY = Collections.unmodifiableList(Arrays.asList(
+        ShapeId.from("smithy.protocols#rpcv2Cbor"),
+        ShapeId.from("aws.protocols#awsJson1_0"),
+        ShapeId.from("aws.protocols#awsJson1_1"),
+        ShapeId.from("aws.protocols#restJson1"),
+        ShapeId.from("aws.protocols#restXml"),
+        ShapeId.from("aws.protocols#awsQuery"),
+        ShapeId.from("aws.protocols#ec2Query")));
 
     /**
      * Priority-ordered list of protocols supported by the SDK.
@@ -93,24 +108,27 @@ public final class ProtocolUtils {
      * @throws IllegalArgumentException if no applied protocol trait is supported.
      */
     public static String resolveProtocol(ServiceIndex serviceIndex, ServiceShape service) {
-        Map<ShapeId, ?> protocolTraits = serviceIndex.getProtocols(service);
+        // CLIENT_PROTOCOL_PRIORITY maps, in order, to the SUPPORTED_PROTOCOLS order, so the client protocol trait
+        // selects the same SDK protocol string as a priority scan over the mapped strings.
+        return SMITHY_PROTOCOL_TRAITS.get(resolveDefaultClientProtocol(serviceIndex, service).toString());
+    }
 
-        List<String> resolved = new ArrayList<>();
-        for (ShapeId protocolTraitId : protocolTraits.keySet()) {
-            String sdkProtocol = SMITHY_PROTOCOL_TRAITS.get(protocolTraitId.toString());
-            if (sdkProtocol != null) {
-                resolved.add(sdkProtocol);
+    /**
+     * Selects the default client protocol of a Smithy service (Requirement 12.3): the first protocol definition trait
+     * applied to the service in {@link #CLIENT_PROTOCOL_PRIORITY} order.
+     *
+     * @return the shape ID of the selected protocol definition trait
+     * @throws IllegalArgumentException {@code "Service <id> declares no supported protocol; found: [<trait ids>]"} if
+     *     the service applies none of the supported protocol traits (Requirement 12.4)
+     */
+    public static ShapeId resolveDefaultClientProtocol(ServiceIndex serviceIndex, ServiceShape service) {
+        Set<ShapeId> applied = serviceIndex.getProtocols(service).keySet();
+        for (ShapeId protocol : CLIENT_PROTOCOL_PRIORITY) {
+            if (applied.contains(protocol)) {
+                return protocol;
             }
         }
-
-        for (String supportedProtocol : SUPPORTED_PROTOCOLS) {
-            if (resolved.contains(supportedProtocol)) {
-                return supportedProtocol;
-            }
-        }
-
-        throw new IllegalArgumentException(
-            "The SDK does not support any of the protocols applied to service " + service.getId()
-            + ": " + protocolTraits.keySet());
+        throw new IllegalArgumentException("Service " + service.getId() + " declares no supported protocol; found: "
+                                           + new TreeSet<>(applied));
     }
 }

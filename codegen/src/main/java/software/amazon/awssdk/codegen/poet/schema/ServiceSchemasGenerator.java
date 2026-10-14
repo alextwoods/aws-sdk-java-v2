@@ -59,7 +59,7 @@ public final class ServiceSchemasGenerator {
         this.model = model;
         this.service = service;
         this.traits = traits;
-        this.className = ClassName.get(internalPackage, serviceName + "ServiceSchemas");
+        this.className = className(internalPackage, serviceName);
         Set<String> used = new HashSet<>(Collections.singleton(SERVICE_FIELD));
         Map<ShapeId, String> fields = new LinkedHashMap<>();
         for (OperationShape operation : new TreeSet<>(TopDownIndex.of(model).getContainedOperations(service))) {
@@ -87,6 +87,15 @@ public final class ServiceSchemasGenerator {
      */
     public ClassName className() {
         return className;
+    }
+
+    /**
+     * @param internalPackage the client's internal package
+     * @param serviceName the class name prefix, such as {@code Sqs}
+     * @return the name of the {@code <Svc>ServiceSchemas} class
+     */
+    static ClassName className(String internalPackage, String serviceName) {
+        return ClassName.get(internalPackage, serviceName + "ServiceSchemas");
     }
 
     /**

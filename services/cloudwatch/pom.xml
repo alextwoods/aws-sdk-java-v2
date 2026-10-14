@@ -52,6 +52,12 @@
             <artifactId>schema</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The default client protocol (smithy.protocols#rpcv2Cbor), referenced by the generated base builder (task 3.23). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rpcv2-cbor-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-json-protocol</artifactId>
