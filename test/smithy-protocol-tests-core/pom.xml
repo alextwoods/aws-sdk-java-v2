@@ -59,6 +59,11 @@
             <artifactId>sdk-core</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The legacy-pipeline SdkAsyncHttpClient view of the protocol test transports reads request publishers. -->
+        <dependency>
+            <groupId>org.reactivestreams</groupId>
+            <artifactId>reactive-streams</artifactId>
+        </dependency>
         <!-- JSON bodies and the skip list are parsed with json-utils, independent of the codecs under test. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>

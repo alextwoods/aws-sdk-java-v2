@@ -26,7 +26,7 @@ import software.amazon.awssdk.core.client.builder.SdkClientBuilder;
  *
  * <p>An implementation builds a fresh client per call from {@code clientBuilder}, applies {@code configuration} (region,
  * credentials and retry settings chosen by the generator), then sets the endpoint and the capturing or fixed-response
- * transport itself.
+ * transport itself. {@link TransportProtocolTestHarnessFactory} is the transport-backed implementation.
  */
 public interface ProtocolTestHarnessFactory {
 

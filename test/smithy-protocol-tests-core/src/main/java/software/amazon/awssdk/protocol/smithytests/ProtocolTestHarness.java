@@ -25,8 +25,8 @@ import java.util.function.Function;
  * builds a fresh client configured for the test: the given endpoint, plus the region, credentials and no-retry settings
  * the generator passes to {@link ProtocolTestHarnesses#forClient}. Generated request test classes fix the idempotency
  * token themselves. Generated classes obtain a harness through {@link ProtocolTestHarnesses}; the transport-backed
- * {@link ProtocolTestHarnessFactory} (a capturing transport for requests and a fixed-response transport for responses)
- * is added once the {@code ClientTransport} SPI exists.
+ * implementation is {@link TransportProtocolTestHarnessFactory} (a {@link CapturingClientTransport} for requests and a
+ * {@link FixedResponseTransport} for responses).
  *
  * <p>Example, as emitted by the protocol test generator:
  * <pre>{@code

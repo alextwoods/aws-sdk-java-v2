@@ -71,8 +71,8 @@ public final class ProtocolTestHarnesses {
         if (factories.isEmpty()) {
             throw new IllegalStateException(
                 "No " + ProtocolTestHarnessFactory.class.getName() + " is registered through "
-                + "META-INF/services, so generated protocol tests cannot build a client. The transport-backed harness is "
-                + "provided once the ClientTransport SPI exists.");
+                + "META-INF/services, so generated protocol tests cannot build a client. Register "
+                + TransportProtocolTestHarnessFactory.class.getName() + " there.");
         }
         if (factories.size() > 1) {
             List<String> names = new ArrayList<>();
