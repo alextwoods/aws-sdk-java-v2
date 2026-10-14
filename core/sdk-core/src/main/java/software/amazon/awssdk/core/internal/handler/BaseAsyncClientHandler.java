@@ -38,7 +38,9 @@ import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.internal.InternalCoreExecutionAttribute;
 import software.amazon.awssdk.core.internal.http.AmazonAsyncHttpClient;
+import software.amazon.awssdk.core.internal.http.AsyncApiCallPipeline;
 import software.amazon.awssdk.core.internal.http.IdempotentAsyncResponseHandler;
+import software.amazon.awssdk.core.internal.http.PipelineCache;
 import software.amazon.awssdk.core.internal.http.TransformingAsyncResponseHandler;
 import software.amazon.awssdk.core.internal.http.async.AsyncAfterTransmissionInterceptorCallingResponseHandler;
 import software.amazon.awssdk.core.internal.http.async.AsyncResponseHandler;
@@ -50,6 +52,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.metrics.MetricCollector;
+import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.Logger;
 
@@ -57,18 +60,32 @@ import software.amazon.awssdk.utils.Logger;
 public abstract class BaseAsyncClientHandler extends BaseClientHandler implements AsyncClientHandler {
     private static final Logger log = Logger.loggerFor(BaseAsyncClientHandler.class);
     private final AmazonAsyncHttpClient client;
+    private final PipelineCache<AsyncApiCallPipeline> pipelines;
     private final Function<SdkHttpFullResponse, SdkHttpFullResponse> crc32Validator;
 
     protected BaseAsyncClientHandler(SdkClientConfiguration clientConfiguration,
                                      AmazonAsyncHttpClient client) {
         super(clientConfiguration);
         this.client = client;
+        this.pipelines = PipelineCache.forAsync(client.requestExecutionBuilder().httpClientDependencies());
         this.crc32Validator = response -> Crc32Validation.validate(isCalculateCrc32FromCompressedData(), response);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A call with an {@linkplain ClientExecutionParams#getOperation() operation} runs on the client's
+     * {@link AsyncApiCallPipeline}; any other call runs on the legacy pipeline.
+     */
     @Override
     public <InputT extends SdkRequest, OutputT extends SdkResponse> CompletableFuture<OutputT> execute(
         ClientExecutionParams<InputT, OutputT> executionParams) {
+
+        ApiOperation<?, ?> operation = executionParams.getOperation();
+        if (operation != null) {
+            return executeOnNewPath(executionParams, pipeline -> pipeline.execute(
+                operation, executionParams, this::invokeInterceptorsAndCreateExecutionContext));
+        }
 
         return measureApiCallSuccess(executionParams, () -> {
             // Running beforeExecution interceptors and modifyRequest interceptors.
@@ -81,10 +98,24 @@ public abstract class BaseAsyncClientHandler extends BaseClientHandler implement
         });
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link AsyncApiCallPipeline} does not support streaming outputs yet (task 7.19), so a call with an
+     * {@linkplain ClientExecutionParams#getOperation() operation} runs on the legacy pipeline when it also has a
+     * marshaller (with its response handlers). A call with an operation and no marshaller goes to the schema-based
+     * pipeline, which fails it with an {@link UnsupportedOperationException} before any interceptor runs.
+     */
     @Override
     public <InputT extends SdkRequest, OutputT extends SdkResponse, ReturnT> CompletableFuture<ReturnT> execute(
         ClientExecutionParams<InputT, OutputT> executionParams,
         AsyncResponseTransformer<OutputT, ReturnT> asyncResponseTransformer) {
+
+        ApiOperation<?, ?> operation = executionParams.getOperation();
+        if (operation != null && executionParams.getMarshaller() == null) {
+            return executeOnNewPath(executionParams, pipeline -> pipeline.execute(
+                operation, executionParams, this::invokeInterceptorsAndCreateExecutionContext, asyncResponseTransformer));
+        }
 
         return measureApiCallSuccess(executionParams, () -> {
             if (executionParams.getCombinedResponseHandler() != null) {
@@ -252,6 +283,22 @@ public abstract class BaseAsyncClientHandler extends BaseClientHandler implement
     @Override
     public void close() {
         client.close();
+    }
+
+    /**
+     * Runs a call on the schema-based pipeline of its configuration. The pipeline reports {@code API_CALL_SUCCESSFUL}
+     * itself, so the call is not wrapped in {@code measureApiCallSuccess}. A failure before the pipeline returns its
+     * future (building the pipeline, or a call it does not support) is reported here and returned as a failed future,
+     * as the legacy handler does for any synchronous failure.
+     */
+    private <T> CompletableFuture<T> executeOnNewPath(ClientExecutionParams<?, ?> executionParams,
+                                                      Function<AsyncApiCallPipeline, CompletableFuture<T>> call) {
+        try {
+            return call.apply(pipelines.pipeline(resolveRequestConfiguration(executionParams)));
+        } catch (RuntimeException e) {
+            reportApiCallSuccess(executionParams, false);
+            return CompletableFutureUtils.failedFuture(e);
+        }
     }
 
     /**

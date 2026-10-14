@@ -30,11 +30,14 @@ import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.interceptor.ExecutionAttribute;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.SdkExecutionAttribute;
 import software.amazon.awssdk.core.runtime.transform.Marshaller;
 import software.amazon.awssdk.core.spi.identity.AuthSchemeOptionsResolver;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.metrics.MetricCollector;
+import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.utils.Validate;
 
 /**
  * Encapsulates parameters needed for a particular API call. Captures input and output pojo types.
@@ -68,6 +71,31 @@ public final class ClientExecutionParams<InputT extends SdkRequest, OutputT> {
     private SdkClientConfiguration requestConfiguration;
     private AuthSchemeOptionsResolver authSchemeOptionsResolver;
     private EndpointResolver endpointResolver;
+    private ApiOperation<?, ?> operation;
+
+    /**
+     * The schema-based operation of the call, or null for a call that uses a marshaller and response handlers.
+     *
+     * @see #withOperation(ApiOperation)
+     */
+    public ApiOperation<?, ?> getOperation() {
+        return operation;
+    }
+
+    /**
+     * Sets the schema-based operation of the call. The client handler then runs the call on the schema-based pipeline,
+     * which serializes the input and deserializes the response through the client's {@code ClientProtocol}, so the
+     * marshaller and response handlers are not needed. This also sets the operation name to {@link ApiOperation#name()}
+     * and puts the operation in the execution attributes as {@link SdkExecutionAttribute#API_OPERATION}.
+     *
+     * @param operation the operation, not null
+     */
+    public ClientExecutionParams<InputT, OutputT> withOperation(ApiOperation<?, ?> operation) {
+        this.operation = Validate.paramNotNull(operation, "operation");
+        this.operationName = operation.name();
+        this.attributes.putAttribute(SdkExecutionAttribute.API_OPERATION, operation);
+        return this;
+    }
 
     public Marshaller<InputT> getMarshaller() {
         return marshaller;

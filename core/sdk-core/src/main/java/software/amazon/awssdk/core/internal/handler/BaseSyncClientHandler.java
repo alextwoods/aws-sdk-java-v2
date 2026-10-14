@@ -34,6 +34,8 @@ import software.amazon.awssdk.core.interceptor.InterceptorContext;
 import software.amazon.awssdk.core.internal.http.AmazonSyncHttpClient;
 import software.amazon.awssdk.core.internal.http.CombinedResponseHandler;
 import software.amazon.awssdk.core.internal.http.InterruptMonitor;
+import software.amazon.awssdk.core.internal.http.PipelineCache;
+import software.amazon.awssdk.core.internal.http.SyncApiCallPipeline;
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
@@ -41,21 +43,37 @@ import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.metrics.MetricCollector;
+import software.amazon.awssdk.schema.ApiOperation;
 
 @SdkInternalApi
 public abstract class BaseSyncClientHandler extends BaseClientHandler implements SyncClientHandler {
     private final AmazonSyncHttpClient client;
+    private final PipelineCache<SyncApiCallPipeline> pipelines;
 
     protected BaseSyncClientHandler(SdkClientConfiguration clientConfiguration,
                                     AmazonSyncHttpClient client) {
         super(clientConfiguration);
         this.client = client;
+        this.pipelines = PipelineCache.forSync(client.requestExecutionBuilder().httpClientDependencies());
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A call with an {@linkplain ClientExecutionParams#getOperation() operation} runs on the client's
+     * {@link SyncApiCallPipeline}; any other call runs on the legacy pipeline.
+     */
     @Override
     public <InputT extends SdkRequest, OutputT extends SdkResponse, ReturnT> ReturnT execute(
         ClientExecutionParams<InputT, OutputT> executionParams,
         ResponseTransformer<OutputT, ReturnT> responseTransformer) {
+
+        ApiOperation<?, ?> operation = executionParams.getOperation();
+        if (operation != null) {
+            return newPathPipeline(executionParams).execute(operation, executionParams,
+                                                            this::invokeInterceptorsAndCreateExecutionContext,
+                                                            responseTransformer);
+        }
 
         return measureApiCallSuccess(executionParams, () -> {
             // Running beforeExecution interceptors and modifyRequest interceptors.
@@ -67,9 +85,21 @@ public abstract class BaseSyncClientHandler extends BaseClientHandler implements
         });
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A call with an {@linkplain ClientExecutionParams#getOperation() operation} runs on the client's
+     * {@link SyncApiCallPipeline}; any other call runs on the legacy pipeline.
+     */
     @Override
     public <InputT extends SdkRequest, OutputT extends SdkResponse> OutputT execute(
         ClientExecutionParams<InputT, OutputT> executionParams) {
+
+        ApiOperation<?, ?> operation = executionParams.getOperation();
+        if (operation != null) {
+            return newPathPipeline(executionParams).execute(operation, executionParams,
+                                                            this::invokeInterceptorsAndCreateExecutionContext);
+        }
 
         return measureApiCallSuccess(executionParams, () -> {
             // Running beforeExecution interceptors and modifyRequest interceptors.
@@ -84,6 +114,20 @@ public abstract class BaseSyncClientHandler extends BaseClientHandler implements
     @Override
     public void close() {
         client.close();
+    }
+
+    /**
+     * The schema-based pipeline of the call's configuration. The pipeline reports {@code API_CALL_SUCCESSFUL} itself,
+     * so the call is not wrapped in {@code measureApiCallSuccess}; only a failure to build the pipeline is reported
+     * here, as the legacy handler reports any failure.
+     */
+    private SyncApiCallPipeline newPathPipeline(ClientExecutionParams<?, ?> executionParams) {
+        try {
+            return pipelines.pipeline(resolveRequestConfiguration(executionParams));
+        } catch (RuntimeException e) {
+            reportApiCallSuccess(executionParams, false);
+            throw e;
+        }
     }
 
     /**
