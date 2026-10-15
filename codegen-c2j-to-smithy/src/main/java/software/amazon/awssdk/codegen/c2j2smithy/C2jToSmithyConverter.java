@@ -1073,6 +1073,9 @@ public final class C2jToSmithyConverter {
         AbstractShapeBuilder<?, ?> b = isUnion ? UnionShape.builder().id(id) : StructureShape.builder().id(id);
 
         String payloadMember = c2j.path("payload").asText(null);
+        if (payloadMember == null && !isUnion) {
+            payloadMember = implicitEventStreamPayload(c2j);
+        }
         Set<String> required = new HashSet<>();
         for (JsonNode r : c2j.path("required")) {
             required.add(r.asText());
@@ -1106,6 +1109,31 @@ public final class C2jToSmithyConverter {
             errorTraits(c2jName, id, c2j).forEach(b::addTrait);
         }
         return one((Shape) b.build());
+    }
+
+    /**
+     * The event stream member of a REST structure that names no {@code payload}, when it is the structure's only
+     * member with no HTTP location; otherwise null. codegen's C2J route sends and reads an event stream as the whole
+     * message body whether or not C2J names it the payload, which in Smithy is {@code @httpPayload} (required on a
+     * member that targets a {@code @streaming} union in a protocol with HTTP bindings). The published AWS models
+     * always name the payload; some C2J test models do not.
+     */
+    private String implicitEventStreamPayload(JsonNode c2j) {
+        if (!isHttpBindingProtocol()) {
+            return null;
+        }
+        String eventStream = null;
+        for (Map.Entry<String, JsonNode> e : c2j.path("members").properties()) {
+            if (shapes.path(e.getValue().path("shape").asText()).path("eventstream").asBoolean(false)) {
+                if (eventStream != null) {
+                    return null;
+                }
+                eventStream = e.getKey();
+            } else if (!e.getValue().has("location")) {
+                return null;
+            }
+        }
+        return eventStream;
     }
 
     // A server fault: top-level "fault": true; else the error block's senderFault (false means server); else an HTTP

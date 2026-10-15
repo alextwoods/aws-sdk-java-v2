@@ -29,6 +29,7 @@ import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
 import software.amazon.smithy.model.traits.DefaultTrait;
+import software.amazon.smithy.model.traits.HttpPayloadTrait;
 import software.amazon.smithy.model.traits.HttpQueryParamsTrait;
 import software.amazon.smithy.model.traits.HttpQueryTrait;
 import software.amazon.smithy.model.traits.RequiresLengthTrait;
@@ -45,6 +46,12 @@ class LegacyC2jFormsConversionTest {
     private static final String NS = "com.amazonaws.x";
     private static final String REST_JSON = "{'metadata': {'serviceId': 'X', 'protocol': 'rest-json', "
                                             + "'apiVersion': '2020-01-01', 'endpointPrefix': 'x'}, ";
+    private static final String EVENT_STREAM_OPERATION = "'operations': {'Subscribe': {'http': {'method': 'POST', "
+                                                         + "'requestUri': '/'}, 'output': {'shape': 'Out'}}}, ";
+    private static final String EVENT_SHAPES = "'Events': {'type': 'structure', 'eventstream': true, 'members': {"
+                                               + "'Changed': {'shape': 'Changed'}}}, "
+                                               + "'Changed': {'type': 'structure', 'event': true, 'members': {"
+                                               + "'Value': {'shape': 'S'}}}, 'S': {'type': 'string'}}}";
 
     // ----- bigdecimal -----
 
@@ -181,5 +188,39 @@ class LegacyC2jFormsConversionTest {
         assertThat(member(result.model(), NS, "In", "Body").expectTrait(DefaultTrait.class).toNode())
             .isEqualTo(Node.from(""));
         assertThat(ConvertAndAssembleTest.errorEvents(result)).isEmpty();
+    }
+
+    // ----- event stream payloads -----
+
+    @Test
+    void restEventStreamMember_withoutPayload_becomesTheHttpPayload() {
+        ConversionResult result = TestModels.convertJson("x", REST_JSON + EVENT_STREAM_OPERATION
+                                                              + "'shapes': {'Out': {'type': 'structure', 'members': {"
+                                                              + "'Id': {'shape': 'S', 'location': 'header', "
+                                                              + "'locationName': 'x-id'}, "
+                                                              + "'Events': {'shape': 'Events'}}}, " + EVENT_SHAPES);
+
+        assertThat(member(result.model(), NS, "Out", "Events").hasTrait(HttpPayloadTrait.class)).isTrue();
+        assertThat(ConvertAndAssembleTest.errorEvents(result)).isEmpty();
+    }
+
+    @Test
+    void restEventStreamMember_withOtherBodyMembers_isNotMadeThePayload() {
+        ConversionResult result = TestModels.convertJson("x", REST_JSON + EVENT_STREAM_OPERATION
+                                                              + "'shapes': {'Out': {'type': 'structure', 'members': {"
+                                                              + "'Id': {'shape': 'S'}, "
+                                                              + "'Events': {'shape': 'Events'}}}, " + EVENT_SHAPES);
+
+        assertThat(member(result.model(), NS, "Out", "Events").hasTrait(HttpPayloadTrait.class)).isFalse();
+    }
+
+    @Test
+    void rpcEventStreamMember_isNotMadeThePayload() {
+        ConversionResult result = TestModels.convertJson("x", "{'metadata': {'serviceId': 'X', 'protocol': 'json'}, "
+                                                              + EVENT_STREAM_OPERATION
+                                                              + "'shapes': {'Out': {'type': 'structure', 'members': {"
+                                                              + "'Events': {'shape': 'Events'}}}, " + EVENT_SHAPES);
+
+        assertThat(member(result.model(), NS, "Out", "Events").hasTrait(HttpPayloadTrait.class)).isFalse();
     }
 }
