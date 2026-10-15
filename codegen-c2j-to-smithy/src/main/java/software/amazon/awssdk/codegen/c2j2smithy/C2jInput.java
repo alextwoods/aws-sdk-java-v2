@@ -15,8 +15,10 @@
 
 package software.amazon.awssdk.codegen.c2j2smithy;
 
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -43,7 +45,9 @@ public final class C2jInput {
     /** The endpoint tests file name. */
     public static final String ENDPOINT_TESTS_FILE = "endpoint-tests.json";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    // Comments are allowed, as in codegen's C2J loader (software.amazon.awssdk.codegen.internal.Jackson): several C2J
+    // test models annotate shapes with // comments.
+    private static final ObjectMapper MAPPER = JsonMapper.builder().enable(JsonReadFeature.ALLOW_JAVA_COMMENTS).build();
 
     private final String serviceName;
     private final JsonNode serviceModel;
@@ -93,7 +97,7 @@ public final class C2jInput {
     }
 
     /**
-     * Parse one C2J JSON file.
+     * Parse one C2J JSON file. Java-style comments are allowed, as in codegen's C2J loader.
      */
     public static JsonNode read(Path file) {
         try (InputStream is = Files.newInputStream(file)) {

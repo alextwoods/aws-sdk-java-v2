@@ -44,6 +44,16 @@ class C2jInputTest {
     }
 
     @Test
+    void fromDirectory_withComments_ignoresThemLikeTheCodegenLoader(@TempDir Path dir) throws IOException {
+        write(dir, C2jInput.SERVICE_MODEL_FILE, "{\n  // A line comment\n  \"metadata\": {/* a block comment */ "
+                                                + "\"serviceId\": \"S\"}\n}");
+
+        C2jInput models = C2jInput.fromDirectory("s", dir);
+
+        assertThat(models.serviceModel().path("metadata").path("serviceId").asText()).isEqualTo("S");
+    }
+
+    @Test
     void fromDirectory_missingServiceModel_throwsIllegalArgumentException(@TempDir Path dir) {
         assertThatThrownBy(() -> C2jInput.fromDirectory("s", dir))
             .isInstanceOf(IllegalArgumentException.class)
