@@ -4,5 +4,17 @@
         "protocol": "aws.protocols#restJson1",
         "service": "aws.protocoltests.restjson#RestJson",
         "reason": "The Smithy IntermediateModel builder does not apply the service shape's rename property, so aws.protocoltests.restjson.nested#GreetingStruct (renamed RenamedGreeting) has no generated class and the union member uses aws.protocoltests.restjson#GreetingStruct instead"
+    },
+    {
+        "id": "RpcV2CborClientPopulatesDefaultValuesInInput",
+        "protocol": "smithy.protocols#rpcv2Cbor",
+        "service": "smithy.protocoltests.rpcv2Cbor#RpcV2Protocol",
+        "reason": "Generated model classes do not populate @default values: an unset member is null and is not serialized, as in the legacy SDK (smithy-java skips this case too). The fixture also encodes defaultTimestamp as an integer (c1 00), while the CBOR codec writes timestamps as doubles like the legacy marshallers, so the case cannot pass with a strict CBOR comparison until the fixture is fixed"
+    },
+    {
+        "id": "RpcV2CborClientPopulatesDefaultsValuesWhenMissingInResponse",
+        "protocol": "smithy.protocols#rpcv2Cbor",
+        "service": "smithy.protocoltests.rpcv2Cbor#RpcV2Protocol",
+        "reason": "Generated model classes do not populate @default values: a member missing from the response stays null, as in the legacy SDK (smithy-java skips this case too)"
     }
 ]

@@ -268,6 +268,9 @@ apply SdkDocuments @httpResponseTests([
 structure SdkDocumentsInputOutput {
     stringDocument: Document
     arrayDocument: Document
+
+    /// Read by the hand-written NullDocumentProtocolTest (legacy-disposition.csv row json-core-output.json#35).
+    documentValue: Document
 }
 
 /// An idempotency token member.

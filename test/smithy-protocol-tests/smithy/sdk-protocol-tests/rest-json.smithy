@@ -259,6 +259,7 @@ list SparseMapList {
 @http(uri: "/SdkDocuments", method: "POST")
 operation SdkDocuments {
     input: SdkDocumentsInput
+    output: SdkDocumentsOutput
 }
 
 apply SdkDocuments @httpRequestTests([
@@ -279,6 +280,12 @@ apply SdkDocuments @httpRequestTests([
 
 @input
 structure SdkDocumentsInput {
+    documentValue: Document
+}
+
+/// Read by the hand-written NullDocumentProtocolTest (legacy-disposition.csv row json-core-output.json#35).
+@output
+structure SdkDocumentsOutput {
     documentValue: Document
 }
 

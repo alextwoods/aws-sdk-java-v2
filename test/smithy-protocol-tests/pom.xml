@@ -36,10 +36,10 @@
             -DprotocolTests.enabledProtocols=smithy.protocols#rpcv2Cbor,aws.protocols#awsJson1_0
           Each generated test class is tagged @Tag("protocol:<protocol ShapeId>"); the list is turned into the JUnit tag
           expression "none() | protocol:<id> | ..." below, so untagged tests (this module's own unit tests) always run.
-          Empty in phase 1, because no ProtocolTestHarnessFactory is registered until task 3.33. Task 3.34 adds
-          smithy.protocols#rpcv2Cbor and task 7.21 adds the remaining Supported_Protocols.
+          Task 3.34 enabled smithy.protocols#rpcv2Cbor, whose clients run on the new pipeline path; task 7.21 adds the
+          remaining Supported_Protocols.
         -->
-        <protocolTests.enabledProtocols/>
+        <protocolTests.enabledProtocols>smithy.protocols#rpcv2Cbor</protocolTests.enabledProtocols>
         <protocol-test-models.directory>${project.build.directory}/protocol-test-models</protocol-test-models.directory>
     </properties>
     <dependencyManagement>
@@ -80,12 +80,11 @@
             <artifactId>aws-xml-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>smithy-rpcv2-protocol</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <!-- The default client protocol of the rpcv2Cbor projections, referenced by their generated base builders (task 3.23). -->
+        <!--
+          The default client protocol of the rpcv2Cbor projections, referenced by their generated base builders (task 3.23).
+          Every rpcv2Cbor operation runs on the new pipeline path (task 3.34), so the legacy smithy-rpcv2-protocol
+          marshallers are no longer a dependency.
+        -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>rpcv2-cbor-client-protocol</artifactId>
