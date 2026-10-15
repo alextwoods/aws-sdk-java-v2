@@ -16,10 +16,13 @@
 package software.amazon.awssdk.codegen.c2j2smithy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.expectOnlyService;
 
 import org.junit.jupiter.api.Test;
+import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
+import software.amazon.smithy.rulesengine.traits.EndpointRuleSetTrait;
 
 /**
  * C2J forms that codegen's C2J route accepts and the C2J test models of {@code test/codegen-generated-classes-test}
@@ -39,5 +42,24 @@ class LegacyC2jFormsConversionTest {
 
         assertThat(result.model().expectShape(ShapeId.from(NS + "#D")).getType()).isEqualTo(ShapeType.BIG_DECIMAL);
         assertThat(result.model().expectShape(ShapeId.from(NS + "#I")).getType()).isEqualTo(ShapeType.BIG_INTEGER);
+    }
+
+    // ----- stringArray -----
+
+    @Test
+    void ruleSetParameterTypes_stringArrayInAnyCase_isWrittenAsStringArray() {
+        ConversionResult result = TestModels.convertJson(
+            "x", "{'metadata': {'serviceId': 'X', 'protocol': 'json'}}",
+            "{'version': '1.0', 'parameters': {"
+            + "'Names': {'type': 'StringArray', 'required': false, 'documentation': 'Names.'}, "
+            + "'Region': {'type': 'String', 'required': false, 'documentation': 'Region.'}}, 'rules': []}");
+
+        Node parameters = expectOnlyService(result.model()).expectTrait(EndpointRuleSetTrait.class).getRuleSet()
+                                                           .expectObjectNode().expectObjectMember("parameters");
+        assertThat(parameters.expectObjectNode().expectObjectMember("Names").expectStringMember("type").getValue())
+            .isEqualTo("stringArray");
+        // Smithy reads string and boolean ignoring case; they are copied unchanged.
+        assertThat(parameters.expectObjectNode().expectObjectMember("Region").expectStringMember("type").getValue())
+            .isEqualTo("String");
     }
 }

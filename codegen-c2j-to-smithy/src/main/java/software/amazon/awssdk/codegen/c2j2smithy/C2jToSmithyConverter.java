@@ -178,6 +178,7 @@ public final class C2jToSmithyConverter {
     private static final Pattern CLOUD_FORMATION_NAME = Pattern.compile("^[A-Z][A-Za-z0-9]+$");
     private static final Pattern ARN_NAMESPACE = Pattern.compile("^[a-z0-9.\\-]{1,63}$");
     private static final Set<String> CLASS_SHAPE_TYPES = setOf("structure");
+    private static final String STRING_ARRAY_PARAMETER_TYPE = "stringArray";
 
     // AWS endpoint rule set built-ins that smithy-aws-endpoints flags for review (RuleSetAwsBuiltInValidator).
     private static final Set<String> REVIEWED_BUILT_INS = setOf(
@@ -1261,7 +1262,7 @@ public final class C2jToSmithyConverter {
         if (ccp.isObject() && ccp.size() > 0) {
             svc.addTrait(provide(new ClientContextParamsTrait.Provider(), serviceId, ccp));
         }
-        JsonNode ruleSet = input.endpointRuleSetModel();
+        JsonNode ruleSet = withNormalizedParameterTypes(input.endpointRuleSetModel());
         if (ruleSet != null) {
             svc.addTrait(provide(new EndpointRuleSetTrait.Provider(), serviceId, ruleSet));
             // Smithy flags these AWS built-ins as DANGER because rules that use them need review; the SDK already
@@ -1306,6 +1307,29 @@ public final class C2jToSmithyConverter {
             svc.addOperation(operationId(e.getKey()));
         }
         return svc.build();
+    }
+
+    /**
+     * The rule set with every parameter type spelled as the rules engine expects. codegen's endpoint generators read
+     * parameter types ignoring case, and so does Smithy for {@code string} and {@code boolean} (the published rule sets
+     * use {@code String} and {@code Boolean}), but Smithy accepts only the exact spelling {@code stringArray}.
+     */
+    private static JsonNode withNormalizedParameterTypes(JsonNode ruleSet) {
+        if (ruleSet == null || !ruleSet.path("parameters").isObject()) {
+            return ruleSet;
+        }
+        JsonNode normalized = null;
+        for (Map.Entry<String, JsonNode> parameter : ruleSet.get("parameters").properties()) {
+            String type = parameter.getValue().path("type").asText(null);
+            if (STRING_ARRAY_PARAMETER_TYPE.equalsIgnoreCase(type) && !STRING_ARRAY_PARAMETER_TYPE.equals(type)) {
+                if (normalized == null) {
+                    normalized = ruleSet.deepCopy();
+                }
+                ((com.fasterxml.jackson.databind.node.ObjectNode) normalized.get("parameters").get(parameter.getKey()))
+                    .put("type", STRING_ARRAY_PARAMETER_TYPE);
+            }
+        }
+        return normalized == null ? ruleSet : normalized;
     }
 
     // The awsJson and rpcv2Cbor protocols name the service shape on the wire (X-Amz-Target, the request path), so the
