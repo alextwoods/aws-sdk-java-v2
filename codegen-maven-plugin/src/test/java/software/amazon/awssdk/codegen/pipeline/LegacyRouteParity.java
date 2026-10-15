@@ -41,6 +41,7 @@ import software.amazon.awssdk.codegen.IntermediateModelBuilder;
 import software.amazon.awssdk.codegen.emitters.GeneratorPathProvider;
 import software.amazon.awssdk.codegen.emitters.GeneratorTaskParams;
 import software.amazon.awssdk.codegen.emitters.PoetGeneratorTask;
+import software.amazon.awssdk.codegen.emitters.tasks.MarshallerGeneratorTasks;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
@@ -276,6 +277,11 @@ final class LegacyRouteParity {
      * method; what the comparison checks is that the pipeline's IntermediateModel produces the legacy route's client
      * classes. The routed calls are covered by the codegen golden files ({@code SchemaClientClassTest}) and the
      * modules' tests ({@code CloudWatchNewPathTest}).
+     *
+     * <p>A schema-based service, whose operations are all routed, generates no {@code transform} marshallers (task
+     * 5.1); they are rendered from the same view, so the comparison still checks that the pipeline's IntermediateModel
+     * produces the legacy route's marshallers. The legacy protocol option its base client builder no longer sets is
+     * listed in the expected differences.
      */
     private static void withoutSchemaOperationRouting(List<PreparedService> services, Path out) {
         for (PreparedService service : services) {
@@ -293,6 +299,13 @@ final class LegacyRouteParity {
             GeneratorTaskParams params = GeneratorTaskParams.create(withoutSmithy, out.resolve("src").toString(),
                                                                     out.resolve("tests").toString(),
                                                                     out.resolve("resources").toString());
+            GeneratorTaskParams pipelineParams = GeneratorTaskParams.create(model, out.resolve("src").toString(),
+                                                                            out.resolve("tests").toString(),
+                                                                            out.resolve("resources").toString());
+            if (SchemaOperationRouting.routesEveryOperation(model, pipelineParams.getSchemaCodegen())) {
+                // A schema-based service generates no marshallers (task 5.1); render them from the same view.
+                new MarshallerGeneratorTasks(params).invoke();
+            }
             String clientDirectory = params.getPathProvider().getClientDirectory();
             Map<String, ClassSpec> clients = new LinkedHashMap<>();
             clients.put(model.getMetadata().getSyncClient(), new SyncClientClass(params));

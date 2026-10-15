@@ -61,6 +61,8 @@ import software.amazon.awssdk.codegen.poet.model.ServiceClientConfigurationUtils
 import software.amazon.awssdk.codegen.poet.rules.EndpointParamsKnowledgeIndex;
 import software.amazon.awssdk.codegen.poet.rules.EndpointRulesSpecUtils;
 import software.amazon.awssdk.codegen.poet.schema.ClientProtocolSelection;
+import software.amazon.awssdk.codegen.poet.schema.SchemaCodegen;
+import software.amazon.awssdk.codegen.poet.schema.SchemaOperationRouting;
 import software.amazon.awssdk.codegen.utils.AuthUtils;
 import software.amazon.awssdk.codegen.validation.ModelInvalidException;
 import software.amazon.awssdk.codegen.validation.ValidationEntry;
@@ -113,9 +115,23 @@ public class BaseClientBuilderClass implements ClassSpec {
      * The runtime protocol selection (task 3.23), or null if the client does not have one.
      */
     private final ClientProtocolSelection protocolSelection;
+    /**
+     * Whether every operation runs on the schema-based pipeline path ({@link SchemaOperationRouting#routesEveryOperation},
+     * task 5.1), so no legacy protocol factory reads the legacy protocol options.
+     */
+    private final boolean schemaBasedService;
 
     public BaseClientBuilderClass(IntermediateModel model) {
+        this(model, null);
+    }
+
+    /**
+     * @param schemaCodegen the model's prepared Schema_Generator, or null if the model gets no schemas; used to decide
+     *     whether the service is schema-based ({@link SchemaOperationRouting#routesEveryOperation})
+     */
+    public BaseClientBuilderClass(IntermediateModel model, SchemaCodegen schemaCodegen) {
         this.model = model;
+        this.schemaBasedService = SchemaOperationRouting.routesEveryOperation(model, schemaCodegen);
         this.basePackage = model.getMetadata().getFullClientPackageName();
         this.builderInterfaceName = ClassName.get(basePackage, model.getMetadata().getBaseBuilderInterface());
         this.builderClassName = ClassName.get(basePackage, model.getMetadata().getBaseBuilder());
@@ -544,7 +560,8 @@ public class BaseClientBuilderClass implements ClassSpec {
                .addCode("    .fipsEnabled(c.get($T.FIPS_ENDPOINT_ENABLED))", AwsClientOption.class)
                .addCode("    .build());");
 
-        if (model.getMetadata().isJsonProtocol()) {
+        // Read only by the legacy JSON protocol factory, which a schema-based service's clients do not have.
+        if (model.getMetadata().isJsonProtocol() && !schemaBasedService) {
             builder.addStatement("builder.option($1T.ENABLE_FAST_UNMARSHALLER, true)",
                                  SdkClientJsonProtocolAdvancedOption.class);
         }

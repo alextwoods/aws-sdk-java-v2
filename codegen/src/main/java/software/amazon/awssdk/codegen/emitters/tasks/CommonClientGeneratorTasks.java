@@ -29,8 +29,11 @@ import software.amazon.awssdk.codegen.poet.model.ServiceClientConfigurationClass
  * Task for classes shared by {@link AsyncClientGeneratorTasks} and {@link SyncClientGeneratorTasks}.
  */
 public class CommonClientGeneratorTasks extends BaseGeneratorTasks {
+    private final GeneratorTaskParams params;
+
     public CommonClientGeneratorTasks(GeneratorTaskParams dependencies) {
         super(dependencies);
+        this.params = dependencies;
     }
 
     @Override
@@ -42,7 +45,7 @@ public class CommonClientGeneratorTasks extends BaseGeneratorTasks {
     }
 
     private GeneratorTask createBaseBuilderTask() throws IOException {
-        return createPoetGeneratorTask(new BaseClientBuilderClass(model));
+        return createPoetGeneratorTask(new BaseClientBuilderClass(model, params.getSchemaCodegen()));
     }
 
     private GeneratorTask createBaseBuilderInterfaceTask() throws IOException {

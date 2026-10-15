@@ -26,15 +26,29 @@ import software.amazon.awssdk.codegen.model.intermediate.Metadata;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
 import software.amazon.awssdk.codegen.poet.eventstream.EventStreamUtils;
+import software.amazon.awssdk.codegen.poet.schema.SchemaOperationRouting;
 import software.amazon.awssdk.codegen.poet.transform.MarshallerSpec;
 
+/**
+ * Generates the {@code transform} package's request and event marshallers.
+ *
+ * <p>A schema-based service ({@link SchemaOperationRouting#routesEveryOperation}) generates none: every client method
+ * runs on the schema-based pipeline path, so nothing references a marshaller (task 5.1, Requirement 17.12).
+ */
 public class MarshallerGeneratorTasks extends BaseGeneratorTasks {
 
     private final Metadata metadata;
+    private final GeneratorTaskParams params;
 
     public MarshallerGeneratorTasks(GeneratorTaskParams dependencies) {
         super(dependencies);
         this.metadata = model.getMetadata();
+        this.params = dependencies;
+    }
+
+    @Override
+    protected boolean hasTasks() {
+        return !SchemaOperationRouting.routesEveryOperation(model, params.getSchemaCodegen());
     }
 
     @Override

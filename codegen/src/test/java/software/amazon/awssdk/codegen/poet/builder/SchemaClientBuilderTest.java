@@ -22,9 +22,12 @@ import com.squareup.javapoet.TypeSpec;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.codegen.emitters.GeneratorTaskParams;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.poet.schema.ClientProtocolSelection;
+import software.amazon.awssdk.codegen.poet.schema.SchemaCodegen;
+import software.amazon.awssdk.codegen.poet.schema.SchemaOperationRouting;
 import software.amazon.awssdk.codegen.smithy.SmithyIntermediateModelBuilder;
 import software.amazon.awssdk.codegen.smithy.SmithyModels;
 import software.amazon.smithy.model.Model;
@@ -32,8 +35,9 @@ import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
  * Runtime protocol selection in the base client builders of schema-enabled services (task 3.23, Requirements 12.1,
- * 12.3, 12.5, 16.3, 10.8). Builders of services generated from C2J are covered by the other builder tests, whose golden
- * files do not change.
+ * 12.3, 12.5, 16.3, 10.8), and the legacy protocol option that a schema-based service's builder does not set (task
+ * 5.1). Builders of services generated from C2J are covered by the other builder tests, whose golden files do not
+ * change.
  */
 class SchemaClientBuilderTest {
     @Test
@@ -44,8 +48,30 @@ class SchemaClientBuilderTest {
 
     @Test
     void baseClientBuilderClass_defaultsToTheHighestPriorityProtocolAndValidatesTheTransport() {
-        validateGeneration(BaseClientBuilderClass::new, model("@rpcv2Cbor\n@awsJson1_0\n@awsQuery"),
+        validateGeneration(m -> new BaseClientBuilderClass(m, schemaCodegen(m)), model("@rpcv2Cbor\n@awsJson1_0\n@awsQuery"),
                            "test-schema-client-builder-class.java");
+    }
+
+    @Test
+    void baseClientBuilderClass_forASchemaBasedService_setsNoLegacyProtocolOption() {
+        // Every operation of the fixture is routed (task 5.1): no legacy JSON protocol factory reads
+        // ENABLE_FAST_UNMARSHALLER, so the builder does not set it.
+        IntermediateModel model = model("@rpcv2Cbor\n@awsJson1_0\n@awsQuery");
+        SchemaCodegen schemaCodegen = schemaCodegen(model);
+
+        assertThat(SchemaOperationRouting.routesEveryOperation(model, schemaCodegen)).isTrue();
+        assertThat(new BaseClientBuilderClass(model, schemaCodegen).poetSpec().toString())
+            .doesNotContain("ENABLE_FAST_UNMARSHALLER", "SdkClientJsonProtocolAdvancedOption");
+    }
+
+    @Test
+    void baseClientBuilderClass_withoutRuntimeProtocolSelection_keepsTheLegacyProtocolOption() {
+        IntermediateModel model = model("@awsJson1_0\n@awsQuery");
+        SchemaCodegen schemaCodegen = schemaCodegen(model);
+
+        assertThat(SchemaOperationRouting.routesEveryOperation(model, schemaCodegen)).isFalse();
+        assertThat(new BaseClientBuilderClass(model, schemaCodegen).poetSpec().toString())
+            .contains("ENABLE_FAST_UNMARSHALLER");
     }
 
     @Test
@@ -73,6 +99,10 @@ class SchemaClientBuilderTest {
         TypeSpec builderClass = new BaseClientBuilderClass(model).poetSpec();
         assertThat(methodNames(builderClass)).doesNotContain("protocol", "protocolSettings");
         assertThat(builderClass.toString()).doesNotContain("CLIENT_PROTOCOL");
+    }
+
+    private static SchemaCodegen schemaCodegen(IntermediateModel model) {
+        return GeneratorTaskParams.create(model, "sources/", "tests/", "resources/").getSchemaCodegen();
     }
 
     private static List<String> methodNames(TypeSpec spec) {

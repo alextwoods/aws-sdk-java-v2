@@ -75,6 +75,21 @@ public final class SchemaOperationRouting {
     }
 
     /**
+     * Whether the model is a schema-based service: its client is routed and every operation of the model, including the
+     * event-stream operations that only the async client has methods for, runs on the schema-based pipeline path. Such
+     * a service generates no per-operation serde components (task 5.1, Requirements 17.12, 23.6, 36.4): no
+     * {@code transform} marshallers, and no legacy protocol factory configuration in its client builder.
+     *
+     * @param model the intermediate model
+     * @param schemaCodegen the model's prepared Schema_Generator, or null if the model gets no schemas
+     * @return whether no operation of the model keeps a marshaller and response handlers
+     */
+    public static boolean routesEveryOperation(IntermediateModel model, SchemaCodegen schemaCodegen) {
+        return forClient(model, schemaCodegen).map(r -> !r.hasLegacyOperations(model.getOperations().values()))
+                                              .orElse(false);
+    }
+
+    /**
      * @param operation an operation of the client
      * @return whether its client methods run on the schema-based pipeline path
      */

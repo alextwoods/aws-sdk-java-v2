@@ -11,11 +11,13 @@
 + import software.amazon.awssdk.awscore.client.builder.ClientProtocolSupport;
 + import software.amazon.awssdk.core.client.protocol.ClientProtocol;
 + import software.amazon.awssdk.core.client.protocol.ProtocolSettings;
+- import software.amazon.awssdk.protocols.json.internal.unmarshall.SdkClientJsonProtocolAdvancedOption;
 + import software.amazon.awssdk.protocols.client.rpcv2.RpcV2CborProtocol;
 + import software.amazon.awssdk.services.cloudwatch.internal.<service>ServiceSchemas;
 + import software.amazon.awssdk.services.cloudwatch.model.<service>Exception;
 - c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, false);
 + c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, false).option(SdkClientOption.CLIENT_PROTOCOL_FACTORY, RpcV2CborProtocol.Factory.INSTANCE);
+- builder.option(SdkClientJsonProtocolAdvancedOption.ENABLE_FAST_UNMARSHALLER, true);
 + builder.lazyOptionIfAbsent(SdkClientOption.CLIENT_PROTOCOL, c -> ClientProtocolSupport.createProtocol(c.get(SdkClientOption.CLIENT_PROTOCOL_FACTORY), protocolSettings()));
 + ClientProtocolSupport.validateMessageExchange(c);
 + }

@@ -57,6 +57,18 @@ class SchemaClientClassTest {
     }
 
     @Test
+    void syncClientClass_forASchemaBasedService_hasNoPerOperationSerdeComponents() {
+        assertThat(new SyncClientClass(params(schemaBasedModel())),
+                   generatesTo("test-schema-service-sync-client-class.java"));
+    }
+
+    @Test
+    void asyncClientClass_forASchemaBasedService_hasNoPerOperationSerdeComponents() {
+        assertThat(new AsyncClientClass(params(schemaBasedModel())),
+                   generatesTo("test-schema-service-async-client-class.java"));
+    }
+
+    @Test
     void routing_withUnsupportedOperations_keepsThemOnTheLegacyPath() {
         IntermediateModel model = model();
         SchemaOperationRouting routing = routing(model);
@@ -147,6 +159,15 @@ class SchemaClientClassTest {
 
     private static IntermediateModel model() {
         return model(resource());
+    }
+
+    /**
+     * The fixture without the two operations that stay on the legacy path: a schema-based service (task 5.1).
+     */
+    private static IntermediateModel schemaBasedModel() {
+        IntermediateModel model = model(resource().replace(", WatchThings, CountThings]", "]"));
+        assertThat(SchemaOperationRouting.routesEveryOperation(model, params(model).getSchemaCodegen())).isTrue();
+        return model;
     }
 
     private static IntermediateModel model(String src) {

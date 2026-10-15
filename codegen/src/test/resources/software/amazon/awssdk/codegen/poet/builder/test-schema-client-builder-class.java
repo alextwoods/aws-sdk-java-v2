@@ -29,7 +29,6 @@ import software.amazon.awssdk.http.auth.spi.scheme.AuthScheme;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.IdentityProviders;
 import software.amazon.awssdk.protocols.client.rpcv2.RpcV2CborProtocol;
-import software.amazon.awssdk.protocols.json.internal.unmarshall.SdkClientJsonProtocolAdvancedOption;
 import software.amazon.awssdk.regions.ServiceMetadataAdvancedOption;
 import software.amazon.awssdk.retries.api.RetryStrategy;
 import software.amazon.awssdk.services.demo.auth.scheme.DemoAuthSchemeProvider;
@@ -104,7 +103,6 @@ abstract class DefaultDemoBaseClientBuilder<B extends DemoBaseClientBuilder<B, C
                                 c.get(ServiceMetadataAdvancedOption.DEFAULT_S3_US_EAST_1_REGIONAL_ENDPOINT))
                         .dualstackEnabled(c.get(AwsClientOption.DUALSTACK_ENDPOINT_ENABLED))
                         .fipsEnabled(c.get(AwsClientOption.FIPS_ENDPOINT_ENABLED)).build());
-        builder.option(SdkClientJsonProtocolAdvancedOption.ENABLE_FAST_UNMARSHALLER, true);
         builder.lazyOptionIfAbsent(SdkClientOption.CLIENT_PROTOCOL,
                 c -> ClientProtocolSupport.createProtocol(c.get(SdkClientOption.CLIENT_PROTOCOL_FACTORY), protocolSettings()));
         return builder.build();

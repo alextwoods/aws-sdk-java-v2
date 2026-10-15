@@ -65,6 +65,12 @@
                         <includeModules combine.children="append">
                             <includeModule>cloudwatch</includeModule>
                         </includeModules>
+                        <!-- The 50 @SdkInternalApi <Operation>RequestMarshaller classes, no longer generated (task 5.1,
+                             Requirement 17.12); listed in porting-deviations.md, section "codegen per-operation serde
+                             removed for schema-based services". -->
+                        <excludes combine.children="append">
+                            <exclude>software.amazon.awssdk.services.cloudwatch.transform.*</exclude>
+                        </excludes>
                         <ignoreMissingOldVersion>false</ignoreMissingOldVersion>
                         <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
                         <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
@@ -123,6 +129,36 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+              The Baseline_Build jar (the japicmp baseline above) for BaselineModelParityTest, which compares the
+              SdkField tables, toString and hashCode of the model classes with the baseline's (task 5.1, Requirement
+              16.1, OD-14). Test-only: the test loads the jar in its own class loader; it is not on any class path.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-baseline-jar</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.awssdk</groupId>
+                                    <artifactId>cloudwatch</artifactId>
+                                    <version>${awsjavasdk.previous.version}</version>
+                                    <type>jar</type>
+                                    <outputDirectory>${project.build.directory}/baseline</outputDirectory>
+                                    <destFileName>cloudwatch-baseline.jar</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
@@ -139,19 +175,8 @@
             <artifactId>rpcv2-cbor-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
-        <!-- The generated marshallers in the transform package (BaseAwsJsonProtocolFactory), until tasks 5.1/5.3 stop
-             generating them. The client calls run on the schema-based path (task 3.32), so the legacy
-             smithy-rpcv2-protocol factory is no longer referenced. -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>aws-json-protocol</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>protocol-core</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
+        <!-- No legacy protocol module (aws-json-protocol, protocol-core, smithy-rpcv2-protocol): every call runs on the
+             schema-based path (task 3.32) and no transform marshallers are generated (task 5.1). -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>http-auth-aws</artifactId>
