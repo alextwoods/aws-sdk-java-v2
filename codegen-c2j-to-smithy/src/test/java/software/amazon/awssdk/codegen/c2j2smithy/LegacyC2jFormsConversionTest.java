@@ -23,6 +23,7 @@ import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
 import software.amazon.smithy.rulesengine.traits.EndpointRuleSetTrait;
+import software.amazon.smithy.rulesengine.traits.EndpointTestsTrait;
 
 /**
  * C2J forms that codegen's C2J route accepts and the C2J test models of {@code test/codegen-generated-classes-test}
@@ -61,5 +62,19 @@ class LegacyC2jFormsConversionTest {
         // Smithy reads string and boolean ignoring case; they are copied unchanged.
         assertThat(parameters.expectObjectNode().expectObjectMember("Region").expectStringMember("type").getValue())
             .isEqualTo("String");
+    }
+
+    // ----- empty endpoint tests -----
+
+    @Test
+    void endpointTests_withNoTestCases_emitNoTrait() {
+        ConversionResult result = C2jToSmithyConverter.convert(
+            C2jInput.builder()
+                    .serviceName("x")
+                    .serviceModel(TestModels.parse("{'metadata': {'serviceId': 'X', 'protocol': 'json'}}"))
+                    .endpointTestsModel(TestModels.parse("{'version': '1.0', 'testCases': []}"))
+                    .build());
+
+        assertThat(expectOnlyService(result.model()).hasTrait(EndpointTestsTrait.class)).isFalse();
     }
 }

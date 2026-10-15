@@ -1274,8 +1274,14 @@ public final class C2jToSmithyConverter {
                 }
             }
         }
-        if (input.endpointTestsModel() != null) {
-            svc.addTrait(provide(new EndpointTestsTrait.Provider(), serviceId, input.endpointTestsModel()));
+        // An empty test suite ("testCases": []) carries nothing, and as a trait it fails validation: Smithy reports every
+        // rule-set parameter as unused by the tests (DANGER) and every required one as missing (ERROR). codegen
+        // generates no endpoint tests for an empty suite, which is also what it does without the trait.
+        JsonNode endpointTests = input.endpointTestsModel();
+        boolean emptySuite = endpointTests != null && endpointTests.path("testCases").isArray()
+                             && endpointTests.get("testCases").size() == 0;
+        if (endpointTests != null && !emptySuite) {
+            svc.addTrait(provide(new EndpointTestsTrait.Provider(), serviceId, endpointTests));
         }
         addClientEndpointDiscovery(svc, suppressions);
         if ((query || queryCompatible) && hasDuplicateErrorCodes()) {
