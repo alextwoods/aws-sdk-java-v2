@@ -829,9 +829,12 @@ public final class C2jToSmithyConverter {
                 return one(numeric(FloatShape.builder().id(id), c2j));
             case "double":
                 return one(numeric(DoubleShape.builder().id(id), c2j));
+            // codegen's C2J loader knows only the lowercase spellings (TypeUtils); the camel-case ones are the fork's.
             case "bigInteger":
+            case "biginteger":
                 return one(numeric(BigIntegerShape.builder().id(id), c2j));
             case "bigDecimal":
+            case "bigdecimal":
                 return one(numeric(BigDecimalShape.builder().id(id), c2j));
             case "timestamp": {
                 TimestampShape.Builder b = TimestampShape.builder().id(id);
