@@ -34,7 +34,12 @@ import software.amazon.awssdk.codegen.poet.PoetUtils;
 import software.amazon.awssdk.codegen.poet.model.TypeProvider;
 import software.amazon.awssdk.codegen.poet.schema.SchemaSerdeModel.CollectionSerde;
 import software.amazon.awssdk.codegen.schema.SchemaRuntimeType;
+import software.amazon.awssdk.core.util.DefaultSdkAutoConstructList;
+import software.amazon.awssdk.core.util.DefaultSdkAutoConstructMap;
+import software.amazon.awssdk.core.util.SdkAutoConstructList;
+import software.amazon.awssdk.core.util.SdkAutoConstructMap;
 import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.traits.SparseTrait;
 
 /**
  * Generates {@code <Svc>SharedSerde}, the package-private class with the schema serde code that the model classes of a
@@ -138,13 +143,14 @@ public final class SharedSerdeSpec {
         CodeBlock memberSchema = CodeBlock.of("MEMBER");
         ValueKind kind = ValueKind.of(element);
 
+        boolean sparse = isSparse(collection);
         MethodSpec write = MethodSpec.methodBuilder("accept")
                                      .addAnnotation(Override.class)
                                      .addModifiers(Modifier.PUBLIC)
                                      .addParameter(listType, "values")
                                      .addParameter(SchemaRuntimeType.SHAPE_SERIALIZER, SERIALIZER)
                                      .beginControlFlow("for ($T value : values)", elementType)
-                                     .addCode(writeOrNull(kind, element, memberSchema))
+                                     .addCode(writeOrNull(kind, element, memberSchema, sparse))
                                      .endControlFlow()
                                      .build();
         MethodSpec readElement = MethodSpec.methodBuilder("accept")
@@ -153,7 +159,7 @@ public final class SharedSerdeSpec {
                                            .addParameter(listType, "values")
                                            .addParameter(SchemaRuntimeType.SHAPE_DESERIALIZER, DESERIALIZER)
                                            .beginControlFlow("if ($N.isNull())", DESERIALIZER)
-                                           .addStatement("values.add($N.readNull())", DESERIALIZER)
+                                           .addCode(readNull("values.add($L)", kind, sparse))
                                            .nextControlFlow("else")
                                            .addStatement("values.add($L)", read(kind, element, memberSchema))
                                            .endControlFlow()
@@ -197,6 +203,7 @@ public final class SharedSerdeSpec {
         ClassName valueWriter = self.nestedClass("ValueWriter");
         CodeBlock valueSchema = CodeBlock.of("VALUE");
         ValueKind kind = ValueKind.of(value);
+        boolean sparse = isSparse(collection);
 
         MethodSpec write = MethodSpec.methodBuilder("accept")
                                      .addAnnotation(Override.class)
@@ -215,7 +222,7 @@ public final class SharedSerdeSpec {
                                          .addParameter(String.class, "key")
                                          .addParameter(SchemaRuntimeType.SHAPE_DESERIALIZER, DESERIALIZER)
                                          .beginControlFlow("if ($N.isNull())", DESERIALIZER)
-                                         .addStatement("values.put(key, $N.readNull())", DESERIALIZER)
+                                         .addCode(readNull("values.put(key, $L)", kind, sparse))
                                          .nextControlFlow("else")
                                          .addStatement("values.put(key, $L)", read(kind, value, valueSchema))
                                          .endControlFlow()
@@ -243,7 +250,7 @@ public final class SharedSerdeSpec {
                                                        .addModifiers(Modifier.PUBLIC)
                                                        .addParameter(valueType, "value")
                                                        .addParameter(SchemaRuntimeType.SHAPE_SERIALIZER, SERIALIZER)
-                                                       .addCode(writeOrNull(kind, value, valueSchema))
+                                                       .addCode(writeOrNull(kind, value, valueSchema, sparse))
                                                        .build())
                                   .build();
         return TypeSpec.classBuilder(self)
@@ -270,14 +277,56 @@ public final class SharedSerdeSpec {
                        .build();
     }
 
-    private CodeBlock writeOrNull(ValueKind kind, MemberModel element, CodeBlock schema) {
+    private boolean isSparse(CollectionSerde collection) {
+        return smithy.expectShape(collection.shapeId()).hasTrait(SparseTrait.class);
+    }
+
+    /**
+     * Writes a null element as null. In a sparse collection, a list or map element that is
+     * {@code SdkAutoConstructList}/{@code SdkAutoConstructMap} is written as null too: the builder's copier stores a
+     * null nested collection as the auto-construct instance.
+     */
+    private CodeBlock writeOrNull(ValueKind kind, MemberModel element, CodeBlock schema, boolean sparse) {
+        CodeBlock isNull = CodeBlock.of("value == null");
+        Class<?> autoConstruct = autoConstructType(kind);
+        if (sparse && autoConstruct != null) {
+            isNull = CodeBlock.of("value == null || value instanceof $T", autoConstruct);
+        }
         return CodeBlock.builder()
-                        .beginControlFlow("if (value == null)")
+                        .beginControlFlow("if ($L)", isNull)
                         .addStatement("$N.writeNull($L)", SERIALIZER, schema)
                         .nextControlFlow("else")
                         .addStatement("$L", kind.write(SERIALIZER, schema, CodeBlock.of("value"), writerOf(kind, element)))
                         .endControlFlow()
                         .build();
+    }
+
+    /**
+     * Reads a null element. In a sparse collection, a null list or map element becomes the
+     * {@code DefaultSdkAutoConstructList}/{@code DefaultSdkAutoConstructMap} instance, as the builder's copier and the
+     * legacy unmarshallers (which call the builder setter) store it; other null elements stay null.
+     */
+    private CodeBlock readNull(String addFormat, ValueKind kind, boolean sparse) {
+        if (sparse && autoConstructType(kind) != null) {
+            ClassName instance = ClassName.get(kind == ValueKind.LIST ? DefaultSdkAutoConstructList.class
+                                                                     : DefaultSdkAutoConstructMap.class);
+            return CodeBlock.builder()
+                            .addStatement("$N.readNull()", DESERIALIZER)
+                            .addStatement(addFormat, CodeBlock.of("$T.getInstance()", instance))
+                            .build();
+        }
+        return CodeBlock.builder().addStatement(addFormat, CodeBlock.of("$N.readNull()", DESERIALIZER)).build();
+    }
+
+    private static Class<?> autoConstructType(ValueKind kind) {
+        switch (kind) {
+            case LIST:
+                return SdkAutoConstructList.class;
+            case MAP:
+                return SdkAutoConstructMap.class;
+            default:
+                return null;
+        }
     }
 
     private CodeBlock read(ValueKind kind, MemberModel element, CodeBlock schema) {
