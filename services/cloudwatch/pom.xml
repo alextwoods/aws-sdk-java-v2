@@ -139,14 +139,12 @@
             <artifactId>rpcv2-cbor-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The generated marshallers in the transform package (BaseAwsJsonProtocolFactory), until tasks 5.1/5.3 stop
+             generating them. The client calls run on the schema-based path (task 3.32), so the legacy
+             smithy-rpcv2-protocol factory is no longer referenced. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-json-protocol</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>smithy-rpcv2-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>

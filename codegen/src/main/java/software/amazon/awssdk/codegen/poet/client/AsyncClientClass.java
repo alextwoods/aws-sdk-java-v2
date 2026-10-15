@@ -111,7 +111,7 @@ public final class AsyncClientClass extends AsyncClientInterface {
         this.model = dependencies.getModel();
         this.poetExtensions = dependencies.getPoetExtensions();
         this.className = poetExtensions.getClientClass(model.getMetadata().getAsyncClient());
-        this.protocolSpec = getProtocolSpecs(poetExtensions, model);
+        this.protocolSpec = getProtocolSpecs(dependencies, model.getOperations().values());
         this.serviceClientConfigurationClassName = new PoetExtension(model).getServiceConfigClass();
         this.configurationUtils = new ServiceClientConfigurationUtils(model);
         this.authSchemeSpecUtils = new AuthSchemeSpecUtils(model);
@@ -148,9 +148,11 @@ public final class AsyncClientClass extends AsyncClientInterface {
                                             className)
                                .build())
             .addField(protocolMetadata())
-            .addField(AsyncClientHandler.class, "clientHandler", PRIVATE, FINAL)
-            .addField(protocolSpec.protocolFactory(model))
-            .addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
+            .addField(AsyncClientHandler.class, "clientHandler", PRIVATE, FINAL);
+        if (protocolSpec.usesProtocolFactory()) {
+            type.addField(protocolSpec.protocolFactory(model));
+        }
+        type.addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
 
         // Kinesis doesn't support CBOR for STS yet so need another protocol factory for JSON
         if (model.getMetadata().isCborProtocol()) {
@@ -169,9 +171,11 @@ public final class AsyncClientClass extends AsyncClientInterface {
     protected void addAdditionalMethods(TypeSpec.Builder type) {
         type.addMethod(constructor(type))
             .addMethod(nameMethod())
-            .addMethods(protocolSpec.additionalMethods())
-            .addMethod(protocolSpec.initProtocolFactory(model))
-            .addMethod(resolveMetricPublishersMethod())
+            .addMethods(protocolSpec.additionalMethods());
+        if (protocolSpec.usesProtocolFactory()) {
+            type.addMethod(protocolSpec.initProtocolFactory(model));
+        }
+        type.addMethod(resolveMetricPublishersMethod())
             .addMethod(ClientClassUtils.resolveAuthSchemeOptionsMethod(authSchemeSpecUtils, endpointRulesSpecUtils))
             .addMethod(ClientClassUtils.resolveEndpointMethod(authSchemeSpecUtils, endpointRulesSpecUtils));
 
@@ -234,12 +238,14 @@ public final class AsyncClientClass extends AsyncClientInterface {
                                       ClassName.get(model.getMetadata().getFullClientInternalPackageName(),
                                                     "ServiceVersionInfo"));
 
-        FieldSpec protocolFactoryField = protocolSpec.protocolFactory(model);
-        if (model.getMetadata().isJsonProtocol()) {
-            builder.addStatement("this.$N = init($T.builder()).build()", protocolFactoryField.name,
-                                 protocolFactoryField.type);
-        } else {
-            builder.addStatement("this.$N = init()", protocolFactoryField.name);
+        if (protocolSpec.usesProtocolFactory()) {
+            FieldSpec protocolFactoryField = protocolSpec.protocolFactory(model);
+            if (model.getMetadata().isJsonProtocol()) {
+                builder.addStatement("this.$N = init($T.builder()).build()", protocolFactoryField.name,
+                                     protocolFactoryField.type);
+            } else {
+                builder.addStatement("this.$N = init()", protocolFactoryField.name);
+            }
         }
         if (model.getMetadata().isCborProtocol()) {
             builder.addStatement("this.jsonProtocolFactory = init($T.builder()).build()", AwsJsonProtocolFactory.class);

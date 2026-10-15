@@ -34,6 +34,7 @@ import com.squareup.javapoet.TypeSpec;
 import com.squareup.javapoet.WildcardTypeName;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -59,9 +60,11 @@ import software.amazon.awssdk.codegen.poet.client.specs.Ec2ProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.JsonProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.ProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.QueryProtocolSpec;
+import software.amazon.awssdk.codegen.poet.client.specs.SchemaOperationsProtocolSpec;
 import software.amazon.awssdk.codegen.poet.client.specs.XmlProtocolSpec;
 import software.amazon.awssdk.codegen.poet.model.ServiceClientConfigurationUtils;
 import software.amazon.awssdk.codegen.poet.rules.EndpointRulesSpecUtils;
+import software.amazon.awssdk.codegen.poet.schema.SchemaOperationRouting;
 import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
@@ -93,11 +96,21 @@ public class SyncClientClass extends SyncClientInterface {
         this.model = taskParams.getModel();
         this.poetExtensions = taskParams.getPoetExtensions();
         this.className = poetExtensions.getClientClass(model.getMetadata().getSyncClient());
-        this.protocolSpec = getProtocolSpecs(poetExtensions, model);
+        this.protocolSpec = getProtocolSpecs(taskParams, syncOperations(model));
         this.serviceClientConfigurationClassName = new PoetExtension(model).getServiceConfigClass();
         this.configurationUtils = new ServiceClientConfigurationUtils(model);
         this.authSchemeSpecUtils = new AuthSchemeSpecUtils(model);
         this.endpointRulesSpecUtils = new EndpointRulesSpecUtils(model);
+    }
+
+    /**
+     * The operations the sync client has methods for: every operation without an event stream.
+     */
+    private static List<OperationModel> syncOperations(IntermediateModel model) {
+        return model.getOperations().values().stream()
+                    .filter(o -> !o.hasEventStreamInput())
+                    .filter(o -> !o.hasEventStreamOutput())
+                    .collect(Collectors.toList());
     }
 
     @Override
@@ -126,9 +139,11 @@ public class SyncClientClass extends SyncClientInterface {
     protected void addFields(TypeSpec.Builder type) {
         type.addField(logger())
             .addField(protocolMetadata())
-            .addField(SyncClientHandler.class, "clientHandler", PRIVATE, FINAL)
-            .addField(protocolSpec.protocolFactory(model))
-            .addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
+            .addField(SyncClientHandler.class, "clientHandler", PRIVATE, FINAL);
+        if (protocolSpec.usesProtocolFactory()) {
+            type.addField(protocolSpec.protocolFactory(model));
+        }
+        type.addField(SdkClientConfiguration.class, "clientConfiguration", PRIVATE, FINAL);
     }
 
     @Override
@@ -147,7 +162,9 @@ public class SyncClientClass extends SyncClientInterface {
         type.addMethod(ClientClassUtils.updateRetryStrategyClientConfigurationMethod());
         type.addMethod(updateSdkClientConfigurationMethod(configurationUtils.serviceClientConfigurationBuilderClassName(),
                                                           model));
-        type.addMethod(protocolSpec.initProtocolFactory(model));
+        if (protocolSpec.usesProtocolFactory()) {
+            type.addMethod(protocolSpec.initProtocolFactory(model));
+        }
     }
 
     private FieldSpec logger() {
@@ -204,12 +221,14 @@ public class SyncClientClass extends SyncClientInterface {
                                       ClassName.get(model.getMetadata().getFullClientInternalPackageName(),
                                                     "ServiceVersionInfo"));
 
-        FieldSpec protocolFactoryField = protocolSpec.protocolFactory(model);
-        if (model.getMetadata().isJsonProtocol()) {
-            builder.addStatement("this.$N = init($T.builder()).build()", protocolFactoryField.name,
-                                 protocolFactoryField.type);
-        } else {
-            builder.addStatement("this.$N = init()", protocolFactoryField.name);
+        if (protocolSpec.usesProtocolFactory()) {
+            FieldSpec protocolFactoryField = protocolSpec.protocolFactory(model);
+            if (model.getMetadata().isJsonProtocol()) {
+                builder.addStatement("this.$N = init($T.builder()).build()", protocolFactoryField.name,
+                                     protocolFactoryField.type);
+            } else {
+                builder.addStatement("this.$N = init()", protocolFactoryField.name);
+            }
         }
 
         if (model.getEndpointOperation().isPresent()) {
@@ -237,11 +256,9 @@ public class SyncClientClass extends SyncClientInterface {
 
     @Override
     protected List<MethodSpec> operations() {
-        return model.getOperations().values().stream()
-                    .filter(o -> !o.hasEventStreamInput())
-                    .filter(o -> !o.hasEventStreamOutput())
-                    .flatMap(this::operations)
-                    .collect(Collectors.toList());
+        return syncOperations(model).stream()
+                                    .flatMap(this::operations)
+                                    .collect(Collectors.toList());
     }
 
     private Stream<MethodSpec> operations(OperationModel opModel) {
@@ -393,7 +410,25 @@ public class SyncClientClass extends SyncClientInterface {
                                     String.join(",", config.getCreateMethodParams()));
     }
 
-    static ProtocolSpec getProtocolSpecs(PoetExtension poetExtensions, IntermediateModel model) {
+    /**
+     * The protocol spec of the sync and async client classes: the protocol's legacy spec, wrapped in a
+     * {@link SchemaOperationsProtocolSpec} when the client's operations run on the schema-based pipeline path
+     * ({@link SchemaOperationRouting}, task 3.32).
+     *
+     * @param clientOperations the operations the client class generates methods for
+     */
+    static ProtocolSpec getProtocolSpecs(GeneratorTaskParams taskParams, Collection<OperationModel> clientOperations) {
+        IntermediateModel model = taskParams.getModel();
+        PoetExtension poetExtensions = taskParams.getPoetExtensions();
+        ProtocolSpec legacy = legacyProtocolSpec(poetExtensions, model);
+        return SchemaOperationRouting.forClient(model, taskParams.getSchemaCodegen())
+                                     .<ProtocolSpec>map(r -> new SchemaOperationsProtocolSpec(legacy, r, model,
+                                                                                              poetExtensions,
+                                                                                              clientOperations))
+                                     .orElse(legacy);
+    }
+
+    private static ProtocolSpec legacyProtocolSpec(PoetExtension poetExtensions, IntermediateModel model) {
         Protocol protocol = model.getMetadata().getProtocol();
         switch (protocol) {
             case QUERY:

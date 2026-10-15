@@ -47,6 +47,15 @@ public interface ProtocolSpec {
 
     MethodSpec initProtocolFactory(IntermediateModel model);
 
+    /**
+     * Whether the client needs the {@link #protocolFactory(IntermediateModel)} field and its
+     * {@link #initProtocolFactory(IntermediateModel)} method: false when every operation runs on the schema-based
+     * pipeline path ({@link SchemaOperationsProtocolSpec}), which uses the configuration's client protocol instead.
+     */
+    default boolean usesProtocolFactory() {
+        return true;
+    }
+
     CodeBlock responseHandler(IntermediateModel model, OperationModel opModel);
 
     Optional<CodeBlock> errorResponseHandler(OperationModel opModel);

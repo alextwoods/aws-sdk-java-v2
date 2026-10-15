@@ -39,6 +39,7 @@ import software.amazon.awssdk.codegen.C2jModels;
 import software.amazon.awssdk.codegen.CodeGenerator;
 import software.amazon.awssdk.codegen.IntermediateModelBuilder;
 import software.amazon.awssdk.codegen.emitters.GeneratorPathProvider;
+import software.amazon.awssdk.codegen.emitters.GeneratorTaskParams;
 import software.amazon.awssdk.codegen.emitters.PoetGeneratorTask;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
@@ -51,8 +52,12 @@ import software.amazon.awssdk.codegen.model.service.ServiceMetadata;
 import software.amazon.awssdk.codegen.model.service.ServiceModel;
 import software.amazon.awssdk.codegen.model.service.Waiters;
 import software.amazon.awssdk.codegen.poet.ClassSpec;
+import software.amazon.awssdk.codegen.poet.client.AsyncClientClass;
+import software.amazon.awssdk.codegen.poet.client.SyncClientClass;
 import software.amazon.awssdk.codegen.poet.common.EnumClass;
 import software.amazon.awssdk.codegen.poet.model.AwsServiceModel;
+import software.amazon.awssdk.codegen.poet.schema.ClientProtocolSelection;
+import software.amazon.awssdk.codegen.poet.schema.SchemaOperationRouting;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 
 /**
@@ -259,6 +264,54 @@ final class LegacyRouteParity {
         }
         pipeline.generate(prepared, s -> shareTarget(s.intermediateModel(), byName));
         withoutSchemaSerdeMembers(prepared, out);
+        withoutSchemaOperationRouting(prepared, out);
+    }
+
+    /**
+     * Re-renders the pipeline's sync and async client classes whose methods run on the schema-based pipeline path
+     * (task 3.32, {@link SchemaOperationRouting}) the way the client class generators render them without it: from a
+     * view of the same IntermediateModel without its Smithy model, which has no runtime protocol selection and so keeps
+     * every operation's marshaller and response handlers. Only the pipeline route routes calls (it needs the Smithy
+     * model's protocol traits), so comparing the routed classes with the legacy route would report every client
+     * method; what the comparison checks is that the pipeline's IntermediateModel produces the legacy route's client
+     * classes. The routed calls are covered by the codegen golden files ({@code SchemaClientClassTest}) and the
+     * modules' tests ({@code CloudWatchNewPathTest}).
+     */
+    private static void withoutSchemaOperationRouting(List<PreparedService> services, Path out) {
+        for (PreparedService service : services) {
+            IntermediateModel model = service.intermediateModel();
+            if (!ClientProtocolSelection.forModel(model).isPresent()) {
+                continue;
+            }
+            IntermediateModel withoutSmithy = new IntermediateModel(model.getMetadata(), model.getOperations(),
+                                                                    model.getShapes(), model.getCustomizationConfig(),
+                                                                    model.getEndpointOperation().orElse(null),
+                                                                    model.getPaginators(), model.getNamingStrategy(),
+                                                                    model.getWaiters(), model.getEndpointRuleSetModel(),
+                                                                    model.getEndpointTestSuiteModel(),
+                                                                    model.getClientContextParams());
+            GeneratorTaskParams params = GeneratorTaskParams.create(withoutSmithy, out.resolve("src").toString(),
+                                                                    out.resolve("tests").toString(),
+                                                                    out.resolve("resources").toString());
+            String clientDirectory = params.getPathProvider().getClientDirectory();
+            Map<String, ClassSpec> clients = new LinkedHashMap<>();
+            clients.put(model.getMetadata().getSyncClient(), new SyncClientClass(params));
+            clients.put(model.getMetadata().getAsyncClient(), new AsyncClientClass(params));
+            for (Map.Entry<String, ClassSpec> client : clients.entrySet()) {
+                Path file = Paths.get(clientDirectory, client.getKey() + ".java");
+                ClassSpec spec = client.getValue();
+                if (!Files.exists(file)) {
+                    continue;
+                }
+                try {
+                    // The generator's writer refuses to overwrite a file with other content.
+                    Files.delete(file);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                new PoetGeneratorTask(clientDirectory, model.getFileHeader(), spec).compute();
+            }
+        }
     }
 
     /**
