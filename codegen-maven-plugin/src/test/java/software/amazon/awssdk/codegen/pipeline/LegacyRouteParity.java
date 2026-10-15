@@ -234,6 +234,23 @@ final class LegacyRouteParity {
     }
 
     private static void generatePipeline(String module, List<Path> roots, Path out, Path build) {
+        List<PreparedService> prepared = generateWithPipeline(module, roots, out, build);
+        withoutSchemaSerdeMembers(prepared, out);
+        withoutSchemaOperationRouting(prepared, out);
+    }
+
+    /**
+     * Generates the module through the {@link CodegenPipeline} only, as {@code GenerationMojo} does, into
+     * {@code out/src}, {@code out/resources} and {@code out/tests}. Used by {@code NoTransformPackageTest}, which checks
+     * the pipeline's own output.
+     *
+     * @return the module's prepared services, in generation order
+     */
+    static List<PreparedService> generateWithPipeline(String module, Path out, Path build) {
+        return generateWithPipeline(module, modelRoots(codegenResources(module)), out, build);
+    }
+
+    private static List<PreparedService> generateWithPipeline(String module, List<Path> roots, Path out, Path build) {
         CodegenPipeline pipeline = CodegenPipeline.builder().listener(new CodegenPipelineListener() {
         }).build();
         List<PreparedService> prepared = new ArrayList<>();
@@ -264,8 +281,7 @@ final class LegacyRouteParity {
             byName.put(model.getMetadata().getServiceName().toLowerCase(), model);
         }
         pipeline.generate(prepared, s -> shareTarget(s.intermediateModel(), byName));
-        withoutSchemaSerdeMembers(prepared, out);
-        withoutSchemaOperationRouting(prepared, out);
+        return prepared;
     }
 
     /**
