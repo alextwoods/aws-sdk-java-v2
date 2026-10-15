@@ -49,8 +49,6 @@ public class CodeGenerator {
             new PaginatorDefinitionValidator()
     );
 
-    private final C2jModels c2jModels;
-
     private final IntermediateModel intermediateModel;
     private final IntermediateModel shareModelsTarget;
     private final String sourcesDirectory;
@@ -73,12 +71,7 @@ public class CodeGenerator {
     }
 
     public CodeGenerator(Builder builder) {
-        this.c2jModels = builder.models;
         this.intermediateModel = builder.intermediateModel;
-
-        if (this.c2jModels != null && this.intermediateModel != null) {
-            throw new IllegalArgumentException("Only one of c2jModels and intermediateModel must be specified");
-        }
 
         this.shareModelsTarget = builder.shareModelsTarget;
         this.sourcesDirectory = builder.sourcesDirectory;
@@ -104,18 +97,13 @@ public class CodeGenerator {
     }
 
     /**
-     * load ServiceModel. load code gen configuration from individual client. generate intermediate model. generate
-     * code.
+     * Validates the intermediate model and generates its code. In the SDK build the intermediate model comes from the
+     * Codegen_Pipeline ({@code CodegenPipeline}), which converts C2J models to Smithy first (Requirement 17.2).
      */
     public void execute() {
         ModelValidationReport report = new ModelValidationReport();
 
-        IntermediateModel modelToGenerate;
-        if (c2jModels != null) {
-            modelToGenerate = new IntermediateModelBuilder(c2jModels).build();
-        } else {
-            modelToGenerate = intermediateModel;
-        }
+        IntermediateModel modelToGenerate = intermediateModel;
 
         List<ValidationEntry> validatorEntries = runModelValidators(modelToGenerate);
         report.setValidationEntries(validatorEntries);
@@ -216,7 +204,6 @@ public class CodeGenerator {
      */
     public static final class Builder {
 
-        private C2jModels models;
         private IntermediateModel intermediateModel;
         private IntermediateModel shareModelsTarget;
         private String sourcesDirectory;
@@ -227,11 +214,6 @@ public class CodeGenerator {
         private boolean emitValidationReport;
 
         private Builder() {
-        }
-
-        public Builder models(C2jModels models) {
-            this.models = models;
-            return this;
         }
 
         public Builder intermediateModel(IntermediateModel intermediateModel) {

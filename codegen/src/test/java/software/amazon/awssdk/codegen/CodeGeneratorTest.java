@@ -36,7 +36,6 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,16 +65,6 @@ public class CodeGeneratorTest {
     @AfterEach
     void methodTeardown() throws IOException {
         deleteDirectory(outputDir);
-    }
-
-    @Test
-    void build_cj2ModelsAndIntermediateModelSet_throws() {
-        assertThatThrownBy(() -> CodeGenerator.builder()
-                                              .models(C2jModels.builder().build())
-                                              .intermediateModel(new IntermediateModel())
-                                              .build())
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Only one of");
     }
 
     @Test
@@ -117,42 +106,6 @@ public class CodeGeneratorTest {
         assertThatThrownBy(() -> generateCodeFromC2jModels(modelsWithConflict, outputDir))
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining("Validation failed");
-    }
-
-    @Test
-    void execute_c2jModelsAndIntermediateModel_generateSameCode() throws IOException {
-        Path c2jModelsOutputDir = outputDir.resolve("c2jModels");
-        generateCodeFromC2jModels(ClientTestModels.awsJsonServiceC2jModels(), c2jModelsOutputDir, false, Collections.emptyList());
-
-        Path intermediateModelOutputDir = outputDir.resolve("intermediate-model");
-        generateCodeFromIntermediateModel(ClientTestModels.awsJsonServiceModels(), intermediateModelOutputDir);
-
-        List<Path> c2jModels_generatedFiles = Files.walk(c2jModelsOutputDir)
-                                                   .sorted()
-                                                   .map(c2jModelsOutputDir::relativize)
-                                                   .collect(Collectors.toList());
-
-        List<Path> intermediateModels_generatedFiles = Files.walk(intermediateModelOutputDir)
-                                                            .sorted()
-                                                            .map(intermediateModelOutputDir::relativize)
-                                                            .collect(Collectors.toList());
-
-        assertThat(c2jModels_generatedFiles).isNotEmpty();
-
-        // Ensure same exact set of files
-        assertThat(c2jModels_generatedFiles).isEqualTo(intermediateModels_generatedFiles);
-
-        // All files should be exactly the same
-        for (Path generatedFile : c2jModels_generatedFiles) {
-            Path c2jGenerated = c2jModelsOutputDir.resolve(generatedFile);
-            Path intermediateGenerated = intermediateModelOutputDir.resolve(generatedFile);
-
-            if (Files.isDirectory(c2jGenerated)) {
-                assertThat(Files.isDirectory(intermediateGenerated)).isTrue();
-            } else {
-                assertThat(readToString(c2jGenerated)).isEqualTo(readToString(intermediateGenerated));
-            }
-        }
     }
 
     @Test
@@ -242,7 +195,7 @@ public class CodeGeneratorTest {
         Path tests = outputDir.resolve("generated-test-sources").resolve("sdk-tests");
 
         CodeGenerator.builder()
-                     .models(c2jModels)
+                     .intermediateModel(new IntermediateModelBuilder(c2jModels).build())
                      .sourcesDirectory(sources.toAbsolutePath().toString())
                      .resourcesDirectory(resources.toAbsolutePath().toString())
                      .testsDirectory(tests.toAbsolutePath().toString())
@@ -250,25 +203,6 @@ public class CodeGeneratorTest {
                      .modelValidators(modelValidators)
                      .build()
                      .execute();
-    }
-
-    private void generateCodeFromIntermediateModel(IntermediateModel intermediateModel, Path outputDir) {
-        Path sources = outputDir.resolve("generated-sources").resolve("sdk");
-        Path resources = outputDir.resolve("generated-resources").resolve("sdk-resources");
-        Path tests = outputDir.resolve("generated-test-sources").resolve("sdk-tests");
-
-        CodeGenerator.builder()
-                     .intermediateModel(intermediateModel)
-                     .sourcesDirectory(sources.toAbsolutePath().toString())
-                     .resourcesDirectory(resources.toAbsolutePath().toString())
-                     .testsDirectory(tests.toAbsolutePath().toString())
-                     .build()
-                     .execute();
-    }
-
-    private static String readToString(Path p) throws IOException {
-        ByteBuffer bb = ByteBuffer.wrap(Files.readAllBytes(p));
-        return StandardCharsets.UTF_8.decode(bb).toString();
     }
 
     private static Path validationReportPath(Path root) {
