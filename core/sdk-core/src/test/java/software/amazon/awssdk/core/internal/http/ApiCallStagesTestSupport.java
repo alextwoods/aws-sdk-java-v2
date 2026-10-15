@@ -27,6 +27,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.core.ClientEndpointProvider;
 import software.amazon.awssdk.core.ClientType;
@@ -216,7 +217,7 @@ final class ApiCallStagesTestSupport {
             SdkHttpFullRequest.Builder builder = marshalledRequest(endpoint, "{}").toBuilder();
             return builder.encodedPath(OPERATION_PATH).build();
         };
-        final List<Endpoint> updatedEndpoints = new ArrayList<>();
+        final List<Endpoint> updatedEndpoints = new CopyOnWriteArrayList<>();
 
         @Override
         public ShapeId id() {

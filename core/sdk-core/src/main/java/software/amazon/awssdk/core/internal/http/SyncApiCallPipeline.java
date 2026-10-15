@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.annotations.SdkTestInternalApi;
 import software.amazon.awssdk.annotations.ThreadSafe;
 import software.amazon.awssdk.core.ClientType;
 import software.amazon.awssdk.core.Response;
@@ -123,6 +124,11 @@ import software.amazon.awssdk.utils.Validate;
 public final class SyncApiCallPipeline {
     private static final Logger log = Logger.loggerFor(SyncApiCallPipeline.class);
 
+    /**
+     * The number of pipelines constructed in this class loader. Incremented once per construction, never by a call.
+     */
+    private static final AtomicLong CONSTRUCTIONS = new AtomicLong();
+
     private final HttpClientDependencies dependencies;
     private final ClientTransport<SdkHttpFullRequest, SdkHttpFullResponse> transport;
     private final ExecutionAttributesTemplate attributesTemplate;
@@ -142,6 +148,16 @@ public final class SyncApiCallPipeline {
         this.timeoutExecutor = config.option(SdkClientOption.SCHEDULED_EXECUTOR_SERVICE);
         this.apiCallTimeout = config.option(SdkClientOption.API_CALL_TIMEOUT);
         this.apiCallAttemptTimeout = config.option(SdkClientOption.API_CALL_ATTEMPT_TIMEOUT);
+        CONSTRUCTIONS.incrementAndGet();
+    }
+
+    /**
+     * The number of pipelines constructed so far, counting only constructions that completed (test seam for the
+     * stage-graph-built-once tests, Requirement 37.4). Every stage object of a pipeline is created by its constructor.
+     */
+    @SdkTestInternalApi
+    static long constructions() {
+        return CONSTRUCTIONS.get();
     }
 
     /**
