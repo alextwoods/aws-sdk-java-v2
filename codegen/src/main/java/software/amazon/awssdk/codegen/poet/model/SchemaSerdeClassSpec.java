@@ -124,13 +124,17 @@ final class SchemaSerdeClassSpec {
     }
 
     /**
-     * The partition field of the class's Root_Schema, or for a class that holds its own schema a member-less structure
-     * schema with the {@code unitType} trait: {@code smithy.api#Unit} for the {@code Unit} class, else the class name
-     * in the service namespace.
+     * The partition field of the class's Root_Schema; for a class of a shared shape a copy of the structure's schema
+     * with the class's builder; for another class that holds its own schema a member-less structure schema with the
+     * {@code unitType} trait: {@code smithy.api#Unit} for the {@code Unit} class, else the class name in the service
+     * namespace.
      */
     private CodeBlock schemaInitializer() {
         if (!entry.hasOwnSchema()) {
             return serde.schemaReference(entry);
+        }
+        if (entry.isSharedShape()) {
+            return serde.sharedShapeSchemaInitializer(entry);
         }
         String namespace = entry.isUnit() ? entry.shapeId().getNamespace() : serde.serviceNamespace();
         String name = entry.isUnit() ? entry.shapeId().getName() : className.simpleName();

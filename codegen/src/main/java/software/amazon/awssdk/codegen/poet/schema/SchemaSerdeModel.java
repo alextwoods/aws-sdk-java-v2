@@ -54,7 +54,8 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * Others keep the generated code of the previous generator, and their schema has no builder:
  * <ul>
  *     <li>event streams, events and shapes with streaming, document or {@code BigInteger} members (later tasks);</li>
- *     <li>a Smithy shape that two classes represent, or a class whose members do not match its shape's members;</li>
+ *     <li>a Smithy shape that several classes represent, unless they are all request and response classes, or a class
+ *     whose members do not match its shape's members;</li>
  *     <li>members with the {@code ignoreDataTypeConversionFailures}, {@code attachPayloadTraitToMember} or
  *     {@code modelMarshallerDefaultValueSupplier} customizations, whose {@code SdkField} traits the schema cannot
  *     carry.</li>
@@ -65,6 +66,11 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * {@code PreludeSchemas.UNIT} has no builder, so the class's schema is {@code smithy.api#Unit} with its builder, and
  * members that target {@code smithy.api#Unit} reference it ({@link #unitSchemaReference()}), as smithy-java's do
  * {@code Unit.SCHEMA}.
+ *
+ * <p>When the IntermediateModel generates several request and response classes from one Smithy structure (a structure
+ * that is both an operation's input and its output, or the input of two operations), each class holds its own copy of
+ * the structure's schema with its own builder ({@link Entry#isSharedShape()}): one Root_Schema names one
+ * {@code shapeClass}. The partition field of the structure keeps no builder.
  */
 @SdkInternalApi
 public final class SchemaSerdeModel {
@@ -124,14 +130,19 @@ public final class SchemaSerdeModel {
 
         Map<String, Entry> candidates = new TreeMap<>();
         for (Map.Entry<ShapeId, List<ShapeModel>> classes : classesByShape.entrySet()) {
-            if (classes.getValue().size() != 1) {
+            boolean shared = classes.getValue().size() > 1;
+            if (shared && !classes.getValue().stream().allMatch(SchemaSerdeModel::isOperationShape)) {
                 continue;
             }
-            ShapeModel shape = classes.getValue().get(0);
             Shape smithyShape = smithy.getShape(classes.getKey()).orElse(null);
-            Entry entry = smithyShape == null ? null : candidate(shape, smithyShape, modelPackage, customization);
-            if (entry != null) {
-                candidates.put(shape.getShapeName(), entry);
+            if (smithyShape == null) {
+                continue;
+            }
+            for (ShapeModel shape : classes.getValue()) {
+                Entry entry = candidate(shape, smithyShape, modelPackage, customization, shared);
+                if (entry != null) {
+                    candidates.put(shape.getShapeName(), entry);
+                }
             }
         }
         for (ShapeModel shape : new TreeMap<>(model.getShapes()).values()) {
@@ -139,7 +150,7 @@ public final class SchemaSerdeModel {
                 && !shape.getCustomization().isSkipGeneratingModelClass()) {
                 candidates.put(shape.getShapeName(),
                                new Entry(shape, null, ClassName.get(modelPackage, shape.getShapeName()),
-                                         Collections.emptyList()));
+                                         Collections.emptyList(), false));
             }
         }
         removeUnsupportedReferences(candidates, smithy);
@@ -147,7 +158,7 @@ public final class SchemaSerdeModel {
 
         Map<ShapeId, Entry> ids = new HashMap<>();
         for (Entry entry : candidates.values()) {
-            if (entry.shapeId() != null) {
+            if (entry.shapeId() != null && !entry.isSharedShape()) {
                 ids.put(entry.shapeId(), entry);
             }
         }
@@ -201,7 +212,7 @@ public final class SchemaSerdeModel {
     }
 
     private static Entry candidate(ShapeModel shape, Shape smithyShape, String modelPackage,
-                                   CustomizationConfig customization) {
+                                   CustomizationConfig customization, boolean shared) {
         switch (shape.getShapeType()) {
             case Model:
             case Request:
@@ -241,7 +252,8 @@ public final class SchemaSerdeModel {
         if (!imMembers.isEmpty()) {
             return null;
         }
-        return new Entry(shape, smithyShape.getId(), ClassName.get(modelPackage, shape.getShapeName()), members);
+        return new Entry(shape, smithyShape.getId(), ClassName.get(modelPackage, shape.getShapeName()), members,
+                         shared);
     }
 
     private static boolean isSupportedMember(MemberModel member, CustomizationConfig customization) {
@@ -263,7 +275,7 @@ public final class SchemaSerdeModel {
             changed = false;
             Set<ShapeId> supported = new HashSet<>();
             for (Entry entry : candidates.values()) {
-                if (entry.shapeId() != null) {
+                if (entry.shapeId() != null && !entry.isSharedShape()) {
                     supported.add(entry.shapeId());
                 }
             }
@@ -473,6 +485,18 @@ public final class SchemaSerdeModel {
     }
 
     /**
+     * @param entry a class of a shared shape ({@link Entry#isSharedShape()})
+     * @return the initializer of the class's own copy of its structure's schema: the same ShapeId, traits and members
+     *     as the partition field, with the class's builder supplier and class
+     */
+    public CodeBlock sharedShapeSchemaInitializer(Entry entry) {
+        if (!entry.isSharedShape()) {
+            throw new IllegalArgumentException(entry.className() + " is not a class of a shared shape");
+        }
+        return schemas.classSchemaInitializer(entry.shapeId(), entry.className());
+    }
+
+    /**
      * @return the target schema of members that target {@code smithy.api#Unit}: {@code Unit.SCHEMA} of the generated
      *     {@code Unit} class if it has schema serde members, else null ({@code PreludeSchemas.UNIT})
      */
@@ -496,12 +520,15 @@ public final class SchemaSerdeModel {
         private final ShapeId shapeId;
         private final ClassName className;
         private final List<MemberBinding> members;
+        private final boolean sharedShape;
 
-        private Entry(ShapeModel shape, ShapeId shapeId, ClassName className, List<MemberBinding> members) {
+        private Entry(ShapeModel shape, ShapeId shapeId, ClassName className, List<MemberBinding> members,
+                      boolean sharedShape) {
             this.shape = shape;
             this.shapeId = shapeId;
             this.className = className;
             this.members = Collections.unmodifiableList(members);
+            this.sharedShape = sharedShape;
         }
 
         public ShapeModel shape() {
@@ -543,11 +570,20 @@ public final class SchemaSerdeModel {
         }
 
         /**
+         * @return whether the class is one of several request and response classes that the IntermediateModel
+         *     generates from one Smithy structure (for example a structure that is both an operation's input and its
+         *     output), so the class holds its own copy of the structure's schema, with its own builder
+         */
+        public boolean isSharedShape() {
+            return sharedShape;
+        }
+
+        /**
          * @return whether the class holds its own schema rather than referencing a partition field: a synthetic
-         *     class or the {@code Unit} class
+         *     class, the {@code Unit} class or a class of a shared shape
          */
         public boolean hasOwnSchema() {
-            return isSynthetic() || isUnit();
+            return isSynthetic() || isUnit() || isSharedShape();
         }
     }
 

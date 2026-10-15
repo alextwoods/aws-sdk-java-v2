@@ -231,6 +231,50 @@ public final class SchemasGenerator {
     }
 
     /**
+     * Renders a copy of a structure's schema for a class outside the partitions: the same ShapeId, traits and members
+     * as the structure's partition field, with the class's builder supplier and class. Member targets are read from
+     * the partition fields, which are complete once their partition class is initialized.
+     *
+     * @param shapeId a structure or union of the closure, which no member targets
+     * @param shapeClass the class that holds the copy
+     * @return the initializer expression
+     */
+    CodeBlock classSchemaInitializer(ShapeId shapeId, ClassName shapeClass) {
+        SchemaField field = order.field(shapeId);
+        if (field == null) {
+            throw new IllegalStateException("Shape " + shapeId + " has no schema");
+        }
+        Shape shape = field.shape();
+        CodeBlock.Builder code = CodeBlock.builder()
+                                          .add("$T.$L($L$L)", SchemaRuntimeType.SCHEMA, builderMethod(shape),
+                                               qualifiedShapeId(field.emittedId()),
+                                               SchemaTraits.arguments(rootTraits(field)))
+                                          .add("$>");
+        for (MemberShape member : SchemaFieldOrder.edges(shape)) {
+            if (member.getTarget().equals(shapeId)) {
+                throw new IllegalStateException("Shape " + shapeId + " targets itself through " + member.getId());
+            }
+            code.add("\n.putMember($S, $L$L)", member.getMemberName(), qualifiedTarget(member),
+                     SchemaTraits.arguments(traits.forShape(member)));
+        }
+        return code.add("\n.builderSupplier($T::newShapeBuilder)", shapeClass)
+                   .add("\n.shapeClass($T.class)", shapeClass)
+                   .add("\n.build()$<")
+                   .build();
+    }
+
+    private CodeBlock qualifiedTarget(MemberShape member) {
+        ShapeId targetId = member.getTarget();
+        if (UNIT.equals(targetId) && serde.unitSchemaReference() != null) {
+            return serde.unitSchemaReference();
+        }
+        if (Prelude.isPreludeShape(targetId)) {
+            return CodeBlock.of("$T.$L", SchemaRuntimeType.PRELUDE_SCHEMAS, preludeField(targetId));
+        }
+        return fieldReference(order.field(targetId));
+    }
+
+    /**
      * {@code , X.class} for an enum with a generated enum class, else nothing.
      */
     private CodeBlock enumClassArgument(Shape shape) {
@@ -275,6 +319,10 @@ public final class SchemasGenerator {
             return CodeBlock.of("$T.fromParts($L, $S)", SchemaRuntimeType.SHAPE_ID, SchemaFieldOrder.NAMESPACE_CONSTANT,
                                 id.getName());
         }
+        return qualifiedShapeId(id);
+    }
+
+    private static CodeBlock qualifiedShapeId(ShapeId id) {
         return CodeBlock.of("$T.fromParts($S, $S)", SchemaRuntimeType.SHAPE_ID, id.getNamespace(), id.getName());
     }
 
