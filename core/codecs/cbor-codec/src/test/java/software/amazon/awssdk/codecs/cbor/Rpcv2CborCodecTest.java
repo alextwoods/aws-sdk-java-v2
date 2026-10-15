@@ -311,15 +311,25 @@ class Rpcv2CborCodecTest {
     }
 
     @Test
-    void timestamps_areTag1EpochSeconds() {
+    void timestamps_areTag1EpochSecondsAsDoubles() {
+        // Whole seconds are doubles too, as the legacy smithy-rpcv2-protocol marshallers write them.
         assertThat(encode(s -> s.writeTimestamp(PreludeSchemas.TIMESTAMP, Instant.ofEpochSecond(1363896240))))
-            .isEqualTo("c11a514b67b0");
+            .isEqualTo("c1fb41d452d9ec000000");
         assertThat(encode(s -> s.writeTimestamp(PreludeSchemas.TIMESTAMP, Instant.ofEpochMilli(1500))))
             .isEqualTo("c1fb3ff8000000000000");
         assertThat(encode(s -> s.writeTimestamp(PreludeSchemas.TIMESTAMP, Instant.ofEpochSecond(-1))))
-            .isEqualTo("c120");
+            .isEqualTo("c1fbbff0000000000000");
         // The timestampFormat trait is ignored.
-        assertThat(encode(s -> s.writeTimestamp(ALL.member("timestamp"), Instant.ofEpochSecond(1)))).isEqualTo("c101");
+        assertThat(encode(s -> s.writeTimestamp(ALL.member("timestamp"), Instant.ofEpochSecond(1))))
+            .isEqualTo("c1fb3ff0000000000000");
+    }
+
+    @Test
+    void timestamps_readIntegerAndFloatEpochSeconds() {
+        assertThat(CODEC.createDeserializer(hex("c11a514b67b0")).readTimestamp(PreludeSchemas.TIMESTAMP))
+            .isEqualTo(Instant.ofEpochSecond(1363896240));
+        assertThat(CODEC.createDeserializer(hex("c1fb41d452d9ec000000")).readTimestamp(PreludeSchemas.TIMESTAMP))
+            .isEqualTo(Instant.ofEpochSecond(1363896240));
     }
 
     @Test

@@ -527,13 +527,12 @@ final class CborSerializer implements ShapeSerializer {
         } catch (ArithmeticException e) {
             throw new SerializationException("Timestamp " + value + " cannot be written as epoch milliseconds", e);
         }
+        // Always a double-precision float, also for whole seconds (smithy-java writes an integer there): the
+        // Baseline_Build's smithy-rpcv2-protocol marshallers and the rpcv2Cbor protocol test fixtures send a double, and
+        // the protocol allows both, so the wire format stays the same as the legacy SDK's.
         ensureCapacity(10);
         buf[pos++] = (byte) (TYPE_TAG | TAG_TIME_EPOCH);
-        if (millis % 1000 == 0) {
-            writeLongUnchecked(millis / 1000);
-        } else {
-            writeDoubleUnchecked(Double.doubleToRawLongBits(millis / 1000D));
-        }
+        writeDoubleUnchecked(Double.doubleToRawLongBits(millis / 1000D));
     }
 
     @Override
