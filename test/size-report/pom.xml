@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>aws-sdk-java-pom</artifactId>
+        <version>2.49.7-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+    <artifactId>size-report</artifactId>
+    <name>AWS Java SDK :: Test :: Size Report</name>
+    <description>Compares the artifact sizes of the Baseline_Build and the feature build for the schema-serde
+        Prototype_Service_Set and checks docs/design/schema-serde/size-report.md (Requirement 36).
+    </description>
+    <url>https://aws.amazon.com/sdkforjava</url>
+    <properties>
+        <size-report.asm.version>9.7</size-report.asm.version>
+        <!--
+          The Baseline_Build: the merge base of this branch, built by scripts/schema-serde/build-size-baseline.sh
+          into size-report.baselineDir (see README.md).
+        -->
+        <size-report.baselineCommit>fc8b74e9fe21</size-report.baselineCommit>
+        <size-report.baselineDir>${user.home}/.cache/aws-sdk-java-v2/size-baseline/${size-report.baselineCommit}</size-report.baselineDir>
+        <!-- Prototype_Service_Set services in the report: artifactId=display name, comma-separated (task 9.27 adds the rest) -->
+        <size-report.services>cloudwatch=CloudWatch</size-report.services>
+        <!-- true: rewrite size-report.md instead of failing when it is out of date -->
+        <size-report.update>false</size-report.update>
+        <size-report.docsDir>${project.basedir}/../../docs/design/schema-serde</size-report.docsDir>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom-internal</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>annotations</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>${size-report.asm.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-tree</artifactId>
+            <version>${size-report.asm.version}</version>
+        </dependency>
+
+        <!--
+          The feature build of each reported service. Test scope: the report reads the JARs (copied below with their
+          software.amazon.awssdk runtime dependencies) as files and never loads their classes.
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cloudwatch</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>nl.jqno.equalsverifier</groupId>
+            <artifactId>equalsverifier</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Automatic-Module-Name>software.amazon.awssdk.sizereport</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <configuration>
+                    <!--
+                      The attribution names schema types as class-file descriptor strings; the analyzer reads those
+                      as uses of the schema module, which is only on the test classpath (through cloudwatch).
+                    -->
+                    <ignoredUsedUndeclaredDependencies combine.children="append">
+                        <ignoredUsedUndeclaredDependency>software.amazon.awssdk:schema</ignoredUsedUndeclaredDependency>
+                    </ignoredUsedUndeclaredDependencies>
+                </configuration>
+                <executions>
+                    <execution>
+                        <!-- The feature build's service JARs and their runtime dependencies, as <artifactId>.jar -->
+                        <id>copy-feature-jars</id>
+                        <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <includeGroupIds>software.amazon.awssdk</includeGroupIds>
+                            <excludeTransitive>false</excludeTransitive>
+                            <includeScope>test</includeScope>
+                            <stripVersion>true</stripVersion>
+                            <outputDirectory>${project.build.directory}/size-report/feature-jars</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <size-report.baselineDir>${size-report.baselineDir}</size-report.baselineDir>
+                        <size-report.featureJarsDir>${project.build.directory}/size-report/feature-jars</size-report.featureJarsDir>
+                        <size-report.services>${size-report.services}</size-report.services>
+                        <size-report.update>${size-report.update}</size-report.update>
+                        <size-report.document>${size-report.docsDir}/size-report.md</size-report.document>
+                        <size-report.disabledCustomizations>${size-report.docsDir}/disabled-customizations.md</size-report.disabledCustomizations>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

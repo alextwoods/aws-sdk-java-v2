@@ -135,6 +135,7 @@
         "aws-query-client-protocol": { "skipImport": true },
         "dynamic-client": { "skipImport": true },
         "client-mock-plugin": { "skipImport": true },
+        "size-report": { "skipImport": true },
         "message-payloads": { "skipImport": true },
         "codegen-c2j-to-smithy": { "skipImport": true }
     },

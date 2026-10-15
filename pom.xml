@@ -101,6 +101,7 @@
         <module>test/architecture-tests</module>
         <module>test/s3-tests</module>
         <module>test/client-mock-plugin</module>
+        <module>test/size-report</module>
     </modules>
     <scm>
         <url>${scm.github.url}</url>
