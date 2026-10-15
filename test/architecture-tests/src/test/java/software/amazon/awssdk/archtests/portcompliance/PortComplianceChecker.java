@@ -15,29 +15,18 @@
 
 package software.amazon.awssdk.archtests.portcompliance;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 import org.codehaus.mojo.animal_sniffer.Clazz;
 import org.codehaus.mojo.animal_sniffer.SignatureChecker;
 import org.codehaus.mojo.animal_sniffer.logging.Logger;
@@ -51,6 +40,7 @@ import org.objectweb.asm.RecordComponentVisitor;
 import org.objectweb.asm.TypePath;
 import org.objectweb.asm.commons.ClassRemapper;
 import org.objectweb.asm.commons.Remapper;
+import software.amazon.awssdk.archtests.ClassFiles;
 
 /**
  * Scans compiled classes (a directory or a jar) for constructs that break the Java 8 porting rules of the
@@ -105,7 +95,7 @@ public final class PortComplianceChecker {
      * violation. An empty list means the classes comply.
      */
     public List<String> check(Path root) throws IOException {
-        Map<String, byte[]> classFiles = readClassFiles(root);
+        Map<String, byte[]> classFiles = ClassFiles.read(root);
         List<String> violations = new ArrayList<>();
         Set<String> nonJdkPackages = new TreeSet<>();
 
@@ -197,41 +187,6 @@ public final class PortComplianceChecker {
     private static String packageOf(String internalName) {
         int idx = internalName.lastIndexOf('/');
         return idx < 0 ? "" : internalName.substring(0, idx);
-    }
-
-    private static Map<String, byte[]> readClassFiles(Path root) throws IOException {
-        Map<String, byte[]> result = new TreeMap<>();
-        if (Files.isDirectory(root)) {
-            try (Stream<Path> paths = Files.walk(root)) {
-                for (Path p : paths.filter(f -> f.toString().endsWith(".class")).collect(Collectors.toList())) {
-                    result.put(root.relativize(p).toString(), Files.readAllBytes(p));
-                }
-            }
-        } else {
-            try (ZipFile zip = new ZipFile(root.toFile())) {
-                Enumeration<? extends ZipEntry> entries = zip.entries();
-                while (entries.hasMoreElements()) {
-                    ZipEntry entry = entries.nextElement();
-                    if (!entry.isDirectory() && entry.getName().endsWith(".class")
-                        && !entry.getName().startsWith("META-INF/")) {
-                        try (InputStream in = zip.getInputStream(entry)) {
-                            result.put(entry.getName(), readAll(in));
-                        }
-                    }
-                }
-            }
-        }
-        return result;
-    }
-
-    private static byte[] readAll(InputStream in) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = in.read(buffer)) != -1) {
-            out.write(buffer, 0, read);
-        }
-        return out.toByteArray();
     }
 
     /**
@@ -413,33 +368,5 @@ public final class PortComplianceChecker {
         public void error(String message, Throwable t) {
             errors.add(message + ": " + t);
         }
-    }
-
-    /**
-     * Locate the jar or class directory of an SDK artifact on the test classpath.
-     *
-     * @return the location, or {@code null} if it is not on the classpath
-     */
-    static Path locateArtifact(String artifactId) throws IOException {
-        // Packaged jars (local repository or reactor "package" phase) carry Maven metadata.
-        String pomProperties = "META-INF/maven/software.amazon.awssdk/" + artifactId + "/pom.properties";
-        URL url = PortComplianceChecker.class.getClassLoader().getResource(pomProperties);
-        if (url != null && "jar".equals(url.getProtocol())) {
-            String spec = url.getPath();
-            String jarUri = spec.substring(0, spec.indexOf("!/"));
-            try {
-                return new File(new URI(jarUri)).toPath();
-            } catch (URISyntaxException e) {
-                throw new IOException("Cannot resolve " + url, e);
-            }
-        }
-        // Reactor builds that stop before "package" resolve to <module>/target/classes.
-        String suffix = File.separator + artifactId + File.separator + "target" + File.separator + "classes";
-        for (String entry : System.getProperty("java.class.path", "").split(File.pathSeparator)) {
-            if (entry.endsWith(suffix)) {
-                return new File(entry).toPath();
-            }
-        }
-        return null;
     }
 }

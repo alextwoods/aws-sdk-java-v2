@@ -28,6 +28,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import software.amazon.awssdk.archtests.ClassFiles;
 
 /**
  * Java 8 port-compliance check for the modules that port smithy-java (task 1.19; Requirements 1.3, 1.4, 1.5, 1.8).
@@ -77,7 +78,7 @@ class PortComplianceTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("portedModules")
     void portedModuleCompliesWithJava8PortingRules(String artifactId) throws IOException {
-        Path location = PortComplianceChecker.locateArtifact(artifactId);
+        Path location = ClassFiles.locateArtifact(artifactId);
         assertThat(location)
             .as("%s is listed in PORTED_MODULES but is not on the test classpath; add it to architecture-tests/pom.xml",
                 artifactId)
