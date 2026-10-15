@@ -18,15 +18,21 @@ package software.amazon.awssdk.codegen.c2j2smithy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.expectOnlyService;
 import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.gapOccurrences;
+import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.marker;
 import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.member;
 
 import org.junit.jupiter.api.Test;
+import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.shapes.MemberShape;
+import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
+import software.amazon.smithy.model.traits.DefaultTrait;
 import software.amazon.smithy.model.traits.HttpQueryParamsTrait;
 import software.amazon.smithy.model.traits.HttpQueryTrait;
+import software.amazon.smithy.model.traits.RequiresLengthTrait;
+import software.amazon.smithy.model.traits.StreamingTrait;
 import software.amazon.smithy.rulesengine.traits.EndpointRuleSetTrait;
 import software.amazon.smithy.rulesengine.traits.EndpointTestsTrait;
 
@@ -111,6 +117,69 @@ class LegacyC2jFormsConversionTest {
         assertThat(gapOccurrences(result)).containsEntry("member.locationName(querystring map)", 1);
         assertThat(member(result.model(), NS, "In", "One").expectTrait(HttpQueryTrait.class).getValue())
             .isEqualTo("one");
+        assertThat(ConvertAndAssembleTest.errorEvents(result)).isEmpty();
+    }
+
+    // ----- member-level streaming -----
+
+    @Test
+    void memberLevelStreaming_onlyStreamingReferences_makesTheBlobStreaming() {
+        ConversionResult result = TestModels.convertJson("x", REST_JSON
+                                                              + "'operations': {'Put': {'http': {'method': 'PUT', "
+                                                              + "'requestUri': '/'}, 'input': {'shape': 'In'}}}, "
+                                                              + "'shapes': {'In': {'type': 'structure', 'members': {"
+                                                              + "'Body': {'shape': 'Body', 'streaming': true, "
+                                                              + "'requiresLength': true}}, 'payload': 'Body'}, "
+                                                              + "'Body': {'type': 'blob'}}}");
+
+        Shape body = result.model().expectShape(ShapeId.from(NS + "#Body"));
+        assertThat(body.hasTrait(StreamingTrait.class)).isTrue();
+        assertThat(body.hasTrait(RequiresLengthTrait.class)).isTrue();
+        MemberShape member = member(result.model(), NS, "In", "Body");
+        assertThat(member.hasTrait(StreamingTrait.class)).isFalse();
+        assertThat(member.hasTrait(RequiresLengthTrait.class)).isFalse();
+        assertThat(member.expectTrait(DefaultTrait.class).toNode()).isEqualTo(Node.from(""));
+        assertThat(ConvertAndAssembleTest.errorEvents(result)).isEmpty();
+    }
+
+    @Test
+    void memberLevelStreaming_blobAlsoUsedWithoutTheFlag_targetsAStreamingCopy() {
+        ConversionResult result = TestModels.convertJson("x", REST_JSON
+                                                              + "'operations': {'Put': {'http': {'method': 'PUT', "
+                                                              + "'requestUri': '/put'}, 'input': {'shape': 'In'}}, "
+                                                              + "'Get': {'http': {'method': 'POST', "
+                                                              + "'requestUri': '/get'}, 'input': {'shape': 'Other'}}}, "
+                                                              + "'shapes': {'In': {'type': 'structure', 'required': "
+                                                              + "['Body'], 'members': {'Body': {'shape': 'Body', "
+                                                              + "'streaming': true}}, 'payload': 'Body'}, "
+                                                              + "'Other': {'type': 'structure', 'members': {"
+                                                              + "'Data': {'shape': 'Body'}}}, "
+                                                              + "'Body': {'type': 'blob'}}}");
+
+        Model model = result.model();
+        assertThat(model.expectShape(ShapeId.from(NS + "#Body")).hasTrait(StreamingTrait.class)).isFalse();
+        Shape copy = model.expectShape(ShapeId.from(NS + "#Body" + C2jToSmithyConverter.STREAMING_SUFFIX));
+        assertThat(copy.hasTrait(StreamingTrait.class)).isTrue();
+        assertThat(marker(copy, C2jMarkerTrait.SHAPE_NAME)).isEqualTo(Node.from("Body"));
+        MemberShape body = member(model, NS, "In", "Body");
+        assertThat(body.getTarget()).isEqualTo(copy.getId());
+        // A required streaming member needs no default.
+        assertThat(body.hasTrait(DefaultTrait.class)).isFalse();
+        assertThat(member(model, NS, "Other", "Data").getTarget()).isEqualTo(ShapeId.from(NS + "#Body"));
+        assertThat(ConvertAndAssembleTest.errorEvents(result)).isEmpty();
+    }
+
+    @Test
+    void streamingBlobMember_notRequired_getsAnEmptyDefault() {
+        ConversionResult result = TestModels.convertJson("x", REST_JSON
+                                                              + "'operations': {'Put': {'http': {'method': 'PUT', "
+                                                              + "'requestUri': '/'}, 'input': {'shape': 'In'}}}, "
+                                                              + "'shapes': {'In': {'type': 'structure', 'members': {"
+                                                              + "'Body': {'shape': 'Stream'}}, 'payload': 'Body'}, "
+                                                              + "'Stream': {'type': 'blob', 'streaming': true}}}");
+
+        assertThat(member(result.model(), NS, "In", "Body").expectTrait(DefaultTrait.class).toNode())
+            .isEqualTo(Node.from(""));
         assertThat(ConvertAndAssembleTest.errorEvents(result)).isEmpty();
     }
 }

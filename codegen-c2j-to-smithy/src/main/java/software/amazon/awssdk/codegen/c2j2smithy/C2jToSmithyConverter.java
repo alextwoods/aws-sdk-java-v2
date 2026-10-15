@@ -77,6 +77,7 @@ import software.amazon.smithy.model.shapes.StructureShape;
 import software.amazon.smithy.model.shapes.TimestampShape;
 import software.amazon.smithy.model.shapes.UnionShape;
 import software.amazon.smithy.model.traits.ClientOptionalTrait;
+import software.amazon.smithy.model.traits.DefaultTrait;
 import software.amazon.smithy.model.traits.DeprecatedTrait;
 import software.amazon.smithy.model.traits.DocumentationTrait;
 import software.amazon.smithy.model.traits.DynamicTrait;
@@ -172,6 +173,12 @@ public final class C2jToSmithyConverter {
      */
     public static final String JSON_VALUE_SUFFIX = "JsonValue";
 
+    /**
+     * The suffix of the copy of a blob that members with a member-level C2J {@code streaming} flag target, when other
+     * members target the blob without the flag; only the copy gets {@code @streaming}.
+     */
+    public static final String STREAMING_SUFFIX = "Streaming";
+
     private static final ShapeId UNIT = ShapeId.from("smithy.api#Unit");
     private static final String JSON_MEDIA_TYPE = "application/json";
     private static final Pattern IDENTIFIER = Pattern.compile("^(_+[A-Za-z0-9]|[A-Za-z])[A-Za-z0-9_]*$");
@@ -214,6 +221,13 @@ public final class C2jToSmithyConverter {
     private final Map<String, String> jsonValueTargets = new HashMap<>();
     // Smithy name of a JSON-value copy -> C2J name it copies.
     private final Map<String, String> jsonValueCopies = new LinkedHashMap<>();
+    // C2J blob name -> Smithy name that members with a member-level "streaming" flag target (the blob itself, or its
+    // streaming copy).
+    private final Map<String, String> streamingTargets = new HashMap<>();
+    // Smithy name of a streaming copy -> C2J blob name it copies.
+    private final Map<String, String> streamingCopies = new LinkedHashMap<>();
+    // C2J blob names whose streaming target also gets @requiresLength.
+    private final Set<String> streamingRequiresLength = new HashSet<>();
     // "<C2J structure>$<member>" of members bound by a host prefix label.
     private final Set<String> hostLabelMembers = new HashSet<>();
     // Operations (C2J keys) whose host prefix labels are all bindable.
@@ -239,6 +253,7 @@ public final class C2jToSmithyConverter {
         this.gaps = ConversionGapReport.builder(serviceName);
         assignShapeNames();
         assignJsonValueTargets();
+        assignStreamingTargets();
         findHostLabels();
         this.protocolTraits = protocolTraits();
         this.auth = AuthConversion.of(metadata, service.path("operations"), gaps);
@@ -300,7 +315,10 @@ public final class C2jToSmithyConverter {
             convertGuarded(e.getKey(), () -> model.addShapes(convertShape(e.getKey(), shapeId(e.getKey()), e.getValue())));
         }
         for (Map.Entry<String, String> e : jsonValueCopies.entrySet()) {
-            convertGuarded(e.getValue(), () -> model.addShapes(convertJsonValueCopy(e.getKey(), e.getValue())));
+            convertGuarded(e.getValue(), () -> model.addShapes(convertCopy(e.getKey(), e.getValue())));
+        }
+        for (Map.Entry<String, String> e : streamingCopies.entrySet()) {
+            convertGuarded(e.getValue(), () -> model.addShapes(convertCopy(e.getKey(), e.getValue())));
         }
 
         // Build each operation shape (with @http and input/output references).
@@ -515,6 +533,73 @@ public final class C2jToSmithyConverter {
                 jsonValueCopies.put(copy, e.getKey());
             }
         }
+    }
+
+    /**
+     * C2J can mark a structure member {@code streaming} instead of its blob target (S3's {@code Body}); codegen's C2J
+     * route then treats the member as a streaming payload. Smithy allows {@code @streaming} only on the blob, so the
+     * members target a streaming blob: the C2J blob itself when only such members reference it, otherwise a copy named
+     * {@code <Name>Streaming}. A member-level {@code requiresLength} goes on that target too.
+     */
+    private void assignStreamingTargets() {
+        Map<String, int[]> references = new TreeMap<>();
+        for (JsonNode shape : shapes) {
+            for (JsonNode member : shape.path("members")) {
+                countStreamingReference(references, member);
+            }
+            for (String ref : Arrays.asList("member", "key", "value")) {
+                countStreamingReference(references, shape.path(ref));
+            }
+        }
+        for (Map.Entry<String, int[]> e : references.entrySet()) {
+            int streaming = e.getValue()[1];
+            if (streaming == 0) {
+                continue;
+            }
+            JsonNode target = shapes.path(e.getKey());
+            if (!"blob".equals(target.path("type").asText())) {
+                gaps.record("member.streaming(non-blob)", "A member-level streaming flag on a member that does not "
+                                                          + "target a blob has no Smithy equivalent and is dropped.");
+            } else if (target.path("streaming").asBoolean(false)) {
+                // Already a streaming blob; the member flag adds nothing.
+                continue;
+            } else if (streaming == e.getValue()[0]) {
+                streamingTargets.put(e.getKey(), smithyName(e.getKey()));
+            } else {
+                String copy = uniqueName(smithyName(e.getKey()) + STREAMING_SUFFIX);
+                streamingTargets.put(e.getKey(), copy);
+                streamingCopies.put(copy, e.getKey());
+            }
+            if (e.getValue()[2] > 0) {
+                streamingRequiresLength.add(e.getKey());
+            }
+        }
+    }
+
+    private static void countStreamingReference(Map<String, int[]> references, JsonNode ref) {
+        if (!ref.path("shape").isTextual()) {
+            return;
+        }
+        int[] counts = references.computeIfAbsent(ref.get("shape").asText(), k -> new int[3]);
+        counts[0]++;
+        if (ref.path("streaming").asBoolean(false)) {
+            counts[1]++;
+            if (ref.path("requiresLength").asBoolean(false)) {
+                counts[2]++;
+            }
+        }
+    }
+
+    // Whether a structure member targets a streaming blob: a C2J streaming blob, or one made streaming for
+    // member-level streaming flags (assignStreamingTargets).
+    private boolean targetsStreamingBlob(JsonNode member) {
+        String target = member.path("shape").asText();
+        JsonNode shape = shapes.path(target);
+        if (!"blob".equals(shape.path("type").asText())) {
+            return false;
+        }
+        return shape.path("streaming").asBoolean(false)
+               || member.path("streaming").asBoolean(false) && streamingTargets.containsKey(target);
     }
 
     private static void countReference(Map<String, int[]> references, JsonNode ref) {
@@ -784,6 +869,12 @@ public final class C2jToSmithyConverter {
         if (id.getName().equals(jsonValueTargets.get(c2jName))) {
             shapeTraits.add(new MediaTypeTrait(JSON_MEDIA_TYPE));
         }
+        if (id.getName().equals(streamingTargets.get(c2jName))) {
+            shapeTraits.add(new StreamingTrait());
+            if (streamingRequiresLength.contains(c2jName)) {
+                shapeTraits.add(new RequiresLengthTrait());
+            }
+        }
         if (!shapeTraits.isEmpty()) {
             AbstractShapeBuilder<?, ?> b = Shape.shapeToBuilder(converted.get(0));
             shapeTraits.forEach(b::addTrait);
@@ -792,7 +883,8 @@ public final class C2jToSmithyConverter {
         return converted;
     }
 
-    private List<Shape> convertJsonValueCopy(String copyName, String c2jName) {
+    // A JSON-value or streaming copy of a C2J shape, with the C2J name on a shapeName marker.
+    private List<Shape> convertCopy(String copyName, String c2jName) {
         List<Shape> copy = convertShape(c2jName, ShapeId.fromParts(namespace, copyName), shapes.get(c2jName));
         AbstractShapeBuilder<?, ?> b = Shape.shapeToBuilder(copy.get(0));
         b.addTrait(marker(C2jMarkerTrait.SHAPE_NAME, Node.from(c2jName)));
@@ -998,6 +1090,12 @@ public final class C2jToSmithyConverter {
             for (Trait t : memberTraits(c2jMemberName, memberName, m, payloadMember, isRequired)) {
                 mb.addTrait(t);
             }
+            // Smithy requires a structure member that targets a streaming blob to be @required or to have a @default.
+            // C2J streaming members are optional; the published AWS models give them an empty default (S3's
+            // `Body: StreamingBlob = ""`).
+            if (!isUnion && !isRequired && targetsStreamingBlob(m)) {
+                mb.addTrait(new DefaultTrait(Node.from("")));
+            }
             if (isUnion) {
                 ((UnionShape.Builder) b).addMember(mb.build());
             } else {
@@ -1159,12 +1257,8 @@ public final class C2jToSmithyConverter {
         if (m.path("eventheader").asBoolean(false)) {
             traits.add(new EventHeaderTrait());
         }
-        if (m.path("streaming").asBoolean(false)) {
-            traits.add(new StreamingTrait());
-            if (m.path("requiresLength").asBoolean(false)) {
-                traits.add(new RequiresLengthTrait());
-            }
-        }
+        // A member-level streaming flag makes the member's blob target streaming (see assignStreamingTargets);
+        // @streaming and @requiresLength are invalid on members.
         if (m.path("deprecatedName").isTextual()) {
             traits.add(marker(C2jMarkerTrait.DEPRECATED_NAME, Node.from(m.get("deprecatedName").asText())));
         }
@@ -1210,6 +1304,9 @@ public final class C2jToSmithyConverter {
         String target = memberOrRef.path("shape").asText();
         if (memberOrRef.path("jsonvalue").asBoolean(false) && jsonValueTargets.containsKey(target)) {
             return ShapeId.fromParts(namespace, jsonValueTargets.get(target));
+        }
+        if (memberOrRef.path("streaming").asBoolean(false) && streamingTargets.containsKey(target)) {
+            return ShapeId.fromParts(namespace, streamingTargets.get(target));
         }
         return shapeId(target);
     }
