@@ -17,11 +17,16 @@ package software.amazon.awssdk.codegen.c2j2smithy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.expectOnlyService;
+import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.gapOccurrences;
+import static software.amazon.awssdk.codegen.c2j2smithy.C2jToSmithyConverterTest.member;
 
 import org.junit.jupiter.api.Test;
 import software.amazon.smithy.model.node.Node;
+import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
+import software.amazon.smithy.model.traits.HttpQueryParamsTrait;
+import software.amazon.smithy.model.traits.HttpQueryTrait;
 import software.amazon.smithy.rulesengine.traits.EndpointRuleSetTrait;
 import software.amazon.smithy.rulesengine.traits.EndpointTestsTrait;
 
@@ -32,6 +37,8 @@ import software.amazon.smithy.rulesengine.traits.EndpointTestsTrait;
  */
 class LegacyC2jFormsConversionTest {
     private static final String NS = "com.amazonaws.x";
+    private static final String REST_JSON = "{'metadata': {'serviceId': 'X', 'protocol': 'rest-json', "
+                                            + "'apiVersion': '2020-01-01', 'endpointPrefix': 'x'}, ";
 
     // ----- bigdecimal -----
 
@@ -76,5 +83,34 @@ class LegacyC2jFormsConversionTest {
                     .build());
 
         assertThat(expectOnlyService(result.model()).hasTrait(EndpointTestsTrait.class)).isFalse();
+    }
+
+    // ----- query string maps -----
+
+    @Test
+    void querystringMap_becomesHttpQueryParams() {
+        ConversionResult result = TestModels.convertJson("x", REST_JSON
+                                                              + "'operations': {'Op': {'http': {'method': 'GET', "
+                                                              + "'requestUri': '/op'}, 'input': {'shape': 'In'}}, "
+                                                              + "'Other': {'http': {'method': 'GET', "
+                                                              + "'requestUri': '/other'}, 'input': {'shape': 'In2'}}}, "
+                                                              + "'shapes': {'In': {'type': 'structure', 'members': {"
+                                                              + "'Params': {'shape': 'M', 'location': 'querystring'}, "
+                                                              + "'One': {'shape': 'S', 'location': 'querystring', "
+                                                              + "'locationName': 'one'}}}, "
+                                                              + "'In2': {'type': 'structure', 'members': {"
+                                                              + "'Named': {'shape': 'M', 'location': 'querystring', "
+                                                              + "'locationName': 'named'}}}, "
+                                                              + "'M': {'type': 'map', 'key': {'shape': 'S'}, "
+                                                              + "'value': {'shape': 'S'}}, 'S': {'type': 'string'}}}");
+
+        MemberShape params = member(result.model(), NS, "In", "Params");
+        assertThat(params.hasTrait(HttpQueryParamsTrait.class)).isTrue();
+        assertThat(params.hasTrait(HttpQueryTrait.class)).isFalse();
+        assertThat(member(result.model(), NS, "In2", "Named").hasTrait(HttpQueryParamsTrait.class)).isTrue();
+        assertThat(gapOccurrences(result)).containsEntry("member.locationName(querystring map)", 1);
+        assertThat(member(result.model(), NS, "In", "One").expectTrait(HttpQueryTrait.class).getValue())
+            .isEqualTo("one");
+        assertThat(ConvertAndAssembleTest.errorEvents(result)).isEmpty();
     }
 }

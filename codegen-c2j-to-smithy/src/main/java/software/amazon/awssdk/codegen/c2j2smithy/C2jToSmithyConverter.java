@@ -94,6 +94,7 @@ import software.amazon.smithy.model.traits.HttpHeaderTrait;
 import software.amazon.smithy.model.traits.HttpLabelTrait;
 import software.amazon.smithy.model.traits.HttpPayloadTrait;
 import software.amazon.smithy.model.traits.HttpPrefixHeadersTrait;
+import software.amazon.smithy.model.traits.HttpQueryParamsTrait;
 import software.amazon.smithy.model.traits.HttpQueryTrait;
 import software.amazon.smithy.model.traits.HttpResponseCodeTrait;
 import software.amazon.smithy.model.traits.HttpTrait;
@@ -1073,7 +1074,20 @@ public final class C2jToSmithyConverter {
                     }
                     break;
                 case "querystring":
-                    traits.add(new HttpQueryTrait(wire));
+                    // A map in the query string is one query parameter per entry, named by the key (codegen's
+                    // QueryParamMarshaller), which is @httpQueryParams; @httpQuery is invalid on a map. The C2J
+                    // locationName of such a member names no parameter.
+                    if ("map".equals(shapes.path(m.path("shape").asText()).path("type").asText())) {
+                        traits.add(new HttpQueryParamsTrait());
+                        if (locationName != null && !locationName.equals(memberName)) {
+                            gaps.record("member.locationName(querystring map)",
+                                        "The locationName of a query string map names no query parameter, and "
+                                        + "@httpQueryParams has none; it is dropped, so the member's SdkField "
+                                        + "location name is the member name.");
+                        }
+                    } else {
+                        traits.add(new HttpQueryTrait(wire));
+                    }
                     break;
                 case "statusCode":
                     traits.add(new HttpResponseCodeTrait());

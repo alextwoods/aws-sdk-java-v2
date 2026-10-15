@@ -75,7 +75,7 @@ class ConvertAndAssembleTest {
         return dir;
     }
 
-    private static List<String> errorEvents(ConversionResult result) {
+    static List<String> errorEvents(ConversionResult result) {
         Model converted = result.model();
         String json = Node.printJson(ModelSerializer.builder().build().serialize(converted));
 
