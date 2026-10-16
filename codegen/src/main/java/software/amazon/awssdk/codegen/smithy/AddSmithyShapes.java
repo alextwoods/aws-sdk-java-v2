@@ -62,6 +62,7 @@ import software.amazon.smithy.model.traits.EnumValueTrait;
 import software.amazon.smithy.model.traits.ErrorTrait;
 import software.amazon.smithy.model.traits.EventHeaderTrait;
 import software.amazon.smithy.model.traits.EventPayloadTrait;
+import software.amazon.smithy.model.traits.HttpPayloadTrait;
 import software.amazon.smithy.model.traits.IdempotencyTokenTrait;
 import software.amazon.smithy.model.traits.RequiredTrait;
 import software.amazon.smithy.model.traits.RequiresLengthTrait;
@@ -630,6 +631,13 @@ abstract class AddSmithyShapes {
         // Only a streaming blob is a streaming payload. An event stream (a @streaming union) is not: C2J marks its
         // structure "eventstream", not "streaming", and the client generators treat the two differently.
         boolean streaming = targetShape.isBlobShape() && targetShape.hasTrait(StreamingTrait.class);
+        // An RPC protocol ignores HTTP bindings, but codegen's C2J route makes a streaming C2J "payload" member the
+        // operation's streaming body in every protocol (the awsQuery test model's StreamingInputOperation). The
+        // C2J_Converter keeps it as @httpPayload, so a top-level streaming member with that trait is the payload here
+        // too. Other RPC payload members stay body members.
+        if (streaming && bindings != null && !httpBindingsHonored() && member.hasTrait(HttpPayloadTrait.class)) {
+            isPayload = true;
+        }
         boolean requiresLength = targetShape.hasTrait(RequiresLengthTrait.class)
                                  || member.hasTrait(RequiresLengthTrait.class);
         boolean flattened = member.hasTrait(XmlFlattenedTrait.class)

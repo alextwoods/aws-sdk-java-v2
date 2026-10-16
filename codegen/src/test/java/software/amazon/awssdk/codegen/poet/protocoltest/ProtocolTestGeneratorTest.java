@@ -270,9 +270,12 @@ class ProtocolTestGeneratorTest {
     }
 
     @Test
-    void streamingMemberTheClientMethodDoesNotExpose_isUngeneratable() throws IOException {
-        // Under awsJson1_0, the default protocol of demo.smithy, the intermediate model marks an @httpPayload stream as
-        // streaming but the client method takes no RequestBody; the case cannot be expressed.
+    void rpcProtocolHttpPayloadStream_isPassedAsARequestBody() throws IOException {
+        // Under awsJson1_0, the default protocol of demo.smithy, an @httpPayload stream is the operation's streaming
+        // body, as a streaming C2J payload is on the C2J route, so the client method takes a RequestBody. (Before, the
+        // intermediate model did not mark it the payload and the case was ungeneratable. A valid Smithy model of a
+        // service with an HTTP binding protocol cannot have a stream without @httpPayload, so the
+        // ShapeValueLiteralGenerator guard for an unexposed streaming member has no case here.)
         String model = resource(DEMO).replace("operations: [PutThing, GetThing, WatchThings]",
                                               "operations: [PutThing, GetThing, WatchThings, UploadThing]")
                        + resource(STREAMING).substring(resource(STREAMING).indexOf("@http(method: \"PUT\""),
@@ -281,11 +284,18 @@ class ProtocolTestGeneratorTest {
                        + "@streaming\nblob StreamingBlob\n";
         IntermediateModel intermediateModel = CodegenPipeline.create().prepare(inputs(dir, model, null).build())
                                                              .intermediateModel();
-        assertThatThrownBy(() -> ProtocolTestGenerator.builder().model(intermediateModel)
-                                                      .skips(ProtocolTestSkipList.parse(SKIP_EVENT_STREAM, "skips.json"))
-                                                      .build())
-            .isInstanceOf(ProtocolTestCodegenException.class)
-            .hasMessageContaining("UploadThingStream (aws.protocols#awsJson1_0): params.Body is a streaming member");
+        assertThat(intermediateModel.getOperation("UploadThing").hasStreamingInput()).isTrue();
+        List<ClassSpec> specs = ProtocolTestGenerator.builder().model(intermediateModel)
+                                                     .skips(ProtocolTestSkipList.parse(SKIP_EVENT_STREAM, "skips.json"))
+                                                     .build()
+                                                     .classSpecs();
+        String upload = specs.stream()
+                             .filter(s -> s.poetSpec().methodSpecs.stream()
+                                                                  .anyMatch(m -> m.name.equals("request_UploadThingStream")))
+                             .map(s -> method(s, "request_UploadThingStream").code.toString())
+                             .findFirst()
+                             .orElseThrow(AssertionError::new);
+        assertThat(upload).contains("c.uploadThing(input, software.amazon.awssdk.core.sync.RequestBody.fromBytes(");
     }
 
     @Test

@@ -170,13 +170,19 @@ public class IntermediateModelBuilder {
         setSimpleMethods(trimmedModel);
 
         namingStrategy.validateCustomerVisibleNaming(trimmedModel);
-        customizeEndpointParameters(fullModel, endpointRuleSet);
+        customizeEndpointParameters(fullModel.getCustomizationConfig(), endpointRuleSet);
         customizeOperationContextParams(trimmedModel, fullModel.getCustomizationConfig().getCustomOperationContextParams());
         return trimmedModel;
     }
 
-    private static void customizeOperationContextParams(IntermediateModel trimmedModel,
-                                                        List<CustomOperationContextParam> customOperationContextParams) {
+    /**
+     * Applies the {@code customOperationContextParams} customization to the operations of the model. Shared with the
+     * Smithy route ({@code SmithyIntermediateModelBuilder}).
+     *
+     * @throws IllegalStateException if an operation does not exist or already has operation context parameters
+     */
+    public static void customizeOperationContextParams(IntermediateModel trimmedModel,
+                                                       List<CustomOperationContextParam> customOperationContextParams) {
 
         if (CollectionUtils.isNullOrEmpty(customOperationContextParams)) {
             return;
@@ -196,14 +202,21 @@ public class IntermediateModelBuilder {
         });
     }
 
-    private void customizeEndpointParameters(IntermediateModel fullModel, EndpointRuleSetModel endpointRuleSet) {
-        if (fullModel.getCustomizationConfig().getEndpointParameters() != null) {
-            fullModel.getCustomizationConfig().getEndpointParameters().keySet().forEach(key -> {
+    /**
+     * Adds the {@code endpointParameters} customization to the parameters of the endpoint rule set. Shared with the
+     * Smithy route ({@code SmithyIntermediateModelBuilder}).
+     *
+     * @throws IllegalStateException if a customized parameter is already a rule-set parameter
+     */
+    public static void customizeEndpointParameters(CustomizationConfig customizationConfig,
+                                                   EndpointRuleSetModel endpointRuleSet) {
+        if (customizationConfig.getEndpointParameters() != null) {
+            customizationConfig.getEndpointParameters().keySet().forEach(key -> {
                 if (endpointRuleSet.getParameters().containsKey(key)) {
                     throw new IllegalStateException("Duplicate parameters found in customizationConfig");
                 }
             });
-            fullModel.getCustomizationConfig().getEndpointParameters().forEach(endpointRuleSet.getParameters()::put);
+            customizationConfig.getEndpointParameters().forEach(endpointRuleSet.getParameters()::put);
         }
     }
 

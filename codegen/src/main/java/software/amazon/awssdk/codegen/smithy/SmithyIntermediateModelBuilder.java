@@ -27,6 +27,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.codegen.IntermediateModelBuilder;
 import software.amazon.awssdk.codegen.IntermediateModelShapeProcessor;
 import software.amazon.awssdk.codegen.customization.processors.SmithyIntermediateModelPostprocessor;
 import software.amazon.awssdk.codegen.internal.Constant;
@@ -219,6 +220,10 @@ public final class SmithyIntermediateModelBuilder {
         linkCustomAuthorizationToRequestShapes(trimmedModel);
         setSimpleMethods(trimmedModel);
         namingStrategy.validateCustomerVisibleNaming(trimmedModel);
+        // The same endpoint customizations, in the same order, as the C2J route.
+        IntermediateModelBuilder.customizeEndpointParameters(customConfig, endpointRuleSet);
+        IntermediateModelBuilder.customizeOperationContextParams(trimmedModel,
+                                                                 customConfig.getCustomOperationContextParams());
         return trimmedModel;
     }
 

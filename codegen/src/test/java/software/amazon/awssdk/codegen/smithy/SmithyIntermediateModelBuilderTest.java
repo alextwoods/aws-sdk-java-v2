@@ -18,7 +18,9 @@ package software.amazon.awssdk.codegen.smithy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.codegen.internal.Jackson;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.EnumModel;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
@@ -66,19 +68,27 @@ class SmithyIntermediateModelBuilderTest {
         + "})\n";
 
     private static IntermediateModel build(String serviceTraits) {
+        return build(serviceTraits, CustomizationConfig.create());
+    }
+
+    private static IntermediateModel build(String serviceTraits, CustomizationConfig config) {
         return buildService(serviceTraits
                             + "service DemoService { version: \"2024-01-01\", operations: [Op] }\n\n"
                             + "@http(method: \"POST\", uri: \"/op\")\n"
                             + "operation Op { input: OpRequest, output: OpResponse }\n"
                             + "structure OpRequest {}\n"
-                            + "structure OpResponse {}\n");
+                            + "structure OpResponse {}\n", config);
+    }
+
+    private static IntermediateModel buildService(String serviceAndShapes) {
+        return buildService(serviceAndShapes, CustomizationConfig.create());
     }
 
     /**
      * @param serviceAndShapes the service shape (with any extra traits before it) and every shape after the common
      *                         {@code @service}, {@code @sigv4} and {@code @restJson1} traits
      */
-    private static IntermediateModel buildService(String serviceAndShapes) {
+    private static IntermediateModel buildService(String serviceAndShapes, CustomizationConfig config) {
         String src =
             "$version: \"2.0\"\nnamespace demo\n\n"
             + "use aws.api#service\n"
@@ -96,7 +106,7 @@ class SmithyIntermediateModelBuilderTest {
         return new SmithyIntermediateModelBuilder(
             SmithyModels.builder()
                         .model(model)
-                        .customizationConfig(CustomizationConfig.create())
+                        .customizationConfig(config)
                         .build()).build();
     }
 
@@ -214,6 +224,50 @@ class SmithyIntermediateModelBuilderTest {
 
         assertThat(model.getMetadata().getAuthType()).isNull();
         assertThat(model.getMetadata().getAuth()).containsExactly(AuthType.NONE);
+    }
+
+    /**
+     * The {@code endpointParameters} and {@code customOperationContextParams} customizations apply as on the C2J route
+     * (the {@code endpointproviders} test model).
+     */
+    @Test
+    void endpointCustomizations_addParametersAndOperationContextParams() throws IOException {
+        CustomizationConfig config = Jackson.load(CustomizationConfig.class,
+            "{\"endpointParameters\": {\"PojoString\": {\"required\": false, \"type\": \"String\"}},"
+            + " \"customOperationContextParams\": [{\"operationName\": \"Op\","
+            + " \"operationContextParamsMap\": {\"PojoString\": {\"path\": \"Nested.StringMember\"}}}]}");
+
+        IntermediateModel model = build(RULE_SET, config);
+
+        assertThat(model.getEndpointRuleSetModel().getParameters()).containsOnlyKeys("Region", "PojoString");
+        assertThat(model.getOperation("Op").getOperationContextParams()).containsOnlyKeys("PojoString");
+    }
+
+    /**
+     * An awsQuery operation has no HTTP bindings, but a streaming C2J {@code payload} member (kept as
+     * {@code @httpPayload}) is its streaming body, as on the C2J route (the {@code query} test model).
+     */
+    @Test
+    void rpcProtocolStreamingPayload_isAStreamingPayload() {
+        String src = "$version: \"2.0\"\nnamespace demo\n\n"
+                     + "use aws.api#service\nuse aws.auth#sigv4\nuse aws.protocols#awsQuery\n"
+                     + "@service(sdkId: \"Demo\")\n@sigv4(name: \"demo\")\n@awsQuery\n"
+                     + "@xmlNamespace(uri: \"https://example.com/doc/2024-01-01/\")\n"
+                     + "service DemoService { version: \"2024-01-01\", operations: [Op] }\n\n"
+                     + "operation Op { input: OpRequest, output: OpResponse }\n"
+                     + "structure OpRequest { @httpPayload @required body: Stream, other: Blob }\n"
+                     + "structure OpResponse {}\n"
+                     + "@streaming\nblob Stream\n";
+        Model smithy = Model.assembler().discoverModels(Model.class.getClassLoader())
+                            .addUnparsedModel("test.smithy", src).assemble().unwrap();
+        IntermediateModel model = new SmithyIntermediateModelBuilder(
+            SmithyModels.builder().model(smithy).customizationConfig(CustomizationConfig.create()).build()).build();
+
+        ShapeModel request = model.getShapes().get("OpRequest");
+        assertThat(request.findMemberModelByC2jName("body").getHttp().getIsPayload()).isTrue();
+        assertThat(request.findMemberModelByC2jName("other").getHttp().getIsPayload()).isFalse();
+        assertThat(request.isHasStreamingMember()).isTrue();
+        assertThat(model.getOperation("Op").hasStreamingInput()).isTrue();
     }
 
     @Test
