@@ -24,17 +24,11 @@
     <modelVersion>4.0.0</modelVersion>
     <artifactId>json-codec</artifactId>
     <name>AWS Java SDK :: Core :: Codecs :: JSON Codec</name>
-    <description>The AWS SDK for Java - JSON Codec module holds the schema-based JSON serializer, deserializer and
-        documents.
+    <description>The AWS SDK for Java - JSON Codec module holds the schema-based JSON codec: a hand-written byte-level
+        serializer and deserializer with no Jackson dependency.
     </description>
     <url>https://aws.amazon.com/sdkforjava</url>
-    <properties>
-        <!-- Skeleton module with no classes yet (schema-decoupling-serde task 1.2). Remove both skips once
-             sources land: javadoc fails when a module has no public classes, and dependency analysis reports
-             every declared dependency as unused. -->
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-        <mdep.analyze.skip>true</mdep.analyze.skip>
-    </properties>
+
     <dependencies>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
@@ -52,11 +46,6 @@
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>test-utils</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
@@ -71,9 +60,43 @@
             <artifactId>jqwik</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- JsonPrettyPrinterTest uses the jqwik API directly; the jqwik aggregator only brings it transitively. -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik-api</artifactId>
+            <version>${jqwik.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
+            <!-- Requirement 8.4 (design K5, OD-5): the JSON codec is hand-written and must not pull in Jackson
+                 databind, in any scope. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>ban-jackson-databind</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>com.fasterxml.jackson.core:jackson-databind</exclude>
+                                        <exclude>tools.jackson.core:jackson-databind</exclude>
+                                    </excludes>
+                                    <message>json-codec must not depend on Jackson databind (Requirement 8.4)</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>

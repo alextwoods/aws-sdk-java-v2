@@ -14,6 +14,7 @@
  */
 
 /**
- * Schema-based JSON codec, settings and documents.
+ * Schema-based JSON codec ({@link software.amazon.awssdk.codecs.json.JsonCodec}), its settings and the
+ * {@link software.amazon.awssdk.codecs.json.JsonSerdeProvider} SPI.
  */
 package software.amazon.awssdk.codecs.json;
