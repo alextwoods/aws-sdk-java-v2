@@ -28,14 +28,10 @@
         aws.protocols#awsQuery and aws.protocols#ec2Query client protocols.
     </description>
     <url>https://aws.amazon.com/sdkforjava</url>
-    <properties>
-        <!-- Skeleton module with no classes yet (schema-decoupling-serde task 1.2). Remove both skips once
-             sources land: javadoc fails when a module has no public classes, and dependency analysis reports
-             every declared dependency as unused. -->
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-        <mdep.analyze.skip>true</mdep.analyze.skip>
-    </properties>
     <dependencies>
+        <!-- The request serializer (task 7.5) needs only the schema serde interfaces and codec-commons'
+             public timestamp and base64 helpers. The client protocols (task 7.15) add http-client-protocol
+             and xml-codec for the transport and the XML responses. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>annotations</artifactId>
@@ -43,12 +39,17 @@
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>http-client-protocol</artifactId>
+            <artifactId>utils</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>xml-codec</artifactId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codec-commons</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
