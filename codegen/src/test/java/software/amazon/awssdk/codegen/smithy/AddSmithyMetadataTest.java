@@ -190,6 +190,17 @@ class AddSmithyMetadataTest {
         assertThat(metadata.getAuth()).containsExactly(AuthType.BEARER, AuthType.V4);
     }
 
+    // The bearerauth/mixedauth case: a C2J auth list in Smithy's order converts to no @auth, so every applied
+    // scheme is listed, in shape ID order.
+    @Test
+    void noAuthTrait_severalAppliedSchemes_allListedInShapeIdOrder() {
+        Metadata metadata = metadataOf(modelOf(
+            "use aws.protocols#restJson1\nuse aws.auth#sigv4a\n",
+            "@restJson1\n@httpBearerAuth\n@sigv4a(name: \"demo\")\n", ""));
+        assertThat(metadata.getAuth()).containsExactly(AuthType.V4, AuthType.V4A, AuthType.BEARER);
+        assertThat(metadata.getAuthType()).isEqualTo(AuthType.V4);
+    }
+
     // An empty @auth is a different input from no @auth, and takes the other branch.
     @Test
     void emptyAuthTrait_isEmpty() {

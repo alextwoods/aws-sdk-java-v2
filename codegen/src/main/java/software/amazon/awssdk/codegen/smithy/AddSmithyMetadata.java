@@ -30,6 +30,7 @@ import software.amazon.awssdk.codegen.utils.ProtocolUtils;
 import software.amazon.awssdk.utils.Pair;
 import software.amazon.awssdk.utils.StringUtils;
 import software.amazon.smithy.aws.traits.ServiceTrait;
+import software.amazon.smithy.aws.traits.auth.SigV4ATrait;
 import software.amazon.smithy.aws.traits.auth.SigV4Trait;
 import software.amazon.smithy.aws.traits.protocols.AwsJson1_0Trait;
 import software.amazon.smithy.aws.traits.protocols.AwsQueryCompatibleTrait;
@@ -102,7 +103,7 @@ final class AddSmithyMetadata {
                 .withServiceId(serviceId(service))
                 .withSupportsH2(supportsH2(serviceIndex, service))
                 .withAwsQueryCompatible(awsQueryCompatible(service))
-                .withAuth(auth(service));
+                .withAuth(auth(serviceIndex, service));
 
         metadata.withJsonVersion(jsonVersion(metadata, service));
 
@@ -242,8 +243,12 @@ final class AddSmithyMetadata {
      * {@code smithy.api#noAuth}, so that is returned instead of an empty list, which leaves the auth scheme generators
      * with no service default. C2J models always declare a signature version, so this applies only to native Smithy
      * models such as the protocol test services. An explicit {@code @auth([])} is still returned as an empty list.
+     *
+     * <p>Without {@code @auth}, every applied sigv4, sigv4a and bearer auth trait is listed, in Smithy's order (by
+     * shape ID). The C2J_Converter emits {@code @auth} on the service only when the C2J order differs from that order,
+     * so a C2J service with {@code auth: [sigv4, httpBearerAuth]} has no {@code @auth} and both schemes.
      */
-    private static List<AuthType> auth(ServiceShape service) {
+    private static List<AuthType> auth(ServiceIndex serviceIndex, ServiceShape service) {
         List<AuthType> auth = new ArrayList<>();
         if (service.hasTrait(AuthTrait.class)) {
             for (ShapeId schemeId : service.expectTrait(AuthTrait.class).getValues()) {
@@ -251,11 +256,16 @@ final class AddSmithyMetadata {
             }
             return auth;
         }
-        if (service.hasTrait(SigV4Trait.class)) {
-            auth.add(AuthType.V4);
-        } else if (service.hasTrait(HttpBearerAuthTrait.class)) {
-            auth.add(AuthType.BEARER);
-        } else {
+        for (ShapeId scheme : serviceIndex.getAuthSchemes(service).keySet()) {
+            if (scheme.equals(SigV4Trait.ID)) {
+                auth.add(AuthType.V4);
+            } else if (scheme.equals(SigV4ATrait.ID)) {
+                auth.add(AuthType.V4A);
+            } else if (scheme.equals(HttpBearerAuthTrait.ID)) {
+                auth.add(AuthType.BEARER);
+            }
+        }
+        if (auth.isEmpty()) {
             auth.add(AuthType.NONE);
         }
         return auth;
