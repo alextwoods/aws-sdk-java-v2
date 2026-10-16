@@ -150,6 +150,12 @@
             <artifactId>smithy-rpcv2-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The rpcv2Cbor test client (sdkrpcv2) runs on the new path (runtime protocol selection, task 3.23). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rpcv2-cbor-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <artifactId>netty-nio-client</artifactId>
             <groupId>software.amazon.awssdk</groupId>
