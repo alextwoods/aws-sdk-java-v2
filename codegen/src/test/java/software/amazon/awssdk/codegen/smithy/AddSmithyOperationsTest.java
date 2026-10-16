@@ -346,6 +346,22 @@ class AddSmithyOperationsTest {
         assertThat(op.getAuth()).isEmpty();
     }
 
+    // The C2J_Converter's form of C2J authtype "none" (NoneAuthTypeRequestTest in codegen-generated-classes-test).
+    @Test
+    void emptyAuth_mapsToNoneAndUnauthenticated() {
+        Model model = modelOf(
+            "@auth([])\n"
+            + "@http(method: \"POST\", uri: \"/op\")\n"
+            + "operation Op { input: OpRequest, output: OpResponse }\n"
+            + "structure OpRequest {}\n"
+            + "structure OpResponse {}\n");
+        OperationModel op = op(model, "rest-json");
+
+        assertThat(op.getAuth()).containsExactly(AuthType.NONE);
+        assertThat(op.getAuthType()).isEqualTo(AuthType.NONE);
+        assertThat(op.isAuthenticated()).isFalse();
+    }
+
     @Test
     void optionalAuth_mapsToNoneAndUnauthenticated() {
         Model model = modelOf(

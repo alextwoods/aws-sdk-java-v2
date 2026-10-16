@@ -220,8 +220,11 @@ final class AddSmithyOperations {
         operationModel.setAuth(authTypes);
 
         if (authTypes.isEmpty()) {
-            operationModel.setIsAuthenticated(true);
-            operationModel.setAuthType(null);
+            // An explicit empty @auth is smithy.api#noAuth; the C2J_Converter emits it for C2J authtype "none" and for
+            // auth [smithy.api#noAuth]. As on the C2J route for authtype "none": unauthenticated, auth type NONE.
+            operationModel.setIsAuthenticated(false);
+            operationModel.setAuthType(AuthType.NONE);
+            operationModel.setAuth(Collections.singletonList(AuthType.NONE));
         } else {
             // On the C2J route only the single-valued C2J authtype sets the auth type, which picks the legacy request
             // signer; a C2J auth list does not (AddOperations). Several schemes, or sigv4a, which no authtype names
