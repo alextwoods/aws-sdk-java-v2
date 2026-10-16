@@ -308,6 +308,11 @@
                         <goals>
                             <goal>generate</goal>
                         </goals>
+                        <configuration>
+                            <!-- The C2J test models exercise C2J forms that Smithy rejects; each model's
+                                 customization.config lists the validation events it accepts, with a reason. -->
+                            <allowSmithyValidationSuppressions>true</allowSmithyValidationSuppressions>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
