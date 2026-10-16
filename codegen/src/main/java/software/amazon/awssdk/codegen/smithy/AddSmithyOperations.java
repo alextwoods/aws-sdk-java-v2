@@ -223,8 +223,13 @@ final class AddSmithyOperations {
             operationModel.setIsAuthenticated(true);
             operationModel.setAuthType(null);
         } else {
-            operationModel.setAuthType(authTypes.get(0));
-            operationModel.setIsAuthenticated(authTypes.get(0) != AuthType.NONE);
+            // On the C2J route only the single-valued C2J authtype sets the auth type, which picks the legacy request
+            // signer; a C2J auth list does not (AddOperations). Several schemes, or sigv4a, which no authtype names
+            // and which has no legacy signer, therefore come from an auth list.
+            AuthType first = authTypes.get(0);
+            boolean fromAuthtype = authTypes.size() == 1 && first != AuthType.V4A;
+            operationModel.setAuthType(fromAuthtype ? first : null);
+            operationModel.setIsAuthenticated(first != AuthType.NONE);
         }
     }
 

@@ -378,6 +378,34 @@ class AddSmithyOperationsTest {
     }
 
     @Test
+    void sigv4aOrSeveralSchemes_populateTheAuthListButNoAuthType() {
+        Model model = modelOf(
+            "use aws.auth#sigv4a\n\n"
+            + "@service(sdkId: \"Demo\", arnNamespace: \"demo\")\n"
+            + "@restJson1\n"
+            + "@sigv4a(name: \"demo\")\n"
+            + "@sigv4(name: \"demo\")\n"
+            + "service DemoService { version: \"2024-01-01\", operations: [Op, Both] }\n\n",
+            "@auth([sigv4a])\n"
+            + "@http(method: \"POST\", uri: \"/op\")\n"
+            + "operation Op { input: OpRequest, output: OpResponse }\n"
+            + "@auth([sigv4a, sigv4])\n"
+            + "@http(method: \"POST\", uri: \"/both\")\n"
+            + "operation Both { input: OpRequest, output: OpResponse }\n"
+            + "structure OpRequest {}\n"
+            + "structure OpResponse {}\n");
+
+        // As on the C2J route, where only a C2J authtype (never sigv4a, never a list) sets the auth type.
+        OperationModel op = op(model, "rest-json");
+        assertThat(op.getAuth()).containsExactly(AuthType.V4A);
+        assertThat(op.getAuthType()).isNull();
+        assertThat(op.isAuthenticated()).isTrue();
+        OperationModel both = translate(model, "rest-json").get("Both");
+        assertThat(both.getAuth()).containsExactly(AuthType.V4A, AuthType.V4);
+        assertThat(both.getAuthType()).isNull();
+    }
+
+    @Test
     void unsignedPayload_setsFlag() {
         Model model = modelOf(
             "use aws.auth#unsignedPayload\n\n"
