@@ -1089,3 +1089,66 @@ A **schema-based service** is one whose client is routed by `SchemaOperationRout
 | `RpcV2CborNewPathTest` (untagged) | "Confirm the generated clients take the new path" | For `RpcV2Protocol` (13), `QueryCompatibleRpcV2Protocol`, `NonQueryCompatibleRpcV2Protocol` and `SdkRpcV2Protocol` (1 each), it calls every client operation through `captureRequest`. At `beforeTransmission` it asserts `API_OPERATION` (matching the operation name), `CLIENT_PROTOCOL` as `RpcV2CborProtocol`, a `SyncApiCallPipeline` frame, and no `RequestPipelineBuilder` or legacy stage frame | The generated tests do not show which pipeline ran |
 
 **Generated code changes outside the protocol tests.** CloudWatch generates byte-identical sources (no shared shapes or sparse collections); its 34 tests and japicmp pass. DynamoDB's `Enable`/`DisableKinesisStreamingDestinationRequest`/`Response` now have schema serde members, and `DynamoDbOperations` types those two operations with their classes. This supersedes the task 3.7 exclusion "a Smithy shape that two classes represent" for request and response classes; the DynamoDB module tests (61) pass. SQS, Secrets Manager, Account, Route 53 and SNS have neither case. `codegen` (976 tests), `codegen-maven-plugin` (18, including `LegacyRouteParityTest`), `cbor-codec` (203) and `rpcv2-cbor-client-protocol` (20) pass. The task 3.33 note about `restJson1-RestJson` failing to generate no longer applies: the full module generates every projection.
+
+## Checkpoint 6: Smithy validation for C2J test models
+
+**Target.** Since task 1.22, stage 4 of `CodegenPipeline` validates every converted C2J model and fails on `ERROR` and `DANGER` events. The 30 C2J models of `test/codegen-generated-classes-test` then failed to generate, and once they generated, some tests did not compile. Each failure was either a C2J_Converter or Smithy-route loader gap, fixed with a test, or a C2J form that a test model uses on purpose and that a Smithy model cannot hold, suppressed per service with a recorded reason. Real services stay strictly validated. `test/protocol-tests` is not covered: it is not in the reactor (Requirement 32.9; `test/smithy-protocol-tests` replaces it).
+
+**Converter and loader fixes.**
+
+| Component | Problem | Fix |
+|---|---|---|
+| `C2jInput` | Test models annotate shapes with `//` comments (`endpointproviders`), and stage 1 failed | Java comments enabled, as codegen's C2J loader does |
+| C2J_Converter | codegen's C2J loader spells the big number types `bigdecimal`/`biginteger`; the converter knew only camel case (`waiters` failed in stage 3) | Both spellings converted |
+| C2J_Converter | codegen reads rule-set parameter types ignoring case; Smithy accepts only `stringArray` (`stringarray`'s `StringArray` failed assembly) | Parameter type normalized to `stringArray` |
+| C2J_Converter | 25 test models ship an empty `endpoint-tests.json`; as `@endpointTests` every parameter is reported unused (DANGER) and every required one missing (ERROR) | Omitted; codegen generates no endpoint tests for an empty suite either way |
+| C2J_Converter | A `location: querystring` map was bound with `@httpQuery`, which Smithy does not allow on a map (also used by apigateway, amp, route53globalresolver) | Bound with `@httpQueryParams`; a `locationName` on such a member is recorded as a gap |
+| C2J_Converter | C2J can mark a member streaming instead of its blob target; the converter put `@streaming`/`@requiresLength` on the member, where Smithy does not allow them | The member targets a streaming blob (the C2J blob, or a `<Name>Streaming` copy when non-streaming members also use it); optional streaming members get `@default("")`, as in S3's published model |
+| C2J_Converter | Seven REST test models have an event stream output member and no `payload`; Smithy requires `@httpPayload` on it | `@httpPayload` added when the event stream is the structure's only member without an HTTP location (published AWS models always name the payload) |
+| `AddSmithyOperations` | An operation whose `@auth` lists several schemes or sigv4a got the auth type `V4A`, which has no legacy signer ("Unsupported authtype for AWS Request: V4A") | Such operations get no auth type, as their C2J auth list did |
+| `AddSmithyMetadata` | Without `@auth`, only sigv4 or else bearer became the service auth list; the converter omits `@auth` when a C2J auth list is already in Smithy's order (`environmenttokenprovider`: `[sigv4, httpBearerAuth]`), and sigv4a (`sigv4aonly`) was never listed | Every applied sigv4, sigv4a and bearer scheme, in `ServiceIndex` order; `NONE` if there is none |
+| `test/codegen-generated-classes-test/pom.xml` | The rpcv2Cbor test client (`sdkrpcv2`) now generates and runs on the new path (task 3.23), and did not compile without `RpcV2CborProtocol` | Depends on `rpcv2-cbor-client-protocol` |
+| `SmithyIntermediateModelBuilder` | The `endpointParameters` and `customOperationContextParams` customizations were not applied (`endpointproviders`, `restjson`: `OperationContextParametersTest`, `MapEndpointParamTest` did not compile) | Both routes call the same `IntermediateModelBuilder` methods |
+| `AddSmithyShapes.buildHttpMapping` | An RPC protocol ignores HTTP bindings, so a streaming C2J `payload` member (kept as `@httpPayload`) was not the payload, and the awsQuery test client had no `RequestBody`/`AsyncResponseTransformer` overloads (`AsyncOperationCancelTest` did not compile) | A top-level `@httpPayload` streaming blob is the payload in every protocol, as on the C2J route. `ProtocolTestGeneratorTest`'s awsJson1_0 `@httpPayload` stream case is now generatable (`rpcProtocolHttpPayloadStream_isPassedAsARequestBody`) |
+| `AddSmithyOperations` | An operation `@auth([])` (the converter's form of C2J `authtype: none`) stayed authenticated with no auth type and was signed (`NoneAuthTypeRequestTest`) | Unauthenticated, auth type `NONE`, auth `[NONE]`, as `authtype: none` on the C2J route |
+
+**Suppression mechanism.** `customization.config` key `smithyValidationSuppressions`: a list of `{id, shapes?, reason}` (`SmithyValidationSuppression`, applied by `SmithyValidationSuppressions` in stage 4).
+
+- Only C2J models, and only in modules whose POM sets the `codegen-maven-plugin` parameter `allowSmithyValidationSuppressions` (no user property, so not settable from the command line). `GenerationMojo` rejects it for modules whose parent is `services`. Without it, a model with suppressions fails generation. Smithy's own `@suppress` and metadata suppressions cannot be used: they never apply to `ERROR` events.
+- `reason` is required; `shapes` must be absolute shape IDs, and an entry with shapes matches only events on those shapes. `id` matches as `ValidationEvent.containsId` (so `HttpMethodSemantics.UnexpectedPayload` is specific).
+- `Model`, `Target` and `ResourceCycle` cannot be suppressed, and loading is checked with validation disabled first. With suppressions, validation runs in Smithy's legacy mode so that a suppressed critical validator (`TraitTarget`, `TraitValue`) does not stop the others.
+- An entry that matches no `ERROR` or `DANGER` event is stale and fails generation. Each applied entry is logged as a warning with the service, event count and reason.
+- `C2jTestModelsPrepareTest` (`codegen-maven-plugin`) runs stages 1 to 5 on every C2J model of the module, as `GenerationMojo` does, so a converter change that breaks one fails there.
+
+**Suppressed events** (each also recorded in the model's `customization.config`):
+
+| Event ID | Models | Why a suppression, not a fix |
+|---|---|---|
+| `SdkServiceId` | 15 models (`query`, `xml`, `h2`, `stringarray`, ...) | Test service IDs contain "Amazon"/"Aws" or end in "Service"; the generated client and package names derive from them and the tests use those names |
+| `ExclusiveStructureMemberTrait` | 7 (shape `IdempotentOperationStructure`) | An idempotency token in a header, a URI label and the query string at once, to test each binding |
+| `HttpMethodSemantics.UnexpectedPayload` | 8 | GET/DELETE operations with body members, to test that the SDK marshals them as C2J defines |
+| `HttpUriConflict` | 6 | Test operations share request URIs; the client never routes by URI |
+| `RuleSetParameter.RuleSet.UnmatchedName` | `bearerauth`, `mixedauth`, `mixedauthservice`, `multiauth`, `endpointproviders` | Shared test rule sets declare parameters the model never binds; in `endpointproviders`, `StaticStringParam` vs `staticStringParam`, which codegen matches ignoring case |
+| `TraitValue` | `customresponsemetadata`, `serviceconfig` (one shape each) | Lowercase response checksum algorithms; the SDK matches them ignoring case |
+| `TraitTarget` | `tostring` (one member), `documenttype` (two members) | A member-level C2J `sensitive` flag; a `RegistryName` URI label member on an operation without that label |
+| `HttpLabelTrait`, `HttpPayload` | `documenttype` (same members) | Same `RegistryName` binding |
+| `StreamingTrait` | `endpointproviders`, `waiters` (one shape) | A `@requiresLength` streaming structure used as both input and output |
+| `WaitableTrait` | `waiters` (one shape) | Test waiters with only failure and retry acceptors |
+| `RuleSetAuthSchemes` | `endpointbasedauth` | A sigv4a `signingRegionSet` that Smithy's validator rejects, to test endpoint-based auth resolution |
+| `RuleSetTestCase`, `RuleSetParameter.TestCase.RequiredMissing`, `RuleSetParameter.TestCase.Unused` | `stringarray` | Endpoint test cases with an empty `stringArray` and without the required `Region` |
+| `rpcv2Cbor.NoDocuments` | `sdkrpcv2` (one member) | A document member, to test documents in rpcv2Cbor |
+
+None of these hides a converter gap that a prototype service hits: the prototype services are validated without suppressions, and `LegacyRouteParityTest` shows their generated sources unchanged.
+
+**Open: Smithy-route behavior gaps in `test/codegen-generated-classes-test`.** The module generates and compiles, and 1633 of its 1673 tests pass. The 40 that fail, in 9 classes, are C2J-route behaviors that the C2J_Converter or the Smithy IntermediateModel does not carry yet. None of them is suppressed or skipped, and none affects the seven prototype services (`LegacyRouteParityTest`):
+
+| Test class (failures) | Evidence | Likely gap |
+|---|---|---|
+| `EndpointDiscoveryAndEndpointOverrideTest` (16) | Requests go to `https://endpointoverride/`, expected `/DescribeEndpoints`, `/TestDiscoveryOptional` | RPC `requestUri` other than `/`: the converter keeps it only in the gap marker (`operation.http`), and the Smithy route sends to `/` |
+| `HttpChecksumInHeaderTest` (4), `HttpChecksumRequiredTest` (2) | rest-xml body checksums differ (`0/Va+Gm0...` vs `FB/utBbw...`, `caVLcw==` vs `YP74zg==`); JSON cases pass | The rest-xml request body differs (root element or namespace) |
+| `HostPrefixTest` (4) | Host `localhost`, expected `123-foo.localhost`; invalid prefix not rejected | C2J `endpoint.hostPrefix` does not reach the operation model |
+| `BlobUnmarshallingTest` (8) | Four rest-xml cases (sync and async, two content lengths): a present blob payload fails with "Could not parse XML response" at [1,1], and a missing one is null instead of empty `SdkBytes`; JSON cases pass | A rest-xml blob `@httpPayload` response is read as an XML document, not as the raw body |
+| `MoveQueryParamsToBodyTest` (2) | Body `Action=AllTypes`, expected `Action=QueryService.AllTypes` | The C2J `targetPrefix` of an awsQuery service is only in the metadata marker |
+| `SensitiveDataRedactedTest` (1) | `ListOfListOfSensitiveString=[[Value]]` is not redacted | Sensitivity of a nested list's element target is not propagated |
+| `CustomSdkShapeTest` (1) | The request body has no `SdkPartType` | The `customSdkShapes` customization is not applied on the Smithy route |
+| `RpcV2CborUserAgentTest` (2) | `BadCborException: unexpected end of payload` for `OperationWithNoInputOrOutput` | New path: an empty rpcv2Cbor response body is not read as an empty structure (`rpcv2-cbor-client-protocol`) |
