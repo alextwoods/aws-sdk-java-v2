@@ -72,10 +72,6 @@ public final class TimestampCodec {
         {'D', 'e', 'c'},
     };
 
-    private static final byte[] LONG_MIN_DIGITS = {
-        '9', '2', '2', '3', '3', '7', '2', '0', '3', '6', '8', '5', '4', '7', '7', '5', '8', '0', '8'
-    };
-
     static {
         for (int i = 0; i < 100; i++) {
             DIGIT_PAIRS[i * 2] = (byte) ('0' + i / 10);
@@ -574,7 +570,7 @@ public final class TimestampCodec {
      */
     public static int writeEpochSeconds(byte[] buf, int pos, long epochSecond, int nano) {
         if (nano == 0) {
-            return writeLong(buf, pos, epochSecond);
+            return NumberCodec.writeLong(buf, pos, epochSecond);
         }
 
         int fraction = nano;
@@ -585,10 +581,10 @@ public final class TimestampCodec {
                 buf[pos++] = '-';
                 buf[pos++] = '0';
             } else {
-                pos = writeLong(buf, pos, epochSecond);
+                pos = NumberCodec.writeLong(buf, pos, epochSecond);
             }
         } else {
-            pos = writeLong(buf, pos, epochSecond);
+            pos = NumberCodec.writeLong(buf, pos, epochSecond);
         }
 
         buf[pos++] = '.';
@@ -771,34 +767,6 @@ public final class TimestampCodec {
             buf[pos++] = (byte) yearStr.charAt(i);
         }
         return pos;
-    }
-
-    /**
-     * Writes a long in decimal. Stands in for smithy-java {@code NumberCodec.writeLong}, which is not ported yet.
-     */
-    private static int writeLong(byte[] buf, int pos, long value) {
-        if (value == 0) {
-            buf[pos] = '0';
-            return pos + 1;
-        }
-        if (value < 0) {
-            buf[pos++] = '-';
-            if (value == Long.MIN_VALUE) {
-                System.arraycopy(LONG_MIN_DIGITS, 0, buf, pos, LONG_MIN_DIGITS.length);
-                return pos + LONG_MIN_DIGITS.length;
-            }
-            value = -value;
-        }
-        int digits = 1;
-        for (long v = value / 10; v != 0; v /= 10) {
-            digits++;
-        }
-        int end = pos + digits;
-        for (int p = end - 1; p >= pos; p--) {
-            buf[p] = (byte) ('0' + (int) (value % 10));
-            value /= 10;
-        }
-        return end;
     }
 
     private static int maxDayOfMonth(int year, int month) {
