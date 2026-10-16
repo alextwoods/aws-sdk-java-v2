@@ -36,6 +36,7 @@ import software.amazon.awssdk.codegen.c2j2smithy.C2jConversionException;
 import software.amazon.awssdk.codegen.c2j2smithy.ConversionGapReport;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.config.customization.ShapeModifier;
+import software.amazon.awssdk.codegen.model.config.customization.SmithyValidationSuppression;
 import software.amazon.awssdk.codegen.model.config.customization.UnderscoresInNameBehavior;
 import software.amazon.awssdk.codegen.pipeline.CodegenPipeline.Stage;
 import software.amazon.smithy.model.Model;
@@ -287,6 +288,121 @@ class CodegenPipelineTest {
                                                       .smithyModelSources(Collections.singletonList(tmp))).build())
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("2 are set");
+    }
+
+    // ----- smithyValidationSuppressions -----
+
+    @Test
+    void suppressedEvent_doesNotStopTheService_andIsReportedWithTheReason() throws IOException {
+        CustomizationConfig config = suppressing(suppression("SdkServiceId", "A test service ID."));
+
+        PreparedService prepared = pipeline.prepare(allowingSuppressions(c2jModel("string").replace(
+            "\"serviceId\": \"Demo\"", "\"serviceId\": \"Demo Service\""), config));
+
+        assertThat(prepared.intermediateModel()).isNotNull();
+        assertThat(listener.warnings)
+            .containsExactly("Suppressed 1 Smithy validation event(s) SdkServiceId for demo: A test service ID.");
+    }
+
+    @Test
+    void suppressedCriticalError_letsTheOtherValidatorsRun() throws IOException {
+        // The member-level sensitive flag is a TraitTarget ERROR, which normally stops Smithy before the validator
+        // that reports the service ID (DANGER).
+        CustomizationConfig config = suppressing(
+            suppression("TraitTarget", "Member-level sensitive.", "com.amazonaws.demoservice#GetThingRequest$Extra"));
+        ServiceInputs inputs = allowingSuppressions(
+            c2jModel("string").replace("\"serviceId\": \"Demo\"", "\"serviceId\": \"Demo Service\"")
+                              .replace("\"Extra\": { \"shape\": \"String\" }",
+                                       "\"Extra\": { \"shape\": \"String\", \"sensitive\": true }"),
+            config);
+
+        assertThatThrownBy(() -> pipeline.prepare(inputs))
+            .isInstanceOfSatisfying(CodegenPipelineException.class,
+                                    e -> assertThat(e.stage()).isEqualTo(Stage.ASSEMBLY_AND_VALIDATION))
+            .hasMessageContaining("1 validation event(s)")
+            .hasMessageContaining("DANGER SdkServiceId")
+            .hasMessageNotContaining("TraitTarget");
+        assertThat(listener.warnings).containsExactly(
+            "Suppressed 1 Smithy validation event(s) TraitTarget [com.amazonaws.demoservice#GetThingRequest$Extra] for "
+            + "demo: Member-level sensitive.");
+    }
+
+    @Test
+    void suppressionsInAModuleThatDoesNotAllowThem_failTheService() throws IOException {
+        CustomizationConfig config = suppressing(suppression("SdkServiceId", "A test service ID."));
+
+        assertThatThrownBy(() -> pipeline.prepare(c2jInputs(c2jModel("string"), config)))
+            .isInstanceOfSatisfying(CodegenPipelineException.class,
+                                    e -> assertThat(e.stage()).isEqualTo(Stage.ASSEMBLY_AND_VALIDATION))
+            .hasMessageContaining("does not allow them")
+            .hasMessageContaining("allowSmithyValidationSuppressions");
+    }
+
+    @Test
+    void staleSuppression_failsTheService_withTheRemainingEvents() throws IOException {
+        CustomizationConfig config = suppressing(
+            suppression("SdkServiceId", "Only one shape.", "com.amazonaws.demoservice#NoSuchShape"),
+            suppression("HttpMethodSemantics", "Nothing matches."));
+
+        assertThatThrownBy(() -> pipeline.prepare(allowingSuppressions(c2jModel("string").replace(
+            "\"serviceId\": \"Demo\"", "\"serviceId\": \"Demo Service\""), config)))
+            .isInstanceOf(CodegenPipelineException.class)
+            .hasMessageContaining("DANGER SdkServiceId")
+            .hasMessageContaining("match no ERROR or DANGER event")
+            .hasMessageContaining("SdkServiceId [com.amazonaws.demoservice#NoSuchShape]")
+            .hasMessageContaining("HttpMethodSemantics");
+    }
+
+    @Test
+    void invalidSuppressions_failTheService() throws IOException {
+        CustomizationConfig config = suppressing(suppression("SdkServiceId", " "),
+                                                 suppression("Model", "Hide a parse failure."),
+                                                 suppression("Target.Something", "Hide a missing shape."),
+                                                 suppression("TraitTarget", "Relative shape.", "GetThingRequest"));
+
+        assertThatThrownBy(() -> pipeline.prepare(allowingSuppressions(c2jModel("string"), config)))
+            .isInstanceOf(CodegenPipelineException.class)
+            .hasMessageContaining("entry 0 (SdkServiceId): a reason is required")
+            .hasMessageContaining("entry 1 (Model): Model events")
+            .hasMessageContaining("entry 2 (Target.Something): Target events")
+            .hasMessageContaining("entry 3 (TraitTarget): GetThingRequest is not an absolute shape ID");
+    }
+
+    @Test
+    void suppressionsForANativeSmithyModel_failTheService() throws IOException {
+        Path model = write(tmp.resolve("model/main.smithy"), String.format(SMITHY_MODEL, "String"));
+        ServiceInputs inputs = outputs(ServiceInputs.builder().serviceName(SERVICE)
+                                                    .smithyModelSources(Collections.singletonList(model))
+                                                    .customizationConfig(suppressing(suppression("X", "Reason.")))
+                                                    .allowSmithyValidationSuppressions(true))
+            .build();
+
+        assertThatThrownBy(() -> pipeline.prepare(inputs))
+            .isInstanceOf(CodegenPipelineException.class)
+            .hasMessageContaining("apply only to C2J models");
+    }
+
+    private static SmithyValidationSuppression suppression(String id, String reason, String... shapes) {
+        SmithyValidationSuppression suppression = new SmithyValidationSuppression();
+        suppression.setId(id);
+        suppression.setReason(reason);
+        suppression.setShapes(Arrays.asList(shapes));
+        return suppression;
+    }
+
+    private static CustomizationConfig suppressing(SmithyValidationSuppression... suppressions) {
+        CustomizationConfig config = CustomizationConfig.create();
+        config.setSmithyValidationSuppressions(Arrays.asList(suppressions));
+        return config;
+    }
+
+    private ServiceInputs allowingSuppressions(String c2jModel, CustomizationConfig config) throws IOException {
+        return outputs(ServiceInputs.builder()
+                                    .serviceName(SERVICE)
+                                    .c2jModelDirectory(c2jDirectory(c2jModel))
+                                    .customizationConfig(config)
+                                    .allowSmithyValidationSuppressions(true))
+            .build();
     }
 
     private static ShapeModifier excludeExtra() {

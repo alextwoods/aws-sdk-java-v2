@@ -45,12 +45,12 @@ import software.amazon.awssdk.codegen.smithy.SmithyModels;
 import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.loader.ModelAssembler;
+import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.shapes.ModelSerializer;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
-import software.amazon.smithy.model.validation.Severity;
 import software.amazon.smithy.model.validation.ValidatedResult;
 import software.amazon.smithy.model.validation.ValidationEvent;
 
@@ -63,7 +63,8 @@ import software.amazon.smithy.model.validation.ValidationEvent;
  *     <li>{@link Stage#C2J_CUSTOMIZATIONS}: apply the C2J half of the {@code customization.config} customizations.</li>
  *     <li>{@link Stage#C2J_CONVERSION}: convert to Smithy with the C2J_Converter, and write the gap report.</li>
  *     <li>{@link Stage#ASSEMBLY_AND_VALIDATION}: assemble and validate the Smithy model; any {@code ERROR} or
- *     {@code DANGER} event stops the service.</li>
+ *     {@code DANGER} event stops the service, except the events of a C2J test model that its customization config
+ *     suppresses ({@code SmithyValidationSuppressions}).</li>
  *     <li>{@link Stage#INTERMEDIATE_MODEL}: build the intermediate model with {@link SmithyIntermediateModelBuilder};
  *     for a C2J model, supplement its paginators and waiters with the sidecar definitions the converter could not
  *     express ({@link C2jSidecarSupplement}).</li>
@@ -85,6 +86,9 @@ public final class CodegenPipeline {
     public static final String STAGING_DIRECTORY = "codegen-staging";
 
     private static final String VALIDATION_REPORT = "models/validation-report.json";
+
+    /** The ModelAssembler property that keeps an ERROR of a critical validator from stopping the other validators. */
+    private static final String LEGACY_VALIDATION_MODE = "LEGACY_VALIDATION_MODE";
 
     private final CodegenPipelineListener listener;
 
@@ -131,7 +135,8 @@ public final class CodegenPipeline {
                     service, c2j.serviceModel, inputs.customizationConfig(), listener));
                 conversion = stage(service, Stage.C2J_CONVERSION, () -> convert(inputs, c2j.input, customized));
                 ConversionResult converted = conversion;
-                model = stage(service, Stage.ASSEMBLY_AND_VALIDATION, () -> assembleConverted(inputs, converted));
+                model = stage(service, Stage.ASSEMBLY_AND_VALIDATION, () -> assembleConverted(inputs, converted,
+                                                                                               listener));
                 break;
             case SMITHY_FILES:
                 model = stage(service, Stage.ASSEMBLY_AND_VALIDATION, () -> assembleFiles(inputs));
@@ -296,15 +301,48 @@ public final class CodegenPipeline {
 
     // Stage 4
 
-    private static Model assembleConverted(ServiceInputs inputs, ConversionResult conversion) {
+    private static Model assembleConverted(ServiceInputs inputs, ConversionResult conversion,
+                                           CodegenPipelineListener listener) {
         // Re-assembled from the serialized model, so that every trait is validated against its definition, including
         // the com.amazonaws.c2j marker traits discovered from the converter's META-INF/smithy manifest. The rule-set
         // built-ins come from smithy-aws-endpoints on the class path.
+        SmithyValidationSuppressions suppressions = SmithyValidationSuppressions.of(inputs);
+        Node document = ModelSerializer.builder().build().serialize(conversion.model());
+        if (suppressions.isEmpty()) {
+            return withConvertedErrorOrder(validated(inputs, converted(inputs, document).assemble()),
+                                           conversion.model());
+        }
+
+        // Loading is checked on its own first: its events cannot be suppressed, because Smithy runs no validator on a
+        // model that did not load.
+        failOnErrors(inputs, converted(inputs, document).disableValidation().assemble().getValidationEvents());
+        // In legacy validation mode an ERROR from a critical validator (TraitTarget, TraitValue, ...) does not stop the
+        // other validators, so suppressing it cannot hide events that Smithy would otherwise never have reported.
+        ValidatedResult<Model> result = converted(inputs, document).putProperty(LEGACY_VALIDATION_MODE, true)
+                                                                   .assemble();
+        SmithyValidationSuppressions.Applied applied = suppressions.apply(result.getValidationEvents(), listener);
+        List<ValidationEvent> errors = failures(applied.remaining());
+        if (!errors.isEmpty() || !applied.stale().isEmpty()) {
+            StringBuilder message = new StringBuilder();
+            if (!errors.isEmpty()) {
+                message.append(errorsMessage(inputs, errors));
+            }
+            if (!applied.stale().isEmpty()) {
+                message.append(message.length() == 0 ? "" : "\n")
+                       .append("The customization config of ").append(inputs.serviceName())
+                       .append(" has smithyValidationSuppressions that match no ERROR or DANGER event; remove them:\n  ")
+                       .append(String.join("\n  ", applied.stale()));
+            }
+            throw new IllegalStateException(message.toString());
+        }
+        Model model = result.getResult().orElseThrow(() -> new IllegalStateException(
+            "The Smithy model of " + inputs.serviceName() + " could not be assembled"));
+        return withConvertedErrorOrder(model, conversion.model());
+    }
+
+    private static ModelAssembler converted(ServiceInputs inputs, Node document) {
         ClassLoader classLoader = inputs.classLoader();
-        ModelAssembler assembler = SmithyModelDiscovery.discoverModels(Model.assembler(classLoader), classLoader)
-                                                       .addDocumentNode(ModelSerializer.builder().build()
-                                                                                       .serialize(conversion.model()));
-        return withConvertedErrorOrder(validated(inputs, assembler.assemble()), conversion.model());
+        return SmithyModelDiscovery.discoverModels(Model.assembler(classLoader), classLoader).addDocumentNode(document);
     }
 
     /**
@@ -330,6 +368,8 @@ public final class CodegenPipeline {
     }
 
     private static Model assembleFiles(ServiceInputs inputs) {
+        // Fails when suppressions are configured: they apply only to C2J models.
+        SmithyValidationSuppressions.of(inputs);
         ClassLoader classLoader = inputs.classLoader();
         ModelAssembler assembler = SmithyModelDiscovery.discoverModels(Model.assembler(classLoader), classLoader);
         for (Path source : inputs.smithyModelSources()) {
@@ -342,6 +382,7 @@ public final class CodegenPipeline {
     }
 
     private static Model checkAssembled(ServiceInputs inputs) {
+        SmithyValidationSuppressions.of(inputs);
         failOnErrors(inputs, inputs.smithyModelEvents());
         return inputs.smithyModel();
     }
@@ -353,17 +394,21 @@ public final class CodegenPipeline {
     }
 
     private static void failOnErrors(ServiceInputs inputs, List<ValidationEvent> events) {
-        List<ValidationEvent> errors = events.stream()
-                                             .filter(e -> e.getSeverity() == Severity.ERROR
-                                                          || e.getSeverity() == Severity.DANGER)
-                                             .collect(Collectors.toList());
+        List<ValidationEvent> errors = failures(events);
         if (!errors.isEmpty()) {
-            throw new IllegalStateException(
-                "The Smithy model of " + inputs.serviceName() + " has " + errors.size() + " validation event(s) of "
-                + "severity ERROR or DANGER:\n" + errors.stream()
-                                                        .map(CodegenPipeline::describe)
-                                                        .collect(Collectors.joining("\n")));
+            throw new IllegalStateException(errorsMessage(inputs, errors));
         }
+    }
+
+    private static List<ValidationEvent> failures(List<ValidationEvent> events) {
+        return events.stream().filter(SmithyValidationSuppressions::isFailure).collect(Collectors.toList());
+    }
+
+    private static String errorsMessage(ServiceInputs inputs, List<ValidationEvent> errors) {
+        return "The Smithy model of " + inputs.serviceName() + " has " + errors.size() + " validation event(s) of "
+               + "severity ERROR or DANGER:\n" + errors.stream()
+                                                       .map(CodegenPipeline::describe)
+                                                       .collect(Collectors.joining("\n"));
     }
 
     static String describe(ValidationEvent event) {

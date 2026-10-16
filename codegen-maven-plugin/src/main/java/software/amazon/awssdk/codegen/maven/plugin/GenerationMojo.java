@@ -67,6 +67,7 @@ public class GenerationMojo extends AbstractMojo {
     private static final String SMITHY_BUILD_FILE = "smithy-build.json";
     private static final String SMITHY_PROJECTIONS_DIR = "smithyprojections";
     private static final String CUSTOMIZATION_CONFIG_FILE = "customization.config";
+    private static final String SERVICES_PARENT_ARTIFACT_ID = "services";
 
     @Parameter(property = "codeGenResources", defaultValue = "${basedir}/src/main/resources/codegen-resources/")
     private File codeGenResources;
@@ -88,6 +89,15 @@ public class GenerationMojo extends AbstractMojo {
     @Parameter(property = "writeValidationReport", defaultValue = "false")
     private boolean writeValidationReport;
 
+    /**
+     * Allow the {@code smithyValidationSuppressions} of the C2J models' {@code customization.config}: Smithy validation
+     * events of severity ERROR or DANGER that do not stop code generation. Only for modules of C2J test models, such as
+     * {@code test/codegen-generated-classes-test}; it is set in the module's POM and has no user property, so it cannot
+     * be turned on from the command line. When false, a model with suppressions fails generation.
+     */
+    @Parameter(defaultValue = "false")
+    private boolean allowSmithyValidationSuppressions;
+
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
 
@@ -102,6 +112,8 @@ public class GenerationMojo extends AbstractMojo {
         this.resourcesDirectory = buildDirectory.resolve("generated-resources").resolve("sdk-resources");
         this.testsDirectory = buildDirectory.resolve("generated-test-sources").resolve("sdk-tests");
 
+        checkSuppressionsAllowed();
+
         Path smithyBuildFile = project.getBasedir().toPath().resolve(SMITHY_BUILD_FILE);
         if (Files.exists(smithyBuildFile)) {
             new SmithyBuildGenerator(project, getLog())
@@ -115,6 +127,18 @@ public class GenerationMojo extends AbstractMojo {
 
         project.addCompileSourceRoot(sourcesDirectory.toFile().getAbsolutePath());
         project.addTestCompileSourceRoot(testsDirectory.toFile().getAbsolutePath());
+    }
+
+    /**
+     * Service modules (the children of {@code services/pom.xml}) are generated from real service models, which must
+     * validate without suppressions.
+     */
+    private void checkSuppressionsAllowed() throws MojoExecutionException {
+        if (allowSmithyValidationSuppressions && project.getModel().getParent() != null
+            && SERVICES_PARENT_ARTIFACT_ID.equals(project.getModel().getParent().getArtifactId())) {
+            throw new MojoExecutionException("allowSmithyValidationSuppressions is set for " + project.getArtifactId()
+                                             + ", a service module; it is only for modules of C2J test models");
+        }
     }
 
     /**
@@ -227,6 +251,7 @@ public class GenerationMojo extends AbstractMojo {
                             .buildDirectory(buildDirectory)
                             .writeIntermediateModel(writeIntermediateModel)
                             .emitValidationReport(writeValidationReport)
+                            .allowSmithyValidationSuppressions(allowSmithyValidationSuppressions)
                             .classLoader(CodegenPipeline.class.getClassLoader());
     }
 

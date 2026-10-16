@@ -399,6 +399,13 @@ public class CustomizationConfig {
     private List<String> disabledCustomizations = new ArrayList<>();
 
     /**
+     * Smithy validation events of severity ERROR or DANGER that do not stop the Codegen_Pipeline for this C2J model,
+     * each with a reason. Only for the C2J test models of modules that opt in; see
+     * {@link SmithyValidationSuppression}.
+     */
+    private List<SmithyValidationSuppression> smithyValidationSuppressions = new ArrayList<>();
+
+    /**
      * Trait ShapeIds added to, or removed from, the traits that generated Schemas carry (Requirement 9.5). Null means no
      * changes to the default Trait_Inclusion_Policy.
      */
@@ -1053,6 +1060,14 @@ public class CustomizationConfig {
 
     public void setDisabledCustomizations(List<String> disabledCustomizations) {
         this.disabledCustomizations = disabledCustomizations;
+    }
+
+    public List<SmithyValidationSuppression> getSmithyValidationSuppressions() {
+        return smithyValidationSuppressions;
+    }
+
+    public void setSmithyValidationSuppressions(List<SmithyValidationSuppression> smithyValidationSuppressions) {
+        this.smithyValidationSuppressions = smithyValidationSuppressions;
     }
 
     public SchemaTraitsConfig getSchemaTraits() {

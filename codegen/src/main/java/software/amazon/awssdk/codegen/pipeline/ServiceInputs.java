@@ -66,6 +66,7 @@ public final class ServiceInputs {
     private final Path buildDirectory;
     private final boolean writeIntermediateModel;
     private final boolean emitValidationReport;
+    private final boolean allowSmithyValidationSuppressions;
     private final ClassLoader classLoader;
 
     private ServiceInputs(Builder builder) {
@@ -88,6 +89,7 @@ public final class ServiceInputs {
         this.buildDirectory = Objects.requireNonNull(builder.buildDirectory, "buildDirectory");
         this.writeIntermediateModel = builder.writeIntermediateModel;
         this.emitValidationReport = builder.emitValidationReport;
+        this.allowSmithyValidationSuppressions = builder.allowSmithyValidationSuppressions;
         this.classLoader = builder.classLoader == null
                            ? CodegenPipeline.class.getClassLoader()
                            : builder.classLoader;
@@ -188,6 +190,15 @@ public final class ServiceInputs {
         return emitValidationReport;
     }
 
+    /**
+     * Whether the {@code smithyValidationSuppressions} of the customization config may be applied. False by default:
+     * a service whose customization config has suppressions then fails in stage 4. Only test modules allow them
+     * (see {@code SmithyValidationSuppressions}).
+     */
+    public boolean allowSmithyValidationSuppressions() {
+        return allowSmithyValidationSuppressions;
+    }
+
     /** The class loader whose Smithy trait definitions, validators and model files stage 4 discovers. */
     public ClassLoader classLoader() {
         return classLoader;
@@ -206,6 +217,7 @@ public final class ServiceInputs {
         private Path buildDirectory;
         private boolean writeIntermediateModel;
         private boolean emitValidationReport;
+        private boolean allowSmithyValidationSuppressions;
         private ClassLoader classLoader;
 
         private Builder() {
@@ -268,6 +280,14 @@ public final class ServiceInputs {
 
         public Builder emitValidationReport(boolean emitValidationReport) {
             this.emitValidationReport = emitValidationReport;
+            return this;
+        }
+
+        /**
+         * Allow the customization config's {@code smithyValidationSuppressions}. Only for test modules.
+         */
+        public Builder allowSmithyValidationSuppressions(boolean allowSmithyValidationSuppressions) {
+            this.allowSmithyValidationSuppressions = allowSmithyValidationSuppressions;
             return this;
         }
 

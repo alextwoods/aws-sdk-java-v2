@@ -26,6 +26,7 @@ import static software.amazon.awssdk.codegen.maven.plugin.SmithyTestModule.write
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.apache.maven.model.Parent;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
@@ -101,10 +102,47 @@ class GenerationMojoPipelineTest {
         assertThat(moduleDir.resolve("target/generated-sources")).doesNotExist();
     }
 
+    @Test
+    void smithyValidationSuppressions_applyOnlyWhenTheModuleAllowsThem() throws Exception {
+        // "Thing Service" is a DANGER SdkServiceId event.
+        writeC2jModel(C2J_MODEL.replace("\"serviceId\": \"Thing\"", "\"serviceId\": \"Thing Service\""));
+        write(moduleDir.resolve("src/main/resources/codegen-resources/customization.config"),
+              "{\"smithyValidationSuppressions\": [{\"id\": \"SdkServiceId\", \"reason\": \"A test service ID.\"}]}");
+
+        assertThatThrownBy(() -> mojo(project(moduleDir)).execute())
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("does not allow them");
+
+        GenerationMojo allowing = mojo(project(moduleDir));
+        setField(allowing, "allowSmithyValidationSuppressions", true);
+        allowing.execute();
+        assertThat(containsFileEndingWith(moduleDir.resolve("target/generated-sources/sdk"), "Client.java")).isTrue();
+    }
+
+    @Test
+    void serviceModule_cannotAllowSmithyValidationSuppressions() throws Exception {
+        writeC2jModel(C2J_MODEL);
+        MavenProject project = project(moduleDir);
+        Parent services = new Parent();
+        services.setArtifactId("services");
+        project.getModel().setParent(services);
+        GenerationMojo mojo = mojo(project);
+        setField(mojo, "allowSmithyValidationSuppressions", true);
+
+        assertThatThrownBy(mojo::execute)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("a service module");
+        assertThat(moduleDir.resolve("target/generated-sources")).doesNotExist();
+    }
+
     private void writeC2jModel() throws Exception {
+        writeC2jModel(C2J_MODEL);
+    }
+
+    private void writeC2jModel(String model) throws Exception {
         Path resources = moduleDir.resolve("src/main/resources/codegen-resources");
         Files.createDirectories(resources);
-        write(resources.resolve("service-2.json"), C2J_MODEL);
+        write(resources.resolve("service-2.json"), model);
     }
 
     private GenerationMojo mojo(MavenProject project) throws Exception {
