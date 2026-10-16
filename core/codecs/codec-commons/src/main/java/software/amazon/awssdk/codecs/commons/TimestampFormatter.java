@@ -17,10 +17,11 @@ package software.amazon.awssdk.codecs.commons;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
-import java.util.Locale;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.codecs.commons.internal.TimestampCodec;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.TraitKey;
 import software.amazon.awssdk.schema.serde.SerializationException;
@@ -162,9 +163,16 @@ public interface TimestampFormatter {
      */
     enum Prelude implements TimestampFormatter {
         /**
-         * {@code epoch-seconds}: seconds since the Unix epoch as a number, with millisecond precision.
+         * {@code epoch-seconds}: seconds since the Unix epoch as a number.
+         *
+         * <p>{@link #writeString(Instant)} writes the exact value: the whole seconds, then up to nine fraction digits
+         * with trailing zeros dropped, for example {@code 1398796238}, {@code 1398796238.1} or {@code 1.123456789}.
+         * This is the same text the JSON codec writes for an epoch-seconds timestamp.
          */
         EPOCH_SECONDS {
+            // '-' + 19 digits (Long.MIN_VALUE) + '.' + 9 nano digits = 30 bytes
+            private static final int MAX_EPOCH_SECONDS_LENGTH = 30;
+
             @Override
             public TimestampFormatTrait.Format format() {
                 return TimestampFormatTrait.Format.EPOCH_SECONDS;
@@ -172,12 +180,9 @@ public interface TimestampFormatter {
 
             @Override
             public String writeString(Instant value) {
-                double v = ((double) value.toEpochMilli()) / 1000;
-                // only write fractional seconds if we wouldn't write ".000"
-                if (v - (long) v >= 0.001d) {
-                    return String.format(Locale.ROOT, "%.3f", v);
-                }
-                return Long.toString((long) v);
+                byte[] buf = new byte[MAX_EPOCH_SECONDS_LENGTH];
+                int len = TimestampCodec.writeEpochSeconds(buf, 0, value.getEpochSecond(), value.getNano());
+                return new String(buf, 0, len, StandardCharsets.US_ASCII);
             }
 
             @Override
@@ -185,6 +190,12 @@ public interface TimestampFormatter {
                 if (strict) {
                     throw new TimestampSyntaxError(format(), ExpectedType.NUMBER, value);
                 }
+                byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+                Instant exact = TimestampCodec.parseEpochSeconds(bytes, 0, bytes.length);
+                if (exact != null) {
+                    return exact;
+                }
+                // Not a plain decimal with at most nine fraction digits; keep the lenient double parse.
                 return Instant.ofEpochMilli((long) (Double.parseDouble(value) * 1000));
             }
 

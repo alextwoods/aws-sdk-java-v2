@@ -57,6 +57,42 @@ public class TimestampFormatterTest {
         assertEquals("1718830549.002", TimestampFormatter.Prelude.EPOCH_SECONDS.writeString(fractionalTime));
     }
 
+    static Stream<Arguments> exactEpochSeconds() {
+        return Stream.of(
+            Arguments.of(Instant.ofEpochMilli(1422172800001L), "1422172800.001"),
+            Arguments.of(Instant.ofEpochSecond(1398796238, 100_000_000), "1398796238.1"),
+            Arguments.of(Instant.ofEpochSecond(1, 123_456_789), "1.123456789"),
+            Arguments.of(Instant.ofEpochSecond(1, 1), "1.000000001"),
+            Arguments.of(Instant.ofEpochSecond(1422172800, 1_500), "1422172800.0000015"),
+            Arguments.of(Instant.EPOCH, "0"),
+            Arguments.of(Instant.ofEpochSecond(-1), "-1"),
+            Arguments.of(Instant.ofEpochMilli(-1), "-0.001"),
+            Arguments.of(Instant.ofEpochMilli(-1500), "-1.5"),
+            Arguments.of(Instant.ofEpochSecond(-2, 1), "-1.999999999"),
+            Arguments.of(Instant.MAX, "31556889864403199.999999999"),
+            Arguments.of(Instant.MIN, "-31557014167219200"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("exactEpochSeconds")
+    void writeString_epochSeconds_keepsExactFractionWithoutTrailingZeros(Instant value, String expected) {
+        assertThat(Prelude.EPOCH_SECONDS.writeString(value)).isEqualTo(expected);
+    }
+
+    @ParameterizedTest
+    @MethodSource("exactEpochSeconds")
+    void readFromString_epochSecondsWriteStringOutput_roundTripsExactly(Instant value, String text) {
+        assertThat(Prelude.EPOCH_SECONDS.readFromString(text, false)).isEqualTo(value);
+    }
+
+    @Test
+    void readFromString_epochSecondsOutsideExactForm_fallsBackToDoubleParse() {
+        assertThat(Prelude.EPOCH_SECONDS.readFromString("1.5e3", false)).isEqualTo(Instant.ofEpochSecond(1500));
+        assertThat(Prelude.EPOCH_SECONDS.readFromString("1.0000000001", false)).isEqualTo(Instant.ofEpochSecond(1));
+        assertThatThrownBy(() -> Prelude.EPOCH_SECONDS.readFromString("abc", false))
+            .isInstanceOf(NumberFormatException.class);
+    }
+
     @Test
     void of_knownFormats_returnsPreludeFormatters() {
         assertThat(TimestampFormatter.of(Format.EPOCH_SECONDS)).isSameAs(Prelude.EPOCH_SECONDS);

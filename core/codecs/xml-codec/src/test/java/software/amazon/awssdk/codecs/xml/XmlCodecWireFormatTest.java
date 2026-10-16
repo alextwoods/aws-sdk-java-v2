@@ -237,7 +237,7 @@ public class XmlCodecWireFormatTest extends ProviderTestBase {
 
         assertThat(write(NATIVE, value))
             .isEqualTo("<Numbers><d>1</d><f>1.0E10</f><i>-7</i><big>1E+3</big><blob>AQ==</blob>"
-                       + "<epoch>1422172800.100</epoch><http>Tue, 29 Apr 2014 18:30:38 GMT</http>"
+                       + "<epoch>1422172800.1</epoch><http>Tue, 29 Apr 2014 18:30:38 GMT</http>"
                        + "<plain>2015-01-25T08:00:00Z</plain></Numbers>");
         assertThat(write(STAX, value)).contains("<d>1.0</d>");
         assertThat(roundtrip(NATIVE, value)).isEqualTo(value);
@@ -258,6 +258,18 @@ public class XmlCodecWireFormatTest extends ProviderTestBase {
     void epochSecondsTimestamps_wholeSecondsHaveNoFraction() {
         SchemaStruct value = SchemaStruct.builder(NUMBERS).set("epoch", Instant.parse("2015-01-25T08:00:00Z")).build();
         assertThat(write(NATIVE, value)).isEqualTo("<Numbers><epoch>1422172800</epoch></Numbers>");
+    }
+
+    @Test
+    void epochSecondsTimestamps_keepExactFraction() {
+        SchemaStruct millis = SchemaStruct.builder(NUMBERS).set("epoch", Instant.ofEpochMilli(1422172800001L)).build();
+        SchemaStruct nanos = SchemaStruct.builder(NUMBERS)
+                                         .set("epoch", Instant.ofEpochSecond(1422172800, 1_500)).build();
+        assertThat(write(NATIVE, millis)).isEqualTo("<Numbers><epoch>1422172800.001</epoch></Numbers>");
+        assertThat(write(NATIVE, nanos)).isEqualTo("<Numbers><epoch>1422172800.0000015</epoch></Numbers>");
+        assertThat(roundtrip(NATIVE, millis)).isEqualTo(millis);
+        assertThat(roundtrip(NATIVE, nanos)).isEqualTo(nanos);
+        assertThat(roundtrip(STAX, nanos)).isEqualTo(nanos);
     }
 
     @PerProvider
