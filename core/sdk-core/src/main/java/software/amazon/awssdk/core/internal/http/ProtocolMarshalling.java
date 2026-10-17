@@ -80,7 +80,9 @@ public final class ProtocolMarshalling {
      *     {@code software.amazon.awssdk.request} logger, with no member values (Requirements 40.4, 40.5);</li>
      *     <li>{@code beforeMarshalling} with the current interceptor context;</li>
      *     <li>{@code protocol.serializeRequest(operation, input, attributes, UNRESOLVED_URI)}, where the input is the
-     *     interceptor context's request (after {@code modifyRequest}); the time it takes is reported as
+     *     interceptor context's request (after {@code modifyRequest}), with an unset {@code @idempotencyToken} member
+     *     filled from {@code IdempotentUtils.getGenerator()} in a view of the input (the request itself is not
+     *     modified, see {@link IdempotencyTokens}); the time it takes is reported as
      *     {@link CoreMetric#MARSHALLING_DURATION};</li>
      *     <li>the request, and its body as a {@link RequestBody} when it has one, are set on the interceptor context, as
      *     the legacy handler does;</li>
@@ -184,7 +186,8 @@ public final class ProtocolMarshalling {
                                             + (input == null ? "is null" : input.getClass().getName()
                                                                            + " is not a schema-based request"));
         }
-        return protocol.serializeRequest(operation, (SerializableStruct) input, attributes, UNRESOLVED_URI);
+        SerializableStruct struct = IdempotencyTokens.fill(operation, (SerializableStruct) input);
+        return protocol.serializeRequest(operation, struct, attributes, UNRESOLVED_URI);
     }
 
     /**
