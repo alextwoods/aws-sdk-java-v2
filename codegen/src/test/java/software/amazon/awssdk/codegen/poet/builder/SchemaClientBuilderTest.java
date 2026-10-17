@@ -22,6 +22,8 @@ import com.squareup.javapoet.TypeSpec;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import software.amazon.awssdk.codegen.emitters.GeneratorTaskParams;
 import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
@@ -90,8 +92,8 @@ class SchemaClientBuilderTest {
     }
 
     @Test
-    void defaultProtocolWithoutAFactory_keepsTheLegacyBuilder() {
-        // awsJson1_0 has no ClientProtocolFactory in phase 2, so the builder gets no protocol selection.
+    void defaultProtocolWithOnlyAStagedFactory_keepsTheLegacyBuilder() {
+        // awsJson1_0 has a staged factory only: without stagedClientProtocols the builder gets no protocol selection.
         IntermediateModel model = model("@awsJson1_0\n@awsQuery");
 
         assertThat(ClientProtocolSelection.forModel(model)).isEmpty();
@@ -99,6 +101,43 @@ class SchemaClientBuilderTest {
         TypeSpec builderClass = new BaseClientBuilderClass(model).poetSpec();
         assertThat(methodNames(builderClass)).doesNotContain("protocol", "protocolSettings");
         assertThat(builderClass.toString()).doesNotContain("CLIENT_PROTOCOL");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "@awsJson1_0 @awsQuery, aws.protocols#awsJson1_0, AwsJson1Protocol",
+        "@awsJson1_1, aws.protocols#awsJson1_1, AwsJson11Protocol",
+        "@awsJson1_1 @awsJson1_0, aws.protocols#awsJson1_0, AwsJson1Protocol"
+    })
+    void stagedClientProtocols_selectsTheStagedFactory(String traits, String protocol, String protocolClass) {
+        IntermediateModel model = model(traits, stagedClientProtocols());
+
+        ClientProtocolSelection selection = ClientProtocolSelection.forModel(model).orElseThrow(AssertionError::new);
+
+        assertThat(selection.defaultProtocol()).isEqualTo(ShapeId.from(protocol));
+        assertThat(selection.factoryClass().reflectionName())
+            .isEqualTo("software.amazon.awssdk.protocols.client.awsjson." + protocolClass + "$Factory");
+        assertThat(methodNames(new BaseClientBuilderInterface(model).poetSpec())).contains("protocol");
+        assertThat(new BaseClientBuilderClass(model, schemaCodegen(model)).poetSpec().toString())
+            .contains("CLIENT_PROTOCOL_FACTORY, software.amazon.awssdk.protocols.client.awsjson." + protocolClass
+                      + ".Factory.INSTANCE");
+    }
+
+    @Test
+    void stagedClientProtocols_keepsRpcv2CborFirstAndChangesNothingWithoutAFactory() {
+        ClientProtocolSelection selection = ClientProtocolSelection.forModel(model("@awsJson1_0\n@rpcv2Cbor",
+                                                                                   stagedClientProtocols()))
+                                                                   .orElseThrow(AssertionError::new);
+        assertThat(selection.factoryClass().reflectionName())
+            .isEqualTo("software.amazon.awssdk.protocols.client.rpcv2.RpcV2CborProtocol$Factory");
+
+        assertThat(ClientProtocolSelection.forModel(model("@awsQuery", stagedClientProtocols()))).isEmpty();
+    }
+
+    private static CustomizationConfig stagedClientProtocols() {
+        CustomizationConfig config = CustomizationConfig.create();
+        config.setStagedClientProtocols(true);
+        return config;
     }
 
     private static SchemaCodegen schemaCodegen(IntermediateModel model) {
@@ -110,10 +149,15 @@ class SchemaClientBuilderTest {
     }
 
     private static IntermediateModel model(String protocolTraits) {
+        return model(protocolTraits, CustomizationConfig.create());
+    }
+
+    private static IntermediateModel model(String protocolTraits, CustomizationConfig config) {
         String src = "$version: \"2.0\"\nnamespace demo\n\n"
                      + "use aws.api#service\n"
                      + "use aws.auth#sigv4\n"
                      + "use aws.protocols#awsJson1_0\n"
+                     + "use aws.protocols#awsJson1_1\n"
                      + "use aws.protocols#awsQuery\n"
                      + "use smithy.protocols#rpcv2Cbor\n"
                      + "@service(sdkId: \"Demo\")\n"
@@ -131,7 +175,7 @@ class SchemaClientBuilderTest {
                             .unwrap();
         return new SmithyIntermediateModelBuilder(SmithyModels.builder()
                                                               .model(smithy)
-                                                              .customizationConfig(CustomizationConfig.create())
+                                                              .customizationConfig(config)
                                                               .build())
             .build();
     }

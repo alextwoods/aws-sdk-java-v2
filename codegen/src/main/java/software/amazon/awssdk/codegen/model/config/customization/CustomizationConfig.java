@@ -425,6 +425,15 @@ public class CustomizationConfig {
      */
     private String protocolTestSkips;
 
+    /**
+     * Whether a service built from a Smithy model may get runtime protocol selection, and so the schema-based call path,
+     * for a default protocol whose client protocol is implemented but not yet adopted by the prototype services (see
+     * {@code ClientProtocolSelection}; today {@code aws.protocols#awsJson1_0} and {@code aws.protocols#awsJson1_1}).
+     * Off by default. The Protocol_Test_Services set it so their protocol tests run on the new path before the prototype
+     * services move to it.
+     */
+    private boolean stagedClientProtocols;
+
     private CustomizationConfig() {
     }
 
@@ -1092,6 +1101,14 @@ public class CustomizationConfig {
 
     public void setProtocolTestSkips(String protocolTestSkips) {
         this.protocolTestSkips = protocolTestSkips;
+    }
+
+    public boolean isStagedClientProtocols() {
+        return stagedClientProtocols;
+    }
+
+    public void setStagedClientProtocols(boolean stagedClientProtocols) {
+        this.stagedClientProtocols = stagedClientProtocols;
     }
 
     /**

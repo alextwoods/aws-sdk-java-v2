@@ -36,20 +36,35 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * {@link ProtocolUtils#CLIENT_PROTOCOL_PRIORITY} order, and the {@code ClientProtocolFactory} the generated base
  * builder references for it.
  *
- * <p>A client gets runtime protocol selection only when the factory of its default protocol exists. In phase 2 that is
- * {@code smithy.protocols#rpcv2Cbor} alone; the other protocol modules gain their factories in phase 7, and each is
- * added to {@link #FACTORIES} then. Until that happens a service whose default protocol has no factory keeps the
- * legacy builder, because its calls still run on the legacy marshallers and would ignore a configured protocol.
+ * <p>A client gets runtime protocol selection only when the factory of its default protocol is available to it:
+ * <ul>
+ *     <li>{@link #FACTORIES}, available to every service: {@code smithy.protocols#rpcv2Cbor};</li>
+ *     <li>{@link #STAGED_FACTORIES}, available only to services whose {@code customization.config} sets
+ *     {@code stagedClientProtocols} (the Protocol_Test_Services): {@code aws.protocols#awsJson1_0} and
+ *     {@code aws.protocols#awsJson1_1}. Phase 4 adds each new protocol here so its protocol tests run on the new path,
+ *     while the prototype services that default to it keep the legacy path until phase 5 (tasks 9.2–9.4) moves them.</li>
+ * </ul>
+ * A service whose default protocol has no available factory keeps the legacy builder, because its calls still run on
+ * the legacy marshallers and would ignore a configured protocol. A runtime override ({@code protocol(...)}) of a client
+ * that has runtime protocol selection may use any registered factory, staged or not.
  */
 @SdkInternalApi
 public final class ClientProtocolSelection {
     private static final Map<ShapeId, ClassName> FACTORIES;
+    private static final Map<ShapeId, ClassName> STAGED_FACTORIES;
 
     static {
         Map<ShapeId, ClassName> factories = new HashMap<>();
         factories.put(ShapeId.from("smithy.protocols#rpcv2Cbor"),
                       ClassName.get("software.amazon.awssdk.protocols.client.rpcv2", "RpcV2CborProtocol", "Factory"));
         FACTORIES = Collections.unmodifiableMap(factories);
+
+        Map<ShapeId, ClassName> staged = new HashMap<>();
+        staged.put(ShapeId.from("aws.protocols#awsJson1_0"),
+                   ClassName.get("software.amazon.awssdk.protocols.client.awsjson", "AwsJson1Protocol", "Factory"));
+        staged.put(ShapeId.from("aws.protocols#awsJson1_1"),
+                   ClassName.get("software.amazon.awssdk.protocols.client.awsjson", "AwsJson11Protocol", "Factory"));
+        STAGED_FACTORIES = Collections.unmodifiableMap(staged);
     }
 
     private final ShapeId defaultProtocol;
@@ -72,7 +87,8 @@ public final class ClientProtocolSelection {
      *
      * @param model the intermediate model
      * @return the selection, or empty if the client is not generated with schema-based serialization
-     *     ({@link SchemaCodegen#isApplicable(IntermediateModel)}) or its default protocol has no factory yet
+     *     ({@link SchemaCodegen#isApplicable(IntermediateModel)}) or its default protocol has no factory available to
+     *     it: none yet, or a staged one without {@code stagedClientProtocols}
      * @throws IllegalArgumentException if the service is generated with schema-based serialization and declares none of
      *     the supported protocols ({@link ProtocolUtils#resolveDefaultClientProtocol})
      */
@@ -84,6 +100,9 @@ public final class ClientProtocolSelection {
         ServiceShape service = smithy.expectShape(model.serviceId(), ServiceShape.class);
         ShapeId selected = ProtocolUtils.resolveDefaultClientProtocol(ServiceIndex.of(smithy), service);
         ClassName factory = FACTORIES.get(selected);
+        if (factory == null && model.getCustomizationConfig().isStagedClientProtocols()) {
+            factory = STAGED_FACTORIES.get(selected);
+        }
         if (factory == null) {
             return Optional.empty();
         }

@@ -90,6 +90,16 @@
             <artifactId>rpcv2-cbor-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!--
+          The default client protocol of the awsJson1_0 and awsJson1_1 projections, which customization.config opts into
+          with stagedClientProtocols (task 7.11). Their operations with schema serde members run on the new pipeline path;
+          the others still use the aws-json-protocol marshallers.
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>annotations</artifactId>
