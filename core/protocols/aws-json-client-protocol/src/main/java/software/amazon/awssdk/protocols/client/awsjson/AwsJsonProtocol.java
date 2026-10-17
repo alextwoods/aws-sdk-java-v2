@@ -63,7 +63,8 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
  * it.
  *
  * <p>A 2xx response is deserialized from its body through the operation's output builder; an empty body is read as
- * {@code {}}, and content after the JSON value is rejected. Any other response is an error, whose discriminator is the
+ * {@code {}}, content after the JSON value is rejected, and the body of an output without members is not read. Any
+ * other response is an error, whose discriminator is the
  * {@code X-Amzn-Errortype} header, then the body's {@code __type} member, then its {@code code} member, or, for an
  * awsQueryCompatible service, first the code in the {@code x-amzn-query-error} header.
  *
@@ -172,16 +173,22 @@ abstract class AwsJsonProtocol extends HttpClientProtocol {
             throw new UnsupportedOperationException("Event stream output is not supported by " + id());
         }
         ShapeBuilder<O> builder = operation.outputBuilder();
-        ByteBuffer body = ResponseBodies.asByteBuffer(context, response);
-        // An empty body is read as "{}": an output with no members.
+        // Like earlier SDK clients, the body of an output without members is not read, so it need not be JSON. An empty
+        // body is read as "{}": an output with no members set.
+        if (!operation.outputSchema().members().isEmpty()) {
+            readBody(builder, ResponseBodies.asByteBuffer(context, response));
+        }
+        builder.errorCorrection();
+        return buildOutput(builder, response);
+    }
+
+    private void readBody(ShapeBuilder<?> builder, ByteBuffer body) {
         if (body.hasRemaining()) {
             // close() rejects content after the JSON value, as JsonCodec.deserializeShape does.
             try (ShapeDeserializer deserializer = codec.createDeserializer(body)) {
                 builder.deserialize(deserializer);
             }
         }
-        builder.errorCorrection();
-        return buildOutput(builder, response);
     }
 
     @Override

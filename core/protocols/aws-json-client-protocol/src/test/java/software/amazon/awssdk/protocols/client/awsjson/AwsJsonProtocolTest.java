@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.ERRORS;
 import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.GREET;
 import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.NO_INPUT;
+import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.NO_OUTPUT;
 import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.QUERY_COMPATIBLE_SETTINGS;
 import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.SETTINGS;
 import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.json;
@@ -189,6 +190,16 @@ class AwsJsonProtocolTest {
             assertThat(output.count()).isNull();
             assertThat(output.sdkHttpResponse()).isSameAs(response);
         }
+    }
+
+    @ParameterizedTest
+    @MethodSource("variants")
+    void bodyOfAnOutputWithoutMembersIsNotRead(Variant variant) {
+        // As earlier SDK clients (legacy-disposition.csv json-core-output.json#23).
+        NoInputRequest output = variant.create(SETTINGS).deserializeResponse(
+            NO_OUTPUT, new ExecutionAttributes(), ERRORS, null, response(200, utf8("THIS ISN'T JSON!!!")).build());
+
+        assertThat(output).isNotNull();
     }
 
     @ParameterizedTest

@@ -94,6 +94,19 @@ final class TestShapes {
                           .service(SERVICE)
                           .build();
 
+    /**
+     * An operation without input or output members, like a generated operation whose input and output are
+     * {@code smithy.api#Unit}.
+     */
+    static final SimpleApiOperation<NoInputRequest, NoInputRequest> NO_OUTPUT =
+        SimpleApiOperation.<NoInputRequest, NoInputRequest>builder()
+                          .schema(Schema.createOperation(ShapeId.fromParts(NS, "NoOutput")))
+                          .inputSchema(() -> NoInputRequest.SCHEMA)
+                          .outputSchema(() -> NoInputRequest.SCHEMA)
+                          .errorRegistry(ERRORS)
+                          .service(SERVICE)
+                          .build();
+
     private TestShapes() {
     }
 
