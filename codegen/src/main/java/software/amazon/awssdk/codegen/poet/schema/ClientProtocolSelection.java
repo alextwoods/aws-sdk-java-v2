@@ -40,9 +40,10 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * <ul>
  *     <li>{@link #FACTORIES}, available to every service: {@code smithy.protocols#rpcv2Cbor};</li>
  *     <li>{@link #STAGED_FACTORIES}, available only to services whose {@code customization.config} sets
- *     {@code stagedClientProtocols} (the Protocol_Test_Services): {@code aws.protocols#awsJson1_0} and
- *     {@code aws.protocols#awsJson1_1}. Phase 4 adds each new protocol here so its protocol tests run on the new path,
- *     while the prototype services that default to it keep the legacy path until phase 5 (tasks 9.2–9.4) moves them.</li>
+ *     {@code stagedClientProtocols} (the Protocol_Test_Services): {@code aws.protocols#awsJson1_0},
+ *     {@code aws.protocols#awsJson1_1} and {@code aws.protocols#restJson1}. Phase 4 adds each new protocol here so its
+ *     protocol tests run on the new path, while the prototype services that default to it keep the legacy path until
+ *     phase 5 (tasks 9.2–9.4) moves them.</li>
  * </ul>
  * A service whose default protocol has no available factory keeps the legacy builder, because its calls still run on
  * the legacy marshallers and would ignore a configured protocol. A runtime override ({@code protocol(...)}) of a client
@@ -64,6 +65,8 @@ public final class ClientProtocolSelection {
                    ClassName.get("software.amazon.awssdk.protocols.client.awsjson", "AwsJson1Protocol", "Factory"));
         staged.put(ShapeId.from("aws.protocols#awsJson1_1"),
                    ClassName.get("software.amazon.awssdk.protocols.client.awsjson", "AwsJson11Protocol", "Factory"));
+        staged.put(ShapeId.from("aws.protocols#restJson1"),
+                   ClassName.get("software.amazon.awssdk.protocols.client.restjson", "RestJsonClientProtocol", "Factory"));
         STAGED_FACTORIES = Collections.unmodifiableMap(staged);
     }
 

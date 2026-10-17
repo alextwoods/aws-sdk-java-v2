@@ -105,9 +105,11 @@ class SchemaClientBuilderTest {
 
     @ParameterizedTest
     @CsvSource({
-        "@awsJson1_0 @awsQuery, aws.protocols#awsJson1_0, AwsJson1Protocol",
-        "@awsJson1_1, aws.protocols#awsJson1_1, AwsJson11Protocol",
-        "@awsJson1_1 @awsJson1_0, aws.protocols#awsJson1_0, AwsJson1Protocol"
+        "@awsJson1_0 @awsQuery, aws.protocols#awsJson1_0, awsjson.AwsJson1Protocol",
+        "@awsJson1_1, aws.protocols#awsJson1_1, awsjson.AwsJson11Protocol",
+        "@awsJson1_1 @awsJson1_0, aws.protocols#awsJson1_0, awsjson.AwsJson1Protocol",
+        "@restJson1, aws.protocols#restJson1, restjson.RestJsonClientProtocol",
+        "@restJson1 @awsJson1_1, aws.protocols#awsJson1_1, awsjson.AwsJson11Protocol"
     })
     void stagedClientProtocols_selectsTheStagedFactory(String traits, String protocol, String protocolClass) {
         IntermediateModel model = model(traits, stagedClientProtocols());
@@ -116,11 +118,16 @@ class SchemaClientBuilderTest {
 
         assertThat(selection.defaultProtocol()).isEqualTo(ShapeId.from(protocol));
         assertThat(selection.factoryClass().reflectionName())
-            .isEqualTo("software.amazon.awssdk.protocols.client.awsjson." + protocolClass + "$Factory");
+            .isEqualTo("software.amazon.awssdk.protocols.client." + protocolClass + "$Factory");
         assertThat(methodNames(new BaseClientBuilderInterface(model).poetSpec())).contains("protocol");
         assertThat(new BaseClientBuilderClass(model, schemaCodegen(model)).poetSpec().toString())
-            .contains("CLIENT_PROTOCOL_FACTORY, software.amazon.awssdk.protocols.client.awsjson." + protocolClass
+            .contains("CLIENT_PROTOCOL_FACTORY, software.amazon.awssdk.protocols.client." + protocolClass
                       + ".Factory.INSTANCE");
+    }
+
+    @Test
+    void restJson1WithoutStagedClientProtocols_keepsTheLegacyBuilder() {
+        assertThat(ClientProtocolSelection.forModel(model("@restJson1"))).isEmpty();
     }
 
     @Test
@@ -159,6 +166,7 @@ class SchemaClientBuilderTest {
                      + "use aws.protocols#awsJson1_0\n"
                      + "use aws.protocols#awsJson1_1\n"
                      + "use aws.protocols#awsQuery\n"
+                     + "use aws.protocols#restJson1\n"
                      + "use smithy.protocols#rpcv2Cbor\n"
                      + "@service(sdkId: \"Demo\")\n"
                      + "@sigv4(name: \"demo\")\n"

@@ -100,6 +100,16 @@
             <artifactId>aws-json-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!--
+          The default client protocol of the restJson1 projections, also opted into with stagedClientProtocols (task 7.13).
+          Their operations with schema serde members run on the new pipeline path; the others still use the
+          aws-json-protocol marshallers.
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>annotations</artifactId>
