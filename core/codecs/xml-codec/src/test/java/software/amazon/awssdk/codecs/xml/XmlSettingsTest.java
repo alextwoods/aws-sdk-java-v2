@@ -111,8 +111,17 @@ public class XmlSettingsTest {
         assertThat(codec.settings()).isEqualTo(XmlSettings.REST_XML);
         assertThat(codec.wrapperElements()).isEmpty();
         assertThat(codec.strictRootElement()).isTrue();
+        assertThat(codec.xmlDeclaration()).isFalse();
         assertThat(codec.toString()).isEqualTo("XmlCodec(" + XmlSettings.REST_XML + ", wrapperElements=[], "
-                                               + "strictRootElement=true)");
+                                               + "strictRootElement=true, xmlDeclaration=false)");
+    }
+
+    @Test
+    void codecBuilder_xmlDeclaration_isReported() {
+        XmlCodec codec = XmlCodec.builder().xmlDeclaration(true).build();
+
+        assertThat(codec.xmlDeclaration()).isTrue();
+        assertThat(codec.toString()).endsWith("xmlDeclaration=true)");
     }
 
     @Test

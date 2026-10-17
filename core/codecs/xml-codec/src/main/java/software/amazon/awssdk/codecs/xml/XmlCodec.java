@@ -15,8 +15,10 @@
 
 package software.amazon.awssdk.codecs.xml;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -38,7 +40,7 @@ import software.amazon.awssdk.schema.traits.XmlNamespaceTrait;
  * <ul>
  *     <li>A shape is written as an element named by its {@code xmlName} trait or its shape name; members as child
  *     elements (or attributes, with {@code xmlAttribute}) named by their {@code xmlName} trait or member name. No XML
- *     declaration is written.</li>
+ *     declaration is written unless {@link Builder#xmlDeclaration(boolean)} is set.</li>
  *     <li>Lists wrap each item in a {@code <member>} element (or the list member's {@code xmlName}); maps wrap each
  *     entry in {@code <entry>} with {@code <key>} and {@code <value>} children. With {@code xmlFlattened}, the items or
  *     entries are written directly in the containing structure, named by the member. On read, flattened items may be
@@ -66,11 +68,16 @@ import software.amazon.awssdk.schema.traits.XmlNamespaceTrait;
 @SdkPublicApi
 public final class XmlCodec implements Codec {
 
+    private static final byte[] XML_DECLARATION =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>".getBytes(StandardCharsets.UTF_8);
+
     private final XmlSettings settings;
     private final XmlSerdeFactory factory;
+    private final boolean xmlDeclaration;
 
     private XmlCodec(Builder builder) {
         this.settings = builder.settings.build();
+        this.xmlDeclaration = builder.xmlDeclaration;
         this.factory = new XmlSerdeFactory(settings, builder.wrapperElements, builder.strictRootElement,
                                            builder.useNative);
     }
@@ -112,8 +119,30 @@ public final class XmlCodec implements Codec {
         return factory.strictRootElement();
     }
 
+    /**
+     * Returns whether {@link #createSerializer(OutputStream)} writes an XML declaration.
+     *
+     * @return whether an XML declaration is written
+     */
+    public boolean xmlDeclaration() {
+        return xmlDeclaration;
+    }
+
+    /**
+     * Creates a serializer that writes to {@code sink}. With {@link Builder#xmlDeclaration(boolean)}, the declaration
+     * {@code <?xml version="1.0" encoding="UTF-8"?>} is written to {@code sink} first, when the serializer is created.
+     *
+     * @throws SerializationException if the declaration cannot be written to {@code sink}
+     */
     @Override
     public ShapeSerializer createSerializer(OutputStream sink) {
+        if (xmlDeclaration) {
+            try {
+                sink.write(XML_DECLARATION);
+            } catch (IOException e) {
+                throw new SerializationException("Unable to write the XML declaration", e);
+            }
+        }
         return factory.createSerializer(sink);
     }
 
@@ -159,7 +188,7 @@ public final class XmlCodec implements Codec {
     @Override
     public String toString() {
         return "XmlCodec(" + settings + ", wrapperElements=" + factory.wrapperElements()
-               + ", strictRootElement=" + factory.strictRootElement() + ")";
+               + ", strictRootElement=" + factory.strictRootElement() + ", xmlDeclaration=" + xmlDeclaration + ")";
     }
 
     private static <T extends SerializableShape> T deserializeAndClose(ShapeDeserializer deserializer,
@@ -191,6 +220,7 @@ public final class XmlCodec implements Codec {
         private final XmlSettings.Builder settings = XmlSettings.builder();
         private List<String> wrapperElements = Collections.emptyList();
         private boolean strictRootElement = true;
+        private boolean xmlDeclaration;
         private boolean useNative = true;
 
         private Builder() {
@@ -306,6 +336,18 @@ public final class XmlCodec implements Codec {
          */
         public Builder strictRootElement(boolean strictRootElement) {
             this.strictRootElement = strictRootElement;
+            return this;
+        }
+
+        /**
+         * Sets whether each serializer starts its output with the XML declaration
+         * {@code <?xml version="1.0" encoding="UTF-8"?>}. Off by default; the earlier SDK restXml marshallers send it.
+         *
+         * @param xmlDeclaration true to write the declaration
+         * @return this builder
+         */
+        public Builder xmlDeclaration(boolean xmlDeclaration) {
+            this.xmlDeclaration = xmlDeclaration;
             return this;
         }
 

@@ -279,6 +279,19 @@ public class XmlCodecWireFormatTest extends ProviderTestBase {
     }
 
     @PerProvider
+    void serialize_withXmlDeclaration_writesItFirstAndReadsBack(boolean useNative) {
+        SchemaStruct value = SchemaStruct.builder(SIMPLE).set("stringMember", "x").build();
+        try (XmlCodec codec = XmlCodec.builder().useNative(useNative).xmlDeclaration(true).build()) {
+            String xml = codec.serializeToString(value);
+
+            assertThat(xml).isEqualTo("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                      + "<SimpleStruct><stringMember>x</stringMember></SimpleStruct>");
+            assertThat(codec.deserializeShape(xml.getBytes(StandardCharsets.UTF_8), SchemaStruct.builder(SIMPLE)))
+                .isEqualTo(value);
+        }
+    }
+
+    @PerProvider
     void defaultNamespace_declaredOnRootOnly(boolean useNative) {
         SchemaStruct value = SchemaStruct.builder(XML_BODY_REQUEST)
                                          .set("simpleStruct", SchemaStruct.builder(SIMPLE).set("stringMember", "x")
