@@ -190,7 +190,8 @@ class RequestSerializerTest {
                                                            .set("greedy", value)
                                                            .build());
         // Legacy restXml (PathMarshaller.GREEDY_WITH_SLASHES) keeps a leading '/' of a greedy label; legacy restJson1
-        // (PathMarshaller.GREEDY) trims it. The port keeps it, as smithy-java does.
+        // (PathMarshaller.GREEDY) trims it. By default the port keeps it, as smithy-java does; restJson1 sets
+        // trimGreedyLabelLeadingSlash.
         assertThat(request.encodedPath()).isEqualTo("/base/a/" + SdkHttpUtils.urlEncode(value) + "/b/"
                                                      + SdkHttpUtils.urlEncodeIgnoreSlashes(value));
     }
@@ -203,6 +204,26 @@ class RequestSerializerTest {
                                                            .set("greedy", "/x/y")
                                                            .build());
         assertThat(request.encodedPath()).isEqualTo("/base/a/p/b//x/y");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/x/y", "x/y", "//x", "/", "/a b"})
+    void trimGreedyLabelLeadingSlash_whenEnabled_matchesTheLegacyRestJsonGreedyMarshaller(String value) {
+        SdkHttpFullRequest request = HttpBinding.create().requestSerializer()
+                                                .operation(TestModel.LABEL_OPERATION)
+                                                .payloadCodec(CODEC)
+                                                .payloadMediaType("application/json")
+                                                .endpoint(ENDPOINT)
+                                                .trimGreedyLabelLeadingSlash(true)
+                                                .shapeValue(SchemaStruct.builder(TestModel.LABEL_INPUT)
+                                                                        .set("plain", "/p")
+                                                                        .set("greedy", value)
+                                                                        .build())
+                                                .serializeRequest();
+        // Legacy restJson1 PathMarshaller.GREEDY: urlEncodeIgnoreSlashes(trimLeadingSlash(value)). Non-greedy labels are
+        // unchanged.
+        String trimmed = value.startsWith("/") ? value.substring(1) : value;
+        assertThat(request.encodedPath()).isEqualTo("/base/a/%2Fp/b/" + SdkHttpUtils.urlEncodeIgnoreSlashes(trimmed));
     }
 
     @Test
@@ -250,11 +271,32 @@ class RequestSerializerTest {
         assertThat(request.matchingHeaders("X-Token")).containsExactly("");
         assertThat(request.rawQueryParameters().get("tag")).containsExactly("", "x");
         assertThat(request.getUri().getRawQuery()).contains("tag=&tag=x");
-        assertThat(request.firstMatchingHeader("X-Items")).hasValue(", x");
+        // Blank list header elements are left out, as the legacy HeaderMarshaller.LIST does.
+        assertThat(request.firstMatchingHeader("X-Items")).hasValue("x");
     }
 
     @Test
-    void emptyListsWriteNoHeaderOrParameter() {
+    void headerListLeavesOutNullAndBlankElementsLikeTheLegacyMarshaller() {
+        SdkHttpFullRequest request = serialize(ALL_OPERATION, SchemaStruct.builder(ALL_INPUT)
+                                                                          .set("bucket", "b")
+                                                                          .set("key", "k")
+                                                                          .set("items", Arrays.asList("a", null, "",
+                                                                                                      "  ", "b"))
+                                                                          .build());
+        // SdkRestJsonHeaderListSkipsNullAndEmptyElements
+        assertThat(request.matchingHeaders("X-Items")).containsExactly("a, b");
+
+        SdkHttpFullRequest allLeftOut = serialize(ALL_OPERATION, SchemaStruct.builder(ALL_INPUT)
+                                                                             .set("bucket", "b")
+                                                                             .set("key", "k")
+                                                                             .set("items", Arrays.asList(null, ""))
+                                                                             .build());
+        // SdkRestJsonHeaderListWithOnlyNullIsOmitted
+        assertThat(allLeftOut.headers()).doesNotContainKey("X-Items");
+    }
+
+    @Test
+    void emptyListsWriteAnEmptyHeaderAndNoParameter() {
         SdkHttpFullRequest request = serialize(ALL_OPERATION, SchemaStruct.builder(ALL_INPUT)
                                                                           .set("bucket", "b")
                                                                           .set("key", "k")
@@ -262,7 +304,8 @@ class RequestSerializerTest {
                                                                           .set("items", Collections.emptyList())
                                                                           .build());
         assertThat(request.rawQueryParameters()).doesNotContainKey("tag");
-        assertThat(request.headers()).doesNotContainKey("X-Items");
+        // RestJsonNullAndEmptyHeaders: an empty list is sent as an empty header value.
+        assertThat(request.matchingHeaders("X-Items")).containsExactly("");
     }
 
     @Test

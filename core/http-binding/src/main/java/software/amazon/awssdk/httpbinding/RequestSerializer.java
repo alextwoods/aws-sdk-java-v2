@@ -60,6 +60,7 @@ public final class RequestSerializer {
     private ByteBufferOutputStream bodyBuffer;
     private boolean omitEmptyPayload;
     private boolean allowEmptyStructPayload;
+    private boolean trimGreedyLabelLeadingSlash;
 
     RequestSerializer() {
     }
@@ -142,6 +143,19 @@ public final class RequestSerializer {
     }
 
     /**
+     * When true, one leading {@code /} of a greedy label value is dropped before it is encoded, so {@code /a/{key+}}
+     * with {@code key = "/b/c"} is sent as {@code /a/b/c} instead of {@code /a//b/c}. The earlier restJson1 marshallers
+     * of the SDK do this; restXml keeps the slash. SDK addition; the default is false.
+     *
+     * @param trimGreedyLabelLeadingSlash true to drop one leading {@code /}
+     * @return this serializer
+     */
+    public RequestSerializer trimGreedyLabelLeadingSlash(boolean trimGreedyLabelLeadingSlash) {
+        this.trimGreedyLabelLeadingSlash = trimGreedyLabelLeadingSlash;
+        return this;
+    }
+
+    /**
      * Sets the buffer the codec writes the body members into, for example one sized from earlier requests. SDK
      * addition.
      *
@@ -171,6 +185,7 @@ public final class RequestSerializer {
             new HttpBindingSerializer(operation.schema(), payloadCodec, payloadMediaType, false)
                 .omitEmptyPayload(omitEmptyPayload)
                 .allowEmptyStructPayload(allowEmptyStructPayload)
+                .trimGreedyLabelLeadingSlash(trimGreedyLabelLeadingSlash)
                 .bodyBuffer(bodyBuffer);
         shapeValue.serialize(serializer);
 

@@ -114,9 +114,10 @@ final class PathSerializer {
      * Writes the path for {@code struct}: literals as written in the pattern, labels percent-encoded (RFC 3986
      * unreserved set; {@code /} kept only for a greedy label).
      *
+     * @param trimGreedyLabelLeadingSlash true to drop one leading {@code /} of a greedy label value before encoding it
      * @throws SerializationException if a label member is null or an empty string (Requirement 15.7)
      */
-    String serialize(SerializableStruct struct) {
+    String serialize(SerializableStruct struct, boolean trimGreedyLabelLeadingSlash) {
         if (fastPath != null) {
             return fastPath;
         }
@@ -129,7 +130,11 @@ final class PathSerializer {
             } else {
                 Schema labelSchema = schema.member(operand);
                 String value = formatLabelValue(struct, labelSchema);
-                UrlEncoding.encodeUnreserved(value, sb, op == GREEDY_LABEL);
+                boolean greedy = op == GREEDY_LABEL;
+                if (greedy && trimGreedyLabelLeadingSlash && value.startsWith("/")) {
+                    value = value.substring(1);
+                }
+                UrlEncoding.encodeUnreserved(value, sb, greedy);
             }
         }
         return sb.toString();

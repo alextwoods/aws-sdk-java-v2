@@ -53,6 +53,7 @@ import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.serde.SpecificShapeSerializer;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.MediaTypeTrait;
+import software.amazon.awssdk.utils.StringUtils;
 
 /**
  * Generic HTTP binding serializer. It writes the bound members to the path, query string, headers, status code and
@@ -80,6 +81,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
 
     private boolean omitEmptyPayload;
     private boolean allowEmptyStructPayload;
+    private boolean trimGreedyLabelLeadingSlash;
     private HeaderErrorSerializer errorSerializer;
     private ByteBufferOutputStream bodyBuffer;
 
@@ -131,6 +133,15 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
      */
     public HttpBindingSerializer allowEmptyStructPayload(boolean allowEmptyStructPayload) {
         this.allowEmptyStructPayload = allowEmptyStructPayload;
+        return this;
+    }
+
+    /**
+     * When true, one leading {@code /} of a greedy label value is dropped before it is encoded, as the earlier restJson1
+     * marshallers do. SDK addition.
+     */
+    public HttpBindingSerializer trimGreedyLabelLeadingSlash(boolean trimGreedyLabelLeadingSlash) {
+        this.trimGreedyLabelLeadingSlash = trimGreedyLabelLeadingSlash;
         return this;
     }
 
@@ -334,7 +345,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
      * @throws software.amazon.awssdk.schema.serde.SerializationException if a label member is null or empty
      */
     public String path() {
-        return pathSerializer.serialize(outerStruct);
+        return pathSerializer.serialize(outerStruct, trimGreedyLabelLeadingSlash);
     }
 
     /**
@@ -553,7 +564,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
             int idx = schema.memberIndex();
             switch (activeBindings[idx]) {
                 case HEADER:
-                    HeaderListElementSerializer elements = new HeaderListElementSerializer(memberBindings[idx]);
+                    HeaderListElementSerializer elements = new HeaderListElementSerializer(memberBindings[idx], size);
                     consumer.accept(listState, elements);
                     elements.finish();
                     break;
@@ -610,14 +621,20 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
      * Collects the elements of a list-typed {@code @httpHeader} member into one header value joined with
      * {@code ", "} (Requirement 15.6). String elements are quoted when needed; timestamps use the element format
      * ({@code http-date} by default, written unquoted as Smithy specifies).
+     *
+     * <p>An empty list is sent as an empty header value ({@code RestJsonNullAndEmptyHeaders}). Null and blank string
+     * elements are left out, as the earlier SDK marshallers do, and a list whose elements are all left out sends no
+     * header.
      */
     private final class HeaderListElementSerializer extends SpecificShapeSerializer {
         private final MemberBinding binding;
+        private final int size;
         private final StringBuilder joined = new StringBuilder();
         private boolean any;
 
-        HeaderListElementSerializer(MemberBinding binding) {
+        HeaderListElementSerializer(MemberBinding binding, int size) {
             this.binding = binding;
+            this.size = size;
         }
 
         private void append(String value) {
@@ -629,7 +646,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
         }
 
         void finish() {
-            if (any) {
+            if (any || size == 0) {
                 putHeader(binding.wireName(), joined.toString());
             }
         }
@@ -681,6 +698,9 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
 
         @Override
         public void writeString(Schema schema, String value) {
+            if (StringUtils.isBlank(value)) {
+                return;
+            }
             append(quoteHeaderListElement(binding.hasMediaType() ? base64Utf8(value) : value));
         }
 

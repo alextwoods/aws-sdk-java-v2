@@ -90,14 +90,14 @@ class PathSerializerTest {
                               .putMember("v", memberTarget, HttpLabelTrait.INSTANCE)
                               .build();
         PathSerializer serializer = new PathSerializer(UriPattern.parse("/foo/{v}"), schema);
-        assertThat(serializer.serialize(struct(schema, Collections.singletonMap("v", value)))).isEqualTo(expected);
+        assertThat(serializer.serialize(struct(schema, Collections.singletonMap("v", value)), false)).isEqualTo(expected);
     }
 
     @Test
     void staticPathUsesTheLiteral() {
         Schema schema = Schema.structureBuilder(INPUT_ID).build();
-        assertThat(new PathSerializer(UriPattern.parse("/"), schema).serialize(null)).isEqualTo("/");
-        assertThat(new PathSerializer(UriPattern.parse("/a/b/"), schema).serialize(null)).isEqualTo("/a/b/");
+        assertThat(new PathSerializer(UriPattern.parse("/"), schema).serialize(null, false)).isEqualTo("/");
+        assertThat(new PathSerializer(UriPattern.parse("/a/b/"), schema).serialize(null, false)).isEqualTo("/a/b/");
     }
 
     @Test
@@ -110,7 +110,7 @@ class PathSerializerTest {
         Map<String, Object> values = new java.util.HashMap<>();
         values.put("a", "1/2");
         values.put("b", "3/4 5");
-        assertThat(serializer.serialize(struct(schema, values))).isEqualTo("/x/1%2F2/y/3/4%205");
+        assertThat(serializer.serialize(struct(schema, values), false)).isEqualTo("/x/1%2F2/y/3/4%205");
     }
 
     @Test
@@ -119,10 +119,10 @@ class PathSerializerTest {
                               .putMember("v", PreludeSchemas.STRING, HttpLabelTrait.INSTANCE)
                               .build();
         PathSerializer serializer = new PathSerializer(UriPattern.parse("/foo/{v}"), schema);
-        assertThatThrownBy(() -> serializer.serialize(struct(schema, Collections.emptyMap())))
+        assertThatThrownBy(() -> serializer.serialize(struct(schema, Collections.emptyMap()), false))
             .isInstanceOf(SerializationException.class)
             .hasMessage("Required httpLabel member `smithy.example#Input$v` must not be null");
-        assertThatThrownBy(() -> serializer.serialize(struct(schema, Collections.singletonMap("v", ""))))
+        assertThatThrownBy(() -> serializer.serialize(struct(schema, Collections.singletonMap("v", "")), false))
             .isInstanceOf(SerializationException.class)
             .hasMessage("Required httpLabel member `smithy.example#Input$v` must not be empty");
     }
