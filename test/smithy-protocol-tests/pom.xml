@@ -75,11 +75,6 @@
             <artifactId>aws-query-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>aws-xml-protocol</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
         <!--
           The default client protocol of the rpcv2Cbor projections, referenced by their generated base builders (task 3.23).
           Every rpcv2Cbor operation runs on the new pipeline path (task 3.34), so the legacy smithy-rpcv2-protocol
@@ -108,6 +103,16 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>rest-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!--
+          The default client protocol of the restXml projections, also opted into with stagedClientProtocols (task 7.14).
+          Every restXml operation has schema serde members and runs on the new pipeline path, so the legacy
+          aws-xml-protocol marshallers are no longer a dependency.
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-xml-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>

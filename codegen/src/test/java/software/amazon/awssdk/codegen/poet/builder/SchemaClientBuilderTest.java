@@ -109,7 +109,9 @@ class SchemaClientBuilderTest {
         "@awsJson1_1, aws.protocols#awsJson1_1, awsjson.AwsJson11Protocol",
         "@awsJson1_1 @awsJson1_0, aws.protocols#awsJson1_0, awsjson.AwsJson1Protocol",
         "@restJson1, aws.protocols#restJson1, restjson.RestJsonClientProtocol",
-        "@restJson1 @awsJson1_1, aws.protocols#awsJson1_1, awsjson.AwsJson11Protocol"
+        "@restJson1 @awsJson1_1, aws.protocols#awsJson1_1, awsjson.AwsJson11Protocol",
+        "@restXml, aws.protocols#restXml, restxml.RestXmlClientProtocol",
+        "@restXml @restJson1, aws.protocols#restJson1, restjson.RestJsonClientProtocol"
     })
     void stagedClientProtocols_selectsTheStagedFactory(String traits, String protocol, String protocolClass) {
         IntermediateModel model = model(traits, stagedClientProtocols());
@@ -125,9 +127,10 @@ class SchemaClientBuilderTest {
                       + ".Factory.INSTANCE");
     }
 
-    @Test
-    void restJson1WithoutStagedClientProtocols_keepsTheLegacyBuilder() {
-        assertThat(ClientProtocolSelection.forModel(model("@restJson1"))).isEmpty();
+    @ParameterizedTest
+    @CsvSource({"@restJson1", "@restXml"})
+    void restProtocolWithoutStagedClientProtocols_keepsTheLegacyBuilder(String traits) {
+        assertThat(ClientProtocolSelection.forModel(model(traits))).isEmpty();
     }
 
     @Test
@@ -167,6 +170,7 @@ class SchemaClientBuilderTest {
                      + "use aws.protocols#awsJson1_1\n"
                      + "use aws.protocols#awsQuery\n"
                      + "use aws.protocols#restJson1\n"
+                     + "use aws.protocols#restXml\n"
                      + "use smithy.protocols#rpcv2Cbor\n"
                      + "@service(sdkId: \"Demo\")\n"
                      + "@sigv4(name: \"demo\")\n"
