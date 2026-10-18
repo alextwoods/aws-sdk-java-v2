@@ -1,0 +1,2 @@
+software.amazon.awssdk.protocols.client.awsquery.AwsQueryClientProtocol$Factory
+software.amazon.awssdk.protocols.client.awsquery.Ec2QueryClientProtocol$Factory

@@ -29,9 +29,9 @@
     </description>
     <url>https://aws.amazon.com/sdkforjava</url>
     <dependencies>
-        <!-- The request serializer (task 7.5) needs only the schema serde interfaces and codec-commons'
-             public timestamp and base64 helpers. The client protocols (task 7.15) add http-client-protocol
-             and xml-codec for the transport and the XML responses. -->
+        <!-- The request serializer (task 7.5) uses the schema serde interfaces and codec-commons' public timestamp
+             and base64 helpers; the client protocols (task 7.15) add http-client-protocol, sdk-core and
+             http-client-spi for the transport and xml-codec for the XML responses. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>annotations</artifactId>
@@ -51,6 +51,41 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>codec-commons</artifactId>
             <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>xml-codec</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-client-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <!-- The test shapes extend AwsResponse and AwsServiceException, like generated classes. The main code
+                 reaches aws-core only through http-client-protocol. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- The tests move requests to an Endpoint. -->
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>

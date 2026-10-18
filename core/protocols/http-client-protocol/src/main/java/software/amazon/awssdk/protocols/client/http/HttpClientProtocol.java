@@ -271,8 +271,25 @@ public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRe
      * @return the built output
      */
     protected final <O extends SerializableStruct> O buildOutput(ShapeBuilder<O> builder, SdkHttpFullResponse response) {
+        return buildOutput(builder, response, null);
+    }
+
+    /**
+     * Like {@link #buildOutput(ShapeBuilder, SdkHttpFullResponse)}, for protocols that also send the request ID in the
+     * response body, such as awsQuery's {@code <ResponseMetadata><RequestId>}: a non-null {@code bodyRequestId} is the
+     * {@link AwsHeader#AWS_REQUEST_ID} of the response metadata instead of the request ID headers, as in
+     * {@code AwsQueryResponseHandler}.
+     *
+     * @param builder the output builder, already deserialized
+     * @param response the HTTP response
+     * @param bodyRequestId the request ID read from the body, or null to use the request ID headers
+     * @param <O> the output type
+     * @return the built output
+     */
+    protected final <O extends SerializableStruct> O buildOutput(ShapeBuilder<O> builder, SdkHttpFullResponse response,
+                                                                 String bodyRequestId) {
         if (builder instanceof AwsResponse.Builder) {
-            ((AwsResponse.Builder) builder).responseMetadata(responseMetadata(response));
+            ((AwsResponse.Builder) builder).responseMetadata(responseMetadata(response, bodyRequestId));
         }
         if (builder instanceof SdkResponse.Builder) {
             return SchemaSerdeSupport.buildResponse(builder, response);
@@ -281,12 +298,14 @@ public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRe
     }
 
     /**
-     * Same metadata as {@code AwsJsonResponseHandler} and {@code AwsXmlResponseHandler}.
+     * Same metadata as {@code AwsJsonResponseHandler}, {@code AwsXmlResponseHandler} and {@code AwsQueryResponseHandler}.
      */
-    private static AwsResponseMetadata responseMetadata(SdkHttpResponse response) {
+    private static AwsResponseMetadata responseMetadata(SdkHttpResponse response, String bodyRequestId) {
         Map<String, String> metadata = new HashMap<>();
         metadata.put(AwsHeader.AWS_REQUEST_ID,
-                     response.firstMatchingHeader(HttpResponseHandler.X_AMZN_REQUEST_ID_HEADERS).orElse(null));
+                     bodyRequestId != null
+                     ? bodyRequestId
+                     : response.firstMatchingHeader(HttpResponseHandler.X_AMZN_REQUEST_ID_HEADERS).orElse(null));
         response.forEachHeader((key, value) -> metadata.put(key, value.get(0)));
         return DefaultAwsResponseMetadata.create(metadata);
     }
