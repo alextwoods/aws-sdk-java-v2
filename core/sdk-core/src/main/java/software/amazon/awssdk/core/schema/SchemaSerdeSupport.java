@@ -23,6 +23,7 @@ import java.util.Map;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.SdkResponse;
+import software.amazon.awssdk.core.document.Document;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
@@ -32,8 +33,8 @@ import software.amazon.awssdk.utils.Validate;
 
 /**
  * Adapters between schema serde values and the {@code sdk-core} types of generated model classes (design A.6). The
- * schema module is below {@code sdk-core}, so it reads and writes blobs as {@link ByteBuffer}s; generated classes hold
- * {@link SdkBytes}.
+ * schema module is below {@code sdk-core}, so it reads and writes blobs as {@link ByteBuffer}s and documents as schema
+ * documents; generated classes hold {@link SdkBytes} and Legacy_Documents ({@link Document}).
  */
 @SdkProtectedApi
 public final class SchemaSerdeSupport {
@@ -90,6 +91,36 @@ public final class SchemaSerdeSupport {
         }
         int expected = Math.min(size, deserializer.containerPreAllocationLimit());
         return new LinkedHashMap<>(expected < 3 ? expected + 1 : (int) (expected / 0.75f + 1.0f));
+    }
+
+    /**
+     * Returns a schema {@link software.amazon.awssdk.schema.serde.document.Document} view of a Legacy_Document, for
+     * writing a {@code document} member with {@code ShapeSerializer.writeDocument}. Nothing is copied: list elements and
+     * map values are converted as they are read. A number keeps its {@link software.amazon.awssdk.core.SdkNumber};
+     * its {@code type()} is the first of integer, long, bigInteger, double and bigDecimal that holds the value exactly.
+     * {@link #unwrapLegacy} of the view returns {@code document}.
+     *
+     * @param document the Legacy_Document, or null
+     * @return the view, or null if {@code document} is null or a null document (a Smithy null)
+     */
+    public static software.amazon.awssdk.schema.serde.document.Document wrapLegacy(Document document) {
+        return LegacyDocumentViews.toSchema(document);
+    }
+
+    /**
+     * Returns a Legacy_Document view of a schema {@link software.amazon.awssdk.schema.serde.document.Document}, for the
+     * value of a {@code document} member read with {@code ShapeDeserializer.readDocument}. Nothing is copied: list
+     * elements and map values are converted as they are read, and the returned lists and maps are the SDK's own
+     * {@code ListDocument}/{@code MapDocument}, so {@code equals}, {@code hashCode} and {@code toString} are unchanged.
+     * Numbers become {@link software.amazon.awssdk.core.SdkNumber}s of the value's Java type; blobs become base64
+     * strings, timestamps epoch seconds with at most three fraction digits, structures and unions maps of their members.
+     * A view made by {@link #wrapLegacy} returns the original Legacy_Document.
+     *
+     * @param document the schema document, or null
+     * @return the Legacy_Document; {@code Document.fromNull()} if {@code document} is null (a Smithy null)
+     */
+    public static Document unwrapLegacy(software.amazon.awssdk.schema.serde.document.Document document) {
+        return LegacyDocumentViews.toLegacy(document);
     }
 
     /**
