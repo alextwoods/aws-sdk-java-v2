@@ -54,8 +54,8 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * Others keep the generated code of the previous generator, and their schema has no builder:
  * <ul>
  *     <li>event streams, events and shapes with streaming or {@code BigInteger} members (later tasks);</li>
- *     <li>a Smithy shape that several classes represent, unless they are all request and response classes, or a class
- *     whose members do not match its shape's members;</li>
+ *     <li>a Smithy shape that several classes represent, unless at most one of them is not a request or response
+ *     class, or a class whose members do not match its shape's members;</li>
  *     <li>members with the {@code ignoreDataTypeConversionFailures}, {@code attachPayloadTraitToMember} or
  *     {@code modelMarshallerDefaultValueSupplier} customizations, whose {@code SdkField} traits the schema cannot
  *     carry.</li>
@@ -70,7 +70,9 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * <p>When the IntermediateModel generates several request and response classes from one Smithy structure (a structure
  * that is both an operation's input and its output, or the input of two operations), each class holds its own copy of
  * the structure's schema with its own builder ({@link Entry#isSharedShape()}): one Root_Schema names one
- * {@code shapeClass}. The partition field of the structure keeps no builder.
+ * {@code shapeClass}. The partition field of the structure keeps no builder, unless a model class also represents the
+ * structure (for example a structure that is an operation's input and also a member target, task 7.21): that class
+ * owns the partition field, with its builder, and members that target the structure reference it.
  */
 @SdkInternalApi
 public final class SchemaSerdeModel {
@@ -130,8 +132,9 @@ public final class SchemaSerdeModel {
 
         Map<String, Entry> candidates = new TreeMap<>();
         for (Map.Entry<ShapeId, List<ShapeModel>> classes : classesByShape.entrySet()) {
-            boolean shared = classes.getValue().size() > 1;
-            if (shared && !classes.getValue().stream().allMatch(SchemaSerdeModel::isOperationShape)) {
+            boolean severalClasses = classes.getValue().size() > 1;
+            long otherClasses = classes.getValue().stream().filter(s -> !isOperationShape(s)).count();
+            if (severalClasses && otherClasses > 1) {
                 continue;
             }
             Shape smithyShape = smithy.getShape(classes.getKey()).orElse(null);
@@ -139,6 +142,8 @@ public final class SchemaSerdeModel {
                 continue;
             }
             for (ShapeModel shape : classes.getValue()) {
+                // The one class that is not a request or response class, if any, owns the partition field.
+                boolean shared = severalClasses && isOperationShape(shape);
                 Entry entry = candidate(shape, smithyShape, modelPackage, customization, shared);
                 if (entry != null) {
                     candidates.put(shape.getShapeName(), entry);
@@ -574,9 +579,10 @@ public final class SchemaSerdeModel {
         }
 
         /**
-         * @return whether the class is one of several request and response classes that the IntermediateModel
-         *     generates from one Smithy structure (for example a structure that is both an operation's input and its
-         *     output), so the class holds its own copy of the structure's schema, with its own builder
+         * @return whether the class is a request or response class of a Smithy structure that the IntermediateModel
+         *     generates several classes from (for example a structure that is both an operation's input and its
+         *     output, or also a model class), so the class holds its own copy of the structure's schema, with its own
+         *     builder
          */
         public boolean isSharedShape() {
             return sharedShape;

@@ -235,7 +235,8 @@ public final class SchemasGenerator {
      * as the structure's partition field, with the class's builder supplier and class. Member targets are read from
      * the partition fields, which are complete once their partition class is initialized.
      *
-     * @param shapeId a structure or union of the closure, which no member targets
+     * @param shapeId a structure or union of the closure. A member may target it only if a model class owns its
+     *     partition field ({@link SchemaSerdeModel#builderClass}); the copy's member then references that field
      * @param shapeClass the class that holds the copy
      * @return the initializer expression
      */
@@ -251,7 +252,7 @@ public final class SchemasGenerator {
                                                SchemaTraits.arguments(rootTraits(field)))
                                           .add("$>");
         for (MemberShape member : SchemaFieldOrder.edges(shape)) {
-            if (member.getTarget().equals(shapeId)) {
+            if (member.getTarget().equals(shapeId) && serde.builderClass(shapeId) == null) {
                 throw new IllegalStateException("Shape " + shapeId + " targets itself through " + member.getId());
             }
             code.add("\n.putMember($S, $L$L)", member.getMemberName(), qualifiedTarget(member),

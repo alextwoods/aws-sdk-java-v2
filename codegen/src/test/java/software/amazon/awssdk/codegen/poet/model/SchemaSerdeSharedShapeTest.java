@@ -68,25 +68,96 @@ class SchemaSerdeSharedShapeTest {
         + "structure Thing { Value: Integer }\n"
         + "list ThingList { member: Thing }\n";
 
+    /**
+     * A structure that is an operation's input and output and also a member target, of itself and of an error, as
+     * awsJson1_1 {@code KitchenSink} (task 7.21): the request and response classes and the model class all represent it.
+     */
+    private static final String SINK_PACKAGE = "software.amazon.awssdk.services.sink.model";
+    private static final String SINK_MODEL =
+        "$version: \"2.0\"\nnamespace sink\n\n"
+        + "use aws.api#service\n"
+        + "use smithy.protocols#rpcv2Cbor\n"
+        + "@service(sdkId: \"Sink\")\n"
+        + "@rpcv2Cbor\n"
+        + "service SinkService { version: \"2024-01-01\", operations: [Store, Fail] }\n"
+        + "operation Store { input: KitchenSink, output: KitchenSink }\n"
+        + "operation Fail { errors: [Failure] }\n"
+        + "structure KitchenSink { Name: String, Recursive: KitchenSink, Sinks: KitchenSinkList }\n"
+        + "list KitchenSinkList { member: KitchenSink }\n"
+        + "@error(\"client\")\n"
+        + "structure Failure { Data: KitchenSink }\n";
+
     private static IntermediateModel model;
     private static SchemaCodegen codegen;
+    private static IntermediateModel sinkModel;
+    private static SchemaCodegen sinkCodegen;
 
     @TempDir
     Path dir;
 
     @BeforeAll
     static void generate() {
+        model = intermediateModel(MODEL);
+        codegen = SchemaCodegen.create(model, TraitInitializers.load(SchemaSerdeSharedShapeTest.class.getClassLoader()));
+        sinkModel = intermediateModel(SINK_MODEL);
+        sinkCodegen = SchemaCodegen.create(sinkModel,
+                                           TraitInitializers.load(SchemaSerdeSharedShapeTest.class.getClassLoader()));
+    }
+
+    private static IntermediateModel intermediateModel(String source) {
         Model smithy = Model.assembler()
                             .discoverModels(Model.class.getClassLoader())
-                            .addUnparsedModel("shared.smithy", MODEL)
+                            .addUnparsedModel("model.smithy", source)
                             .assemble()
                             .unwrap();
-        model = new SmithyIntermediateModelBuilder(SmithyModels.builder()
-                                                               .model(smithy)
-                                                               .customizationConfig(CustomizationConfig.create())
-                                                               .build())
+        return new SmithyIntermediateModelBuilder(SmithyModels.builder()
+                                                              .model(smithy)
+                                                              .customizationConfig(CustomizationConfig.create())
+                                                              .build())
             .build();
-        codegen = SchemaCodegen.create(model, TraitInitializers.load(SchemaSerdeSharedShapeTest.class.getClassLoader()));
+    }
+
+    @Test
+    void create_withAStructureThatIsAlsoAMemberTarget_givesTheModelClassThePartitionSchema() {
+        SchemaSerdeModel serde = sinkCodegen.serde();
+        for (String name : new String[] {"StoreRequest", "StoreResponse"}) {
+            assertThat(serde.entry(name)).as(name).isNotNull();
+            assertThat(serde.entry(name).isSharedShape()).as(name).isTrue();
+        }
+        assertThat(serde.entry("KitchenSink")).isNotNull();
+        assertThat(serde.entry("KitchenSink").isSharedShape()).isFalse();
+        assertThat(serde.entry("FailureException")).isNotNull();
+        assertThat(serde.builderClass(ShapeId.from("sink#KitchenSink")).simpleName()).isEqualTo("KitchenSink");
+        assertThat(serde.operation(ShapeId.from("sink#Store"))).isNotNull();
+        assertThat(serde.operation(ShapeId.from("sink#Fail"))).isNotNull();
+    }
+
+    @Test
+    void generatedModelPackage_withAStructureThatIsAlsoAMemberTarget_buildsEachClassFromItsSchema() throws Exception {
+        try (URLClassLoader loader = RuntimeCompiler.classLoader(ModelPackageCompiler.compile(sinkModel, sinkCodegen,
+                                                                                              dir))) {
+            Class<?> requestClass = loader.loadClass(SINK_PACKAGE + ".StoreRequest");
+            Class<?> modelClass = loader.loadClass(SINK_PACKAGE + ".KitchenSink");
+            Schema requestSchema = (Schema) requestClass.getField("SCHEMA").get(null);
+            Schema modelSchema = (Schema) modelClass.getField("SCHEMA").get(null);
+
+            assertThat(requestSchema).isNotSameAs(modelSchema);
+            assertThat(requestSchema.id()).isEqualTo(modelSchema.id());
+            assertThat(requestSchema.shapeClass()).isSameAs(requestClass);
+            assertThat(modelSchema.shapeClass()).isSameAs(modelClass);
+            // Members that target the structure, including the copy's own recursive member, reference the model
+            // class's schema.
+            assertThat(requestSchema.member("Recursive").memberTarget()).isSameAs(modelSchema);
+            assertThat(modelSchema.member("Recursive").memberTarget()).isSameAs(modelSchema);
+            assertThat(requestSchema.member("Sinks").memberTarget().member("member").memberTarget())
+                .isSameAs(modelSchema);
+            assertThat(requestSchema.member("Recursive").memberTarget().shapeBuilder().build())
+                .isInstanceOf(modelClass);
+
+            Class<?> errorClass = loader.loadClass(SINK_PACKAGE + ".FailureException");
+            Schema errorSchema = (Schema) errorClass.getField("SCHEMA").get(null);
+            assertThat(errorSchema.member("Data").memberTarget()).isSameAs(modelSchema);
+        }
     }
 
     @Test
