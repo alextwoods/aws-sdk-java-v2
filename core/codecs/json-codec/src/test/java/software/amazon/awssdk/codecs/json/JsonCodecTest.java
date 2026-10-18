@@ -330,6 +330,41 @@ class JsonCodecTest {
         assertThat(readDocument("[1,null]").asList()).hasSize(2).containsNull();
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        "1.5, DOUBLE",
+        "-0.0, DOUBLE",
+        "0.30000000000000004, DOUBLE",
+        "123456789.012345, DOUBLE",
+        "1.00000000000000000001, BIG_DECIMAL",
+        "12345678901234567890.5, BIG_DECIMAL",
+        "1e400, BIG_DECIMAL",
+        "1e-400, BIG_DECIMAL",
+        "4.9e-324, DOUBLE"
+    })
+    void readDocument_nonIntegralNumber_isADoubleOnlyWhenTheDoubleHoldsTheValue(String json, ShapeType type) {
+        Document document = readDocument(json);
+
+        assertThat(document.type()).isEqualTo(type);
+        assertThat(document.asBigDecimal()).isEqualByComparingTo(new BigDecimal(json));
+    }
+
+    @Test
+    void readStruct_nullDocumentMember_isPassedToTheConsumer() {
+        Schema struct = Schema.structureBuilder(ShapeId.from("test#WithDocument"))
+                              .putMember("doc", PreludeSchemas.DOCUMENT)
+                              .putMember("name", PreludeSchemas.STRING)
+                              .build();
+        List<String> read = new ArrayList<>();
+
+        REST_JSON.createDeserializer("{\"doc\":null,\"name\":null}".getBytes(StandardCharsets.UTF_8))
+                 .readStruct(struct, read, (members, member, de) -> {
+                     members.add(member.memberName() + "=" + de.readDocument());
+                 });
+
+        assertThat(read).containsExactly("doc=null");
+    }
+
     @Test
     void oneCodec_usedConcurrently_givesEachThreadItsOwnResult() throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(8);

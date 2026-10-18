@@ -428,8 +428,9 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
                     && localBuf[p] == 'n'
                     && localBuf[p + 1] == 'u'
                     && localBuf[p + 2] == 'l'
-                    && localBuf[p + 3] == 'l') {
-                    // A null member is treated as absent.
+                    && localBuf[p + 3] == 'l'
+                    && member.type() != ShapeType.DOCUMENT) {
+                    // A null member is treated as absent, except a document member, whose null is a null document.
                     p += 4;
                 } else {
                     this.pos = p;
@@ -548,8 +549,9 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
 
     /**
      * Reads any JSON value as a schema-free SDK {@link Document}: {@code null} as null, booleans, strings, integers as
-     * {@code INTEGER}, {@code LONG} or {@code BIG_INTEGER} documents by magnitude, other numbers as {@code DOUBLE},
-     * arrays as list documents (null elements kept) and objects as map documents in input order.
+     * {@code INTEGER}, {@code LONG} or {@code BIG_INTEGER} documents by magnitude, other numbers as {@code DOUBLE}, or
+     * as {@code BIG_DECIMAL} when a double does not hold the exact value, arrays as list documents (null elements kept)
+     * and objects as map documents in input order.
      *
      * <p>smithy-java returns {@code JsonDocuments}, which also convert strings to blobs and timestamps, resolve
      * {@code __type} discriminators and deserialize into shapes. Those land with the Protocol_Documents.
@@ -846,7 +848,7 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
 
         Document number;
         if (isFloat) {
-            number = Document.of(parsedDouble);
+            number = floatingPointDocument(newPos);
         } else {
             int len = newPos - pos;
             int digitStart = buf[pos] == '-' ? pos + 1 : pos;
@@ -861,6 +863,49 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
         }
         pos = newPos;
         return number;
+    }
+
+    /**
+     * A number with a fraction or exponent, already parsed into {@code parsedDouble}: a double document when the double
+     * holds the number's value, else a big decimal document of the exact value (Requirement 18.5), so that a document
+     * does not lose digits, overflow to infinity or underflow to zero. A number with at most 15 significant digits in the
+     * normal double range always round-trips through a double, so only longer or extreme numbers build a
+     * {@link BigDecimal}.
+     */
+    private Document floatingPointDocument(int numberEnd) {
+        double value = parsedDouble;
+        if (Double.isFinite(value) && Math.abs(value) >= Double.MIN_NORMAL
+            && significantDigits(buf, pos, numberEnd) <= 15) {
+            return Document.of(value);
+        }
+        BigDecimal exact;
+        try {
+            exact = new BigDecimal(new String(buf, pos, numberEnd - pos, StandardCharsets.US_ASCII));
+        } catch (NumberFormatException e) {
+            // The exponent does not fit a BigDecimal scale: keep the double (infinity or zero), as smithy-java does.
+            return Document.of(value);
+        }
+        if (Double.isFinite(value) && BigDecimal.valueOf(value).compareTo(exact) == 0) {
+            return Document.of(value);
+        }
+        return Document.of(exact);
+    }
+
+    /**
+     * Counts the digits of a JSON number's integer and fraction parts, without leading zeros.
+     */
+    private static int significantDigits(byte[] bytes, int start, int end) {
+        int digits = 0;
+        for (int i = start; i < end; i++) {
+            byte b = bytes[i];
+            if (b == 'e' || b == 'E') {
+                break;
+            }
+            if (b >= '1' && b <= '9' || b == '0' && digits > 0) {
+                digits++;
+            }
+        }
+        return digits;
     }
 
     private static Document integralDocument(long value) {
