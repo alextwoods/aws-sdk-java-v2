@@ -45,6 +45,9 @@ import software.amazon.awssdk.codegen.schema.SchemaRuntimeType;
 import software.amazon.awssdk.core.SdkField;
 import software.amazon.awssdk.core.util.SdkAutoConstructList;
 import software.amazon.awssdk.core.util.SdkAutoConstructMap;
+import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.neighbor.Walker;
+import software.amazon.smithy.model.shapes.Shape;
 
 /**
  * The schema serde members of a generated model class and its builder (design A.6, task 3.7): the {@code SCHEMA} and
@@ -76,9 +79,11 @@ final class SchemaSerdeClassSpec {
     private final ShapeModel shape;
     private final ClassName className;
     private final ClassName builderImpl;
+    private final Model smithy;
 
     SchemaSerdeClassSpec(IntermediateModel model, SchemaSerdeModel serde, Entry entry) {
         this.entry = entry;
+        this.smithy = model.smithyModel();
         this.serde = serde;
         this.sharedSerde = new SharedSerdeSpec(serde, model);
         this.typeProvider = new TypeProvider(model);
@@ -285,9 +290,16 @@ final class SchemaSerdeClassSpec {
      * Whether {@code toString()} delegates to {@code ToStringSerializer}. Not for a class with a sensitive list or map
      * member: the previous generated {@code toString} wrote the redaction placeholder for such a member even when it
      * was never set, while {@code serializeMembers} does not write an unset collection, so the class keeps the
-     * previous {@code toString} to keep its output identical.
+     * previous {@code toString} to keep its output identical. Nor for a class that reaches a {@code document}, directly
+     * or through lists, maps and structures: the previous {@code toString} wrote a Legacy_Document number with its
+     * {@code SdkNumber} string ({@code 1.50}), while {@code ToStringSerializer} writes the schema document's value
+     * ({@code 1.5}).
      */
     boolean usesToStringSerializer() {
+        if (entry.shapeId() != null && new Walker(smithy).walkShapes(smithy.expectShape(entry.shapeId()))
+                                                            .stream().anyMatch(Shape::isDocumentShape)) {
+            return false;
+        }
         for (MemberModel member : shape.getNonStreamingMembers()) {
             if (member.isSensitive() && member.getAutoConstructClassIfExists().isPresent()) {
                 return false;

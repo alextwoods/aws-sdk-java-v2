@@ -37,6 +37,7 @@ public enum ValueKind {
     BIG_DECIMAL("BigDecimal"),
     BLOB("Blob"),
     TIMESTAMP("Timestamp"),
+    DOCUMENT("Document"),
     STRUCTURE("Struct"),
     LIST("List"),
     MAP("Map");
@@ -49,8 +50,8 @@ public enum ValueKind {
 
     /**
      * @param member a member, list element or map value
-     * @return its kind, or null if schema serde does not support its type (documents, {@code BigInteger}, streams, maps
-     *     with non-string keys and collections of those)
+     * @return its kind, or null if schema serde does not support its type ({@code BigInteger}, streams, maps with
+     *     non-string keys and collections of those)
      */
     public static ValueKind of(MemberModel member) {
         if (member.isList()) {
@@ -87,6 +88,8 @@ public enum ValueKind {
                 return BLOB;
             case "Instant":
                 return TIMESTAMP;
+            case "Document":
+                return DOCUMENT;
             default:
                 return null;
         }
@@ -100,6 +103,9 @@ public enum ValueKind {
         switch (this) {
             case BLOB:
                 return CodeBlock.of("$N.writeBlob($L, $L.asByteBuffer())", serializer, schema, value);
+            case DOCUMENT:
+                return CodeBlock.of("$N.writeDocument($L, $T.wrapLegacy($L))", serializer, schema,
+                                    SchemaRuntimeType.SCHEMA_SERDE_SUPPORT, value);
             case LIST:
             case MAP:
                 return CodeBlock.of("$N.write$L($L, $L, $L.size(), $L)", serializer, method, schema, value, value, writer);
@@ -117,6 +123,9 @@ public enum ValueKind {
             case BLOB:
                 return CodeBlock.of("$T.toSdkBytes($N.readBlob($L))", SchemaRuntimeType.SCHEMA_SERDE_SUPPORT,
                                     deserializer, schema);
+            case DOCUMENT:
+                return CodeBlock.of("$T.unwrapLegacy($N.readDocument())", SchemaRuntimeType.SCHEMA_SERDE_SUPPORT,
+                                    deserializer);
             case STRUCTURE:
                 return CodeBlock.of("$T.newShapeBuilder().deserializeMember($N, $L).build()", type, deserializer, schema);
             case LIST:

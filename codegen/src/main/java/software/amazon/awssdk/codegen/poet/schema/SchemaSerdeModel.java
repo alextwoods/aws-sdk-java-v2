@@ -53,7 +53,7 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * <p>A class gets schema serde members when the class, every member's type and every structure it reaches support it.
  * Others keep the generated code of the previous generator, and their schema has no builder:
  * <ul>
- *     <li>event streams, events and shapes with streaming, document or {@code BigInteger} members (later tasks);</li>
+ *     <li>event streams, events and shapes with streaming or {@code BigInteger} members (later tasks);</li>
  *     <li>a Smithy shape that several classes represent, unless they are all request and response classes, or a class
  *     whose members do not match its shape's members;</li>
  *     <li>members with the {@code ignoreDataTypeConversionFailures}, {@code attachPayloadTraitToMember} or

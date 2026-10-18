@@ -158,11 +158,7 @@ public final class SharedSerdeSpec {
                                            .addModifiers(Modifier.PUBLIC)
                                            .addParameter(listType, "values")
                                            .addParameter(SchemaRuntimeType.SHAPE_DESERIALIZER, DESERIALIZER)
-                                           .beginControlFlow("if ($N.isNull())", DESERIALIZER)
-                                           .addCode(readNull("values.add($L)", kind, sparse))
-                                           .nextControlFlow("else")
-                                           .addStatement("values.add($L)", read(kind, element, memberSchema))
-                                           .endControlFlow()
+                                           .addCode(readValue("values.add($L)", kind, element, memberSchema, sparse))
                                            .build();
         MethodSpec read = MethodSpec.methodBuilder("read")
                                     .addModifiers(Modifier.STATIC)
@@ -221,11 +217,7 @@ public final class SharedSerdeSpec {
                                          .addParameter(mapType, "values")
                                          .addParameter(String.class, "key")
                                          .addParameter(SchemaRuntimeType.SHAPE_DESERIALIZER, DESERIALIZER)
-                                         .beginControlFlow("if ($N.isNull())", DESERIALIZER)
-                                         .addCode(readNull("values.put(key, $L)", kind, sparse))
-                                         .nextControlFlow("else")
-                                         .addStatement("values.put(key, $L)", read(kind, value, valueSchema))
-                                         .endControlFlow()
+                                         .addCode(readValue("values.put(key, $L)", kind, value, valueSchema, sparse))
                                          .build();
         MethodSpec read = MethodSpec.methodBuilder("read")
                                     .addModifiers(Modifier.STATIC)
@@ -297,6 +289,23 @@ public final class SharedSerdeSpec {
                         .addStatement("$N.writeNull($L)", SERIALIZER, schema)
                         .nextControlFlow("else")
                         .addStatement("$L", kind.write(SERIALIZER, schema, CodeBlock.of("value"), writerOf(kind, element)))
+                        .endControlFlow()
+                        .build();
+    }
+
+    /**
+     * Reads a list element or map value, null or not. A document reads a null itself: it becomes
+     * {@code Document.fromNull()}, as in the legacy unmarshallers.
+     */
+    private CodeBlock readValue(String addFormat, ValueKind kind, MemberModel element, CodeBlock schema, boolean sparse) {
+        if (kind == ValueKind.DOCUMENT) {
+            return CodeBlock.builder().addStatement(addFormat, read(kind, element, schema)).build();
+        }
+        return CodeBlock.builder()
+                        .beginControlFlow("if ($N.isNull())", DESERIALIZER)
+                        .add(readNull(addFormat, kind, sparse))
+                        .nextControlFlow("else")
+                        .addStatement(addFormat, read(kind, element, schema))
                         .endControlFlow()
                         .build();
     }
