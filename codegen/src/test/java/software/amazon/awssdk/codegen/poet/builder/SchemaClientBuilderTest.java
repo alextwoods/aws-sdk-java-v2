@@ -111,7 +111,11 @@ class SchemaClientBuilderTest {
         "@restJson1, aws.protocols#restJson1, restjson.RestJsonClientProtocol",
         "@restJson1 @awsJson1_1, aws.protocols#awsJson1_1, awsjson.AwsJson11Protocol",
         "@restXml, aws.protocols#restXml, restxml.RestXmlClientProtocol",
-        "@restXml @restJson1, aws.protocols#restJson1, restjson.RestJsonClientProtocol"
+        "@restXml @restJson1, aws.protocols#restJson1, restjson.RestJsonClientProtocol",
+        "@awsQuery, aws.protocols#awsQuery, awsquery.AwsQueryClientProtocol",
+        "@ec2Query, aws.protocols#ec2Query, awsquery.Ec2QueryClientProtocol",
+        "@ec2Query @awsQuery, aws.protocols#awsQuery, awsquery.AwsQueryClientProtocol",
+        "@awsQuery @restXml, aws.protocols#restXml, restxml.RestXmlClientProtocol"
     })
     void stagedClientProtocols_selectsTheStagedFactory(String traits, String protocol, String protocolClass) {
         IntermediateModel model = model(traits, stagedClientProtocols());
@@ -128,20 +132,18 @@ class SchemaClientBuilderTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"@restJson1", "@restXml"})
-    void restProtocolWithoutStagedClientProtocols_keepsTheLegacyBuilder(String traits) {
+    @CsvSource({"@restJson1", "@restXml", "@awsQuery", "@ec2Query"})
+    void stagedProtocolWithoutStagedClientProtocols_keepsTheLegacyBuilder(String traits) {
         assertThat(ClientProtocolSelection.forModel(model(traits))).isEmpty();
     }
 
     @Test
-    void stagedClientProtocols_keepsRpcv2CborFirstAndChangesNothingWithoutAFactory() {
+    void stagedClientProtocols_keepsRpcv2CborFirst() {
         ClientProtocolSelection selection = ClientProtocolSelection.forModel(model("@awsJson1_0\n@rpcv2Cbor",
                                                                                    stagedClientProtocols()))
                                                                    .orElseThrow(AssertionError::new);
         assertThat(selection.factoryClass().reflectionName())
             .isEqualTo("software.amazon.awssdk.protocols.client.rpcv2.RpcV2CborProtocol$Factory");
-
-        assertThat(ClientProtocolSelection.forModel(model("@awsQuery", stagedClientProtocols()))).isEmpty();
     }
 
     private static CustomizationConfig stagedClientProtocols() {
@@ -169,6 +171,7 @@ class SchemaClientBuilderTest {
                      + "use aws.protocols#awsJson1_0\n"
                      + "use aws.protocols#awsJson1_1\n"
                      + "use aws.protocols#awsQuery\n"
+                     + "use aws.protocols#ec2Query\n"
                      + "use aws.protocols#restJson1\n"
                      + "use aws.protocols#restXml\n"
                      + "use smithy.protocols#rpcv2Cbor\n"

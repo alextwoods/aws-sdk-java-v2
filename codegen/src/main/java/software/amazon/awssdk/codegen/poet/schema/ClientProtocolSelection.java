@@ -41,9 +41,10 @@ import software.amazon.smithy.model.shapes.ShapeId;
  *     <li>{@link #FACTORIES}, available to every service: {@code smithy.protocols#rpcv2Cbor};</li>
  *     <li>{@link #STAGED_FACTORIES}, available only to services whose {@code customization.config} sets
  *     {@code stagedClientProtocols} (the Protocol_Test_Services): {@code aws.protocols#awsJson1_0},
- *     {@code aws.protocols#awsJson1_1}, {@code aws.protocols#restJson1} and {@code aws.protocols#restXml}. Phase 4
- *     adds each new protocol here so its protocol tests run on the new path, while the prototype services that default
- *     to it keep the legacy path until phase 5 (tasks 9.2–9.4) moves them.</li>
+ *     {@code aws.protocols#awsJson1_1}, {@code aws.protocols#restJson1}, {@code aws.protocols#restXml},
+ *     {@code aws.protocols#awsQuery} and {@code aws.protocols#ec2Query}. Phase 4 adds each new protocol here so its
+ *     protocol tests run on the new path, while the prototype services that default to it keep the legacy path until
+ *     phase 5 (tasks 9.2–9.4) moves them.</li>
  * </ul>
  * A service whose default protocol has no available factory keeps the legacy builder, because its calls still run on
  * the legacy marshallers and would ignore a configured protocol. A runtime override ({@code protocol(...)}) of a client
@@ -69,6 +70,10 @@ public final class ClientProtocolSelection {
                    ClassName.get("software.amazon.awssdk.protocols.client.restjson", "RestJsonClientProtocol", "Factory"));
         staged.put(ShapeId.from("aws.protocols#restXml"),
                    ClassName.get("software.amazon.awssdk.protocols.client.restxml", "RestXmlClientProtocol", "Factory"));
+        staged.put(ShapeId.from("aws.protocols#awsQuery"),
+                   ClassName.get("software.amazon.awssdk.protocols.client.awsquery", "AwsQueryClientProtocol", "Factory"));
+        staged.put(ShapeId.from("aws.protocols#ec2Query"),
+                   ClassName.get("software.amazon.awssdk.protocols.client.awsquery", "Ec2QueryClientProtocol", "Factory"));
         STAGED_FACTORIES = Collections.unmodifiableMap(staged);
     }
 
