@@ -17,7 +17,9 @@ package software.amazon.awssdk.codegen.poet.schema;
 
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +28,7 @@ import java.util.TreeSet;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.OperationModel;
+import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
@@ -41,15 +44,23 @@ import software.amazon.smithy.model.shapes.ShapeId;
  */
 @SdkInternalApi
 public final class SchemaOperationRouting {
+    /**
+     * The protocols whose client protocol binds a {@code @streaming} blob {@code @httpPayload} member.
+     */
+    private static final Set<ShapeId> HTTP_BINDING_PROTOCOLS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+        ShapeId.from("aws.protocols#restJson1"), ShapeId.from("aws.protocols#restXml"))));
+
     private final ClassName operationsClass;
     private final Map<ShapeId, String> operationFields;
     private final SchemaSerdeModel serde;
     private final Set<ShapeId> errorsWithoutSerde;
+    private final ShapeId defaultProtocol;
 
-    private SchemaOperationRouting(OperationsClassSpec operations, SchemaSerdeModel serde) {
+    private SchemaOperationRouting(OperationsClassSpec operations, SchemaSerdeModel serde, ShapeId defaultProtocol) {
         this.operationsClass = operations.className();
         this.operationFields = operations.operationFields();
         this.serde = serde;
+        this.defaultProtocol = defaultProtocol;
         Set<ShapeId> withSerde = new HashSet<>();
         for (SchemaSerdeModel.Entry entry : serde.entries().values()) {
             if (entry.shapeId() != null) {
@@ -68,10 +79,13 @@ public final class SchemaOperationRouting {
      *     runtime protocol selection or no schemas)
      */
     public static Optional<SchemaOperationRouting> forClient(IntermediateModel model, SchemaCodegen schemaCodegen) {
-        if (schemaCodegen == null || !ClientProtocolSelection.forModel(model).isPresent()) {
+        if (schemaCodegen == null) {
             return Optional.empty();
         }
-        return Optional.of(new SchemaOperationRouting(schemaCodegen.operations(), schemaCodegen.serde()));
+        return ClientProtocolSelection.forModel(model)
+                                      .map(selection -> new SchemaOperationRouting(schemaCodegen.operations(),
+                                                                                   schemaCodegen.serde(),
+                                                                                   selection.defaultProtocol()));
     }
 
     /**
@@ -110,9 +124,9 @@ public final class SchemaOperationRouting {
      *
      * <ul>
      *     <li>Event-stream input or output: the client protocols reject event streams (task 7.20).</li>
-     *     <li>Streaming input: the new path binds no streaming request body yet (task 7.19).</li>
-     *     <li>Streaming output: the client protocols cannot yet deserialize only the bound members of a streaming
-     *     output, and {@code AsyncApiCallPipeline} rejects {@code AsyncResponseTransformer} (task 7.19).</li>
+     *     <li>A streaming blob input or output when the default protocol has no HTTP bindings (awsJson1_0, awsJson1_1,
+     *     rpcv2Cbor, awsQuery, ec2Query): Smithy binds a streaming blob only through {@code @httpPayload}, so those client
+     *     protocols reject it; no AWS service models one (task 7.19). The restJson1 and restXml protocols bind it.</li>
      *     <li>The input or output class has no schema serde members ({@link SchemaSerdeModel}, task 3.7), so the
      *     protocol cannot serialize or build it.</li>
      *     <li>An error class of the service has no schema serde members: the service-wide Error_Registry can resolve
@@ -126,11 +140,8 @@ public final class SchemaOperationRouting {
         if (operation.hasEventStreamInput() || operation.hasEventStreamOutput()) {
             return "event streams are not supported by the client protocols yet (task 7.20)";
         }
-        if (operation.hasStreamingInput()) {
-            return "streaming request bodies are not bound by the new pipeline path yet (task 7.19)";
-        }
-        if (operation.hasStreamingOutput()) {
-            return "streaming outputs are not deserialized by the client protocols yet (task 7.19)";
+        if (hasStreamingBlob(operation) && !HTTP_BINDING_PROTOCOLS.contains(defaultProtocol)) {
+            return "streaming blob members are bound only by HTTP binding protocols, not " + defaultProtocol;
         }
         if (operation.operationId() == null || !operationFields.containsKey(operation.operationId())) {
             return "the operation has no field in " + operationsClass.simpleName();
@@ -142,6 +153,19 @@ public final class SchemaOperationRouting {
             return "the error classes of " + errorsWithoutSerde + " have no schema serde members";
         }
         return null;
+    }
+
+    /**
+     * Whether the operation's client methods take or return a stream, or its input or output has a streaming blob
+     * member, which the client protocol would see in the schema.
+     */
+    private static boolean hasStreamingBlob(OperationModel operation) {
+        return operation.hasStreamingInput() || operation.hasStreamingOutput()
+               || hasStreamingMember(operation.getInputShape()) || hasStreamingMember(operation.getOutputShape());
+    }
+
+    private static boolean hasStreamingMember(ShapeModel shape) {
+        return shape != null && shape.getMembers().stream().anyMatch(m -> m.getHttp().getIsStreaming());
     }
 
     /**

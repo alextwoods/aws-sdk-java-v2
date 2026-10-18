@@ -33,6 +33,7 @@ import software.amazon.awssdk.codegen.poet.client.traits.HttpChecksumTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.LongPollTrait;
 import software.amazon.awssdk.codegen.poet.client.traits.RequestCompressionTrait;
 import software.amazon.awssdk.codegen.poet.schema.SchemaOperationRouting;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
 import software.amazon.awssdk.core.client.handler.SyncClientHandler;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
@@ -104,11 +105,19 @@ public final class SchemaOperationsProtocolSpec implements ProtocolSpec {
         if (!routing.routes(opModel)) {
             return legacy.executionHandler(opModel);
         }
-        return CodeBlock.builder()
-                        .add("\n\nreturn clientHandler.execute(")
-                        .add(executionParams(opModel))
-                        .add(");")
-                        .build();
+        CodeBlock.Builder code = CodeBlock.builder()
+                                          .add("\n\nreturn clientHandler.execute(")
+                                          .add(executionParams(opModel));
+        // As the legacy call: the request body and the transformer go on the parameters, the transformer also as the
+        // second argument. The client protocol binds the body (task 7.19), so there is no streaming marshaller.
+        if (opModel.hasStreamingOutput()) {
+            code.add(".withResponseTransformer(responseTransformer)");
+        }
+        if (opModel.hasStreamingInput()) {
+            code.add(".withRequestBody(requestBody)");
+        }
+        return code.add(opModel.hasStreamingOutput() ? ", responseTransformer);" : ");")
+                   .build();
     }
 
     @Override
@@ -117,20 +126,38 @@ public final class SchemaOperationsProtocolSpec implements ProtocolSpec {
             return legacy.asyncExecutionHandler(intermediateModel, opModel);
         }
         TypeName responseType = getPojoResponseType(opModel, poetExtensions);
+        TypeName futureType = executeFutureValueType(opModel, poetExtensions);
         boolean discovery = opModel.getEndpointDiscovery() != null;
-        return CodeBlock.builder()
-                        .add("\n\n$T<$T> executeFuture = ", CompletableFuture.class, responseType)
-                        .add(discovery ? "endpointFuture.thenCompose(cachedEndpoint -> " : "")
-                        .add("clientHandler.execute(")
-                        .add(executionParams(opModel))
-                        .add(")")
-                        .add(discovery ? ");" : ";")
-                        .addStatement("$T<$T> whenCompleted = executeFuture$L", CompletableFuture.class, responseType,
-                                      publishMetricsWhenComplete())
-                        .addStatement("executeFuture = $T.forwardExceptionTo(whenCompleted, executeFuture)",
-                                      CompletableFutureUtils.class)
-                        .addStatement("return executeFuture")
-                        .build();
+        boolean streamingOutput = opModel.hasStreamingOutput();
+        CodeBlock.Builder code = CodeBlock.builder()
+                                          .add("\n\n$T<$T> executeFuture = ", CompletableFuture.class, futureType)
+                                          .add(discovery ? "endpointFuture.thenCompose(cachedEndpoint -> " : "")
+                                          .add("clientHandler.execute(")
+                                          .add(executionParams(opModel));
+        // As the legacy call: the async request body and the transformer go on the parameters, the transformer also
+        // as the second argument, and a failed call is reported to the transformer.
+        if (opModel.hasStreamingInput()) {
+            code.add(".withAsyncRequestBody(requestBody)");
+        }
+        if (streamingOutput) {
+            code.add(".withAsyncResponseTransformer(asyncResponseTransformer), asyncResponseTransformer");
+        }
+        code.add(")")
+            .add(discovery ? ");" : ";");
+        String whenComplete;
+        if (streamingOutput) {
+            code.addStatement("$T<$T, ReturnT> finalAsyncResponseTransformer = asyncResponseTransformer",
+                              AsyncResponseTransformer.class, responseType);
+            whenComplete = streamingOutputWhenComplete("finalAsyncResponseTransformer");
+        } else {
+            whenComplete = publishMetricsWhenComplete();
+        }
+        return code.addStatement("$T<$T> whenCompleted = executeFuture$L", CompletableFuture.class, futureType,
+                                 whenComplete)
+                   .addStatement("executeFuture = $T.forwardExceptionTo(whenCompleted, executeFuture)",
+                                 CompletableFutureUtils.class)
+                   .addStatement("return executeFuture")
+                   .build();
     }
 
     /**

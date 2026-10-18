@@ -46,6 +46,51 @@ import software.amazon.smithy.model.Model;
 class SchemaClientClassTest {
     private static final String CLOUDWATCH_LIKE_PROTOCOLS = "@rpcv2Cbor\n@awsJson1_0\n@awsQuery";
 
+    /**
+     * A restJson1 service with a streaming blob input (with a header member) and a streaming blob output (task 7.19).
+     */
+    private static final String REST_JSON_STREAMING = String.join(
+        "\n",
+        "$version: \"2.0\"",
+        "namespace streams",
+        "use aws.api#service",
+        "use aws.auth#sigv4",
+        "use aws.protocols#restJson1",
+        "@service(sdkId: \"Streams\")",
+        "@sigv4(name: \"streams\")",
+        "@restJson1",
+        "service StreamsService {",
+        "    version: \"2024-01-01\"",
+        "    operations: [PutBlob, GetBlob]",
+        "}",
+        "@http(method: \"PUT\", uri: \"/blobs/{Name}\")",
+        "operation PutBlob {",
+        "    input: PutBlobRequest",
+        "    output: PutBlobResponse",
+        "}",
+        "@readonly",
+        "@http(method: \"GET\", uri: \"/blobs/{Name}\")",
+        "operation GetBlob {",
+        "    input: GetBlobRequest",
+        "    output: GetBlobResponse",
+        "}",
+        "structure PutBlobRequest {",
+        "    @required @httpLabel Name: String",
+        "    @httpHeader(\"Content-Type\") ContentType: String",
+        "    @httpPayload Body: BlobBody = \"\"",
+        "}",
+        "structure PutBlobResponse {}",
+        "structure GetBlobRequest {",
+        "    @required @httpLabel Name: String",
+        "}",
+        "structure GetBlobResponse {",
+        "    @httpHeader(\"ETag\") ETag: String",
+        "    @httpPayload Body: BlobBody = \"\"",
+        "}",
+        "@streaming",
+        "blob BlobBody",
+        "");
+
     @Test
     void syncClientClass_withRpcv2CborDefault_routesSupportedOperationsThroughTheOperationsClass() {
         assertThat(new SyncClientClass(params(model())), generatesTo("test-schema-sync-client-class.java"));
@@ -142,6 +187,41 @@ class SchemaClientClassTest {
     }
 
     @Test
+    void routing_withAStreamingBlobAndAnRpcDefaultProtocol_keepsTheOperationOnTheLegacyPath() {
+        String src = resource().replace(", CountThings]", ", CountThings, UploadThing]")
+                     + "\noperation UploadThing {\n    input: UploadThingRequest\n    output: UploadThingResponse\n}\n"
+                     + "structure UploadThingRequest {\n    @httpPayload\n    Body: ThingBody = \"\"\n}\n"
+                     + "structure UploadThingResponse {}\n"
+                     + "@streaming\nblob ThingBody\n";
+        IntermediateModel model = model(src);
+
+        assertThat(routing(model).legacyReason(model.getOperation("UploadThing")))
+            .isEqualTo("streaming blob members are bound only by HTTP binding protocols, not smithy.protocols#rpcv2Cbor");
+    }
+
+    @Test
+    void clientClasses_withRestJson1StreamingOperations_routeThemWithTheBodyAndTheTransformer() {
+        IntermediateModel model = model(REST_JSON_STREAMING, staged());
+        SchemaOperationRouting routing = routing(model);
+        assertThat(routing.routes(model.getOperation("PutBlob"))).isTrue();
+        assertThat(routing.routes(model.getOperation("GetBlob"))).isTrue();
+
+        String sync = PoetUtils.buildJavaFile(new SyncClientClass(params(model))).toString();
+        String async = PoetUtils.buildJavaFile(new AsyncClientClass(params(model))).toString();
+
+        for (String client : new String[] {sync, async}) {
+            assertThat(client).contains(".withOperation(StreamsOperations.PUT_BLOB)", ".withOperation(StreamsOperations.GET_BLOB)")
+                              .doesNotContain("StreamingRequestMarshaller", "Marshaller(", "protocolFactory");
+        }
+        assertThat(sync).contains(".withRequestBody(requestBody)", ".withResponseTransformer(responseTransformer), "
+                                                                    + "responseTransformer);");
+        assertThat(async).contains(".withAsyncRequestBody(requestBody)",
+                                   ".withAsyncResponseTransformer(asyncResponseTransformer), asyncResponseTransformer)",
+                                   "finalAsyncResponseTransformer.exceptionOccurred(e)",
+                                   "endOfStreamFuture.whenComplete(");
+    }
+
+    @Test
     void routing_withAC2jModel_isEmpty() {
         IntermediateModel model = ClientTestModels.rpcv2ServiceModels();
 
@@ -171,6 +251,10 @@ class SchemaClientClassTest {
     }
 
     private static IntermediateModel model(String src) {
+        return model(src, CustomizationConfig.create());
+    }
+
+    private static IntermediateModel model(String src, CustomizationConfig customization) {
         Model smithy = Model.assembler()
                             .discoverModels(Model.class.getClassLoader())
                             .addUnparsedModel("schema-routing.smithy", src)
@@ -178,9 +262,18 @@ class SchemaClientClassTest {
                             .unwrap();
         return new SmithyIntermediateModelBuilder(SmithyModels.builder()
                                                               .model(smithy)
-                                                              .customizationConfig(CustomizationConfig.create())
+                                                              .customizationConfig(customization)
                                                               .build())
             .build();
+    }
+
+    /**
+     * restJson1 is a staged client protocol, available with {@code stagedClientProtocols} (the Protocol_Test_Services).
+     */
+    private static CustomizationConfig staged() {
+        CustomizationConfig customization = CustomizationConfig.create();
+        customization.setStagedClientProtocols(true);
+        return customization;
     }
 
     private static String resource() {

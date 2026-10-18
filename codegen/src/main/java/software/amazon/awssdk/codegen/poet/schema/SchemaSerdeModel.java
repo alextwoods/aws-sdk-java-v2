@@ -244,10 +244,14 @@ public final class SchemaSerdeModel {
                 if (!isException || !"message".equalsIgnoreCase(name)) {
                     return null;
                 }
+            } else if (member.getHttp().getIsStreaming()) {
+                // A streaming blob: in the schema, but not held by the class; the client method takes or returns it.
+                members.add(new MemberBinding(name, index++, member, unique(constantName(name), constants), true));
+                continue;
             } else if (!isSupportedMember(member, customization)) {
                 return null;
             }
-            members.add(new MemberBinding(name, index++, member, unique(constantName(name), constants)));
+            members.add(new MemberBinding(name, index++, member, unique(constantName(name), constants), false));
         }
         if (!imMembers.isEmpty()) {
             return null;
@@ -595,12 +599,14 @@ public final class SchemaSerdeModel {
         private final int index;
         private final MemberModel member;
         private final String constantName;
+        private final boolean streaming;
 
-        private MemberBinding(String memberName, int index, MemberModel member, String constantName) {
+        private MemberBinding(String memberName, int index, MemberModel member, String constantName, boolean streaming) {
             this.memberName = memberName;
             this.index = index;
             this.member = member;
             this.constantName = constantName;
+            this.streaming = streaming;
         }
 
         public String memberName() {
@@ -613,10 +619,19 @@ public final class SchemaSerdeModel {
 
         /**
          * @return the class member, or null for the {@code message} member of an exception, which is the exception's
-         *     message
+         *     message, and for a {@linkplain #isStreaming() streaming} member
          */
         public MemberModel member() {
-            return member;
+            return streaming ? null : member;
+        }
+
+        /**
+         * @return whether the member is a streaming blob (task 7.19): it is in the schema, but the class does not hold
+         *     it, because the client method takes it as a {@code RequestBody}/{@code AsyncRequestBody} or hands it to a
+         *     response transformer. The class neither writes nor reads it, and {@code getMemberValue} returns null
+         */
+        public boolean isStreaming() {
+            return streaming;
         }
 
         /**

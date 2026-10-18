@@ -182,6 +182,10 @@ final class SchemaSerdeClassSpec {
                                               .addModifiers(PUBLIC)
                                               .addParameter(SchemaRuntimeType.SHAPE_SERIALIZER, SERIALIZER);
         for (MemberBinding binding : entry.members()) {
+            if (binding.isStreaming()) {
+                // The client method takes the stream; the request pipeline binds it (task 7.19).
+                continue;
+            }
             CodeBlock schema = CodeBlock.of("$N", binding.constantName());
             MemberModel member = binding.member();
             if (member == null) {
@@ -219,7 +223,9 @@ final class SchemaSerdeClassSpec {
         }
         method.beginControlFlow("switch ($N.memberIndex())", MEMBER);
         for (MemberBinding binding : entry.members()) {
-            CodeBlock value = binding.member() == null
+            CodeBlock value = binding.isStreaming()
+                              ? CodeBlock.of("null")
+                              : binding.member() == null
                               ? CodeBlock.of("rawMessage()")
                               : CodeBlock.of("this.$N", binding.member().getVariable().getVariableName());
             method.addCode("case $L:\n", binding.index())
@@ -351,6 +357,14 @@ final class SchemaSerdeClassSpec {
         boolean unchecked = false;
         method.beginControlFlow("switch ($N.memberIndex())", MEMBER);
         for (MemberBinding binding : entry.members()) {
+            if (binding.isStreaming()) {
+                // The class does not hold the stream: the member is checked and the value ignored.
+                method.addCode("case $L:\n", binding.index())
+                      .addStatement("$>$T.validateSameMember($N, $N, value)", SchemaRuntimeType.SCHEMA_UTILS,
+                                    binding.constantName(), MEMBER)
+                      .addStatement("break$<");
+                continue;
+            }
             MemberModel member = binding.member();
             String setter = member == null ? "message" : member.getFluentSetterMethodName();
             TypeName type = member == null ? ClassName.get(String.class) : typeProvider.parameterType(member);
@@ -404,6 +418,11 @@ final class SchemaSerdeClassSpec {
     }
 
     private CodeBlock assignment(MemberBinding binding) {
+        if (binding.isStreaming()) {
+            // HTTP binding protocols never read a streaming payload into the builder; a codec that reads one is
+            // consumed and discarded.
+            return CodeBlock.of("$N.readBlob($N)", DESERIALIZER, MEMBER);
+        }
         MemberModel member = binding.member();
         CodeBlock schema = CodeBlock.of("$N", MEMBER);
         if (member == null) {
