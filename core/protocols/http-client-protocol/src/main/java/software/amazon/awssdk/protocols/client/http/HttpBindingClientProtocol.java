@@ -26,6 +26,8 @@ import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.httpbinding.HttpBinding;
 import software.amazon.awssdk.httpbinding.RequestSerializer;
 import software.amazon.awssdk.httpbinding.ResponseDeserializer;
+import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventDecoderFactory;
+import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventEncoderFactory;
 import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
@@ -48,10 +50,15 @@ import software.amazon.awssdk.schema.serde.TypeRegistry;
  * {@code Content-Type} for it, because the request pipeline binds the caller's {@code RequestBody} or
  * {@code AsyncRequestBody} with its own headers, and a successful response's body is left unread for the caller's
  * response transformer. An error response of such an operation is read as for any other operation (Requirement 14.3).
- * An operation with an event stream input or output fails with an {@code SdkClientException} (task 7.20).
+ *
+ * <p>An event stream {@code @httpPayload} member is skipped the same way: the other input members are bound to the
+ * request line and headers, the request gets {@code Content-Type: application/vnd.amazon.eventstream} and
+ * {@code Transfer-Encoding: chunked}, and the request pipeline sends the events encoded by
+ * {@link #inputEventEncoderFactory} as the body. A successful response's output members are read from the HTTP
+ * response and its body is left for {@link #outputEventDecoderFactory}'s decoders.
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.client.http.binding.HttpBindingClientProtocol}, without the
- * event stream frame type parameter.
+ * event stream frame type parameter: the frames are always {@code AwsEventFrame}s.
  */
 @SdkPublicApi
 @ThreadSafe
@@ -125,9 +132,6 @@ public abstract class HttpBindingClientProtocol extends HttpClientProtocol {
     @Override
     protected final <I extends SerializableStruct, O extends SerializableStruct> SdkHttpFullRequest createRequest(
         ApiOperation<I, O> operation, I input, ExecutionAttributes context, URI endpoint) {
-        if (operation.inputEventBuilderSupplier() != null) {
-            throw new UnsupportedOperationException("Event stream input is not supported by " + id());
-        }
         ByteBufferOutputStream body = newRequestBodyBuffer(operation);
         SdkHttpFullRequest request = httpBinding.requestSerializer()
                                                 .operation(operation)
@@ -143,16 +147,29 @@ public abstract class HttpBindingClientProtocol extends HttpClientProtocol {
         // The request already holds the body when the codec wrote one into the buffer; this only records its size as
         // the next request's starting capacity.
         finishRequestBody(operation, body);
+        if (isEventStream(operation.inputStreamMember())) {
+            // The event stream is the @httpPayload, which the serializer skips; the other members are bound to the
+            // request line and headers. The request pipeline sends the encoded events as the body.
+            return putEventStreamHeaders(request.toBuilder()).build();
+        }
         return request;
+    }
+
+    @Override
+    public final AwsEventEncoderFactory inputEventEncoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventEncoderFactory.forInputStream(operation, payloadCodec(), payloadMediaType(),
+                                                     HttpClientProtocol::eventStreamInternalError);
+    }
+
+    @Override
+    public final AwsEventDecoderFactory outputEventDecoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventDecoderFactory.forOutputStream(operation, payloadCodec());
     }
 
     @Override
     protected final <I extends SerializableStruct, O extends SerializableStruct> O deserializeOutput(
         ApiOperation<I, O> operation, ExecutionAttributes context, SdkHttpFullRequest request,
         SdkHttpFullResponse response) {
-        if (operation.outputEventBuilderSupplier() != null) {
-            throw new UnsupportedOperationException("Event stream output is not supported by " + id());
-        }
         ShapeBuilder<O> builder = operation.outputBuilder();
         ResponseDeserializer deserializer = httpBinding.responseDeserializer()
                                                        .payloadCodec(payloadCodec())

@@ -17,6 +17,7 @@ package software.amazon.awssdk.protocols.client.http;
 
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import software.amazon.awssdk.annotations.SdkPublicApi;
@@ -41,12 +42,18 @@ import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.http.SdkHttpResponse;
+import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventDecoderFactory;
+import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventEncoderFactory;
 import software.amazon.awssdk.protocols.client.http.internal.MarshallBufferSizeTracker;
 import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.TypeRegistry;
+import software.amazon.awssdk.schema.serde.event.EventStreamingException;
+import software.amazon.awssdk.utils.BinaryUtils;
 import software.amazon.awssdk.utils.Validate;
 import software.amazon.awssdk.utils.http.SdkHttpUtils;
 
@@ -81,6 +88,11 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
 @SdkPublicApi
 @ThreadSafe
 public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRequest, SdkHttpFullResponse> {
+    private static final String CONTENT_TYPE_HEADER = "Content-Type";
+    private static final String CONTENT_LENGTH_HEADER = "Content-Length";
+    private static final String TRANSFER_ENCODING_HEADER = "Transfer-Encoding";
+    private static final String CHUNKED = "chunked";
+
     private final ShapeId id;
     private final MarshallBufferSizeTracker bufferSizeHints = new MarshallBufferSizeTracker();
 
@@ -227,6 +239,109 @@ public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRe
      */
     protected boolean isErrorResponse(SdkHttpFullResponse response) {
         return !response.isSuccessful();
+    }
+
+    /**
+     * Returns the encoder factory of the operation's input event stream, which encodes each event (and, when
+     * {@link #sendsInitialEventMessages()}, the {@code initial-request} message) as an AWS event stream frame. The request
+     * pipeline sends the content of {@link #serializeRequest}'s request followed by the encoded events as the request
+     * body.
+     *
+     * <p>The default throws {@link UnsupportedOperationException}: the protocol has no event streams.
+     *
+     * @param operation the operation, which has an input event stream
+     * @return the encoder factory
+     * @throws IllegalArgumentException if the operation has no input event stream
+     */
+    public AwsEventEncoderFactory inputEventEncoderFactory(ApiOperation<?, ?> operation) {
+        throw new UnsupportedOperationException("Event streams are not supported by " + id);
+    }
+
+    /**
+     * Returns the decoder factory of the operation's output event stream, which decodes the frames of a successful
+     * response's body into events (and, when {@link #sendsInitialEventMessages()}, the {@code initial-response} message
+     * into the output).
+     *
+     * <p>The default throws {@link UnsupportedOperationException}: the protocol has no event streams.
+     *
+     * @param operation the operation, which has an output event stream
+     * @return the decoder factory
+     * @throws IllegalArgumentException if the operation has no output event stream
+     */
+    public AwsEventDecoderFactory outputEventDecoderFactory(ApiOperation<?, ?> operation) {
+        throw new UnsupportedOperationException("Event streams are not supported by " + id);
+    }
+
+    /**
+     * Returns whether the protocol sends an event stream input's other members as an {@code initial-request} message,
+     * the request body's first frame, and reads an event stream output's other members from an {@code initial-response}
+     * message, the response body's first frame, as the RPC protocols do. The default is false: the other members are
+     * bound to the HTTP request and response, as the HTTP binding protocols do.
+     *
+     * @return true if the protocol uses initial messages
+     */
+    public boolean sendsInitialEventMessages() {
+        return false;
+    }
+
+    /**
+     * Returns whether a stream member ({@code ApiOperation.inputStreamMember()} or {@code outputStreamMember()}) is
+     * an event stream, a member targeting a {@code @streaming} union.
+     *
+     * @param streamMember the stream member, or null
+     * @return true if the member is an event stream
+     */
+    protected static boolean isEventStream(Schema streamMember) {
+        return streamMember != null && streamMember.memberTarget().type() == ShapeType.UNION;
+    }
+
+    /**
+     * Returns whether a stream member ({@code ApiOperation.inputStreamMember()} or {@code outputStreamMember()}) is
+     * a {@code @streaming} blob.
+     *
+     * @param streamMember the stream member, or null
+     * @return true if the member is a streaming blob
+     */
+    protected static boolean isStreamingBlob(Schema streamMember) {
+        return streamMember != null && streamMember.memberTarget().type() == ShapeType.BLOB;
+    }
+
+    /**
+     * Sets the headers of a request with an event stream body, as earlier SDK clients send them:
+     * {@code Content-Type: application/vnd.amazon.eventstream} and {@code Transfer-Encoding: chunked}, without
+     * {@code Content-Length}.
+     *
+     * @param request the request builder
+     * @return the request builder
+     */
+    protected static SdkHttpFullRequest.Builder putEventStreamHeaders(SdkHttpFullRequest.Builder request) {
+        return request.removeHeader(CONTENT_LENGTH_HEADER)
+                      .putHeader(CONTENT_TYPE_HEADER, AwsEventEncoderFactory.CONTENT_TYPE)
+                      .putHeader(TRANSFER_ENCODING_HEADER, CHUNKED);
+    }
+
+    /**
+     * Encodes the input's members other than the event stream as an {@code initial-request} message with
+     * {@link #inputEventEncoderFactory}, for the request content of a protocol that {@link #sendsInitialEventMessages()}.
+     *
+     * @param operation the operation, which has an input event stream
+     * @param input the operation input
+     * @return the frame, as request content
+     */
+    protected final ContentStreamProvider initialRequestContent(ApiOperation<?, ?> operation, SerializableStruct input) {
+        AwsEventEncoderFactory factory = inputEventEncoderFactory(operation);
+        ByteBuffer frame = factory.newFrameEncoder().encode(factory.newEventEncoder().encode(input));
+        return ContentStreamProvider.fromByteArrayUnsafe(BinaryUtils.copyAllBytesFrom(frame));
+    }
+
+    /**
+     * The error message sent for an input event stream failure that is not a modeled event stream error.
+     *
+     * @param failure the failure
+     * @return the error message
+     */
+    protected static EventStreamingException eventStreamInternalError(Throwable failure) {
+        return new EventStreamingException("InternalError", String.valueOf(failure.getMessage()));
     }
 
     /**

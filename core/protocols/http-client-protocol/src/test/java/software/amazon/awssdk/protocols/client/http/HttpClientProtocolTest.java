@@ -159,6 +159,17 @@ class HttpClientProtocolTest {
     }
 
     @Test
+    void eventStreamFactories_byDefault_areUnsupported() {
+        TestProtocol protocol = new TestProtocol();
+
+        assertThat(protocol.sendsInitialEventMessages()).isFalse();
+        assertThatThrownBy(() -> protocol.inputEventEncoderFactory(GREET))
+            .isInstanceOf(UnsupportedOperationException.class).hasMessageContaining("Event streams are not supported");
+        assertThatThrownBy(() -> protocol.outputEventDecoderFactory(GREET))
+            .isInstanceOf(UnsupportedOperationException.class).hasMessageContaining("Event streams are not supported");
+    }
+
+    @Test
     void serializationFailureBecomesAClientExceptionNamingTheOperation() {
         TestProtocol protocol = new TestProtocol();
         SerializationException cause = new SerializationException("Required httpLabel member Name was null");

@@ -51,12 +51,16 @@ import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.ExampleServiceEx
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.FooError;
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.GreetRequest;
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.GreetResponse;
+import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.GreetResponse.GreetResponseBuilder;
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.NoInputRequest;
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.QueueMissing;
+import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.SimpleApiOperation;
 import software.amazon.awssdk.schema.serde.SerializationException;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.Rpcv2CborTrait;
 import software.amazon.awssdk.schema.traits.StreamingTrait;
@@ -82,6 +86,41 @@ class RpcV2CborProtocolTest {
      * Smithy binds a streaming blob only through {@code @httpPayload}, which rpcv2Cbor does not have (task 7.19);
      * codegen keeps such operations on the legacy path.
      */
+    @Test
+    void serializeRequest_withEventStreamInput_sendsTheInitialRequestMessage() {
+        EventStreamInput input = new EventStreamInput("hi");
+
+        SdkHttpFullRequest request = protocol.serializeRequest(EventStreamInput.OPERATION, input,
+                                                               new ExecutionAttributes(), ENDPOINT);
+
+        assertThat(request.encodedPath()).isEqualTo(SERVICE_PATH + "Chat");
+        assertThat(request.firstMatchingHeader("smithy-protocol")).hasValue("rpc-v2-cbor");
+        assertThat(request.firstMatchingHeader("Content-Type")).hasValue("application/vnd.amazon.eventstream");
+        assertThat(request.firstMatchingHeader("Transfer-Encoding")).hasValue("chunked");
+        assertThat(request.firstMatchingHeader("Content-Length")).isEmpty();
+        assertThat(protocol.sendsInitialEventMessages()).isTrue();
+        ByteBuffer expected = protocol.inputEventEncoderFactory(EventStreamInput.OPERATION).newFrameEncoder().encode(
+            protocol.inputEventEncoderFactory(EventStreamInput.OPERATION).newEventEncoder().encode(input));
+        ByteBuffer body = request.contentStreamProvider().get().contentAsByteBufferOrNull();
+        assertThat(body).isEqualTo(expected);
+        String frame = new String(body.array(), body.arrayOffset() + body.position(), body.remaining(),
+                                  StandardCharsets.ISO_8859_1);
+        assertThat(frame).contains("initial-request", "application/cbor", "greeting");
+    }
+
+    @Test
+    void deserializeResponse_withEventStreamOutput_leavesTheBodyForTheEventDecoder() {
+        SdkHttpFullResponse response = response(200, "not CBOR: event stream frames".getBytes(StandardCharsets.UTF_8))
+            .build();
+
+        GreetResponse output = protocol.deserializeResponse(EventStreamInput.OPERATION, new ExecutionAttributes(),
+                                                            ERRORS, null, response);
+
+        assertThat(output.greeting()).isNull();
+        assertThat(output.sdkHttpResponse().statusCode()).isEqualTo(200);
+        assertThat(protocol.outputEventDecoderFactory(EventStreamInput.OPERATION)).isNotNull();
+    }
+
     @Test
     void streamingBlobMembersAreRejected() {
         Schema streaming = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "Upload"))
@@ -352,5 +391,56 @@ class RpcV2CborProtocolTest {
             offset += part.length;
         }
         return result;
+    }
+    /**
+     * The input of {@code Chat}, an operation with an input and an output event stream.
+     */
+    private static final class EventStreamInput implements SerializableStruct {
+        private static final Schema EVENT = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "Message"))
+                                                  .putMember("text", PreludeSchemas.STRING)
+                                                  .build();
+        private static final Schema STREAM =
+            Schema.unionBuilder(ShapeId.fromParts(TestShapes.NS, "ChatStream"), StreamingTrait.INSTANCE)
+                  .putMember("message", EVENT)
+                  .build();
+        private static final Schema SCHEMA = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "ChatInput"))
+                                                   .putMember("greeting", PreludeSchemas.STRING)
+                                                   .putMember("stream", STREAM)
+                                                   .build();
+        private static final Schema OUTPUT = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "ChatOutput"))
+                                                   .putMember("greeting", PreludeSchemas.STRING)
+                                                   .putMember("stream", STREAM)
+                                                   .builderSupplier(GreetResponseBuilder::new)
+                                                   .build();
+        private static final SimpleApiOperation<EventStreamInput, GreetResponse> OPERATION =
+            SimpleApiOperation.<EventStreamInput, GreetResponse>builder()
+                              .schema(Schema.createOperation(ShapeId.fromParts(TestShapes.NS, "Chat")))
+                              .inputSchema(() -> SCHEMA)
+                              .outputSchema(() -> OUTPUT)
+                              .errorRegistry(ERRORS)
+                              .service(TestShapes.SERVICE)
+                              .build();
+
+        private final String greeting;
+
+        private EventStreamInput(String greeting) {
+            this.greeting = greeting;
+        }
+
+        @Override
+        public Schema sdkSchema() {
+            return SCHEMA;
+        }
+
+        @Override
+        public void serializeMembers(ShapeSerializer serializer) {
+            serializer.writeString(SCHEMA.member("greeting"), greeting);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T getMemberValue(Schema member) {
+            return "greeting".equals(member.memberName()) ? (T) greeting : null;
+        }
     }
 }

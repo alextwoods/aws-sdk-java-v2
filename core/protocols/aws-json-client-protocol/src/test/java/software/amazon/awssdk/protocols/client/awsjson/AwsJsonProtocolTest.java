@@ -29,6 +29,7 @@ import static software.amazon.awssdk.protocols.client.awsjson.TestShapes.utf8;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
@@ -56,12 +57,16 @@ import software.amazon.awssdk.protocols.client.awsjson.TestShapes.ExampleService
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.FooError;
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.GreetRequest;
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.GreetResponse;
+import software.amazon.awssdk.protocols.client.awsjson.TestShapes.GreetResponse.GreetResponseBuilder;
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.NoInputRequest;
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.QueueMissing;
+import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.SimpleApiOperation;
 import software.amazon.awssdk.schema.serde.SerializationException;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.traits.AwsJson1_0Trait;
 import software.amazon.awssdk.schema.traits.AwsJson1_1Trait;
 import software.amazon.awssdk.schema.traits.StreamingTrait;
@@ -143,6 +148,43 @@ class AwsJsonProtocolTest {
                                                               response(200, utf8("{}")).build()))
             .isInstanceOf(SdkClientException.class)
             .hasMessage("Unable to unmarshall Upload: Streaming blob output is not supported by " + variant.id);
+    }
+
+    @ParameterizedTest
+    @MethodSource("variants")
+    void serializeRequest_withEventStreamInput_sendsTheInitialRequestMessage(Variant variant) {
+        AwsJsonProtocol protocol = variant.create(SETTINGS);
+        EventStreamInput input = new EventStreamInput("hi");
+
+        SdkHttpFullRequest request = protocol.serializeRequest(EventStreamInput.OPERATION, input,
+                                                               new ExecutionAttributes(), ENDPOINT);
+
+        assertThat(request.firstMatchingHeader("X-Amz-Target")).hasValue("ExampleService.Chat");
+        assertThat(request.firstMatchingHeader("Content-Type")).hasValue("application/vnd.amazon.eventstream");
+        assertThat(request.firstMatchingHeader("Transfer-Encoding")).hasValue("chunked");
+        assertThat(request.firstMatchingHeader("Content-Length")).isEmpty();
+        assertThat(protocol.sendsInitialEventMessages()).isTrue();
+        ByteBuffer expected = protocol.inputEventEncoderFactory(EventStreamInput.OPERATION).newFrameEncoder().encode(
+            protocol.inputEventEncoderFactory(EventStreamInput.OPERATION).newEventEncoder().encode(input));
+        ByteBuffer body = request.contentStreamProvider().get().contentAsByteBufferOrNull();
+        assertThat(body).isEqualTo(expected);
+        String frame = new String(body.array(), body.arrayOffset() + body.position(), body.remaining(),
+                                  StandardCharsets.ISO_8859_1);
+        assertThat(frame).contains("initial-request", variant.contentType, "{\"greeting\":\"hi\"}");
+    }
+
+    @ParameterizedTest
+    @MethodSource("variants")
+    void deserializeResponse_withEventStreamOutput_leavesTheBodyForTheEventDecoder(Variant variant) {
+        AwsJsonProtocol protocol = variant.create(SETTINGS);
+        SdkHttpFullResponse response = response(200, utf8("not JSON: event stream frames")).build();
+
+        GreetResponse output = protocol.deserializeResponse(EventStreamInput.OPERATION, new ExecutionAttributes(),
+                                                            ERRORS, null, response);
+
+        assertThat(output.greeting()).isNull();
+        assertThat(output.sdkHttpResponse().statusCode()).isEqualTo(200);
+        assertThat(protocol.outputEventDecoderFactory(EventStreamInput.OPERATION)).isNotNull();
     }
 
     @ParameterizedTest
@@ -440,6 +482,57 @@ class AwsJsonProtocolTest {
         @Override
         public String toString() {
             return name;
+        }
+    }
+    /**
+     * The input of {@code Chat}, an operation with an input and an output event stream.
+     */
+    private static final class EventStreamInput implements SerializableStruct {
+        private static final Schema EVENT = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "Message"))
+                                                  .putMember("text", PreludeSchemas.STRING)
+                                                  .build();
+        private static final Schema STREAM =
+            Schema.unionBuilder(ShapeId.fromParts(TestShapes.NS, "ChatStream"), StreamingTrait.INSTANCE)
+                  .putMember("message", EVENT)
+                  .build();
+        private static final Schema SCHEMA = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "ChatInput"))
+                                                   .putMember("greeting", PreludeSchemas.STRING)
+                                                   .putMember("stream", STREAM)
+                                                   .build();
+        private static final Schema OUTPUT = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "ChatOutput"))
+                                                   .putMember("greeting", PreludeSchemas.STRING)
+                                                   .putMember("stream", STREAM)
+                                                   .builderSupplier(GreetResponseBuilder::new)
+                                                   .build();
+        private static final SimpleApiOperation<EventStreamInput, GreetResponse> OPERATION =
+            SimpleApiOperation.<EventStreamInput, GreetResponse>builder()
+                              .schema(Schema.createOperation(ShapeId.fromParts(TestShapes.NS, "Chat")))
+                              .inputSchema(() -> SCHEMA)
+                              .outputSchema(() -> OUTPUT)
+                              .errorRegistry(ERRORS)
+                              .service(TestShapes.SERVICE)
+                              .build();
+
+        private final String greeting;
+
+        private EventStreamInput(String greeting) {
+            this.greeting = greeting;
+        }
+
+        @Override
+        public Schema sdkSchema() {
+            return SCHEMA;
+        }
+
+        @Override
+        public void serializeMembers(ShapeSerializer serializer) {
+            serializer.writeString(SCHEMA.member("greeting"), greeting);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T getMemberValue(Schema member) {
+            return "greeting".equals(member.memberName()) ? (T) greeting : null;
         }
     }
 }

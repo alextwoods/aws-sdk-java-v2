@@ -33,6 +33,8 @@ import software.amazon.awssdk.protocols.client.http.AmznErrorHeaderExtractor;
 import software.amazon.awssdk.protocols.client.http.HttpClientProtocol;
 import software.amazon.awssdk.protocols.client.http.HttpErrorDeserializer;
 import software.amazon.awssdk.protocols.client.http.ResponseBodies;
+import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventDecoderFactory;
+import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventEncoderFactory;
 import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
@@ -68,8 +70,12 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
  * {@code X-Amzn-Errortype} header, then the body's {@code __type} member, then its {@code code} member, or, for an
  * awsQueryCompatible service, first the code in the {@code x-amzn-query-error} header.
  *
- * <p>Event streams are not supported yet: operations with an event stream input or output fail with an
- * {@code SdkClientException}.
+ * <p>An event stream input is sent as {@code Content-Type: application/vnd.amazon.eventstream} and
+ * {@code Transfer-Encoding: chunked}, without {@code Content-Length}, whose body is an {@code initial-request} message
+ * holding the other input members, followed by the events the request pipeline encodes with
+ * {@link #inputEventEncoderFactory}. An event stream output's members are read from the {@code initial-response}
+ * message, the response body's first frame, by {@link #outputEventDecoderFactory}'s decoders; the body is not read
+ * here. A streaming blob input or output fails with an {@code SdkClientException}.
  *
  * <p>Instances are immutable after construction, apart from the request body size hints, and safe to use from multiple
  * threads.
@@ -140,10 +146,7 @@ abstract class AwsJsonProtocol extends HttpClientProtocol {
     @Override
     protected final <I extends SerializableStruct, O extends SerializableStruct> SdkHttpFullRequest createRequest(
         ApiOperation<I, O> operation, I input, ExecutionAttributes context, URI endpoint) {
-        if (operation.inputEventBuilderSupplier() != null) {
-            throw new UnsupportedOperationException("Event stream input is not supported by " + id());
-        }
-        if (operation.inputStreamMember() != null) {
+        if (isStreamingBlob(operation.inputStreamMember())) {
             // Smithy binds a streaming blob only through @httpPayload, which this protocol does not have (task 7.19).
             throw new UnsupportedOperationException("Streaming blob input is not supported by " + id());
         }
@@ -156,6 +159,11 @@ abstract class AwsJsonProtocol extends HttpClientProtocol {
                               .putHeader(TARGET_HEADER, targetPrefix + operation.name());
         if (awsQueryCompatible) {
             request.putHeader(QUERY_MODE_HEADER, "true");
+        }
+        if (isEventStream(operation.inputStreamMember())) {
+            // The input's other members are the initial-request message, the body's first frame; the request pipeline
+            // sends the encoded events after it.
+            return putEventStreamHeaders(request).contentStreamProvider(initialRequestContent(operation, input)).build();
         }
 
         // Every input is a structure, so the body is at least "{}", including for smithy.api#Unit inputs.
@@ -173,13 +181,16 @@ abstract class AwsJsonProtocol extends HttpClientProtocol {
     protected final <I extends SerializableStruct, O extends SerializableStruct> O deserializeOutput(
         ApiOperation<I, O> operation, ExecutionAttributes context, SdkHttpFullRequest request,
         SdkHttpFullResponse response) {
-        if (operation.outputEventBuilderSupplier() != null) {
-            throw new UnsupportedOperationException("Event stream output is not supported by " + id());
-        }
-        if (operation.outputStreamMember() != null) {
+        if (isStreamingBlob(operation.outputStreamMember())) {
             throw new UnsupportedOperationException("Streaming blob output is not supported by " + id());
         }
         ShapeBuilder<O> builder = operation.outputBuilder();
+        if (isEventStream(operation.outputStreamMember())) {
+            // The output's members are the initial-response message, the body's first frame, which the request pipeline
+            // decodes with outputEventDecoderFactory; the body is left unread.
+            builder.errorCorrection();
+            return buildOutput(builder, response);
+        }
         // Like earlier SDK clients, the body of an output without members is not read, so it need not be JSON. An empty
         // body is read as "{}": an output with no members set.
         if (!operation.outputSchema().members().isEmpty()) {
@@ -196,6 +207,28 @@ abstract class AwsJsonProtocol extends HttpClientProtocol {
                 builder.deserialize(deserializer);
             }
         }
+    }
+
+    @Override
+    public final AwsEventEncoderFactory inputEventEncoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventEncoderFactory.forInputStream(operation, codec, contentType, true,
+                                                     HttpClientProtocol::eventStreamInternalError);
+    }
+
+    @Override
+    public final AwsEventDecoderFactory outputEventDecoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventDecoderFactory.forOutputStream(operation, codec);
+    }
+
+    /**
+     * Returns true: event stream inputs and outputs carry their other members in {@code initial-request} and
+     * {@code initial-response} messages.
+     *
+     * @return true
+     */
+    @Override
+    public final boolean sendsInitialEventMessages() {
+        return true;
     }
 
     @Override

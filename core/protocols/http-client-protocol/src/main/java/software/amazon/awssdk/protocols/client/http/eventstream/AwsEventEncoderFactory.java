@@ -38,7 +38,10 @@ import software.amazon.awssdk.utils.Validate;
  */
 @SdkPublicApi
 public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEventFrame> {
-    private static final String CONTENT_TYPE = "application/vnd.amazon.eventstream";
+    /**
+     * The media type of an AWS event stream body, {@code application/vnd.amazon.eventstream}.
+     */
+    public static final String CONTENT_TYPE = "application/vnd.amazon.eventstream";
 
     private final InitialEventType initialEventType;
     private final Schema schema;

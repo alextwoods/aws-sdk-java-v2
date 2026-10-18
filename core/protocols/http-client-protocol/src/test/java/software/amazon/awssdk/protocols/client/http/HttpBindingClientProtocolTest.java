@@ -50,7 +50,9 @@ import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.traits.HttpHeaderTrait;
 import software.amazon.awssdk.schema.traits.HttpLabelTrait;
+import software.amazon.awssdk.schema.traits.HttpPayloadTrait;
 import software.amazon.awssdk.schema.traits.HttpTrait;
+import software.amazon.awssdk.schema.traits.StreamingTrait;
 
 /**
  * Tests the {@link HttpBindingClientProtocol} defaults and {@link HttpBindingErrorFactory} with the CBOR codec. The
@@ -82,6 +84,23 @@ class HttpBindingClientProtocolTest {
 
     private static final ApiOperation<SerializableStruct, SerializableStruct> TAG =
         operation("Tag", new HttpTrait("POST", "/tag"), HEADER_ONLY);
+
+    /**
+     * {@code POST /chat}: a header and an event stream {@code @httpPayload}, in both directions.
+     */
+    private static final Schema CHAT_SHAPE =
+        Schema.structureBuilder(ShapeId.fromParts(NS, "Chat"))
+              .putMember("tag", PreludeSchemas.STRING, new HttpHeaderTrait("X-Tag"))
+              .putMember("stream",
+                         Schema.unionBuilder(ShapeId.fromParts(NS, "ChatStream"), StreamingTrait.INSTANCE)
+                               .putMember("message", HEADER_ONLY)
+                               .build(),
+                         HttpPayloadTrait.INSTANCE)
+              .builderSupplier(() -> new Values(HttpBindingClientProtocolTest.CHAT_SHAPE))
+              .build();
+
+    private static final ApiOperation<SerializableStruct, SerializableStruct> CHAT =
+        operation("Chat", new HttpTrait("POST", "/chat"), CHAT_SHAPE);
 
     private static final TestProtocol PROTOCOL = new TestProtocol();
 
@@ -131,6 +150,33 @@ class HttpBindingClientProtocolTest {
                                                               response))
             .isInstanceOf(FooError.class)
             .satisfies(e -> assertThat(((SdkServiceException) e).statusCode()).isEqualTo(400));
+    }
+
+    @Test
+    void serializeRequest_withEventStreamInput_bindsTheOtherMembersAndLeavesTheBodyToTheEvents() {
+        SdkHttpFullRequest request = PROTOCOL.serializeRequest(CHAT, new Values(CHAT_SHAPE).set("tag", "t").build(),
+                                                               new ExecutionAttributes(), ENDPOINT);
+
+        assertThat(request.encodedPath()).isEqualTo("/chat");
+        assertThat(request.firstMatchingHeader("X-Tag")).hasValue("t");
+        assertThat(request.firstMatchingHeader("Content-Type")).hasValue("application/vnd.amazon.eventstream");
+        assertThat(request.firstMatchingHeader("Transfer-Encoding")).hasValue("chunked");
+        assertThat(request.firstMatchingHeader("Content-Length")).isEmpty();
+        assertThat(request.contentStreamProvider()).isEmpty();
+        assertThat(PROTOCOL.sendsInitialEventMessages()).isFalse();
+        assertThat(PROTOCOL.inputEventEncoderFactory(CHAT).contentType())
+            .isEqualTo("application/vnd.amazon.eventstream");
+    }
+
+    @Test
+    void deserializeResponse_withEventStreamOutput_readsHeadersAndLeavesTheBodyToTheEvents() {
+        SdkHttpFullResponse response = response(200, new byte[] {0, 0, 0, 16}).putHeader("X-Tag", "t").build();
+
+        Values output = (Values) PROTOCOL.deserializeResponse(CHAT, new ExecutionAttributes(), ERRORS, request(),
+                                                              response);
+
+        assertThat(output.values).containsExactly(entry("tag", "t"));
+        assertThat(PROTOCOL.outputEventDecoderFactory(CHAT)).isNotNull();
     }
 
     @Test
