@@ -26,6 +26,8 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sdkjsonprotocol.SdkJsonProtocolClient;
 import software.amazon.awssdk.services.sdkjsonprotocol.SdkJsonProtocolClientBuilder;
 import software.amazon.awssdk.services.sdkjsonprotocol.model.SdkDocumentsResponse;
+import software.amazon.awssdk.services.sdkjsonrpc10.SdkJsonRpc10Client;
+import software.amazon.awssdk.services.sdkjsonrpc10.SdkJsonRpc10ClientBuilder;
 import software.amazon.awssdk.services.sdkrestjsonprotocol.SdkRestJsonProtocolClient;
 import software.amazon.awssdk.services.sdkrestjsonprotocol.SdkRestJsonProtocolClientBuilder;
 
@@ -35,13 +37,22 @@ import software.amazon.awssdk.services.sdkrestjsonprotocol.SdkRestJsonProtocolCl
  * generator treats a null params value as unset, so no Smithy case can assert this).
  *
  * <p>Each test is tagged with the protocol it covers, so it runs only when {@code protocolTests.enabledProtocols} lists
- * that protocol and is counted under it. rpcv2Cbor has no document types ({@code rpcv2Cbor.NoDocuments}), so this class
- * has no rpcv2Cbor case; the JSON protocol cases run once task 7.21 enables those protocols.
+ * that protocol and is counted under it. It covers the protocols with document types, awsJson1_0, awsJson1_1 and
+ * restJson1 (enabled in task 7.21). rpcv2Cbor has no document types ({@code rpcv2Cbor.NoDocuments}), and the query and
+ * XML protocols do not support documents.
  */
 class NullDocumentProtocolTest {
+    private static final String AWS_JSON_1_0 = "aws.protocols#awsJson1_0";
     private static final String AWS_JSON_1_1 = "aws.protocols#awsJson1_1";
     private static final String REST_JSON_1 = "aws.protocols#restJson1";
 
+    private static final ProtocolTestHarness<SdkJsonRpc10Client> AWS_JSON_1_0_HARNESS =
+        ProtocolTestHarnesses.<SdkJsonRpc10Client, SdkJsonRpc10ClientBuilder>forClient(
+            AWS_JSON_1_0,
+            SdkJsonRpc10Client::builder,
+            b -> b.region(Region.US_EAST_1)
+                  .credentialsProvider(AnonymousCredentialsProvider.create())
+                  .overrideConfiguration(o -> o.retryStrategy(AwsRetryStrategy.doNotRetry())));
     private static final ProtocolTestHarness<SdkJsonProtocolClient> AWS_JSON_1_1_HARNESS =
         ProtocolTestHarnesses.<SdkJsonProtocolClient, SdkJsonProtocolClientBuilder>forClient(
             AWS_JSON_1_1,
@@ -57,6 +68,17 @@ class NullDocumentProtocolTest {
             b -> b.region(Region.US_EAST_1)
                   .credentialsProvider(AnonymousCredentialsProvider.create())
                   .overrideConfiguration(o -> o.retryStrategy(AwsRetryStrategy.doNotRetry())));
+
+    @Test
+    @Tag("protocol:" + AWS_JSON_1_0)
+    void awsJson10_nullDocumentMember_readsAsNullDocument() {
+        StubbedResponse response = StubbedResponse.fromTestCase(
+            200, ProtocolTestValues.<String>mapOf("Content-Type", "application/x-amz-json-1.0"),
+            "{\"documentValue\": null}", "application/json");
+        software.amazon.awssdk.services.sdkjsonrpc10.model.SdkDocumentsResponse output =
+            AWS_JSON_1_0_HARNESS.respondWith(response, c -> c.sdkDocuments(r -> { }));
+        assertThat(output.documentValue()).isEqualTo(Document.fromNull());
+    }
 
     @Test
     @Tag("protocol:" + AWS_JSON_1_1)

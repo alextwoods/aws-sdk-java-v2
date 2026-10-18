@@ -7,7 +7,8 @@
 //
 // smithy/sdk-protocol-tests holds SDK-owned protocol test services (software.amazon.awssdk.protocoltests*) with cases
 // ported from the legacy C2J protocol tests (task 1.34); legacy-disposition.csv maps each legacy case to them.
-// SdkRpcV2Protocol has no Smithy cases: the hand-written UnknownEnumValueProtocolTest calls it (task 3.34).
+// SdkRpcV2Protocol (task 3.34), SdkJsonRpc10 and SdkQuery (task 7.21) have no Smithy cases: the hand-written
+// UnknownEnumValueProtocolTest and NullDocumentProtocolTest call them.
 {
     "version": "1.0",
     "imports": [
@@ -108,6 +109,13 @@
             ],
             "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
         },
+        "awsJson1_0-SdkJsonRpc10": {
+            "transforms": [
+                {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.json10#SdkJsonRpc10"]}},
+                {"name": "removeUnusedShapes", "args": {}}
+            ],
+            "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
+        },
         "awsJson1_1-SdkJsonProtocol": {
             "transforms": [
                 {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.json#SdkJsonProtocol"]}},
@@ -132,6 +140,13 @@
         "restXml-SdkRestXml": {
             "transforms": [
                 {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.restxml#SdkRestXml"]}},
+                {"name": "removeUnusedShapes", "args": {}}
+            ],
+            "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}
+        },
+        "awsQuery-SdkQuery": {
+            "transforms": [
+                {"name": "includeServices", "args": {"services": ["software.amazon.awssdk.protocoltests.query#SdkQuery"]}},
                 {"name": "removeUnusedShapes", "args": {}}
             ],
             "plugins": {"aws-sdk-java-v2-codegen": {"customizationConfig": "customization.config"}}

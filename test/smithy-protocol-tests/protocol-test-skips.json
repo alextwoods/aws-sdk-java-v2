@@ -16,5 +16,83 @@
         "protocol": "smithy.protocols#rpcv2Cbor",
         "service": "smithy.protocoltests.rpcv2Cbor#RpcV2Protocol",
         "reason": "Generated model classes do not populate @default values: a member missing from the response stays null, as in the legacy SDK (smithy-java skips this case too)"
+    },
+    {
+        "id": "AwsJson10ClientPopulatesDefaultValuesInInput",
+        "protocol": "aws.protocols#awsJson1_0",
+        "service": "aws.protocoltests.json10#JsonRpc10",
+        "reason": "Generated model classes do not populate @default values: an unset member is null and is not serialized, as in the legacy SDK (the same decision as the rpcv2Cbor RpcV2CborClientPopulatesDefaultValuesInInput skip; smithy-java skips this case too)"
+    },
+    {
+        "id": "AwsJson10ClientPopulatesDefaultsValuesWhenMissingInResponse",
+        "protocol": "aws.protocols#awsJson1_0",
+        "service": "aws.protocoltests.json10#JsonRpc10",
+        "reason": "Generated model classes do not populate @default values: a member missing from the response stays null, as in the legacy SDK (the same decision as the rpcv2Cbor RpcV2CborClientPopulatesDefaultsValuesWhenMissingInResponse skip; smithy-java skips this case too)"
+    },
+    {
+        "id": "AwsJson10ClientPopulatesNestedDefaultValuesWhenMissing",
+        "protocol": "aws.protocols#awsJson1_0",
+        "service": "aws.protocoltests.json10#JsonRpc10",
+        "reason": "Generated model classes do not populate @default values of nested structure members: an unset member of a nested structure, list element or map value is null and is not serialized, as in the legacy SDK (the same decision as the rpcv2Cbor @default skips)"
+    },
+    {
+        "id": "AwsJson10ClientPopulatesNestedDefaultsWhenMissingInResponseBody",
+        "protocol": "aws.protocols#awsJson1_0",
+        "service": "aws.protocoltests.json10#JsonRpc10",
+        "reason": "Generated model classes do not populate @default values of nested structure members: a member missing from a nested structure, list element or map value in the response stays null, as in the legacy SDK (the same decision as the rpcv2Cbor @default skips)"
+    },
+    {
+        "id": "AwsJson10ClientErrorCorrectsWhenServerFailsToSerializeRequiredValues",
+        "protocol": "aws.protocols#awsJson1_0",
+        "service": "aws.protocoltests.json10#JsonRpc10",
+        "reason": "Generated model classes do not error-correct @required output members that the response omits: a missing @required member stays null instead of taking its zero value, as in the legacy SDK. Client error correction belongs to the same open @default decision as the rpcv2Cbor @default skips"
+    },
+    {
+        "id": "AwsJson10ClientErrorCorrectsWithDefaultValuesWhenServerFailsToSerializeRequiredValues",
+        "protocol": "aws.protocols#awsJson1_0",
+        "service": "aws.protocoltests.json10#JsonRpc10",
+        "reason": "Generated model classes do not error-correct @required output members that the response omits: a missing @required member stays null instead of taking its @default value, as in the legacy SDK. Client error correction belongs to the same open @default decision as the rpcv2Cbor @default skips"
+    },
+    {
+        "id": "RestJsonClientPopulatesDefaultValuesInInput",
+        "protocol": "aws.protocols#restJson1",
+        "service": "aws.protocoltests.restjson#RestJson",
+        "reason": "Generated model classes do not populate @default values: an unset member is null and is not serialized, as in the legacy SDK (the same decision as the rpcv2Cbor RpcV2CborClientPopulatesDefaultValuesInInput skip; smithy-java skips this case too)"
+    },
+    {
+        "id": "RestJsonClientPopulatesDefaultsValuesWhenMissingInResponse",
+        "protocol": "aws.protocols#restJson1",
+        "service": "aws.protocoltests.restjson#RestJson",
+        "reason": "Generated model classes do not populate @default values: a member missing from the response stays null, as in the legacy SDK (the same decision as the rpcv2Cbor RpcV2CborClientPopulatesDefaultsValuesWhenMissingInResponse skip; smithy-java skips this case too)"
+    },
+    {
+        "id": "RestJsonClientPopulatesNestedDefaultValuesWhenMissing",
+        "protocol": "aws.protocols#restJson1",
+        "service": "aws.protocoltests.restjson#RestJson",
+        "reason": "Generated model classes do not populate @default values of nested structure members: an unset member of a nested structure, list element or map value is null and is not serialized, as in the legacy SDK (the same decision as the rpcv2Cbor @default skips)"
+    },
+    {
+        "id": "RestJsonClientPopulatesNestedDefaultsWhenMissingInResponseBody",
+        "protocol": "aws.protocols#restJson1",
+        "service": "aws.protocoltests.restjson#RestJson",
+        "reason": "Generated model classes do not populate @default values of nested structure members: a member missing from a nested structure, list element or map value in the response stays null, as in the legacy SDK (the same decision as the rpcv2Cbor @default skips)"
+    },
+    {
+        "id": "RestJsonHttpChecksumRequired",
+        "protocol": "aws.protocols#restJson1",
+        "service": "aws.protocoltests.restjson#RestJson",
+        "reason": "The SDK's checksum behavior, not the protocol: since 2.30.0 the shared HttpChecksumStage computes a CRC32 flexible checksum (x-amz-checksum-crc32) for an @httpChecksumRequired operation, and sends Content-MD5 only when no checksum algorithm resolves (HttpChecksumUtils.isMd5ChecksumRequired). The case expects Content-MD5. The legacy path fails it the same way; the request line, headers and body the protocol writes match the case"
+    },
+    {
+        "id": "SdkRestJsonNoContentWithBlobPayload",
+        "protocol": "aws.protocols#restJson1",
+        "service": "software.amazon.awssdk.protocoltests.restjson#SdkRestJson",
+        "reason": "Behavior change, open compatibility question: on the schema path an empty response body leaves a blob @httpPayload member unset (null), as the upstream RestJsonHttpPayloadTraitsWithNoBlobBody requires, instead of the legacy SDK's empty SdkBytes that this SDK-owned case (legacy-disposition.csv rest-core-output.json#6) expects. The two cases contradict each other; the upstream case passes"
+    },
+    {
+        "id": "SdkRestXmlNoContentWithBlobPayload",
+        "protocol": "aws.protocols#restXml",
+        "service": "software.amazon.awssdk.protocoltests.restxml#SdkRestXml",
+        "reason": "Behavior change, open compatibility question: on the schema path an empty response body leaves a blob @httpPayload member unset (null), as the upstream HttpPayloadTraitsWithNoBlobBody requires, instead of the legacy SDK's empty SdkBytes that this SDK-owned case (legacy-disposition.csv rest-core-output.json#6) expects. The two cases contradict each other; the upstream case passes"
     }
 ]

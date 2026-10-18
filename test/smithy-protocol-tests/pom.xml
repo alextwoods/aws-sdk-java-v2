@@ -36,10 +36,10 @@
             -DprotocolTests.enabledProtocols=smithy.protocols#rpcv2Cbor,aws.protocols#awsJson1_0
           Each generated test class is tagged @Tag("protocol:<protocol ShapeId>"); the list is turned into the JUnit tag
           expression "none() | protocol:<id> | ..." below, so untagged tests (this module's own unit tests) always run.
-          Task 3.34 enabled smithy.protocols#rpcv2Cbor, whose clients run on the new pipeline path; task 7.21 adds the
-          remaining Supported_Protocols.
+          Task 3.34 enabled smithy.protocols#rpcv2Cbor; task 7.21 enabled every Supported_Protocol. Pass a shorter list
+          to run one protocol while developing.
         -->
-        <protocolTests.enabledProtocols>smithy.protocols#rpcv2Cbor</protocolTests.enabledProtocols>
+        <protocolTests.enabledProtocols>smithy.protocols#rpcv2Cbor,aws.protocols#awsJson1_0,aws.protocols#awsJson1_1,aws.protocols#restJson1,aws.protocols#restXml,aws.protocols#awsQuery,aws.protocols#ec2Query</protocolTests.enabledProtocols>
         <protocol-test-models.directory>${project.build.directory}/protocol-test-models</protocol-test-models.directory>
     </properties>
     <dependencyManagement>

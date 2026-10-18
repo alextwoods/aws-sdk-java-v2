@@ -23,6 +23,7 @@ service SdkJsonProtocol {
         SdkDocuments
         SdkIdempotentOperation
         SdkNoOutput
+        SdkEnums
     ]
 }
 
@@ -330,3 +331,31 @@ apply SdkNoOutput @httpResponseTests([
         bodyMediaType: "text/plain"
     }
 ])
+
+/// Enum values in a member, a list element, a map key and a map value. Read by the hand-written
+/// UnknownEnumValueProtocolTest (legacy-disposition.csv rows json-core-output.json#5, #7, #9 and #10).
+operation SdkEnums {
+    output: SdkEnumsOutput
+}
+
+@output
+structure SdkEnumsOutput {
+    enumMember: SdkEnum
+    enumList: SdkEnumList
+    enumKeyMap: SdkEnumKeyMap
+    enumValueMap: SdkEnumValueMap
+}
+
+list SdkEnumList {
+    member: SdkEnum
+}
+
+map SdkEnumKeyMap {
+    key: SdkEnum
+    value: String
+}
+
+map SdkEnumValueMap {
+    key: String
+    value: SdkEnum
+}
