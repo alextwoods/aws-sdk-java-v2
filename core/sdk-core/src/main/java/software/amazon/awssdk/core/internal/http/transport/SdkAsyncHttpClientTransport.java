@@ -19,9 +19,11 @@ import static software.amazon.awssdk.http.Header.CONTENT_LENGTH;
 
 import java.nio.ByteBuffer;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import software.amazon.awssdk.annotations.SdkInternalApi;
@@ -40,6 +42,7 @@ import software.amazon.awssdk.core.internal.http.async.SimpleHttpContentPublishe
 import software.amazon.awssdk.core.internal.metrics.BytesReadTrackingPublisher;
 import software.amazon.awssdk.core.internal.metrics.BytesWrittenTrackingPublisher;
 import software.amazon.awssdk.core.internal.metrics.RequestBodyMetrics;
+import software.amazon.awssdk.http.Abortable;
 import software.amazon.awssdk.http.SdkHttpExecutionAttributes;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
@@ -73,7 +76,10 @@ import software.amazon.awssdk.utils.Validate;
  *     {@code SdkException} or {@code Error} unchanged, anything else as
  *     {@code SdkClientException("Unable to execute HTTP request: <message>", cause)}.</li>
  *     <li><b>Cancellation.</b> Completing the returned future exceptionally (for example on a timeout) fails the HTTP
- *     client's future, which cancels the request, and cancels a body that is being buffered.</li>
+ *     client's future, which cancels the request, and cancels a body that is being buffered. After a hand-off the
+ *     returned future is already complete, so the transport gives the
+ *     {@link TransportExecutionAttribute#ABORTABLE_LISTENER}, when set, an {@code Abortable} that fails the HTTP
+ *     client's future; the request pipeline uses it to abort a streaming body.</li>
  *     <li><b>Threads.</b> Nothing blocks. The future is completed on the HTTP client's thread; moving completion to the
  *     future-completion executor is the pipeline's job.</li>
  *     <li><b>Close.</b> {@link #close()} closes the HTTP client only if the transport was created to own it.</li>
@@ -137,6 +143,12 @@ public final class SdkAsyncHttpClientTransport implements AsyncClientTransport<S
 
             // Failing or cancelling the returned future cancels the HTTP request.
             CompletableFutureUtils.forwardExceptionTo(result, executeFuture);
+            // After a hand-off the returned future is complete, so the pipeline aborts a streaming body through this.
+            Consumer<Abortable> abortableListener = context.getAttribute(TransportExecutionAttribute.ABORTABLE_LISTENER);
+            if (abortableListener != null) {
+                abortableListener.accept(() -> executeFuture.completeExceptionally(
+                    new CancellationException("The HTTP request was aborted by the request pipeline")));
+            }
             executeFuture.whenComplete((ignored, failure) -> responseHandler.onExecuteComplete(failure));
         } catch (Throwable t) {
             result.completeExceptionally(TransportFailures.asyncFailure(t));

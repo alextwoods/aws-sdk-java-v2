@@ -22,6 +22,7 @@ import static software.amazon.awssdk.core.internal.http.ApiCallStagesTestSupport
 import static software.amazon.awssdk.core.internal.http.ApiCallStagesTestSupport.UUID_PATTERN;
 import static software.amazon.awssdk.core.internal.http.ApiCallStagesTestSupport.baseConfig;
 import static software.amazon.awssdk.core.internal.http.ApiCallStagesTestSupport.dependencies;
+import static software.amazon.awssdk.core.internal.http.ApiCallStagesTestSupport.marshalledRequest;
 import static software.amazon.awssdk.core.internal.http.ProtocolStepsTestSupport.OPERATION;
 
 import java.io.ByteArrayInputStream;
@@ -92,8 +93,13 @@ import software.amazon.awssdk.metrics.MetricCollection;
 import software.amazon.awssdk.metrics.MetricCollector;
 import software.amazon.awssdk.metrics.NoOpMetricCollector;
 import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.PreludeSchemas;
+import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.SimpleApiOperation;
 import software.amazon.awssdk.schema.serde.TypeRegistry;
+import software.amazon.awssdk.schema.traits.StreamingTrait;
 import software.amazon.awssdk.utils.IoUtils;
 
 /**
@@ -109,6 +115,23 @@ class SyncApiCallPipelineTest {
     private static final List<String> ATTEMPT_HOOKS = Arrays.asList(
         "beforeTransmission", "afterTransmission", "modifyHttpResponse", "modifyHttpResponseContent",
         "beforeUnmarshalling");
+    private static final Schema STREAMING_INPUT =
+        Schema.structureBuilder(ShapeId.fromParts("com.example", "PutThingRequest"))
+              .putMember("name", PreludeSchemas.STRING)
+              .putMember("body", Schema.createBlob(ShapeId.fromParts("com.example", "Stream"), StreamingTrait.INSTANCE))
+              .build();
+
+    /**
+     * {@link ProtocolStepsTestSupport#OPERATION} with a streaming blob member in its input.
+     */
+    private static final ApiOperation<TestRequest, TestResponse> STREAMING_INPUT_OPERATION =
+        SimpleApiOperation.<TestRequest, TestResponse>builder()
+                          .schema(OPERATION.schema())
+                          .inputSchema(() -> STREAMING_INPUT)
+                          .outputSchema(OPERATION::outputSchema)
+                          .errorRegistry(TypeRegistry.empty())
+                          .service(OPERATION.service())
+                          .build();
 
     private final TestProtocol protocol = new TestProtocol();
     private final ScriptedTransport transport = new ScriptedTransport();
@@ -451,6 +474,83 @@ class SyncApiCallPipelineTest {
     }
 
     @Test
+    void streamingOutput_errorResponse_isDeserializedAsAnErrorAndNeverReachesTheTransformer() {
+        transport.respond(400, "error-body");
+        protocol.readBody = false;
+        List<String> transformed = new ArrayList<>();
+        ResponseTransformer<TestResponse, String> transformer = (response, body) -> {
+            transformed.add(IoUtils.toUtf8String(body));
+            return "unexpected";
+        };
+
+        assertThatThrownBy(() -> pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer))
+            .isInstanceOf(SdkServiceException.class)
+            .satisfies(e -> assertThat(((SdkServiceException) e).statusCode()).isEqualTo(400));
+
+        assertThat(transformed).isEmpty();
+        assertThat(transport.requests).hasSize(1);
+    }
+
+    @Test
+    void streamingOutput_retriedErrorThenSuccess_callsTheTransformerOnceWithTheSuccessBody() {
+        transport.respond(500, "busy");
+        transport.respond(200, "streamed-body");
+        protocol.readBody = false;
+        List<String> transformed = new ArrayList<>();
+        ResponseTransformer<TestResponse, String> transformer = (response, body) -> {
+            transformed.add(IoUtils.toUtf8String(body));
+            return "done";
+        };
+
+        String result = pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer);
+
+        assertThat(result).isEqualTo("done");
+        assertThat(transformed).containsExactly("streamed-body");
+        assertThat(transport.requests).hasSize(2);
+    }
+
+    @Test
+    void streamingOutput_transformerFailure_isNotRetriedAndClosesTheBody() throws Exception {
+        transport.respond(200, "streamed-body");
+        protocol.readBody = false;
+        ResponseTransformer<TestResponse, String> transformer = (response, body) -> {
+            throw new IllegalStateException("transform failed");
+        };
+
+        assertThatThrownBy(() -> pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer))
+            .isInstanceOf(SdkClientException.class)
+            .hasStackTraceContaining("transform failed");
+
+        assertThat(transport.requests).hasSize(1);
+    }
+
+    @Test
+    void streamingInput_bindsTheRequestBodyWithoutReadingItAndWithItsHeaders() throws Exception {
+        transport.respond(200, "hello");
+        protocol.serialize = endpoint -> marshalledRequest(endpoint, "{}").toBuilder()
+                                                                         .removeHeader("Content-Type")
+                                                                         .removeHeader("Content-Length")
+                                                                         .contentStreamProvider(null)
+                                                                         .encodedPath(OPERATION_PATH)
+                                                                         .build();
+        AtomicInteger streams = new AtomicInteger();
+        byte[] payload = "payload".getBytes(StandardCharsets.UTF_8);
+        RequestBody body = RequestBody.fromContentProvider(() -> {
+            streams.incrementAndGet();
+            return new ByteArrayInputStream(payload);
+        }, payload.length, "application/octet-stream");
+        ClientExecutionParams<TestRequest, TestResponse> params = params().withRequestBody(body);
+
+        pipeline(config()).execute(STREAMING_INPUT_OPERATION, params, this::executionContext);
+
+        assertThat(streams.get()).as("not read before the transport").isZero();
+        SdkHttpFullRequest sent = transport.requests.get(0);
+        assertThat(sent.firstMatchingHeader("Content-Length")).hasValue("7");
+        assertThat(sent.firstMatchingHeader("Content-Type")).hasValue("application/octet-stream");
+        assertThat(IoUtils.toUtf8String(sent.contentStreamProvider().get().newStream())).isEqualTo("payload");
+    }
+
+    @Test
     void errorRegistryAttribute_isPassedToTheProtocol() {
         transport.respond(200, "hello");
         TypeRegistry serviceRegistry = TypeRegistry.empty();
@@ -490,7 +590,10 @@ class SyncApiCallPipelineTest {
         ExecutionAttributes attributes = params.executionAttributes();
         attributes.putAttribute(InternalCoreExecutionAttribute.EXECUTION_ATTEMPT, 1);
         ExecutionInterceptorChain chain = new ExecutionInterceptorChain(Collections.singletonList(interceptor));
-        InterceptorContext interceptorContext = InterceptorContext.builder().request(params.getInput()).build();
+        InterceptorContext interceptorContext = InterceptorContext.builder()
+                                                                  .request(params.getInput())
+                                                                  .requestBody(params.getRequestBody())
+                                                                  .build();
         chain.beforeExecution(interceptorContext, attributes);
         interceptorContext = chain.modifyRequest(interceptorContext, attributes);
         return ExecutionContext.builder()

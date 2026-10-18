@@ -30,6 +30,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
@@ -217,35 +218,35 @@ class ClientHandlerPipelineRoutingTest {
     }
 
     @Test
-    void asyncExecute_withOperationAndResponseTransformerAndMarshaller_runsOnTheLegacyPipeline() {
+    void asyncExecute_withOperationAndResponseTransformer_runsOnTheSchemaBasedPipeline() throws Exception {
         AsyncClientHandler handler = asyncHandler(asyncConfig());
-        ClientExecutionParams<TestRequest, TestResponse> params = legacyParams().withOperation(OPERATION);
+        protocol.readBody = false;
+        MetricCollector collector = MetricCollector.create("ApiCall");
 
-        CompletableFuture<?> future = handler.execute(params, AsyncResponseTransformer.toBytes());
+        ResponseBytes<TestResponse> result =
+            handler.execute(newPathParams().withMetricCollector(collector), AsyncResponseTransformer.<TestResponse>toBytes())
+                   .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        assertThatThrownBy(() -> future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS))
-            .hasRootCauseMessage(RecordingAsyncHttpClient.FAILURE);
-        assertThat(asyncHttpClient.requests).hasSize(1);
-        assertThat(asyncTransport.requests).isEmpty();
-        assertThat(interceptor.operations).as("the legacy path also exposes the operation")
-                                          .containsExactly(OPERATION);
+        assertThat(result.response().value()).isEqualTo("headers-only");
+        assertThat(result.asUtf8String()).isEqualTo("from-transport");
+        assertThat(asyncTransport.requests).hasSize(1);
+        assertThat(asyncHttpClient.requests).isEmpty();
+        assertThat(interceptor.operations).containsExactly(OPERATION);
+        assertThat(collector.collect().metricValues(CoreMetric.API_CALL_SUCCESSFUL)).containsExactly(true);
     }
 
     @Test
-    void asyncExecute_withOperationAndResponseTransformerWithoutMarshaller_failsAsUnsupported() {
+    void asyncExecute_withOperationResponseTransformerAndMarshaller_runsOnTheSchemaBasedPipeline() throws Exception {
         AsyncClientHandler handler = asyncHandler(asyncConfig());
-        MetricCollector collector = MetricCollector.create("ApiCall");
+        protocol.readBody = false;
+        ClientExecutionParams<TestRequest, TestResponse> params = legacyParams().withOperation(OPERATION);
 
-        CompletableFuture<?> future = handler.execute(newPathParams().withMetricCollector(collector),
-                                                      AsyncResponseTransformer.toBytes());
+        ResponseBytes<TestResponse> result = handler.execute(params, AsyncResponseTransformer.<TestResponse>toBytes())
+                                                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        assertThatThrownBy(() -> future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS))
-            .hasCauseInstanceOf(UnsupportedOperationException.class)
-            .hasMessageContaining("streaming output");
-        assertThat(asyncTransport.requests).isEmpty();
+        assertThat(result.asUtf8String()).isEqualTo("from-transport");
+        assertThat(asyncTransport.requests).hasSize(1);
         assertThat(asyncHttpClient.requests).isEmpty();
-        assertThat(interceptor.operations).isEmpty();
-        assertThat(collector.collect().metricValues(CoreMetric.API_CALL_SUCCESSFUL)).containsExactly(false);
     }
 
     @Test

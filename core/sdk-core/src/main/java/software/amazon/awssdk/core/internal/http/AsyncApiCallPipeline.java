@@ -20,6 +20,7 @@ import static software.amazon.awssdk.core.internal.http.timers.TimerUtils.resolv
 import static software.amazon.awssdk.core.internal.http.timers.TimerUtils.timeAsyncTaskIfNeeded;
 import static software.amazon.awssdk.http.Header.CONTENT_LENGTH;
 import static software.amazon.awssdk.http.Header.TRANSFER_ENCODING;
+import static software.amazon.awssdk.utils.FunctionalUtils.runAndLogError;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -56,10 +57,12 @@ import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
 import software.amazon.awssdk.core.client.protocol.AsyncClientTransport;
+import software.amazon.awssdk.core.client.protocol.AsyncResponseHandoff;
 import software.amazon.awssdk.core.client.protocol.HttpMessageExchange;
 import software.amazon.awssdk.core.client.protocol.OwnedResponseBody;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.ApiCallTimeoutException;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.http.ExecutionContext;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
@@ -80,6 +83,7 @@ import software.amazon.awssdk.core.internal.metrics.SdkErrorType;
 import software.amazon.awssdk.core.internal.util.MetricUtils;
 import software.amazon.awssdk.core.internal.util.ThrowableUtils;
 import software.amazon.awssdk.core.metrics.CoreMetric;
+import software.amazon.awssdk.http.Abortable;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
@@ -143,8 +147,10 @@ import software.amazon.awssdk.utils.async.SimplePublisher;
  * once per pipeline. When the call's metric collector does not collect metrics, nothing is measured (racecar H8, as in
  * {@link SyncApiCallPipeline}).
  *
- * <p>Operations with a streaming output ({@link AsyncResponseTransformer}) are not supported yet: their body hand-off
- * through the transport's {@code AsyncResponseHandoff} is part of task 7.19.
+ * <p>Operations with a streaming output take an {@link AsyncResponseTransformer}: a successful response's body is
+ * handed off by the transport through an {@link AsyncResponseHandoff} and streamed to the transformer without being
+ * buffered, while error responses are buffered as above ({@link #execute(ApiOperation, ClientExecutionParams, Function,
+ * AsyncResponseTransformer)}).
  */
 @SdkInternalApi
 @ThreadSafe
@@ -251,10 +257,35 @@ public final class AsyncApiCallPipeline {
     }
 
     /**
-     * Calls an operation with a streaming output. Not supported yet: the response body hand-off to an
-     * {@link AsyncResponseTransformer} is part of task 7.19.
+     * Calls an operation with a streaming output: the output and the response body of a successful response go to the
+     * transformer, as with the legacy {@code BaseAsyncClientHandler.execute(params, asyncResponseTransformer)} and its
+     * {@code AsyncStreamingResponseHandler} (Requirements 14.2, 14.3). The body is not buffered: the transport hands it
+     * off through an {@link AsyncResponseHandoff}.
      *
-     * @throws UnsupportedOperationException always, before any interceptor runs
+     * <ul>
+     *     <li>{@link AsyncResponseTransformer#prepare()} runs once before the execution context is created, as on the
+     *     legacy pipeline (aws-sdk-java-v2 issue 1268), and again before each retry's request is sent.</li>
+     *     <li>For each response, {@code afterTransmission}, {@code modifyHttpResponse} and {@code beforeUnmarshalling}
+     *     run when the headers arrive. A successful response's headers, prefix headers and status code are
+     *     deserialized, {@code afterUnmarshalling} and {@code modifyResponse} run, and the output goes to
+     *     {@link AsyncResponseTransformer#onResponse}; the body then goes through {@code modifyAsyncHttpResponseContent}
+     *     to {@link AsyncResponseTransformer#onStream}. The attempt ends when the transformer's future completes.</li>
+     *     <li>An error response is buffered and deserialized through the Error_Registry; the transformer never sees its
+     *     body.</li>
+     *     <li>Before a retry, {@link AsyncResponseTransformer#exceptionOccurred} receives the failure that is retried,
+     *     as the legacy retry stage reports it. Ending the call (a failure, a timeout or a cancellation of the returned
+     *     future) while the body streams aborts the HTTP request.</li>
+     * </ul>
+     *
+     * @param operation the operation
+     * @param params the call's parameters
+     * @param contextFactory creates the call's execution context, as for {@link #execute(ApiOperation,
+     *     ClientExecutionParams, Function)}
+     * @param asyncResponseTransformer receives the output and the response body of a successful response
+     * @param <InputT> the input type
+     * @param <OutputT> the output type
+     * @param <ReturnT> the type the transformer's future completes with
+     * @return a future completed with the transformer's result, or failed as for the non-streaming call
      */
     public <InputT extends SdkRequest, OutputT extends SdkResponse, ReturnT> CompletableFuture<ReturnT> execute(
         ApiOperation<?, ?> operation,
@@ -265,8 +296,7 @@ public final class AsyncApiCallPipeline {
         Validate.paramNotNull(params, "params");
         Validate.paramNotNull(contextFactory, "contextFactory");
         Validate.paramNotNull(asyncResponseTransformer, "asyncResponseTransformer");
-        throw new UnsupportedOperationException("The asynchronous schema-based request pipeline does not support "
-                                                + "operations with a streaming output yet: " + operation.schema().id());
+        return measureApiCallSuccess(operation, params, contextFactory, new StreamingOutput<>(asyncResponseTransformer));
     }
 
     /**
@@ -277,18 +307,30 @@ public final class AsyncApiCallPipeline {
         ApiOperation<?, ?> operation,
         ClientExecutionParams<InputT, OutputT> params,
         Function<ClientExecutionParams<InputT, OutputT>, ExecutionContext> contextFactory) {
+        return measureApiCallSuccess(operation, params, contextFactory, null);
+    }
+
+    private <InputT extends SdkRequest, OutputT extends SdkResponse, R> CompletableFuture<R> measureApiCallSuccess(
+        ApiOperation<?, ?> operation,
+        ClientExecutionParams<InputT, OutputT> params,
+        Function<ClientExecutionParams<InputT, OutputT>, ExecutionContext> contextFactory,
+        StreamingOutput<R> streamingOutput) {
         if (params.getMetricCollector() == null) {
             params.withMetricCollector(NoOpMetricCollector.create());
         }
         MetricCollector callerCollector = params.getMetricCollector();
         ExecutionContext executionContext;
         try {
+            if (streamingOutput != null) {
+                // As BaseAsyncClientHandler: prepared as early as possible, for attempt 1.
+                streamingOutput.prepare(1);
+            }
             executionContext = createExecutionContext(operation, params, contextFactory);
         } catch (RuntimeException e) {
             callerCollector.reportMetric(CoreMetric.API_CALL_SUCCESSFUL, false);
             return CompletableFutureUtils.failedFuture(e);
         }
-        AsyncCall<OutputT> call = new AsyncCall<>(operation, executionContext, callerCollector);
+        AsyncCall<R> call = new AsyncCall<>(operation, executionContext, callerCollector, streamingOutput);
         return call.start(params.hostPrefixExpression(), params.discoveredEndpoint());
     }
 
@@ -450,6 +492,8 @@ public final class AsyncApiCallPipeline {
         private final ExecutionAttributes attributes;
         private final RequestExecutionContext context;
         private final MetricCollector callerCollector;
+        // The transformer of a streaming output, or null.
+        private final StreamingOutput<R> streamingOutput;
         private final CompletableFuture<R> returned = new CompletableFuture<>();
         private final AtomicBoolean finished = new AtomicBoolean();
         private volatile CompletableFuture<?> inFlight;
@@ -464,8 +508,12 @@ public final class AsyncApiCallPipeline {
         private RetryDecisions retries;
         private AsyncRequestBody originalRequestBody;
 
-        private AsyncCall(ApiOperation<?, ?> operation, ExecutionContext executionContext, MetricCollector callerCollector) {
+        private AsyncCall(ApiOperation<?, ?> operation,
+                          ExecutionContext executionContext,
+                          MetricCollector callerCollector,
+                          StreamingOutput<R> streamingOutput) {
             this.operation = operation;
+            this.streamingOutput = streamingOutput;
             this.executionContext = executionContext;
             this.attributes = executionContext.executionAttributes();
             this.errorRegistry = attributes.getAttribute(SdkExecutionAttribute.ERROR_REGISTRY);
@@ -504,6 +552,10 @@ public final class AsyncApiCallPipeline {
                     schedule(this::attempt, initialDelay);
                 }
             } catch (Throwable t) {
+                if (streamingOutput != null) {
+                    // BaseAsyncClientHandler.doExecute reports a failure before the request is sent to the handler.
+                    streamingOutput.exceptionOccurred(t);
+                }
                 fail(t);
             }
             return returned;
@@ -590,6 +642,7 @@ public final class AsyncApiCallPipeline {
             SdkHttpFullRequest request;
             CompletableFuture<SdkHttpFullResponse> sent;
             long sendStart;
+            StreamingAttempt streamingAttempt = null;
             try {
                 executionContext.interceptorChain().beforeTransmission(executionContext.interceptorContext(), attributes);
                 AsyncRequestBody asyncBody = context.requestProvider();
@@ -597,11 +650,20 @@ public final class AsyncApiCallPipeline {
                 attributes.putAttribute(TransportExecutionAttribute.HTTP_METRIC_COLLECTOR,
                                         MetricUtils.createHttpMetricsCollector(context));
                 request = withContentLength(signed, asyncBody);
+                if (streamingOutput != null) {
+                    // MakeAsyncHttpRequestStage prepares the response handler before it sends each attempt.
+                    streamingAttempt = new StreamingAttempt(request, streamingOutput.prepare(executionAttempt()));
+                    attributes.putAttribute(TransportExecutionAttribute.ABORTABLE_LISTENER, streamingAttempt::abortable);
+                }
                 sendStart = System.nanoTime();
                 attributes.putAttribute(SdkInternalExecutionAttribute.API_CALL_ATTEMPT_START_NANO_TIME, sendStart);
-                sent = transport.send(attributes, request, null);
+                sent = transport.send(attributes, request, streamingAttempt);
             } catch (Throwable t) {
                 attemptFailedOrFail(t);
+                return;
+            }
+            if (streamingAttempt != null) {
+                streamingAttempt.start(sent, sendStart);
                 return;
             }
             track(sent);
@@ -614,6 +676,108 @@ public final class AsyncApiCallPipeline {
                 long completed = System.nanoTime();
                 onFutureCompletionExecutor(() -> received(request, sendStart, completed, response, failure));
             });
+        }
+
+        private int executionAttempt() {
+            return retries.attemptNumber();
+        }
+
+        /**
+         * The end of a streaming attempt, on the future completion executor: the transformer's result for a body that
+         * was handed off, or the buffered response otherwise. An error response is deserialized as for a non-streaming
+         * call, after {@code modifyAsyncHttpResponseContent}; the header hooks already ran when the headers arrived. A
+         * successful response that the transport buffered although the hand-off accepted it (a transport without
+         * hand-off support) is streamed to the transformer from the buffer.
+         */
+        private void streamingReceived(StreamingAttempt attempt,
+                                       long sendStart,
+                                       long completed,
+                                       SdkHttpFullResponse response,
+                                       Throwable failure) {
+            if (finished.get()) {
+                if (!attempt.streamed) {
+                    closeQuietly(response);
+                }
+                return;
+            }
+            try {
+                reportTransportTimes(sendStart, completed, failure == null);
+                if (failure != null) {
+                    attemptFailedOrFail(failure);
+                    return;
+                }
+                if (attempt.streamed) {
+                    reportAndDecide(Response.<R>builder()
+                                            .httpResponse(response)
+                                            .response(attempt.transformedResult)
+                                            .isSuccess(true)
+                                            .build());
+                    return;
+                }
+                SdkHttpFullResponse headersOnly = attempt.headersOnly;
+                InterceptorContext headersContext = attempt.headersContext;
+                if (headersContext == null) {
+                    headersOnly = withoutContent(response);
+                    headersContext = runHeaderHooks(headersOnly);
+                }
+                if (headersContext.httpResponse().isSuccessful()) {
+                    streamBuffered(attempt, response, headersOnly, headersContext);
+                    return;
+                }
+                handleBufferedBody(attempt.request, response, headersOnly, headersContext);
+            } catch (Throwable t) {
+                attemptFailedOrFail(t);
+            }
+        }
+
+        /**
+         * A successful response of a streaming call whose body the transport buffered: the transformer gets the output
+         * and the buffer, as it would get a handed-off body.
+         */
+        private void streamBuffered(StreamingAttempt attempt,
+                                    SdkHttpFullResponse response,
+                                    SdkHttpFullResponse headersOnly,
+                                    InterceptorContext headersContext) {
+            SdkHttpFullResponse headers = withContent(headersContext.httpResponse(), headersOnly, headersOnly, null);
+            Response<?> deserialized = ProtocolResponseHandling.handleStreamingHeaders(
+                executionContext, operation, errorRegistry, attempt.request, headers);
+            if (!Boolean.TRUE.equals(deserialized.isSuccess())) {
+                closeQuietly(response);
+                reportAndDecide(Response.<R>builder().httpResponse(headers).exception(deserialized.exception())
+                                        .isSuccess(false).build());
+                return;
+            }
+            // The body is already in memory, so nothing is left to abort; the transformer's own future is not failed by
+            // the end of the call.
+            attempt.transformed.whenComplete((result, failure) -> onFutureCompletionExecutor(() -> {
+                if (finished.get()) {
+                    return;
+                }
+                if (failure != null) {
+                    attemptFailedOrFail(failure);
+                    return;
+                }
+                try {
+                    reportAndDecide(Response.<R>builder().httpResponse(headers).response(result).isSuccess(true).build());
+                } catch (Throwable t) {
+                    attemptFailedOrFail(t);
+                }
+            }));
+            streamingOutput.onResponse(deserialized.response());
+            BufferedBody body = new BufferedBody(response, attributes);
+            streamingOutput.onStream(modifyAsyncHttpResponse(headersContext, body));
+        }
+
+        /**
+         * {@code modifyAsyncHttpResponseContent}, as {@code AsyncAfterTransmissionInterceptorCallingResponseHandler.onStream}
+         * runs it: the interceptors' publisher, or {@code body} when they return none.
+         */
+        private Publisher<ByteBuffer> modifyAsyncHttpResponse(InterceptorContext headersContext, Publisher<ByteBuffer> body) {
+            return executionContext.interceptorChain()
+                                   .modifyAsyncHttpResponse(headersContext.toBuilder().responsePublisher(body).build(),
+                                                            attributes)
+                                   .responsePublisher()
+                                   .orElse(body);
         }
 
         private void received(SdkHttpFullRequest request,
@@ -668,15 +832,33 @@ public final class AsyncApiCallPipeline {
          * body, so the publisher replays it; only a publisher an interceptor substituted is read into a new buffer.
          */
         private void handleResponse(SdkHttpFullRequest request, SdkHttpFullResponse response) {
-            ExecutionInterceptorChain chain = executionContext.interceptorChain();
             SdkHttpFullResponse headersOnly = withoutContent(response);
+            handleBufferedBody(request, response, headersOnly, runHeaderHooks(headersOnly));
+        }
+
+        /**
+         * {@code afterTransmission}, {@code modifyHttpResponse} and {@code beforeUnmarshalling} with the response
+         * headers, as {@code AsyncAfterTransmissionInterceptorCallingResponseHandler.onHeaders} runs them.
+         */
+        private InterceptorContext runHeaderHooks(SdkHttpFullResponse headersOnly) {
+            ExecutionInterceptorChain chain = executionContext.interceptorChain();
             InterceptorContext interceptorContext =
                 executionContext.interceptorContext().copy(b -> b.httpResponse(headersOnly));
             chain.afterTransmission(interceptorContext, attributes);
             interceptorContext = chain.modifyHttpResponse(interceptorContext, attributes);
             chain.beforeUnmarshalling(interceptorContext, attributes);
             executionContext.interceptorContext(interceptorContext);
+            return interceptorContext;
+        }
 
+        /**
+         * {@code modifyAsyncHttpResponseContent} with the buffered body as a publisher, then deserialization.
+         */
+        private void handleBufferedBody(SdkHttpFullRequest request,
+                                        SdkHttpFullResponse response,
+                                        SdkHttpFullResponse headersOnly,
+                                        InterceptorContext interceptorContext) {
+            ExecutionInterceptorChain chain = executionContext.interceptorChain();
             BufferedBody body = new BufferedBody(response, attributes);
             Publisher<ByteBuffer> publisher =
                 chain.modifyAsyncHttpResponse(interceptorContext.toBuilder().responsePublisher(body).build(), attributes)
@@ -719,6 +901,20 @@ public final class AsyncApiCallPipeline {
             }
             Response<R> result = (Response<R>) ProtocolResponseHandling.handle(executionContext, (ApiOperation) operation,
                                                                                errorRegistry, request, response);
+            if (streamingOutput != null && Boolean.TRUE.equals(result.isSuccess())) {
+                // Only error responses of a streaming call are buffered, and the protocol read this one as a success.
+                throw SdkClientException.create("Unable to unmarshall error response: the protocol returned an output "
+                                                + "for the error response of a streaming operation. Response Code: "
+                                                + response.statusCode());
+            }
+            reportAndDecide(result);
+        }
+
+        /**
+         * The response metrics of {@code AsyncApiCallAttemptMetricCollectionStage}, and the retry decision of
+         * {@code AsyncRetryableStage}, for a response handled by the protocol or a streaming transformer.
+         */
+        private void reportAndDecide(Response<R> result) {
             MetricCollector attemptCollector = context.attemptMetricCollector();
             if (MetricUtils.collectsMetrics(attemptCollector)) {
                 MetricUtils.collectHttpMetrics(attemptCollector, result.httpResponse());
@@ -798,6 +994,10 @@ public final class AsyncApiCallPipeline {
          */
         private void decide(RetryDecisions.Decision decision) {
             if (decision.retry()) {
+                if (streamingOutput != null) {
+                    // AsyncRetryableStage tells the response handler, and so the transformer, before each retry.
+                    streamingOutput.exceptionOccurred(retries.lastException());
+                }
                 context.requestProvider(originalRequestBody);
                 schedule(this::attempt, decision.delay());
                 return;
@@ -930,6 +1130,205 @@ public final class AsyncApiCallPipeline {
             SdkHttpRequest finalRequest = executionContext.interceptorContext().httpRequest();
             MetricUtils.collectServiceEndpointMetrics(metricCollector,
                                                       finalRequest != null ? (SdkHttpFullRequest) finalRequest : marshalled);
+        }
+
+        /**
+         * One attempt of a streaming call: the transport's hand-off, and the attempt's future, which completes when the
+         * transformer's future completes for a handed-off body, with the buffered response for an error response, or
+         * with the transport's failure. That future is the one the attempt timeout and the end of the call fail; failing
+         * it cancels the transport's future before the hand-off and aborts the HTTP request after it, as the legacy
+         * {@code MakeAsyncHttpRequestStage} fails the HTTP client's future.
+         *
+         * <p>{@link #onHeaders} and {@link #onStream} run on the transport's thread, as the legacy response handler
+         * callbacks run on the HTTP client's thread; neither blocks.
+         */
+        private final class StreamingAttempt implements AsyncResponseHandoff<SdkHttpFullResponse> {
+            private final SdkHttpFullRequest request;
+            private final CompletableFuture<R> transformed;
+            private final CompletableFuture<SdkHttpFullResponse> result = new CompletableFuture<>();
+            private volatile Abortable abortable;
+            private volatile SdkHttpFullResponse headersOnly;
+            private volatile InterceptorContext headersContext;
+            private volatile SdkHttpFullResponse streamedResponse;
+            private volatile Throwable headersFailure;
+            private volatile boolean streamed;
+            private volatile R transformedResult;
+
+            private StreamingAttempt(SdkHttpFullRequest request, CompletableFuture<R> transformed) {
+                this.request = request;
+                this.transformed = transformed;
+            }
+
+            /**
+             * Receives the transport's handle on the HTTP request ({@link TransportExecutionAttribute#ABORTABLE_LISTENER}).
+             */
+            private void abortable(Abortable requestAbortable) {
+                this.abortable = requestAbortable;
+                if (result.isCompletedExceptionally()) {
+                    requestAbortable.abort();
+                }
+            }
+
+            private void start(CompletableFuture<SdkHttpFullResponse> sent, long sendStart) {
+                // Before the hand-off, failing the attempt cancels the transport's future, and so the HTTP request.
+                CompletableFutureUtils.forwardExceptionTo(result, sent);
+                sent.whenComplete((response, failure) -> {
+                    if (failure != null) {
+                        result.completeExceptionally(failure);
+                    } else if (!streamed) {
+                        result.complete(response);
+                    }
+                });
+                result.whenComplete((response, failure) -> {
+                    if (failure != null) {
+                        abort();
+                    }
+                });
+                track(result);
+                long timeoutInMillis = resolveTimeoutInMillis(context.requestConfig()::apiCallAttemptTimeout,
+                                                              apiCallAttemptTimeout);
+                context.apiCallAttemptTimeoutTracker(
+                    timeAsyncTaskIfNeeded(result, scheduledExecutor,
+                                          () -> ApiCallAttemptTimeoutException.create(timeoutInMillis), timeoutInMillis));
+                result.whenComplete((response, failure) -> {
+                    long completed = System.nanoTime();
+                    onFutureCompletionExecutor(() -> streamingReceived(this, sendStart, completed, response, failure));
+                });
+            }
+
+            /**
+             * The header hooks, then, for a successful response, its non-body members are deserialized and the output
+             * goes to {@link AsyncResponseTransformer#onResponse}, as the legacy {@code AsyncStreamingResponseHandler}
+             * does. The success decision uses the response {@code modifyHttpResponse} returned, as the legacy
+             * {@code CombinedResponseAsyncHttpResponseHandler} does; an error response is left to the transport to
+             * buffer.
+             */
+            @Override
+            public boolean onHeaders(SdkHttpFullResponse response) {
+                if (result.isDone() || finished.get()) {
+                    return false;
+                }
+                // The headers time, recorded here for a transport that does not record it, as reportTransportTimes does
+                // for a buffered response.
+                Long headersRead = attributes.getAttribute(SdkInternalExecutionAttribute.HEADERS_READ_END_NANO_TIME);
+                Long attemptStart = attributes.getAttribute(SdkInternalExecutionAttribute.API_CALL_ATTEMPT_START_NANO_TIME);
+                if (headersRead == null || (attemptStart != null && headersRead < attemptStart)) {
+                    attributes.putAttribute(SdkInternalExecutionAttribute.HEADERS_READ_END_NANO_TIME, System.nanoTime());
+                }
+                InterceptorContext interceptorContext = runHeaderHooks(response);
+                headersOnly = response;
+                headersContext = interceptorContext;
+                SdkHttpResponse modified = interceptorContext.httpResponse();
+                if (!modified.isSuccessful()) {
+                    return false;
+                }
+                streamed = true;
+                SdkHttpFullResponse headers = withContent(modified, response, response, null);
+                try {
+                    Response<?> deserialized = ProtocolResponseHandling.handleStreamingHeaders(
+                        executionContext, operation, errorRegistry, request, headers);
+                    if (!Boolean.TRUE.equals(deserialized.isSuccess())) {
+                        headersFailure = deserialized.exception();
+                        return true;
+                    }
+                    streamedResponse = headers;
+                    streamingOutput.onResponse(deserialized.response());
+                } catch (Throwable t) {
+                    headersFailure = t;
+                }
+                return true;
+            }
+
+            /**
+             * {@code modifyAsyncHttpResponseContent}, then the body goes to {@link AsyncResponseTransformer#onStream};
+             * the attempt ends when the transformer's future completes. After a failure in {@link #onHeaders}, the body
+             * is cancelled unread and the attempt fails with that failure.
+             */
+            @Override
+            public void onStream(Publisher<ByteBuffer> body) {
+                if (result.isDone()) {
+                    discard(body);
+                    return;
+                }
+                Throwable failure = headersFailure;
+                if (failure != null) {
+                    // The legacy handler still passes the body through modifyAsyncHttpResponseContent after a failure
+                    // in onHeaders, and only then to the transformer, which has already been told of the failure.
+                    try {
+                        discard(modifyAsyncHttpResponse(headersContext, body));
+                    } finally {
+                        result.completeExceptionally(failure);
+                    }
+                    return;
+                }
+                Publisher<ByteBuffer> publisher = modifyAsyncHttpResponse(headersContext, body);
+                transformed.whenComplete((transformerResult, transformFailure) -> {
+                    if (transformFailure != null) {
+                        result.completeExceptionally(transformFailure);
+                    } else {
+                        transformedResult = transformerResult;
+                        result.complete(streamedResponse);
+                    }
+                });
+                streamingOutput.onStream(publisher);
+            }
+
+            private void abort() {
+                Abortable requestAbortable = abortable;
+                if (requestAbortable != null) {
+                    requestAbortable.abort();
+                }
+            }
+        }
+    }
+
+    /**
+     * Subscribes and cancels at once, so that the transport releases a body nobody reads.
+     */
+    private static void discard(Publisher<ByteBuffer> body) {
+        ResponseBodyAggregator cancelled = new ResponseBodyAggregator(-1);
+        cancelled.cancel();
+        body.subscribe(cancelled);
+    }
+
+    /**
+     * The transformer of a streaming call, prepared once per attempt as the legacy {@code IdempotentAsyncResponseHandler}
+     * around {@code AsyncStreamingResponseHandler} prepares it: {@link #prepare(int)} calls
+     * {@link AsyncResponseTransformer#prepare()} only when the attempt number changed since the last call.
+     */
+    private static final class StreamingOutput<R> {
+        private final AsyncResponseTransformer<SdkResponse, R> transformer;
+        private int preparedAttempt;
+        private CompletableFuture<R> prepared;
+
+        @SuppressWarnings("unchecked")
+        private StreamingOutput(AsyncResponseTransformer<? extends SdkResponse, R> transformer) {
+            this.transformer = (AsyncResponseTransformer<SdkResponse, R>) transformer;
+        }
+
+        /**
+         * Called on the caller's thread for attempt 1 and on the attempt's thread for each send; synchronized so each
+         * call sees the previous one's future.
+         */
+        private synchronized CompletableFuture<R> prepare(int attempt) {
+            if (prepared == null || preparedAttempt != attempt) {
+                prepared = transformer.prepare();
+                preparedAttempt = attempt;
+            }
+            return prepared;
+        }
+
+        private void onResponse(Object output) {
+            transformer.onResponse((SdkResponse) output);
+        }
+
+        private void onStream(Publisher<ByteBuffer> body) {
+            transformer.onStream(SdkPublisher.adapt(body));
+        }
+
+        private void exceptionOccurred(Throwable failure) {
+            runAndLogError(log.logger(), "Exception thrown in exceptionOccurred callback, ignoring",
+                           () -> transformer.exceptionOccurred(failure));
         }
     }
 

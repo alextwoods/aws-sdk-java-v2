@@ -129,8 +129,8 @@ public final class ProtocolResponseHandling {
      * exception is wrapped in a {@link NonRetryableException}, both then reported as {@code CombinedResponseHandler}
      * reports them.
      *
-     * <p>The asynchronous counterpart, which hands the body publisher to an {@code AsyncResponseTransformer} through
-     * the transport's {@code AsyncResponseHandoff}, is part of task 7.19.
+     * <p>The asynchronous pipeline uses {@link #handleStreamingHeaders} instead and hands the body publisher to an
+     * {@code AsyncResponseTransformer} through the transport's {@code AsyncResponseHandoff}.
      *
      * @param executionContext the call's execution context
      * @param operation the operation being called
@@ -185,6 +185,35 @@ public final class ProtocolResponseHandling {
                 closeBody(response);
             }
         }
+    }
+
+    /**
+     * Deserializes the status, headers and other non-body members of a successful response of an operation with a
+     * streaming output, for the asynchronous pipeline, which then hands the output and the response body to an
+     * {@code AsyncResponseTransformer} (design A.13). It is the async counterpart of the first half of
+     * {@link #handleStreaming}: the request ID is logged, the protocol deserializes the response, and
+     * {@code afterUnmarshalling} and {@code modifyResponse} run with the output, as the legacy decorated response handler
+     * runs them in {@code AsyncStreamingResponseHandler.onHeaders}.
+     *
+     * @param executionContext the call's execution context
+     * @param operation the operation being called
+     * @param errorRegistry the registry the protocol creates modeled errors with
+     * @param request the request that was sent
+     * @param response the response headers, without a body
+     * @return a successful response with the output returned by the {@code modifyResponse} interceptors, or a failed
+     *     response with the service error the protocol threw
+     * @throws SdkClientException if the response cannot be deserialized or an interceptor fails
+     */
+    public static Response<?> handleStreamingHeaders(ExecutionContext executionContext,
+                                                     ApiOperation<?, ?> operation,
+                                                     TypeRegistry errorRegistry,
+                                                     SdkHttpFullRequest request,
+                                                     SdkHttpFullResponse response) {
+        Response<?> result = deserialize(executionContext, operation, errorRegistry, request, response);
+        if (!result.isSuccess()) {
+            return result;
+        }
+        return success(runAfterUnmarshalling(executionContext, result.response(), response), response);
     }
 
     private static <I extends SerializableStruct, O extends SerializableStruct> Response<O> deserialize(

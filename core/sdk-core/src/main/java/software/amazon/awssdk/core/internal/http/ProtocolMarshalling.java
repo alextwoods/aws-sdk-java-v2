@@ -84,6 +84,9 @@ public final class ProtocolMarshalling {
      *     filled from {@code IdempotentUtils.getGenerator()} in a view of the input (the request itself is not
      *     modified, see {@link IdempotencyTokens}); the time it takes is reported as
      *     {@link CoreMetric#MARSHALLING_DURATION};</li>
+     *     <li>for an input with a streaming blob member, the call's {@link RequestBody} or async request body from the
+     *     interceptor context is bound to the request without being read, with the legacy streaming marshallers'
+     *     headers ({@link StreamingRequestBodies}), within the measured marshalling;</li>
      *     <li>the request, and its body as a {@link RequestBody} when it has one, are set on the interceptor context, as
      *     the legacy handler does;</li>
      *     <li>{@code afterMarshalling}.</li>
@@ -126,11 +129,14 @@ public final class ProtocolMarshalling {
 
         executionContext.interceptorChain().beforeMarshalling(executionContext.interceptorContext(), attributes);
 
-        SdkRequest input = executionContext.interceptorContext().request();
+        InterceptorContext beforeMarshalling = executionContext.interceptorContext();
+        SdkRequest input = beforeMarshalling.request();
         MetricCollector metricCollector = executionContext.metricCollector();
         boolean measure = MetricUtils.collectsMetrics(metricCollector);
         long start = measure ? System.nanoTime() : 0L;
         SdkHttpFullRequest request = serialize(protocol, operation, input, attributes);
+        // As the legacy streaming marshallers wrap the generated marshaller, inside the measured marshalling.
+        request = StreamingRequestBodies.bind(operation, request, beforeMarshalling);
         if (measure) {
             metricCollector.reportMetric(CoreMetric.MARSHALLING_DURATION, Duration.ofNanos(System.nanoTime() - start));
         }

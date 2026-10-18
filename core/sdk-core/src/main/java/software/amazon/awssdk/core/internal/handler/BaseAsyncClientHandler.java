@@ -101,10 +101,9 @@ public abstract class BaseAsyncClientHandler extends BaseClientHandler implement
     /**
      * {@inheritDoc}
      *
-     * <p>{@link AsyncApiCallPipeline} does not support streaming outputs yet (task 7.19), so a call with an
-     * {@linkplain ClientExecutionParams#getOperation() operation} runs on the legacy pipeline when it also has a
-     * marshaller (with its response handlers). A call with an operation and no marshaller goes to the schema-based
-     * pipeline, which fails it with an {@link UnsupportedOperationException} before any interceptor runs.
+     * <p>A call with an {@linkplain ClientExecutionParams#getOperation() operation} runs on the client's
+     * {@link AsyncApiCallPipeline}, which streams the response body to the transformer; any other call runs on the legacy
+     * pipeline.
      */
     @Override
     public <InputT extends SdkRequest, OutputT extends SdkResponse, ReturnT> CompletableFuture<ReturnT> execute(
@@ -112,7 +111,7 @@ public abstract class BaseAsyncClientHandler extends BaseClientHandler implement
         AsyncResponseTransformer<OutputT, ReturnT> asyncResponseTransformer) {
 
         ApiOperation<?, ?> operation = executionParams.getOperation();
-        if (operation != null && executionParams.getMarshaller() == null) {
+        if (operation != null) {
             return executeOnNewPath(executionParams, pipeline -> pipeline.execute(
                 operation, executionParams, this::invokeInterceptorsAndCreateExecutionContext, asyncResponseTransformer));
         }

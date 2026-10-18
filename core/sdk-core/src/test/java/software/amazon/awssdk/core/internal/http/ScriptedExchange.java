@@ -269,7 +269,17 @@ final class ScriptedExchange {
             CompletableFuture<SdkHttpFullResponse> result = new CompletableFuture<>();
             switch (step.kind) {
                 case RESPOND:
-                    result.complete(response(step));
+                    SdkHttpFullResponse response = response(step);
+                    SdkHttpFullResponse headers = response.toBuilder().content(null).build();
+                    if (streamingHandoff != null && streamingHandoff.onHeaders(headers)) {
+                        // As the SDK transport hands off a streaming body: the publisher, then the headers-only response.
+                        byte[] body = step.text.getBytes(StandardCharsets.UTF_8);
+                        streamingHandoff.onStream(
+                            SdkPublisher.fromIterable(Collections.singletonList(ByteBuffer.wrap(body))));
+                        result.complete(headers);
+                    } else {
+                        result.complete(response);
+                    }
                     break;
                 case IO_FAILURE:
                     result.completeExceptionally(transportFailure(new IOException(step.text)));

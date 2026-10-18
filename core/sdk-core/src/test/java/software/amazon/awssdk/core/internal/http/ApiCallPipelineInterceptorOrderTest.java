@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -45,6 +46,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import software.amazon.awssdk.core.SdkResponse;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
@@ -92,6 +94,7 @@ class ApiCallPipelineInterceptorOrderTest {
     private static final String HOST_PREFIX = "data.";
     private static final String MARSHALLING_FAILURE = "Unable to marshall request: test failure";
     private static final String COMPLETION_THREAD = "future-completion-executor";
+    private static final String HEADERS_ONLY = "headers-only";
 
     enum Mode {
         SYNC, ASYNC
@@ -184,6 +187,46 @@ class ApiCallPipelineInterceptorOrderTest {
 
         assertThat(legacy.count("onExecutionFailure")).as("Baseline failure reports").isEqualTo(scenario.failureReports);
         assertThat(legacy.count("modifyException")).isEqualTo(scenario.failureReports);
+        assertThat(actual.hooks()).isEqualTo(legacy.hooks());
+        assertThat(actual.contexts()).isEqualTo(AllowedDifferences.contexts(options, legacy.records));
+        assertThat(actual.attributeKeys()).isEqualTo(AllowedDifferences.attributeKeys(newPath, options, legacy.records));
+        assertThat(actual.result).isEqualTo(AllowedDifferences.result(options, legacy.result));
+        assertThat(actual.attempts).isEqualTo(legacy.attempts);
+    }
+
+    static Stream<Arguments> streamingCalls() {
+        List<Arguments> arguments = new ArrayList<>();
+        List<Scenario> scenarios = Arrays.asList(Scenario.SUCCESS, Scenario.SERVICE_ERROR, Scenario.RETRY_THEN_SUCCESS,
+                                                 Scenario.CLIENT_ERROR_THEN_SUCCESS, Scenario.RETRIES_EXHAUSTED,
+                                                 Scenario.AFTER_TRANSMISSION_FAILURE, Scenario.MODIFY_RESPONSE_FAILURE,
+                                                 Scenario.AFTER_EXECUTION_FAILURE);
+        for (Mode mode : Mode.values()) {
+            for (Pipeline newPath : Arrays.asList(Pipeline.NEW_PATH_SDK_TRANSPORT, Pipeline.NEW_PATH_STUB_TRANSPORT)) {
+                for (Scenario scenario : scenarios) {
+                    arguments.add(Arguments.of(mode, newPath, scenario));
+                }
+            }
+        }
+        return arguments.stream();
+    }
+
+    /**
+     * Streaming outputs (task 7.19): a {@code ResponseTransformer} or {@code AsyncResponseTransformer} call sees the same
+     * hooks, contexts and attributes on both pipelines. For an async call that is the legacy
+     * {@code AsyncStreamingResponseHandler} order: {@code afterUnmarshalling} and {@code modifyResponse} run on the
+     * headers, before {@code modifyAsyncHttpResponseContent}; an error response is buffered and keeps the non-streaming
+     * order. The new path's async attempts also carry {@link TransportExecutionAttribute#ABORTABLE_LISTENER} once sent.
+     */
+    @ParameterizedTest(name = "{0} {1} {2}")
+    @MethodSource("streamingCalls")
+    void execute_withAStreamingOutputOnTheNewPath_invokesTheSameHooksAsTheLegacyPipeline(
+        Mode mode, Pipeline newPath, Scenario scenario) {
+        CallOptions options = new CallOptions(mode, scenario.script, scenario.failingHook, false);
+        options.streaming = true;
+
+        Outcome legacy = run(Pipeline.LEGACY, options);
+        Outcome actual = run(newPath, options);
+
         assertThat(actual.hooks()).isEqualTo(legacy.hooks());
         assertThat(actual.contexts()).isEqualTo(AllowedDifferences.contexts(options, legacy.records));
         assertThat(actual.attributeKeys()).isEqualTo(AllowedDifferences.attributeKeys(newPath, options, legacy.records));
@@ -348,7 +391,7 @@ class ApiCallPipelineInterceptorOrderTest {
         ScriptedExchange exchange = new ScriptedExchange();
         options.script.accept(exchange);
         HookRecordingInterceptor interceptor = new HookRecordingInterceptor(options.failingHook);
-        OrderTestProtocol protocol = new OrderTestProtocol(options.failSerialization);
+        OrderTestProtocol protocol = new OrderTestProtocol(options.failSerialization, options.streaming);
         SdkClientConfiguration config = config(pipeline, options, exchange, interceptor, protocol);
         ClientExecutionParams<TestRequest, TestResponse> params =
             pipeline == Pipeline.LEGACY ? legacyParams(options) : newPathParams();
@@ -359,9 +402,18 @@ class ApiCallPipelineInterceptorOrderTest {
         if (options.mode == Mode.SYNC) {
             try (SdkSyncClientHandler handler = new SdkSyncClientHandler(config) {
             }) {
-                result = success(handler.execute(params));
+                result = options.streaming
+                         ? handler.execute(params, (response, body) -> streamed(response, IoUtils.toUtf8String(body)))
+                         : success(handler.execute(params));
             } catch (RuntimeException e) {
                 result = failure(e);
+            }
+        } else if (options.streaming) {
+            try (SdkAsyncClientHandler handler = new SdkAsyncClientHandler(config)) {
+                CompletableFuture<String> future =
+                    handler.execute(params, AsyncResponseTransformer.<TestResponse>toBytes())
+                           .thenApply(bytes -> streamed(bytes.response(), bytes.asUtf8String()));
+                result = await(future, Function.identity());
             }
         } else {
             try (SdkAsyncClientHandler handler = new SdkAsyncClientHandler(config)) {
@@ -435,7 +487,9 @@ class ApiCallPipelineInterceptorOrderTest {
                 }
                 return marshalledRequest(CLIENT_ENDPOINT, "{}");
             })
-            .withResponseHandler((response, attributes) -> TestResponse.builder().value(read(response)).build())
+            .withResponseHandler((response, attributes) -> TestResponse.builder()
+                                                                       .value(options.streaming ? HEADERS_ONLY : read(response))
+                                                                       .build())
             .withErrorResponseHandler((response, attributes) -> serviceError(response));
     }
 
@@ -467,8 +521,16 @@ class ApiCallPipelineInterceptorOrderTest {
     }
 
     private static String await(CompletableFuture<TestResponse> future) {
+        return await(future, ApiCallPipelineInterceptorOrderTest::success);
+    }
+
+    private static String streamed(TestResponse output, String body) {
+        return "streamed=" + output.value() + ":" + body + ", sdkHttpResponse=" + output.sdkHttpResponse().statusCode();
+    }
+
+    private static <T> String await(CompletableFuture<T> future, Function<T, String> describe) {
         try {
-            return success(future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            return describe.apply(future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
         } catch (ExecutionException e) {
             return failure(e.getCause());
         } catch (CancellationException e) {
@@ -603,6 +665,10 @@ class ApiCallPipelineInterceptorOrderTest {
                     keys.add(HTTP_METRIC_COLLECTOR);
                     if (options.mode == Mode.ASYNC) {
                         keys.add(ASYNC_REQUEST_BODY);
+                        if (options.streaming) {
+                            // Each streaming attempt registers the HTTP request's abort with the async transport.
+                            keys.add(ABORTABLE_LISTENER);
+                        }
                         if (newPath == Pipeline.NEW_PATH_SDK_TRANSPORT) {
                             keys.add(OWNED_RESPONSE_BODY);
                         }
@@ -627,6 +693,7 @@ class ApiCallPipelineInterceptorOrderTest {
         private final boolean collectMetrics;
         private boolean failSerialization;
         private boolean cancelWhenPending;
+        private boolean streaming;
         private Duration apiCallTimeout;
 
         private CallOptions(Mode mode, Consumer<ScriptedExchange> script, String failingHook, boolean collectMetrics) {
@@ -682,7 +749,10 @@ class ApiCallPipelineInterceptorOrderTest {
      * legacy response handlers create, setting {@code sdkHttpResponse} on the output builder as the SDK protocols do.
      */
     private static final class OrderTestProtocol extends HttpStubProtocol {
-        OrderTestProtocol(boolean failSerialization) {
+        private final boolean streaming;
+
+        OrderTestProtocol(boolean failSerialization, boolean streaming) {
+            this.streaming = streaming;
             if (failSerialization) {
                 serialize = endpoint -> {
                     throw SdkClientException.create(MARSHALLING_FAILURE);
@@ -698,7 +768,10 @@ class ApiCallPipelineInterceptorOrderTest {
             if (!response.isSuccessful()) {
                 throw serviceError(response);
             }
-            SdkResponse.Builder builder = TestResponse.builder().value(read(response)).sdkHttpResponse(response);
+            // A streaming output's body is left unread for the transformer.
+            SdkResponse.Builder builder = TestResponse.builder()
+                                                      .value(streaming ? HEADERS_ONLY : read(response))
+                                                      .sdkHttpResponse(response);
             return (O) builder.build();
         }
     }

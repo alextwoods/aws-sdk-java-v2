@@ -220,8 +220,11 @@ public abstract class BaseClientHandler {
         ExecutionInterceptorChain interceptorChain =
             new ExecutionInterceptorChain(clientConfiguration.option(SdkClientOption.EXECUTION_INTERCEPTORS));
 
+        // The streaming request bodies are on the context, as the aws-core context factory puts them there.
         InterceptorContext interceptorContext = InterceptorContext.builder()
                                                                   .request(originalRequest)
+                                                                  .asyncRequestBody(params.getAsyncRequestBody())
+                                                                  .requestBody(params.getRequestBody())
                                                                   .build();
 
         interceptorChain.beforeExecution(interceptorContext, executionAttributes);

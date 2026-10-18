@@ -53,6 +53,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
@@ -96,6 +98,7 @@ import software.amazon.awssdk.core.internal.retry.SdkDefaultRetryStrategy;
 import software.amazon.awssdk.core.internal.util.MetricUtils;
 import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.Abortable;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.HttpMetric;
@@ -120,6 +123,7 @@ import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.serde.TypeRegistry;
 import software.amazon.awssdk.utils.IoUtils;
+import software.amazon.awssdk.utils.async.SimplePublisher;
 
 /**
  * Tests for {@link AsyncApiCallPipeline} with a stub operation, protocol and transport: outputs, hook order, retries,
@@ -636,13 +640,102 @@ class AsyncApiCallPipelineTest {
     }
 
     @Test
-    void streamingOutput_isNotSupportedYet() {
-        AsyncResponseTransformer<TestResponse, ResponseBytes<TestResponse>> transformer = AsyncResponseTransformer.toBytes();
+    void streamingOutput_handsTheOutputAndTheUnbufferedBodyToTheTransformerInTheLegacyHookOrder() throws Exception {
+        transport.respondStreaming(200, "streamed-body");
+        RecordingTransformer transformer = new RecordingTransformer();
 
-        assertThatThrownBy(() -> pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer))
-            .isInstanceOf(UnsupportedOperationException.class)
-            .hasMessageContaining("streaming output");
-        assertThat(interceptor.hooks).isEmpty();
+        ResponseBytes<TestResponse> result =
+            join(pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer));
+
+        assertThat(result.asUtf8String()).isEqualTo("streamed-body");
+        assertThat(result.response().value()).isEqualTo("headers-only");
+        assertThat(result.response().sdkHttpResponse().statusCode()).isEqualTo(200);
+        assertThat(transport.handedOff).containsExactly(true);
+        assertThat(transformer.calls).containsExactly("prepare", "onResponse", "onStream");
+        // As AsyncStreamingResponseHandler: the output's hooks run on the headers, before the body's hook.
+        List<String> expected = new ArrayList<>(SUCCESS_HOOKS.subList(0, 12));
+        expected.addAll(Arrays.asList("afterUnmarshalling", "modifyResponse", "modifyAsyncHttpResponseContent",
+                                      "afterExecution"));
+        assertThat(interceptor.hooks).isEqualTo(expected);
+        assertThat(interceptor.afterExecution.response()).isSameAs(result.response());
+    }
+
+    @Test
+    void streamingOutput_errorResponse_isDeserializedAsAnErrorAndNeverReachesTheTransformer() {
+        transport.respondStreaming(400, "error-body");
+        RecordingTransformer transformer = new RecordingTransformer();
+
+        Throwable cause = failure(pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer));
+
+        assertThat(cause).isInstanceOf(SdkServiceException.class);
+        assertThat(((SdkServiceException) cause).statusCode()).isEqualTo(400);
+        assertThat(transport.handedOff).containsExactly(false);
+        assertThat(transformer.calls).containsExactly("prepare");
+        assertThat(protocol.deserializedBodies).hasSize(1);
+        List<String> expected = new ArrayList<>(SUCCESS_HOOKS.subList(0, 13));
+        expected.addAll(Arrays.asList("modifyException", "onExecutionFailure"));
+        assertThat(interceptor.hooks).isEqualTo(expected);
+    }
+
+    @Test
+    void streamingOutput_retriedErrorResponse_preparesTheTransformerAgainAfterReportingTheFailure() throws Exception {
+        transport.respondStreaming(500, "busy");
+        transport.respondStreaming(200, "streamed-body");
+        RecordingTransformer transformer = new RecordingTransformer();
+
+        ResponseBytes<TestResponse> result =
+            join(pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer));
+
+        assertThat(result.asUtf8String()).isEqualTo("streamed-body");
+        assertThat(transport.requests).hasSize(2);
+        // AsyncRetryableStage reports the retried failure to the response handler, then the next attempt prepares it.
+        assertThat(transformer.calls).containsExactly("prepare", "exceptionOccurred:SdkServiceException", "prepare",
+                                                      "onResponse", "onStream");
+    }
+
+    @Test
+    void streamingOutput_transformerFailure_failsTheCallAndAbortsTheHttpRequest() {
+        transport.respondStreaming(200, "streamed-body");
+        RecordingTransformer transformer = new RecordingTransformer();
+        transformer.failure = new IllegalStateException("transform failed");
+
+        Throwable cause = failure(pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer));
+
+        assertThat(cause).hasStackTraceContaining("transform failed");
+        assertThat(transport.aborts.get()).isEqualTo(transport.requests.size());
+        assertThat(interceptor.count("onExecutionFailure")).isEqualTo(1);
+    }
+
+    @Test
+    void streamingOutput_cancelledWhileStreaming_abortsTheHttpRequestAndRunsNoFailureHooks() throws Exception {
+        transport.respondWithEndlessStream();
+        RecordingTransformer transformer = new RecordingTransformer();
+
+        CompletableFuture<ResponseBytes<TestResponse>> future =
+            pipeline(config()).execute(OPERATION, params(), this::executionContext, transformer);
+        transformer.streamed.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        future.cancel(true);
+
+        assertThat(transport.aborts.get()).isEqualTo(1);
+        assertThat(interceptor.hooks).doesNotContain("modifyException", "onExecutionFailure", "afterExecution");
+    }
+
+    @Test
+    void streamingOutput_attemptTimeoutWhileStreaming_abortsTheRequestAndRetries() throws Exception {
+        SimplePublisher<ByteBuffer> stalled = transport.respondWithEndlessStream();
+        transport.respondStreaming(200, "streamed-body");
+        RecordingTransformer transformer = new RecordingTransformer();
+        SdkClientConfiguration config = config().toBuilder()
+                                                .option(SdkClientOption.API_CALL_ATTEMPT_TIMEOUT, Duration.ofMillis(200))
+                                                .build();
+
+        ResponseBytes<TestResponse> result =
+            join(pipeline(config).execute(OPERATION, params(), this::executionContext, transformer));
+
+        assertThat(result.asUtf8String()).isEqualTo("streamed-body");
+        assertThat(transport.aborts.get()).isEqualTo(1);
+        assertThat(transformer.calls).contains("exceptionOccurred:ApiCallAttemptTimeoutException");
+        assertThat(stalled).isNotNull();
     }
 
     @Test
@@ -766,7 +859,13 @@ class AsyncApiCallPipelineTest {
             return (O) builder.build();
         }
 
+        /**
+         * The body, or {@code headers-only} for the headers of a streaming output, whose body is not read.
+         */
         private static String read(SdkHttpFullResponse response) {
+            if (!response.content().isPresent()) {
+                return "headers-only";
+            }
             try {
                 return IoUtils.toUtf8String(response.content().get());
             } catch (IOException e) {
@@ -783,6 +882,60 @@ class AsyncApiCallPipelineTest {
         final List<SdkHttpFullRequest> requests = new CopyOnWriteArrayList<>();
         final List<ExecutionAttributes> attributes = new CopyOnWriteArrayList<>();
         final List<InputStream> responseBodies = new CopyOnWriteArrayList<>();
+        final List<Boolean> handedOff = new CopyOnWriteArrayList<>();
+        final AtomicInteger aborts = new AtomicInteger();
+        private volatile ExecutionAttributes currentAttributes;
+        private volatile AsyncResponseHandoff<SdkHttpFullResponse> currentHandoff;
+
+        /**
+         * Answers as the SDK transport does with a hand-off: when it accepts the headers, the body goes to it as a
+         * publisher and the future completes with the headers-only response; otherwise the body is buffered.
+         */
+        void respondStreaming(int status, String body) {
+            script.add(request -> {
+                SdkHttpFullResponse headers = httpResponse(status, "").toBuilder().content(null).build();
+                AsyncResponseHandoff<SdkHttpFullResponse> handoff = currentHandoff;
+                registerAbortable(new CompletableFuture<>());
+                if (handoff != null && handoff.onHeaders(headers)) {
+                    handedOff.add(true);
+                    handoff.onStream(AsyncRequestBody.fromString(body));
+                    return CompletableFuture.completedFuture(headers);
+                }
+                handedOff.add(false);
+                return CompletableFuture.completedFuture(httpResponse(status, body));
+            });
+        }
+
+        /**
+         * Hands off a body that never ends; returns the publisher, which the test completes or which an abort fails.
+         */
+        SimplePublisher<ByteBuffer> respondWithEndlessStream() {
+            SimplePublisher<ByteBuffer> body = new SimplePublisher<>();
+            script.add(request -> {
+                SdkHttpFullResponse headers = httpResponse(200, "").toBuilder().content(null).build();
+                CompletableFuture<Void> execution = new CompletableFuture<>();
+                execution.whenComplete((r, t) -> {
+                    if (t != null) {
+                        body.error(t);
+                    }
+                });
+                registerAbortable(execution);
+                currentHandoff.onHeaders(headers);
+                currentHandoff.onStream(body);
+                return CompletableFuture.completedFuture(headers);
+            });
+            return body;
+        }
+
+        private void registerAbortable(CompletableFuture<Void> execution) {
+            Consumer<Abortable> listener = currentAttributes.getAttribute(TransportExecutionAttribute.ABORTABLE_LISTENER);
+            if (listener != null) {
+                listener.accept(() -> {
+                    aborts.incrementAndGet();
+                    execution.completeExceptionally(new CancellationException("aborted"));
+                });
+            }
+        }
 
         void respond(int status, String body) {
             script.add(request -> {
@@ -816,6 +969,8 @@ class AsyncApiCallPipelineTest {
             ExecutionAttributes context, SdkHttpFullRequest request, AsyncResponseHandoff<SdkHttpFullResponse> handoff) {
             requests.add(request);
             attributes.add(context);
+            currentAttributes = context;
+            currentHandoff = handoff;
             Function<SdkHttpFullRequest, CompletableFuture<SdkHttpFullResponse>> next = script.poll();
             if (next == null) {
                 throw new IllegalStateException("No scripted response for request " + requests.size());
@@ -825,6 +980,51 @@ class AsyncApiCallPipelineTest {
 
         @Override
         public void close() {
+        }
+    }
+
+    /**
+     * {@link AsyncResponseTransformer#toBytes()}, prepared anew for each attempt, recording each callback; with
+     * {@link #failure} set, its future fails after the body is read.
+     */
+    private static final class RecordingTransformer
+        implements AsyncResponseTransformer<TestResponse, ResponseBytes<TestResponse>> {
+        final List<String> calls = new CopyOnWriteArrayList<>();
+        final CompletableFuture<Void> streamed = new CompletableFuture<>();
+        volatile RuntimeException failure;
+        private volatile AsyncResponseTransformer<TestResponse, ResponseBytes<TestResponse>> delegate;
+
+        @Override
+        public CompletableFuture<ResponseBytes<TestResponse>> prepare() {
+            calls.add("prepare");
+            delegate = AsyncResponseTransformer.toBytes();
+            CompletableFuture<ResponseBytes<TestResponse>> prepared = delegate.prepare();
+            RuntimeException transformFailure = failure;
+            if (transformFailure == null) {
+                return prepared;
+            }
+            return prepared.thenApply(bytes -> {
+                throw transformFailure;
+            });
+        }
+
+        @Override
+        public void onResponse(TestResponse response) {
+            calls.add("onResponse");
+            delegate.onResponse(response);
+        }
+
+        @Override
+        public void onStream(SdkPublisher<ByteBuffer> publisher) {
+            calls.add("onStream");
+            delegate.onStream(publisher);
+            streamed.complete(null);
+        }
+
+        @Override
+        public void exceptionOccurred(Throwable error) {
+            calls.add("exceptionOccurred:" + error.getClass().getSimpleName());
+            delegate.exceptionOccurred(error);
         }
     }
 

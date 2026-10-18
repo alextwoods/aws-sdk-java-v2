@@ -46,7 +46,9 @@ public final class TransportExecutionAttribute {
 
     /**
      * Receives the prepared synchronous request before it executes, so that the pipeline's call and attempt timeout
-     * trackers can abort it (the legacy {@code MakeHttpRequestStage} registers it with both trackers).
+     * trackers can abort it (the legacy {@code MakeHttpRequestStage} registers it with both trackers). The asynchronous
+     * transport gives it an {@code Abortable} that fails the HTTP client's future, which the asynchronous pipeline sets
+     * for streaming outputs to abort a handed-off body when the attempt or the call ends.
      */
     public static final ExecutionAttribute<Consumer<Abortable>> ABORTABLE_LISTENER =
         new ExecutionAttribute<>("TransportAbortableListener");
