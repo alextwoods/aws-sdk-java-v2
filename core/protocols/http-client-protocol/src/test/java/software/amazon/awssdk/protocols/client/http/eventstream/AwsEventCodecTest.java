@@ -49,6 +49,7 @@ import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventEncoderFactory.AwsEventEncoder;
 import software.amazon.awssdk.protocols.client.http.eventstream.EventStreamTestShapes.MyError;
 import software.amazon.awssdk.protocols.client.http.eventstream.EventStreamTestShapes.Struct;
+import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.event.EventDecoder;
 import software.amazon.awssdk.schema.serde.event.EventStreamingException;
 import software.amazon.awssdk.schema.serde.event.EventStreamingProtocolException;
@@ -188,6 +189,47 @@ class AwsEventCodecTest {
 
         assertThat(event.get("id")).isEqualTo("abc");
         assertThat((byte[]) event.get("data")).containsExactly(9);
+    }
+
+    @Test
+    void decode_stringHeadersForNonStringMembers_areParsedAsLegacyHeaderUnmarshallingParsesThem() {
+        SdkHttpFullRequest legacyMarshalled = SdkHttpFullRequest.builder()
+                                                                .method(SdkHttpMethod.POST)
+                                                                .protocol("https")
+                                                                .host("localhost")
+                                                                .putHeader(":message-type", "event")
+                                                                .putHeader(":event-type", "bodyAndHeader")
+                                                                .putHeader("stringHeader", "s")
+                                                                .putHeader("intHeader", "7")
+                                                                .putHeader("longHeader", "9")
+                                                                .putHeader("booleanHeader", "true")
+                                                                .putHeader("timestampHeader",
+                                                                           "Tue, 14 Nov 2023 22:13:20 GMT")
+                                                                .putHeader("blobHeader", "AQI=")
+                                                                .build();
+        ByteBuffer bytes = AwsClientHandlerUtils.encodeEventStreamRequestToByteBuffer(legacyMarshalled);
+
+        Struct event = (Struct) decoderFactory().newEventDecoder()
+                                                .decode(decoderFactory().newFrameDecoder().decode(bytes).get(0));
+
+        assertThat(event.get("stringHeader")).isEqualTo("s");
+        assertThat(event.get("intHeader")).isEqualTo(7);
+        assertThat(event.get("longHeader")).isEqualTo(9L);
+        assertThat(event.get("booleanHeader")).isEqualTo(true);
+        assertThat(event.get("timestampHeader")).isEqualTo(Instant.ofEpochSecond(1_700_000_000L));
+        assertThat(event.get("blobHeader")).isNotNull();
+    }
+
+    @Test
+    void decode_unparsableStringHeader_failsWithoutTheValue() {
+        Map<String, HeaderValue> headers = HeadersBuilder.forEvent().eventType("bodyAndHeader")
+                                                         .put("intHeader", "secret-not-a-number").build();
+        AwsEventFrame frame = new AwsEventFrame(new Message(headers, new byte[0]));
+
+        assertThatThrownBy(() -> decoderFactory().newEventDecoder().decode(frame))
+            .isInstanceOf(SerializationException.class)
+            .hasMessageContaining("Invalid integer in event header for member")
+            .hasMessageNotContaining("secret");
     }
 
     @Test

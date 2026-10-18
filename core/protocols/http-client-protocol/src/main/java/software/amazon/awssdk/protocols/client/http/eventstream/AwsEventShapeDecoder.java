@@ -18,22 +18,26 @@ package software.amazon.awssdk.protocols.client.http.eventstream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.Codec;
+import software.amazon.awssdk.codecs.commons.TimestampFormatter;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableShape;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.TraitKey;
+import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.SpecificShapeDeserializer;
 import software.amazon.awssdk.schema.serde.event.EventDecoder;
 import software.amazon.awssdk.schema.serde.event.EventStreamingException;
 import software.amazon.awssdk.schema.serde.event.EventStreamingProtocolException;
+import software.amazon.awssdk.schema.traits.TimestampFormatTrait;
 import software.amazon.awssdk.utils.Validate;
 import software.amazon.eventstream.HeaderValue;
 import software.amazon.eventstream.Message;
@@ -218,9 +222,18 @@ final class AwsEventShapeDecoder implements EventDecoder<AwsEventFrame> {
     }
 
     /**
-     * Reads {@code eventHeader} members from the typed message headers named after the member.
+     * Reads {@code eventHeader} members from the message headers named after the member.
+     *
+     * <p>Typed headers are read as their type (the Smithy event stream spec). A {@code string} header for a member of
+     * another type is parsed as legacy header unmarshalling parses an HTTP header string, because the legacy SDK
+     * marshals every header member as a string, so services that work with it may send string headers: numbers with
+     * {@code parseX}, booleans with {@link Boolean#parseBoolean}, timestamps in the member's {@code timestampFormat}
+     * or {@code http-date}, and blobs as base64.
      */
     static final class HeadersDeserializer extends SpecificShapeDeserializer {
+        // The eventstream library's HeaderType is package-private, so a string header is recognized by its class.
+        private static final Class<?> STRING_HEADER_CLASS = HeaderValue.fromString("s").getClass();
+
         private final Map<String, HeaderValue> headers;
 
         HeadersDeserializer(Map<String, HeaderValue> headers) {
@@ -229,27 +242,45 @@ final class AwsEventShapeDecoder implements EventDecoder<AwsEventFrame> {
 
         @Override
         public ByteBuffer readBlob(Schema schema) {
-            return header(schema).getByteBuffer();
+            HeaderValue value = header(schema);
+            if (isString(value)) {
+                return parse(schema, "base64 blob", s -> ByteBuffer.wrap(Base64.getDecoder().decode(s)));
+            }
+            return value.getByteBuffer();
         }
 
         @Override
         public byte readByte(Schema schema) {
-            return header(schema).getByte();
+            HeaderValue value = header(schema);
+            return isString(value) ? parse(schema, "byte", Byte::parseByte) : value.getByte();
         }
 
         @Override
         public short readShort(Schema schema) {
-            return header(schema).getShort();
+            HeaderValue value = header(schema);
+            return isString(value) ? parse(schema, "short", Short::parseShort) : value.getShort();
         }
 
         @Override
         public int readInteger(Schema schema) {
-            return header(schema).getInteger();
+            HeaderValue value = header(schema);
+            return isString(value) ? parse(schema, "integer", Integer::parseInt) : value.getInteger();
         }
 
         @Override
         public long readLong(Schema schema) {
-            return header(schema).getLong();
+            HeaderValue value = header(schema);
+            return isString(value) ? parse(schema, "long", Long::parseLong) : value.getLong();
+        }
+
+        @Override
+        public float readFloat(Schema schema) {
+            return parse(schema, "float", Float::parseFloat);
+        }
+
+        @Override
+        public double readDouble(Schema schema) {
+            return parse(schema, "double", Double::parseDouble);
         }
 
         @Override
@@ -259,17 +290,37 @@ final class AwsEventShapeDecoder implements EventDecoder<AwsEventFrame> {
 
         @Override
         public boolean readBoolean(Schema schema) {
-            return header(schema).getBoolean();
+            HeaderValue value = header(schema);
+            return isString(value) ? parse(schema, "boolean", Boolean::parseBoolean) : value.getBoolean();
         }
 
         @Override
         public Instant readTimestamp(Schema schema) {
-            return header(schema).getTimestamp();
+            HeaderValue value = header(schema);
+            if (isString(value)) {
+                TimestampFormatter formatter = TimestampFormatter.of(schema, TimestampFormatTrait.Format.HTTP_DATE);
+                return parse(schema, formatter.format() + " timestamp", s -> formatter.readFromString(s, false));
+            }
+            return value.getTimestamp();
         }
 
         @Override
         public boolean isNull() {
             return false;
+        }
+
+        private static boolean isString(HeaderValue value) {
+            return value.getClass() == STRING_HEADER_CLASS;
+        }
+
+        // Header values are not in the message: they may be sensitive.
+        private <T> T parse(Schema member, String type, Function<String, T> parser) {
+            String value = header(member).getString();
+            try {
+                return parser.apply(value);
+            } catch (RuntimeException e) {
+                throw new SerializationException("Invalid " + type + " in event header for member " + member.id(), e);
+            }
         }
 
         private HeaderValue header(Schema member) {
