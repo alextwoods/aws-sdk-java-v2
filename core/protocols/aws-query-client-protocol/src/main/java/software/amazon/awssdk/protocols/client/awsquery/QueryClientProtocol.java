@@ -180,6 +180,10 @@ abstract class QueryClientProtocol extends HttpClientProtocol {
     @Override
     protected final <I extends SerializableStruct, O extends SerializableStruct> SdkHttpFullRequest createRequest(
         ApiOperation<I, O> operation, I input, ExecutionAttributes context, URI endpoint) {
+        if (operation.inputStreamMember() != null) {
+            // The query protocols have no HTTP bindings, so no streaming blob or event stream member (task 7.19).
+            throw new UnsupportedOperationException("Streaming input is not supported by " + id());
+        }
         QueryFormSerializer serializer = ec2 ? QueryFormSerializer.forEc2Query(operation.name(), version)
                                              : QueryFormSerializer.forAwsQuery(operation.name(), version);
         if (!operation.inputSchema().hasTrait(TraitKey.UNIT_TYPE_TRAIT)) {
@@ -201,6 +205,9 @@ abstract class QueryClientProtocol extends HttpClientProtocol {
     protected final <I extends SerializableStruct, O extends SerializableStruct> O deserializeOutput(
         ApiOperation<I, O> operation, ExecutionAttributes context, SdkHttpFullRequest request,
         SdkHttpFullResponse response) {
+        if (operation.outputStreamMember() != null) {
+            throw new UnsupportedOperationException("Streaming output is not supported by " + id());
+        }
         ShapeBuilder<O> builder = operation.outputBuilder();
         ByteBuffer body = ResponseBodies.asByteBuffer(context, response);
         String requestId = null;

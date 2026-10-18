@@ -143,6 +143,10 @@ public abstract class AbstractRpcV2ClientProtocol extends HttpClientProtocol {
         if (operation.inputEventBuilderSupplier() != null) {
             throw new UnsupportedOperationException("Event stream input is not supported by " + id());
         }
+        if (operation.inputStreamMember() != null) {
+            // Smithy binds a streaming blob only through @httpPayload, which this protocol does not have (task 7.19).
+            throw new UnsupportedOperationException("Streaming blob input is not supported by " + id());
+        }
         String endpointPath = endpoint.getRawPath() == null ? "" : endpoint.getRawPath();
         SdkHttpFullRequest.Builder request =
             SdkHttpFullRequest.builder()
@@ -175,6 +179,9 @@ public abstract class AbstractRpcV2ClientProtocol extends HttpClientProtocol {
         SdkHttpFullResponse response) {
         if (operation.outputEventBuilderSupplier() != null) {
             throw new UnsupportedOperationException("Event stream output is not supported by " + id());
+        }
+        if (operation.outputStreamMember() != null) {
+            throw new UnsupportedOperationException("Streaming blob output is not supported by " + id());
         }
         ShapeBuilder<O> builder = operation.outputBuilder();
         ByteBuffer body = ResponseBodies.asByteBuffer(context, response);

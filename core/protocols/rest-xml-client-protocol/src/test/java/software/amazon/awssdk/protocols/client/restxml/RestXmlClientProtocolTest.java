@@ -282,6 +282,30 @@ class RestXmlClientProtocolTest {
         assertThat(IoUtils.toUtf8String(content)).isEqualTo("stream");
     }
 
+    @Test
+    void serializeRequest_withStreamingPayload_bindsTheOtherMembersAndLeavesTheBodyToThePipeline() {
+        SchemaStruct input = SchemaStruct.builder(TestShapes.STREAMING_INPUT).set("header", "h").build();
+
+        SdkHttpFullRequest request = serialize(TestShapes.STREAMING_INPUT_OPERATION, input);
+
+        assertThat(request.method()).isEqualTo(SdkHttpMethod.PUT);
+        assertThat(request.encodedPath()).isEqualTo("/prefix/stream");
+        assertThat(request.firstMatchingHeader("X-Header")).hasValue("h");
+        // The request pipeline binds the caller's RequestBody with its Content-Type and length (task 7.19).
+        assertThat(request.contentStreamProvider()).isEmpty();
+        assertThat(request.firstMatchingHeader("Content-Type")).isEmpty();
+        assertThat(request.firstMatchingHeader("Content-Length")).isEmpty();
+    }
+
+    @Test
+    void deserializeResponse_withStreamingPayloadAndAnErrorStatus_readsTheBodyAsAModeledError() {
+        String body = "<Error><Code>FooError</Code><Message>m</Message><Reason>r</Reason></Error>";
+
+        assertThatThrownBy(() -> deserialize(STREAMING_OUTPUT_OPERATION, response(404, body).build()))
+            .isInstanceOf(FooError.class)
+            .satisfies(e -> assertThat(((FooError) e).reason()).isEqualTo("r"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"<GreetOutput><Hello>hi", "<GreetOutput></GreetOutput><trailing/>", "not xml",
                             "<GreetOutput><Hello>hi</Hello></Other>"})

@@ -245,6 +245,32 @@ class RestJsonClientProtocolTest {
         assertThat(IoUtils.toUtf8String(content)).isEqualTo("stream");
     }
 
+    @Test
+    void serializeRequest_withStreamingPayload_bindsTheOtherMembersAndLeavesTheBodyToThePipeline() {
+        SchemaStruct input = SchemaStruct.builder(TestShapes.STREAMING_INPUT).set("header", "h").build();
+
+        SdkHttpFullRequest request = serialize(TestShapes.STREAMING_INPUT_OPERATION, input);
+
+        assertThat(request.method()).isEqualTo(SdkHttpMethod.PUT);
+        assertThat(request.encodedPath()).isEqualTo("/prefix/stream");
+        assertThat(request.firstMatchingHeader("X-Header")).hasValue("h");
+        // The request pipeline binds the caller's RequestBody with its Content-Type and length (task 7.19).
+        assertThat(request.contentStreamProvider()).isEmpty();
+        assertThat(request.firstMatchingHeader("Content-Type")).isEmpty();
+        assertThat(request.firstMatchingHeader("Content-Length")).isEmpty();
+    }
+
+    @Test
+    void deserializeResponse_withStreamingPayloadAndAnErrorStatus_readsTheBodyAsAModeledError() {
+        SdkHttpFullResponse response = response(404, "{\"message\":\"boom\",\"reason\":\"r\"}")
+            .putHeader("X-Amzn-Errortype", "FooError")
+            .build();
+
+        assertThatThrownBy(() -> deserialize(STREAMING_OUTPUT_OPERATION, response))
+            .isInstanceOf(FooError.class)
+            .satisfies(e -> assertThat(((FooError) e).reason()).isEqualTo("r"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"{\"Hello\":", "{\"Hello\":\"hi\"} trailing", "[]", "{\"Hello\":true}"})
     void deserializeResponse_withMalformedBody_failsAsAClientException(String body) {

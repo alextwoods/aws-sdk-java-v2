@@ -44,9 +44,11 @@ import software.amazon.awssdk.schema.serde.TypeRegistry;
  * {@link #allowEmptyStructPayload(Schema)}) and how greedy labels are encoded
  * ({@link #trimGreedyLabelLeadingSlash()}).
  *
- * <p>Streaming and event stream members are not bound yet: a {@code @streaming} payload member is skipped in both
- * directions (no request body, the response body is not read), and an operation with an event stream input or output
- * fails with an {@code SdkClientException}.
+ * <p>A {@code @streaming} blob payload member is skipped in both directions: the request has no body or
+ * {@code Content-Type} for it, because the request pipeline binds the caller's {@code RequestBody} or
+ * {@code AsyncRequestBody} with its own headers, and a successful response's body is left unread for the caller's
+ * response transformer. An error response of such an operation is read as for any other operation (Requirement 14.3).
+ * An operation with an event stream input or output fails with an {@code SdkClientException} (task 7.20).
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.client.http.binding.HttpBindingClientProtocol}, without the
  * event stream frame type parameter.

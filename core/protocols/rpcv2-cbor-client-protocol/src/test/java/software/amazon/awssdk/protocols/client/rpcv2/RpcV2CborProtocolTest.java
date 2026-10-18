@@ -53,10 +53,13 @@ import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.GreetRequest;
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.GreetResponse;
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.NoInputRequest;
 import software.amazon.awssdk.protocols.client.rpcv2.TestShapes.QueueMissing;
+import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.SimpleApiOperation;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.Rpcv2CborTrait;
+import software.amazon.awssdk.schema.traits.StreamingTrait;
 
 class RpcV2CborProtocolTest {
     private static final URI ENDPOINT = URI.create("https://example.com");
@@ -73,6 +76,35 @@ class RpcV2CborProtocolTest {
         assertThat(((Rpcv2CborCodec) protocol.payloadCodec()).settings()).isEqualTo(CborSettings.RPCV2);
         assertThat(protocol).hasToString("RpcV2CborProtocol(smithy.example#ExampleService)");
         assertThatThrownBy(() -> new RpcV2CborProtocol(null)).isInstanceOf(NullPointerException.class);
+    }
+
+    /**
+     * Smithy binds a streaming blob only through {@code @httpPayload}, which rpcv2Cbor does not have (task 7.19);
+     * codegen keeps such operations on the legacy path.
+     */
+    @Test
+    void streamingBlobMembersAreRejected() {
+        Schema streaming = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "Upload"))
+                                 .putMember("body", Schema.createBlob(ShapeId.fromParts(TestShapes.NS, "Body"),
+                                                                      StreamingTrait.INSTANCE))
+                                 .build();
+        SimpleApiOperation<GreetRequest, GreetResponse> upload =
+            SimpleApiOperation.<GreetRequest, GreetResponse>builder()
+                              .schema(Schema.createOperation(ShapeId.fromParts(TestShapes.NS, "Upload")))
+                              .inputSchema(() -> streaming)
+                              .outputSchema(() -> streaming)
+                              .errorRegistry(ERRORS)
+                              .service(TestShapes.SERVICE)
+                              .build();
+
+        assertThatThrownBy(() -> protocol.serializeRequest(upload, new GreetRequest("hi", null), new ExecutionAttributes(),
+                                                           ENDPOINT))
+            .isInstanceOf(SdkClientException.class)
+            .hasMessage("Unable to marshall Upload: Streaming blob input is not supported by smithy.protocols#rpcv2Cbor");
+        assertThatThrownBy(() -> protocol.deserializeResponse(upload, new ExecutionAttributes(), ERRORS, null,
+                                                              response(200, null).build()))
+            .isInstanceOf(SdkClientException.class)
+            .hasMessage("Unable to unmarshall Upload: Streaming blob output is not supported by smithy.protocols#rpcv2Cbor");
     }
 
     @Test

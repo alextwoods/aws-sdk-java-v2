@@ -58,10 +58,13 @@ import software.amazon.awssdk.protocols.client.awsjson.TestShapes.GreetRequest;
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.GreetResponse;
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.NoInputRequest;
 import software.amazon.awssdk.protocols.client.awsjson.TestShapes.QueueMissing;
+import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.SimpleApiOperation;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.traits.AwsJson1_0Trait;
 import software.amazon.awssdk.schema.traits.AwsJson1_1Trait;
+import software.amazon.awssdk.schema.traits.StreamingTrait;
 
 /**
  * Tests both AWS JSON protocols. Every case runs against {@link AwsJson1Protocol} and {@link AwsJson11Protocol}, which
@@ -109,6 +112,37 @@ class AwsJsonProtocolTest {
         assertThat(body).as("zero-copy body").isNotNull();
         assertThat(utf8(body)).isEqualTo("{\"message\":\"hi\"}");
         assertThat(request.firstMatchingHeader("Content-Length")).hasValue(String.valueOf(body.remaining()));
+    }
+
+    /**
+     * Smithy binds a streaming blob only through {@code @httpPayload}, which the AWS JSON protocols do not have (task
+     * 7.19); codegen keeps such operations on the legacy path.
+     */
+    @ParameterizedTest
+    @MethodSource("variants")
+    void streamingBlobMembersAreRejected(Variant variant) {
+        AwsJsonProtocol protocol = variant.create(SETTINGS);
+        Schema streaming = Schema.structureBuilder(ShapeId.fromParts(TestShapes.NS, "Upload"))
+                                 .putMember("body", Schema.createBlob(ShapeId.fromParts(TestShapes.NS, "Body"),
+                                                                      StreamingTrait.INSTANCE))
+                                 .build();
+        SimpleApiOperation<GreetRequest, GreetResponse> upload =
+            SimpleApiOperation.<GreetRequest, GreetResponse>builder()
+                              .schema(Schema.createOperation(ShapeId.fromParts(TestShapes.NS, "Upload")))
+                              .inputSchema(() -> streaming)
+                              .outputSchema(() -> streaming)
+                              .errorRegistry(ERRORS)
+                              .service(TestShapes.SERVICE)
+                              .build();
+
+        assertThatThrownBy(() -> protocol.serializeRequest(upload, new GreetRequest("hi", null), new ExecutionAttributes(),
+                                                           ENDPOINT))
+            .isInstanceOf(SdkClientException.class)
+            .hasMessage("Unable to marshall Upload: Streaming blob input is not supported by " + variant.id);
+        assertThatThrownBy(() -> protocol.deserializeResponse(upload, new ExecutionAttributes(), ERRORS, null,
+                                                              response(200, utf8("{}")).build()))
+            .isInstanceOf(SdkClientException.class)
+            .hasMessage("Unable to unmarshall Upload: Streaming blob output is not supported by " + variant.id);
     }
 
     @ParameterizedTest

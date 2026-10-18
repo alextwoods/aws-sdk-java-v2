@@ -178,6 +178,18 @@ final class TestShapes {
 
     static final SimpleApiOperation<SerializableStruct, SerializableStruct> STREAMING_OUTPUT_OPERATION =
         operation("StreamingOutputOperation", new HttpTrait("GET", "/stream"), EMPTY, STREAMING_OUTPUT);
+    /**
+     * A {@code @streaming} blob {@code @httpPayload} input with a header member, as a generated request class holds it:
+     * the client method takes the body as a separate argument, so the struct never sets {@code body}.
+     */
+    static final Schema STREAMING_INPUT =
+        Schema.structureBuilder(ShapeId.fromParts(NS, "StreamingInput"))
+              .putMember("header", PreludeSchemas.STRING, new HttpHeaderTrait("X-Header"))
+              .putMember("body", STREAMING_BLOB, HttpPayloadTrait.INSTANCE)
+              .builderSupplier(() -> SchemaStruct.builder(TestShapes.STREAMING_INPUT))
+              .build();
+    static final SimpleApiOperation<SerializableStruct, SerializableStruct> STREAMING_INPUT_OPERATION =
+        operation("StreamingInputOperation", new HttpTrait("PUT", "/stream"), STREAMING_INPUT, EMPTY);
 
     private TestShapes() {
     }
