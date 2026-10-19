@@ -38,6 +38,13 @@
     </modules>
     <description>The AWS Java SDK services</description>
     <url>https://aws.amazon.com/sdkforjava</url>
+    <properties>
+        <!--
+          Requirement 1.6 (design K1, task 9.8): the ban-smithy-runtime enforcer execution below is off by default.
+          Each Prototype_Service_Set module turns it on by setting this property to false.
+        -->
+        <schema-serde.ban-smithy.skip>true</schema-serde.ban-smithy.skip>
+    </properties>
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -234,6 +241,42 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <!--
+              Requirement 1.6 (design K1, task 9.8): a generated Prototype_Service_Set client must not have any
+              software.amazon.smithy artifact on its compile or runtime classpath, direct or transitive. Test scope
+              is allowed. Codegen's Smithy dependencies are dependencies of codegen-maven-plugin, not of the
+              module, so the rule does not see them. Skipped unless the module sets schema-serde.ban-smithy.skip
+              to false.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>ban-smithy-runtime</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${schema-serde.ban-smithy.skip}</skip>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>software.amazon.smithy:*:*:*:compile</exclude>
+                                        <exclude>software.amazon.smithy:*:*:*:runtime</exclude>
+                                    </excludes>
+                                    <message>Prototype service clients must not depend on Smithy at compile or runtime scope (Requirement 1.6)</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
     <profiles>
         <!-- Build steps executed for services with models -->

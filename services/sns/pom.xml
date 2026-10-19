@@ -29,6 +29,10 @@
         Amazon Simple Notification Service
     </description>
     <url>https://aws.amazon.com/sdkforjava</url>
+    <properties>
+        <!-- Prototype_Service_Set: ban Smithy from compile and runtime scopes (services/pom.xml, task 9.8) -->
+        <schema-serde.ban-smithy.skip>false</schema-serde.ban-smithy.skip>
+    </properties>
     <build>
         <plugins>
             <plugin>

@@ -408,6 +408,8 @@
                         <archunit.freeze.store.default.path>${archtests.freeze.storePath}</archunit.freeze.store.default.path>
                         <racecar-decisions.python>${racecar-decisions.python}</racecar-decisions.python>
                         <racecar-decisions.script>${project.basedir}/../../scripts/schema-serde/racecar_decisions.py</racecar-decisions.script>
+                        <!-- DependencyTreeTest (task 9.8) reads the reactor's pom.xml files from here -->
+                        <dependency-tree.root>${project.basedir}/../..</dependency-tree.root>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
