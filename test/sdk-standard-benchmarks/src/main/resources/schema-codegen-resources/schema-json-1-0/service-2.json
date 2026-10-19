@@ -1,0 +1,216 @@
+{
+    "metadata": {
+        "apiVersion": "1999-12-31",
+        "auth": [
+            "aws.auth#sigv4"
+        ],
+        "endpointPrefix": "schemabenchjson10",
+        "jsonVersion": "1.0",
+        "protocol": "json",
+        "protocols": [
+            "json"
+        ],
+        "serviceFullName": "Schema Serde Benchmark Json10",
+        "serviceId": "SchemaBenchJson10",
+        "signatureVersion": "v4",
+        "signingName": "schemabenchjson10",
+        "targetPrefix": "SchemaBenchJson10",
+        "uid": "schemabenchjson10-1999-12-31"
+    },
+    "operations": {
+        "GetPayload": {
+            "http": {
+                "method": "POST",
+                "requestUri": "/"
+            },
+            "input": {
+                "shape": "GetPayloadInput"
+            },
+            "name": "GetPayload",
+            "output": {
+                "shape": "GetPayloadOutput"
+            }
+        },
+        "PutPayload": {
+            "http": {
+                "method": "POST",
+                "requestUri": "/"
+            },
+            "input": {
+                "shape": "PutPayloadInput"
+            },
+            "name": "PutPayload",
+            "output": {
+                "shape": "PutPayloadOutput"
+            }
+        }
+    },
+    "shapes": {
+        "AttributeMap": {
+            "key": {
+                "shape": "String"
+            },
+            "type": "map",
+            "value": {
+                "shape": "String"
+            }
+        },
+        "Blob": {
+            "type": "blob"
+        },
+        "Boolean": {
+            "type": "boolean"
+        },
+        "Double": {
+            "type": "double"
+        },
+        "DoubleList": {
+            "member": {
+                "shape": "Double"
+            },
+            "type": "list"
+        },
+        "GetPayloadInput": {
+            "members": {
+                "Id": {
+                    "shape": "String"
+                }
+            },
+            "type": "structure"
+        },
+        "GetPayloadOutput": {
+            "members": {
+                "CreatedAt": {
+                    "shape": "Timestamp"
+                },
+                "Data": {
+                    "shape": "Blob"
+                },
+                "Id": {
+                    "shape": "String"
+                },
+                "Items": {
+                    "shape": "ItemList"
+                },
+                "Nested": {
+                    "shape": "Inner"
+                },
+                "Tags": {
+                    "shape": "InnerMap"
+                }
+            },
+            "type": "structure"
+        },
+        "Inner": {
+            "members": {
+                "Count": {
+                    "shape": "Integer"
+                },
+                "Enabled": {
+                    "shape": "Boolean"
+                },
+                "Flags": {
+                    "shape": "StringList"
+                },
+                "Label": {
+                    "shape": "String"
+                }
+            },
+            "type": "structure"
+        },
+        "InnerMap": {
+            "key": {
+                "shape": "String"
+            },
+            "type": "map",
+            "value": {
+                "shape": "Inner"
+            }
+        },
+        "Integer": {
+            "type": "integer"
+        },
+        "Item": {
+            "members": {
+                "Attributes": {
+                    "shape": "AttributeMap"
+                },
+                "Data": {
+                    "shape": "Blob"
+                },
+                "Inner": {
+                    "shape": "Inner"
+                },
+                "Name": {
+                    "shape": "String"
+                },
+                "Score": {
+                    "shape": "Double"
+                },
+                "UpdatedAt": {
+                    "shape": "Timestamp"
+                },
+                "Value": {
+                    "shape": "Long"
+                },
+                "Values": {
+                    "shape": "DoubleList"
+                }
+            },
+            "type": "structure"
+        },
+        "ItemList": {
+            "member": {
+                "shape": "Item"
+            },
+            "type": "list"
+        },
+        "Long": {
+            "type": "long"
+        },
+        "PutPayloadInput": {
+            "members": {
+                "CreatedAt": {
+                    "shape": "Timestamp"
+                },
+                "Data": {
+                    "shape": "Blob"
+                },
+                "Id": {
+                    "shape": "String"
+                },
+                "Items": {
+                    "shape": "ItemList"
+                },
+                "Nested": {
+                    "shape": "Inner"
+                },
+                "Tags": {
+                    "shape": "InnerMap"
+                }
+            },
+            "type": "structure"
+        },
+        "PutPayloadOutput": {
+            "members": {
+                "Id": {
+                    "shape": "String"
+                }
+            },
+            "type": "structure"
+        },
+        "String": {
+            "type": "string"
+        },
+        "StringList": {
+            "member": {
+                "shape": "String"
+            },
+            "type": "list"
+        },
+        "Timestamp": {
+            "type": "timestamp"
+        }
+    },
+    "version": "2.0"
+}

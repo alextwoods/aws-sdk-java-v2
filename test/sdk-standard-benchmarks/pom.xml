@@ -197,6 +197,38 @@
             <artifactId>rpcv2-cbor-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- Schema-based serde (task 9.16): the client protocols the schema-serde benchmark services use, and the
+             Response_Generator that builds their responses. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rest-xml-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-query-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>json-codec</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>client-mock-plugin</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <!-- Codegen dependency for IntermediateModel -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
@@ -329,6 +361,21 @@
                         </goals>
                         <configuration>
                             <writeIntermediateModel>true</writeIntermediateModel>
+                        </configuration>
+                    </execution>
+                    <!--
+                      The schema-serde benchmark services (task 9.16): one C2J model per Supported_Protocol, generated on
+                      the schema path ("stagedClientProtocols"). Kept apart from codegen-resources, the models of the
+                      existing serde benchmarks.
+                    -->
+                    <execution>
+                        <id>schema-serde-benchmark-models</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <codeGenResources>${basedir}/src/main/resources/schema-codegen-resources/</codeGenResources>
                         </configuration>
                     </execution>
                 </executions>

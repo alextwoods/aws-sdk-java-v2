@@ -117,6 +117,33 @@ The output JSON has this structure:
 The `metadata` fields marked `TODO` should be filled in for the target environment
 before publishing results.
 
+## Schema Serde Benchmarks
+Benchmarks for the schema-based serde path (`software.amazon.awssdk.benchmark.schema`).
+`SchemaMarshallBenchmark` runs `ClientProtocol.serializeRequest` from the generated input
+to the `SdkHttpFullRequest`; `SchemaUnmarshallBenchmark` runs
+`ClientProtocol.deserializeResponse` from the response bytes (built by the
+Response_Generator of `client-mock-plugin`) to the generated output. Neither signs nor
+sends. Both are parameterized by `protocol` (`RPCV2_CBOR`, `AWS_JSON_1_0`, `AWS_JSON_1_1`,
+`REST_JSON_1`, `REST_XML`, `AWS_QUERY`, `EC2_QUERY`) and `payload` (`SMALL`, at most 1 KB;
+`LARGE`, at least 100 KB), and report µs/op (`AverageTime`).
+The services are generated from the C2J models in
+`src/main/resources/schema-codegen-resources` (one per protocol, same shapes,
+`stagedClientProtocols`). The payload has a timestamp, a blob, a nested structure, a list
+of structures and a map of structures; each list item has a string map, a double list, a
+timestamp, a blob and a nested structure with a string list. `SchemaSerdeFixtureTest`
+checks the body sizes and that each protocol reads the payload back.
+`TraitLookupBenchmark` (`Schema.getTrait(TraitKey)`) and `SchemaExtensionBenchmark`
+(`Schema.getExtension` after the first computation) must allocate 0 B/op.
+`ZeroAllocationBenchmarkTest` runs them with the GC profiler in the module build (about
+15 seconds) and fails above 1 B/op.
+```bash
+# Full run with bytes per op (class defaults: 5 warmup and 5 measurement iterations, 2 forks)
+java -jar target/benchmarks.jar 'benchmark\.schema\.' -prof gc -rf json -rff schema-serde.json
+# One protocol and size
+java -jar target/benchmarks.jar SchemaMarshallBenchmark -p protocol=AWS_JSON_1_0 -p payload=LARGE -prof gc
+# Smoke run
+java -jar target/benchmarks.jar 'benchmark\.schema\.' -wi 1 -i 1 -f 1 -w 1s -r 1s -prof gc
+```
 ## General JMH options
 
 ```bash
