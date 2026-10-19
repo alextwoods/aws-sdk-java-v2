@@ -1,0 +1,7 @@
+software.amazon.awssdk.testutils.mock.internal.AwsJson10ResponseGenerator
+software.amazon.awssdk.testutils.mock.internal.AwsJson11ResponseGenerator
+software.amazon.awssdk.testutils.mock.internal.AwsQueryResponseGenerator
+software.amazon.awssdk.testutils.mock.internal.Ec2QueryResponseGenerator
+software.amazon.awssdk.testutils.mock.internal.RestJsonResponseGenerator
+software.amazon.awssdk.testutils.mock.internal.RestXmlResponseGenerator
+software.amazon.awssdk.testutils.mock.internal.RpcV2CborResponseGenerator
