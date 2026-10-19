@@ -42,7 +42,7 @@ class NoMarshallerDependencyTest {
      * {@code NoTransformPackageTest}), by artifactId.
      */
     static final List<String> SCHEMA_BASED_SERVICES =
-        Collections.unmodifiableList(Arrays.asList("cloudwatch", "sqs", "secretsmanager", "account"));
+        Collections.unmodifiableList(Arrays.asList("cloudwatch", "sqs", "secretsmanager", "account", "sns"));
 
     /**
      * The new-path pipeline classes of {@code sdk-core} (design D.6), by internal name.

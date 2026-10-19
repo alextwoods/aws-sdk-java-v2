@@ -52,14 +52,10 @@
             <artifactId>schema</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The client protocol of the schema path (awsQuery, task 9.4). -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>aws-query-protocol</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>protocol-core</artifactId>
+            <artifactId>aws-query-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
@@ -72,6 +68,11 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>http-auth-aws</artifactId>
             <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

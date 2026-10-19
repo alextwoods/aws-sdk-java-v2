@@ -1,0 +1,27 @@
+--- src/software/amazon/awssdk/services/sns/DefaultSnsBaseClientBuilder.java
++ import software.amazon.awssdk.awscore.client.builder.ClientProtocolSupport;
++ import software.amazon.awssdk.core.client.protocol.ClientProtocol;
++ import software.amazon.awssdk.core.client.protocol.ProtocolSettings;
++ import software.amazon.awssdk.protocols.client.awsquery.AwsQueryClientProtocol;
++ import software.amazon.awssdk.services.sns.internal.SnsServiceSchemas;
++ import software.amazon.awssdk.services.sns.model.SnsException;
+- c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, false);
++ c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, false).option(SdkClientOption.CLIENT_PROTOCOL_FACTORY, AwsQueryClientProtocol.Factory.INSTANCE);
++ builder.lazyOptionIfAbsent(SdkClientOption.CLIENT_PROTOCOL, c -> ClientProtocolSupport.createProtocol(c.get(SdkClientOption.CLIENT_PROTOCOL_FACTORY), protocolSettings()));
++ ClientProtocolSupport.validateMessageExchange(c);
++ }
++ public B protocol(ClientProtocol<?, ?> protocol) {
++ clientConfiguration.option(SdkClientOption.CLIENT_PROTOCOL, protocol);
++ return thisBuilder();
++ }
++ private static ProtocolSettings protocolSettings() {
++ return ProtocolSettings.builder().serviceSchema(SnsServiceSchemas.SERVICE).serviceVersion("2010-03-31").baseExceptionBuilder(SnsException::builder).build();
+--- src/software/amazon/awssdk/services/sns/SnsBaseClientBuilder.java
++ import software.amazon.awssdk.core.client.protocol.ClientProtocol;
++ throw new UnsupportedOperationException();
++ }
++ /** Set the {@link ClientProtocol}
++ the client serializes requests and deserializes responses and errors with. This is optional;
++ if none is provided, or it is set to null, the client uses the service's default protocol. <p> The protocol's message exchange must match the client transport's;
++ otherwise building the client fails with an {@link java.lang.IllegalStateException}. */
++ default B protocol(ClientProtocol<?, ?> protocol) {
