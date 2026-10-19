@@ -10,6 +10,7 @@ their rows. A prototype service swapped for its design D.2 fallback is also reco
 | Module | Test | Reason | Policy row or defect | Task |
 |---|---|---|---|---|
 | — | None | | | 9.2 |
+| `secretsmanager`, `account` | None. Neither module has tests in the Baseline_Build (no `src/test`); task 9.3 adds `SecretsManagerNewPathTest` (6) and `AccountNewPathTest` (8), all passing | | | 9.3 |
 
 ## Rewritten tests
 
@@ -20,4 +21,4 @@ their rows. A prototype service swapped for its design D.2 fallback is also reco
 
 ## Fallback swaps (design D.2)
 
-None. SQS and DynamoDB are generated themselves (task 9.2).
+None. SQS and DynamoDB (task 9.2), Secrets Manager and Account (task 9.3) are generated themselves.
