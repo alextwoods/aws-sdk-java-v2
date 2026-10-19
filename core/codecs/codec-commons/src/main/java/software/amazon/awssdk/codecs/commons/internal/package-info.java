@@ -14,7 +14,7 @@
  */
 
 /**
- * Byte-level timestamp helpers and the serializer pool used by the SDK's codec modules. Not for use outside the SDK's
- * {@code software.amazon.awssdk.codecs} modules.
+ * Byte-level timestamp helpers, the serializer pool and the shared {@code Codec} convenience implementation used by
+ * the SDK's codec modules. Not for use outside the SDK's {@code software.amazon.awssdk.codecs} modules.
  */
 package software.amazon.awssdk.codecs.commons.internal;

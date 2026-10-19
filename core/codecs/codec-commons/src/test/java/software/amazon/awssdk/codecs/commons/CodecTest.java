@@ -127,6 +127,69 @@ class CodecTest {
     }
 
     @Test
+    void deserializeShape_success_closesDeserializerAfterBuilding() {
+        ScriptedDeserializer deserializer = new ScriptedDeserializer(null, null);
+        TextShape.Builder builder = new TextShape.Builder();
+
+        TextShape shape = codecFor(deserializer).deserializeShape(new byte[0], builder);
+
+        assertThat(shape.value).isEqualTo("scripted");
+        assertThat(deserializer.closed).isTrue();
+    }
+
+    @Test
+    void deserializeShape_closeRejectsTrailingContent_throwsNamingShapeIdWithCause() {
+        SerializationException trailing = new SerializationException("Unexpected content after the value");
+        Codec codec = codecFor(new ScriptedDeserializer(null, trailing));
+        TextShape.Builder builder = new TextShape.Builder();
+
+        assertThatThrownBy(() -> codec.deserializeShape(ByteBuffer.allocate(0), builder))
+            .isInstanceOf(SerializationException.class)
+            .hasMessage("Unable to deserialize smithy.api#String: Unexpected content after the value")
+            .hasCause(trailing);
+    }
+
+    @Test
+    void deserializeShape_readFails_closesQuietlyAndBuildsNothing() {
+        SerializationException readFailure = new SerializationException("Unexpected end of input");
+        SerializationException closeFailure = new SerializationException("incomplete value");
+        ScriptedDeserializer deserializer = new ScriptedDeserializer(readFailure, closeFailure);
+        TextShape.Builder builder = new TextShape.Builder();
+
+        assertThatThrownBy(() -> codecFor(deserializer).deserializeShape(new byte[0], builder))
+            .isInstanceOf(SerializationException.class)
+            .hasMessage("Unable to deserialize smithy.api#String: Unexpected end of input")
+            .hasCause(readFailure);
+        assertThat(deserializer.closed).isTrue();
+        assertThat(readFailure.getSuppressed()).containsExactly(closeFailure);
+        assertThat(builder.built).isFalse();
+    }
+
+    @Test
+    void deserializeShape_createDeserializerFails_throwsNamingShapeId() {
+        Codec failing = new Utf8StringCodec() {
+            @Override
+            public ShapeDeserializer createDeserializer(ByteBuffer source) {
+                throw new SerializationException("illegal first byte");
+            }
+        };
+
+        assertThatThrownBy(() -> failing.deserializeShape("x", new TextShape.Builder()))
+            .isInstanceOf(SerializationException.class)
+            .hasMessage("Unable to deserialize smithy.api#String: illegal first byte");
+    }
+
+    @Test
+    void deserializeShape_otherRuntimeException_propagatesUnchanged() {
+        IllegalStateException failure = new IllegalStateException("builder bug");
+        ScriptedDeserializer deserializer = new ScriptedDeserializer(failure, null);
+
+        assertThatThrownBy(() -> codecFor(deserializer).deserializeShape(new byte[0], new TextShape.Builder()))
+            .isSameAs(failure);
+        assertThat(deserializer.closed).isTrue();
+    }
+
+    @Test
     void convenienceMethods_nullArguments_throwNamingParameter() {
         TextShape.Builder builder = new TextShape.Builder();
 
@@ -188,6 +251,46 @@ class CodecTest {
         byte[] result = new byte[buffer.remaining()];
         buffer.duplicate().get(result);
         return result;
+    }
+
+    private static Codec codecFor(ScriptedDeserializer deserializer) {
+        return new Utf8StringCodec() {
+            @Override
+            public ShapeDeserializer createDeserializer(ByteBuffer source) {
+                return deserializer;
+            }
+        };
+    }
+
+    /**
+     * A deserializer that reads {@code "scripted"} or throws {@code readFailure}, and whose {@code close} records the
+     * call and then throws {@code closeFailure} if it is set.
+     */
+    private static final class ScriptedDeserializer extends SpecificShapeDeserializer {
+        private final RuntimeException readFailure;
+        private final RuntimeException closeFailure;
+        private boolean closed;
+
+        private ScriptedDeserializer(RuntimeException readFailure, RuntimeException closeFailure) {
+            this.readFailure = readFailure;
+            this.closeFailure = closeFailure;
+        }
+
+        @Override
+        public String readString(Schema schema) {
+            if (readFailure != null) {
+                throw readFailure;
+            }
+            return "scripted";
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+            if (closeFailure != null) {
+                throw closeFailure;
+            }
+        }
     }
 
     /**

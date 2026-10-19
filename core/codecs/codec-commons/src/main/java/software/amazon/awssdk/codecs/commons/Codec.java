@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.codecs.commons.internal.CodecSupport;
 import software.amazon.awssdk.schema.SerializableShape;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.serde.SerializationException;
@@ -144,34 +145,46 @@ public interface Codec extends SdkAutoCloseable {
      * Deserializes {@code source} into {@code builder}, applies {@link ShapeBuilder#errorCorrection()} and builds the
      * shape.
      *
-     * @param source the bytes to read
-     * @param builder the builder to populate
-     * @param <T> the shape type
-     * @return the built shape
-     * @throws NullPointerException if {@code source} or {@code builder} is null
-     * @throws SerializationException if the bytes cannot be read into the shape; no shape is returned
-     */
-    default <T extends SerializableShape> T deserializeShape(byte[] source, ShapeBuilder<T> builder) {
-        Objects.requireNonNull(source, "source must not be null");
-        Objects.requireNonNull(builder, "builder must not be null");
-        return builder.deserialize(createDeserializer(source)).errorCorrection().build();
-    }
-
-    /**
-     * Deserializes the remaining bytes of {@code source} into {@code builder}, applies
-     * {@link ShapeBuilder#errorCorrection()} and builds the shape.
+     * <p>The default is the deserializer path: it reads through {@link #createDeserializer(byte[])} into
+     * {@code builder} and then closes the deserializer, so it builds the same value. The SDK codecs' deserializers
+     * reject content after the shape when they are closed. If reading or building fails, the deserializer is still
+     * closed, and a failure of that close is added to the exception as suppressed. A {@link SerializationException}
+     * whose message does not name the builder's schema ShapeId (for example an unexpected end of input) is replaced by
+     * one that does, with the original as its cause.
      *
      * @param source the bytes to read
      * @param builder the builder to populate
      * @param <T> the shape type
      * @return the built shape
      * @throws NullPointerException if {@code source} or {@code builder} is null
-     * @throws SerializationException if the bytes cannot be read into the shape; no shape is returned
+     * @throws SerializationException if the bytes are malformed or truncated, do not match the shape, or have
+     *     content after the shape; no shape is returned
+     */
+    default <T extends SerializableShape> T deserializeShape(byte[] source, ShapeBuilder<T> builder) {
+        Objects.requireNonNull(source, "source must not be null");
+        Objects.requireNonNull(builder, "builder must not be null");
+        return CodecSupport.deserializeShape(this, source, builder);
+    }
+
+    /**
+     * Deserializes the remaining bytes of {@code source} into {@code builder}, applies
+     * {@link ShapeBuilder#errorCorrection()} and builds the shape.
+     *
+     * <p>The default reads through {@link #createDeserializer(ByteBuffer)} and closes the deserializer, as
+     * {@link #deserializeShape(byte[], ShapeBuilder)} does.
+     *
+     * @param source the bytes to read; read-only and direct buffers are accepted
+     * @param builder the builder to populate
+     * @param <T> the shape type
+     * @return the built shape
+     * @throws NullPointerException if {@code source} or {@code builder} is null
+     * @throws SerializationException if the bytes are malformed or truncated, do not match the shape, or have
+     *     content after the shape; no shape is returned
      */
     default <T extends SerializableShape> T deserializeShape(ByteBuffer source, ShapeBuilder<T> builder) {
         Objects.requireNonNull(source, "source must not be null");
         Objects.requireNonNull(builder, "builder must not be null");
-        return builder.deserialize(createDeserializer(source)).errorCorrection().build();
+        return CodecSupport.deserializeShape(this, source, builder);
     }
 
     /**

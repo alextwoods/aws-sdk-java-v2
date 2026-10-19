@@ -26,8 +26,6 @@ import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.codecs.xml.internal.XmlSerdeFactory;
-import software.amazon.awssdk.schema.SerializableShape;
-import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
@@ -159,58 +157,10 @@ public final class XmlCodec implements Codec {
         return factory.createDeserializer(source);
     }
 
-    /**
-     * Deserializes one shape from {@code source} and closes the deserializer.
-     *
-     * @throws NullPointerException if an argument is null
-     * @throws SerializationException if the input is malformed, does not match the shape, or has trailing content
-     */
-    @Override
-    public <T extends SerializableShape> T deserializeShape(byte[] source, ShapeBuilder<T> builder) {
-        Objects.requireNonNull(source, "source must not be null");
-        Objects.requireNonNull(builder, "builder must not be null");
-        return deserializeAndClose(createDeserializer(source), builder);
-    }
-
-    /**
-     * Deserializes one shape from the remaining bytes of {@code source} and closes the deserializer.
-     *
-     * @throws NullPointerException if an argument is null
-     * @throws SerializationException if the input is malformed, does not match the shape, or has trailing content
-     */
-    @Override
-    public <T extends SerializableShape> T deserializeShape(ByteBuffer source, ShapeBuilder<T> builder) {
-        Objects.requireNonNull(source, "source must not be null");
-        Objects.requireNonNull(builder, "builder must not be null");
-        return deserializeAndClose(createDeserializer(source), builder);
-    }
-
     @Override
     public String toString() {
         return "XmlCodec(" + settings + ", wrapperElements=" + factory.wrapperElements()
                + ", strictRootElement=" + factory.strictRootElement() + ", xmlDeclaration=" + xmlDeclaration + ")";
-    }
-
-    private static <T extends SerializableShape> T deserializeAndClose(ShapeDeserializer deserializer,
-                                                                       ShapeBuilder<T> builder) {
-        T result;
-        try {
-            result = builder.deserialize(deserializer).errorCorrection().build();
-        } catch (RuntimeException e) {
-            closeQuietly(deserializer, e);
-            throw e;
-        }
-        deserializer.close();
-        return result;
-    }
-
-    private static void closeQuietly(ShapeDeserializer deserializer, RuntimeException failure) {
-        try {
-            deserializer.close();
-        } catch (RuntimeException closeFailure) {
-            // Don't hide the original deserialization exception.
-            failure.addSuppressed(closeFailure);
-        }
     }
 
     /**
