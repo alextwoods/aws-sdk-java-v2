@@ -45,6 +45,7 @@ import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.services.route53.model.ChangeAction;
 import software.amazon.awssdk.services.route53.model.ChangeResourceRecordSetsResponse;
 import software.amazon.awssdk.services.route53.model.ChangeStatus;
+import software.amazon.awssdk.services.route53.model.CreateHostedZoneResponse;
 import software.amazon.awssdk.services.route53.model.GetChangeResponse;
 import software.amazon.awssdk.services.route53.model.GetHostedZoneResponse;
 import software.amazon.awssdk.services.route53.model.ListResourceRecordSetsResponse;
@@ -63,9 +64,10 @@ import software.amazon.awssdk.utils.StringInputStream;
 /**
  * The generated Route 53 clients run on the schema-based pipeline path with the restXml client protocol (task 9.4):
  * URI labels (the converter's member-named labels, such as {@code {HostedZoneId}}, send the same path as the C2J
- * {@code {Id}}), query parameters, the request root element and namespace, response parsing, errors from
- * {@code <ErrorResponse><Error>} (including the deprecated {@code HealthCheckInUse}), the waiter, and
- * {@code Route53IdInterceptor}, which removes the resource path prefix from the returned IDs.
+ * {@code {Id}}), query parameters, the request root element and namespace, response parsing and the
+ * {@code Location} response header, errors from {@code <ErrorResponse><Error>} (including the deprecated
+ * {@code HealthCheckInUse}), the waiter, and {@code Route53IdInterceptor}, which removes the resource path prefix
+ * from the returned IDs.
  */
 class Route53NewPathTest {
     private static final String SYNC_PIPELINE = "software.amazon.awssdk.core.internal.http.SyncApiCallPipeline";
@@ -103,6 +105,44 @@ class Route53NewPathTest {
             + "<Action>CREATE</Action><ResourceRecordSet><Name>a.example.com</Name><Type>A</Type><TTL>60</TTL>"
             + "<ResourceRecords><ResourceRecord><Value>192.0.2.1</Value></ResourceRecord></ResourceRecords>"
             + "</ResourceRecordSet></Change></Changes></ChangeBatch></ChangeResourceRecordSetsRequest>");
+    }
+
+    /**
+     * A 201 response with the {@code Location} header bound to an output member, and the interceptor removing the
+     * prefixes of all three returned IDs.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void createHostedZone_readsTheLocationHeader_andTheInterceptorStripsEveryId(boolean async) {
+        Recorder recorder = new Recorder();
+        String location = "https://route53.amazonaws.com/2013-04-01/hostedzone/Z1";
+        String body = "<CreateHostedZoneResponse xmlns=\"" + NAMESPACE + "\"><HostedZone><Id>/hostedzone/Z1</Id>"
+                      + "<Name>example.com.</Name><CallerReference>ref</CallerReference></HostedZone>"
+                      + String.format(CHANGE_INFO, "PENDING")
+                      + "<DelegationSet><Id>/delegationset/D1</Id><NameServers><NameServer>ns-1.example.net"
+                      + "</NameServer></NameServers></DelegationSet></CreateHostedZoneResponse>";
+        HttpExecuteResponse created =
+            HttpExecuteResponse.builder()
+                               .response(SdkHttpResponse.builder().statusCode(201).putHeader("Location", location)
+                                                        .build())
+                               .responseBody(AbortableInputStream.create(new StringInputStream(body)))
+                               .build();
+
+        CreateHostedZoneResponse response = call(
+            async, recorder, created,
+            c -> c.createHostedZone(r -> r.name("example.com").callerReference("ref")),
+            c -> c.createHostedZone(r -> r.name("example.com").callerReference("ref")));
+
+        assertThat(response.location()).isEqualTo(location);
+        assertThat(response.hostedZone().id()).isEqualTo("Z1");
+        assertThat(response.changeInfo().id()).isEqualTo("C1");
+        assertThat(response.delegationSet().id()).isEqualTo("D1");
+        recorder.assertRanOnTheNewPipeline(async, Route53Operations.CREATE_HOSTED_ZONE);
+        assertThat(recorder.sent.get(0).encodedPath()).isEqualTo("/2013-04-01/hostedzone");
+        assertThat(recorder.body()).isEqualTo(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            + "<CreateHostedZoneRequest xmlns=\"" + NAMESPACE + "\"><Name>example.com</Name>"
+            + "<CallerReference>ref</CallerReference></CreateHostedZoneRequest>");
     }
 
     @ParameterizedTest
