@@ -20,37 +20,37 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.core.ClientEndpointProvider;
-import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
-import software.amazon.awssdk.core.client.config.SdkClientOption;
-import software.amazon.awssdk.http.SdkHttpFullRequest;
-import software.amazon.awssdk.protocols.json.AwsJsonProtocol;
-import software.amazon.awssdk.protocols.json.AwsJsonProtocolFactory;
+import software.amazon.awssdk.core.interceptor.Context;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
+import software.amazon.awssdk.http.AbortableInputStream;
+import software.amazon.awssdk.http.HttpExecuteResponse;
+import software.amazon.awssdk.http.SdkHttpResponse;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
-import software.amazon.awssdk.services.dynamodb.transform.PutItemRequestMarshaller;
+import software.amazon.awssdk.testutils.service.http.MockSyncHttpClient;
 import software.amazon.awssdk.utils.BinaryUtils;
+import software.amazon.awssdk.utils.FunctionalUtils;
 import software.amazon.awssdk.utils.ImmutableMap;
+import software.amazon.awssdk.utils.IoUtils;
+import software.amazon.awssdk.utils.StringInputStream;
 
+/**
+ * The request body of {@code PutItem} contains only the remaining bytes of a binary attribute's buffer. Before task 9.2
+ * this called the generated {@code PutItemRequestMarshaller}, which the schema path no longer generates; it now sends
+ * the request through the client and reads the body at {@code beforeTransmission}.
+ */
 public class PutItemRequestMarshallerTest {
-
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private final PutItemRequestMarshaller marshaller = new PutItemRequestMarshaller(
-        AwsJsonProtocolFactory.builder()
-                              .clientConfiguration(
-                                  SdkClientConfiguration.builder()
-                                                        .option(SdkClientOption.CLIENT_ENDPOINT_PROVIDER,
-                                                                ClientEndpointProvider.forEndpointOverride(URI.create("http://localhost")))
-                                                        .build())
-                              .protocolVersion("1.1")
-                              .protocol(AwsJsonProtocol.AWS_JSON)
-                              .build());
 
-    /**l
+    /**
      * Regression test for TT0075355961
      */
     @Test
@@ -58,9 +58,33 @@ public class PutItemRequestMarshallerTest {
         final ByteBuffer byteBuffer = ByteBuffer.wrap(new byte[] {0, 0, 0, 1, 1, 1});
         // Consume some of the byte buffer
         byteBuffer.position(3);
-        SdkHttpFullRequest marshalled = marshaller.marshall(PutItemRequest.builder().item(
-                ImmutableMap.of("binaryProp", AttributeValue.builder().b(SdkBytes.fromByteBuffer(byteBuffer)).build())).build());
-        JsonNode marshalledContent = MAPPER.readTree(marshalled.contentStreamProvider().get().newStream());
+        AtomicReference<byte[]> body = new AtomicReference<>();
+        MockSyncHttpClient http = new MockSyncHttpClient();
+        http.stubNextResponse(HttpExecuteResponse.builder()
+                                                 .response(SdkHttpResponse.builder().statusCode(200).build())
+                                                 .responseBody(AbortableInputStream.create(new StringInputStream("{}")))
+                                                 .build());
+        ExecutionInterceptor bodyRecorder = new ExecutionInterceptor() {
+            @Override
+            public void beforeTransmission(Context.BeforeTransmission context, ExecutionAttributes attributes) {
+                body.set(FunctionalUtils.invokeSafely(
+                    () -> IoUtils.toByteArray(context.requestBody().get().contentStreamProvider().newStream())));
+            }
+        };
+
+        try (DynamoDbClient client = DynamoDbClient.builder()
+                                                   .credentialsProvider(StaticCredentialsProvider.create(
+                                                       AwsBasicCredentials.create("test", "test")))
+                                                   .region(Region.US_WEST_2)
+                                                   .httpClient(http)
+                                                   .overrideConfiguration(o -> o.addExecutionInterceptor(bodyRecorder))
+                                                   .build()) {
+            client.putItem(PutItemRequest.builder().tableName("t").item(
+                ImmutableMap.of("binaryProp", AttributeValue.builder().b(SdkBytes.fromByteBuffer(byteBuffer)).build()))
+                                         .build());
+        }
+
+        JsonNode marshalledContent = MAPPER.readTree(body.get());
         String base64Binary = marshalledContent.get("Item").get("binaryProp").get("B").asText();
         // Only the remaining data in the byte buffer should have been read and marshalled.
         assertEquals(BinaryUtils.toBase64(new byte[] {1, 1, 1}), base64Binary);

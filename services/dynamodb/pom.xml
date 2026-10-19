@@ -53,6 +53,14 @@
             <artifactId>schema</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The client protocol of the schema path (awsJson1_0, task 9.2), used by the DynamoDB clients. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- aws-json-protocol and protocol-core stay for the DynamoDB Streams clients, which share DynamoDB's model
+             package (shareModelConfig), get no schemas and keep the legacy marshallers (task 9.2). -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-json-protocol</artifactId>

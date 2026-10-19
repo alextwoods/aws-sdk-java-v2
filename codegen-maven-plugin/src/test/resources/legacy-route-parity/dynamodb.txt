@@ -1,0 +1,29 @@
+--- src/software/amazon/awssdk/services/dynamodb/DefaultDynamoDbBaseClientBuilder.java
++ import software.amazon.awssdk.awscore.client.builder.ClientProtocolSupport;
++ import software.amazon.awssdk.core.client.protocol.ClientProtocol;
++ import software.amazon.awssdk.core.client.protocol.ProtocolSettings;
+- import software.amazon.awssdk.protocols.json.internal.unmarshall.SdkClientJsonProtocolAdvancedOption;
++ import software.amazon.awssdk.protocols.client.awsjson.AwsJson1Protocol;
++ import software.amazon.awssdk.services.dynamodb.internal.DynamoDbServiceSchemas;
++ import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
+- c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, true);
++ c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, true).option(SdkClientOption.CLIENT_PROTOCOL_FACTORY, AwsJson1Protocol.Factory.INSTANCE);
+- builder.option(SdkClientJsonProtocolAdvancedOption.ENABLE_FAST_UNMARSHALLER, true);
++ builder.lazyOptionIfAbsent(SdkClientOption.CLIENT_PROTOCOL, c -> ClientProtocolSupport.createProtocol(c.get(SdkClientOption.CLIENT_PROTOCOL_FACTORY), protocolSettings()));
++ ClientProtocolSupport.validateMessageExchange(c);
++ }
++ public B protocol(ClientProtocol<?, ?> protocol) {
++ clientConfiguration.option(SdkClientOption.CLIENT_PROTOCOL, protocol);
++ return thisBuilder();
++ }
++ private static ProtocolSettings protocolSettings() {
++ return ProtocolSettings.builder().serviceSchema(DynamoDbServiceSchemas.SERVICE).serviceVersion("2012-08-10").baseExceptionBuilder(DynamoDbException::builder).build();
+--- src/software/amazon/awssdk/services/dynamodb/DynamoDbBaseClientBuilder.java
++ import software.amazon.awssdk.core.client.protocol.ClientProtocol;
++ /** Set the {@link ClientProtocol}
++ the client serializes requests and deserializes responses and errors with. This is optional;
++ if none is provided, or it is set to null, the client uses the service's default protocol. <p> The protocol's message exchange must match the client transport's;
++ otherwise building the client fails with an {@link java.lang.IllegalStateException}. */
++ default B protocol(ClientProtocol<?, ?> protocol) {
++ throw new UnsupportedOperationException();
++ }
