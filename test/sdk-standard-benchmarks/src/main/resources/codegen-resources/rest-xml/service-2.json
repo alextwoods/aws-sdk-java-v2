@@ -632,11 +632,6 @@
           "location": "header",
           "locationName": "Last-Modified"
         },
-        "ContentLength": {
-          "shape": "Long",
-          "location": "header",
-          "locationName": "Content-Length"
-        },
         "ETag": {
           "shape": "String",
           "location": "header",
@@ -1259,11 +1254,6 @@
           "shape": "String",
           "location": "header",
           "locationName": "Content-Language"
-        },
-        "ContentLength": {
-          "shape": "Long",
-          "location": "header",
-          "locationName": "Content-Length"
         },
         "ContentMD5": {
           "shape": "String",

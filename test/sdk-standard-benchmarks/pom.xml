@@ -185,6 +185,18 @@
             <version>${awsjavasdk.version}</version>
         </dependency>
 
+        <!-- The rpc-v2-cbor benchmark service is generated with schemas and the rpcv2Cbor client protocol
+             (task 3.23): its base client builder references RpcV2CborProtocol.Factory. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rpcv2-cbor-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <!-- Codegen dependency for IntermediateModel -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>

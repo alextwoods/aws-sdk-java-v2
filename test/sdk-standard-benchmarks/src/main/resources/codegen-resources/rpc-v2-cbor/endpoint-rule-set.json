@@ -11,14 +11,14 @@
             "builtIn": "AWS::UseDualStack",
             "required": true,
             "default": false,
-            "documentation": "When true, use the dual-stack endpoint. If the configured endpoint does not support dual-stack, dispatching the request MAY return an error.",
+            "documentation": "When true, use the dual-stack endpoint.",
             "type": "Boolean"
         },
         "UseFIPS": {
             "builtIn": "AWS::UseFIPS",
             "required": true,
             "default": false,
-            "documentation": "When true, send this request to the FIPS-compliant regional endpoint. If the configured endpoint does not have a FIPS compliant endpoint, dispatching the request will return an error.",
+            "documentation": "When true, use the FIPS endpoint.",
             "type": "Boolean"
         },
         "Endpoint": {
@@ -31,29 +31,48 @@
     "rules": [
         {
             "conditions": [
-            ],
-            "type": "tree",
-            "rules": [
                 {
-                    "conditions": [],
-                    "endpoint": {
-                        "url": {
+                    "fn": "isSet",
+                    "argv": [
+                        {
                             "ref": "Endpoint"
-                        },
-                        "properties": {
-                            "authSchemes": [
-                                {
-                                    "name": "sigv4",
-                                    "signingRegion": "{Region}",
-                                    "signingName": "jsonrpc"
-                                }
-                            ]
-                        },
-                        "headers": {}
-                    },
-                    "type": "endpoint"
+                        }
+                    ]
                 }
-            ]
+            ],
+            "endpoint": {
+                "url": {
+                    "ref": "Endpoint"
+                },
+                "properties": {
+                    "authSchemes": [
+                        {
+                            "name": "sigv4",
+                            "signingRegion": "{Region}",
+                            "signingName": "jsonrpc"
+                        }
+                    ]
+                },
+                "headers": {}
+            },
+            "type": "endpoint"
+        },
+        {
+            "conditions": [],
+            "endpoint": {
+                "url": "https://jsonrpc.{Region}.amazonaws.com",
+                "properties": {
+                    "authSchemes": [
+                        {
+                            "name": "sigv4",
+                            "signingRegion": "{Region}",
+                            "signingName": "jsonrpc"
+                        }
+                    ]
+                },
+                "headers": {}
+            },
+            "type": "endpoint"
         }
     ]
 }
