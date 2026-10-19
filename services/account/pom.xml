@@ -52,20 +52,21 @@
             <artifactId>schema</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The client protocol of the schema path (restJson1, task 9.3). -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>protocol-core</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>aws-json-protocol</artifactId>
+            <artifactId>rest-json-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>http-auth-aws</artifactId>
             <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
