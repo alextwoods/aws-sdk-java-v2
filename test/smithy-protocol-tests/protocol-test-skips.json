@@ -87,12 +87,12 @@
         "id": "SdkRestJsonNoContentWithBlobPayload",
         "protocol": "aws.protocols#restJson1",
         "service": "software.amazon.awssdk.protocoltests.restjson#SdkRestJson",
-        "reason": "Behavior change, open compatibility question: on the schema path an empty response body leaves a blob @httpPayload member unset (null), as the upstream RestJsonHttpPayloadTraitsWithNoBlobBody requires, instead of the legacy SDK's empty SdkBytes that this SDK-owned case (legacy-disposition.csv rest-core-output.json#6) expects. The two cases contradict each other; the upstream case passes"
+        "reason": "Accepted behavior change (user decision, phase 5 behavior policy in docs/design/schema-serde/porting-deviations.md): on the schema path an empty response body leaves a blob @httpPayload member unset (null), as the upstream RestJsonHttpPayloadTraitsWithNoBlobBody requires (it passes), instead of the legacy SDK's empty SdkBytes that this SDK-owned case expects. legacy-disposition.csv retires rest-core-output.json#6"
     },
     {
         "id": "SdkRestXmlNoContentWithBlobPayload",
         "protocol": "aws.protocols#restXml",
         "service": "software.amazon.awssdk.protocoltests.restxml#SdkRestXml",
-        "reason": "Behavior change, open compatibility question: on the schema path an empty response body leaves a blob @httpPayload member unset (null), as the upstream HttpPayloadTraitsWithNoBlobBody requires, instead of the legacy SDK's empty SdkBytes that this SDK-owned case (legacy-disposition.csv rest-core-output.json#6) expects. The two cases contradict each other; the upstream case passes"
+        "reason": "Accepted behavior change (user decision, phase 5 behavior policy in docs/design/schema-serde/porting-deviations.md): on the schema path an empty response body leaves a blob @httpPayload member unset (null), as the upstream HttpPayloadTraitsWithNoBlobBody requires (it passes), instead of the legacy SDK's empty SdkBytes that this SDK-owned case expects. legacy-disposition.csv retires rest-core-output.json#6"
     }
 ]

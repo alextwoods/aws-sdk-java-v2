@@ -1757,3 +1757,16 @@ None of these hides a converter gap that a prototype service hits: the prototype
 | `SensitiveDataRedactedTest` (1) | `ListOfListOfSensitiveString=[[Value]]` is not redacted | Sensitivity of a nested list's element target is not propagated |
 | `CustomSdkShapeTest` (1) | The request body has no `SdkPartType` | The `customSdkShapes` customization is not applied on the Smithy route |
 | `RpcV2CborUserAgentTest` (2) | `BadCborException: unexpected end of payload` for `OperationWithNoInputOrOutput` | New path: an empty rpcv2Cbor response body is not read as an empty structure (`rpcv2-cbor-client-protocol`) |
+
+## Phase 5 behavior policy (user decision)
+
+The prototype services that tasks 9.2–9.4 move to the schema path (SQS, DynamoDB, Secrets Manager, Account, Route 53 and SNS) keep the new path's Smithy-aligned behavior everywhere. The new path does not reproduce the legacy behavior below for any service. Each row is an accepted behavior change. A module test that asserts the legacy behavior is listed with this section as its reason in `docs/design/schema-serde/excluded-tests.md` (task 9.2). This closes the open questions of tasks 7.15 and 7.21.
+
+| # | Behavior | Legacy SDK | Schema path (kept) | Where recorded | Protocols |
+|---|---|---|---|---|---|
+| 1 | Form encoding of space, `*` and `~` in query request bodies | `+`, `*`, `%7E` | `%20`, `%2A`, `~` (RFC 3986 unreserved set, as smithy-java and `SdkHttpUtils.urlEncode`) | Tasks 7.5, 7.15. Both forms decode to the same values | awsQuery, ec2Query (SNS) |
+| 2 | Query request `Content-Type` | `application/x-www-form-urlencoded; charset=utf-8` | `application/x-www-form-urlencoded`, as the Smithy request tests and smithy-java | Task 7.15 | awsQuery, ec2Query (SNS) |
+| 3 | Request path for an endpoint with a path (`https://example.com/custom`) | `/custom` | `/custom/` (`QueryHostWithPath`, `Ec2QueryHostWithPath`) | Task 7.15 | awsQuery, ec2Query (SNS) |
+| 4 | Empty response body for a blob `@httpPayload` output member | Empty `SdkBytes` | Unset (null), as the upstream `RestJsonHttpPayloadTraitsWithNoBlobBody` and `HttpPayloadTraitsWithNoBlobBody` require (both pass) | Task 7.21. The SDK-owned `SdkRestJsonNoContentWithBlobPayload` and `SdkRestXmlNoContentWithBlobPayload` stay skipped, with "accepted behavior change (user decision)" in `protocol-test-skips.json`. `legacy-disposition.csv` row `rest-core-output.json#6` changes from `ported` to `retired` for both protocols (Requirement 32.10 allows only `ported` or `retired`, and the case it was ported to no longer describes SDK behavior) | restJson1, restXml |
+| 5 | `@default` values and client error correction | Not populated: an unset member is null and is not sent; a `@required` output member the response omits stays null | Not populated, as legacy (no change from the legacy SDK; a deviation from the Smithy protocol tests). The 12 skips stay | Tasks 3.34, 7.21 | rpcv2Cbor, awsJson1_0, restJson1 (skips); all protocols (behavior) |
+| 6 | Event-stream `eventHeader` members | String-typed headers | Typed headers (`fromInteger`, `fromTimestamp`, …), as the Smithy event stream spec. The decoder also accepts a legacy string header for a non-string member | Task 7.20 (header typing decided: typed) | Event-stream operations once they run on the new path (task 7.20 stages (c)–(e)) |
