@@ -1,3 +1,30 @@
+--- src/software/amazon/awssdk/services/route53/DefaultRoute53BaseClientBuilder.java
++ import software.amazon.awssdk.awscore.client.builder.ClientProtocolSupport;
++ import software.amazon.awssdk.core.client.protocol.ClientProtocol;
++ import software.amazon.awssdk.core.client.protocol.ProtocolSettings;
++ import software.amazon.awssdk.protocols.client.restxml.RestXmlClientProtocol;
++ import software.amazon.awssdk.services.route53.internal.Route53ServiceSchemas;
++ import software.amazon.awssdk.services.route53.model.Route53Exception;
+- c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, false);
++ c.option(SdkClientOption.ENDPOINT_PROVIDER, defaultEndpointProvider()).option(SdkClientOption.AUTH_SCHEME_PROVIDER, defaultAuthSchemeProvider(config)).option(SdkClientOption.AUTH_SCHEMES, authSchemes()).option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED, false).option(SdkClientOption.CLIENT_PROTOCOL_FACTORY, RestXmlClientProtocol.Factory.INSTANCE);
++ builder.lazyOptionIfAbsent(SdkClientOption.CLIENT_PROTOCOL, c -> ClientProtocolSupport.createProtocol(c.get(SdkClientOption.CLIENT_PROTOCOL_FACTORY), protocolSettings()));
++ ClientProtocolSupport.validateMessageExchange(c);
++ }
++ public B protocol(ClientProtocol<?, ?> protocol) {
++ clientConfiguration.option(SdkClientOption.CLIENT_PROTOCOL, protocol);
++ return thisBuilder();
++ }
++ private static ProtocolSettings protocolSettings() {
++ return ProtocolSettings.builder().serviceSchema(Route53ServiceSchemas.SERVICE).serviceVersion("2013-04-01").baseExceptionBuilder(Route53Exception::builder).build();
+--- src/software/amazon/awssdk/services/route53/Route53BaseClientBuilder.java
++ import software.amazon.awssdk.core.client.protocol.ClientProtocol;
++ throw new UnsupportedOperationException();
++ }
++ /** Set the {@link ClientProtocol}
++ the client serializes requests and deserializes responses and errors with. This is optional;
++ if none is provided, or it is set to null, the client uses the service's default protocol. <p> The protocol's message exchange must match the client transport's;
++ otherwise building the client fails with an {@link java.lang.IllegalStateException}. */
++ default B protocol(ClientProtocol<?, ?> protocol) {
 --- src/software/amazon/awssdk/services/route53/model/AssociateVpcWithHostedZoneRequest.java
 - private static final SdkField<String> HOSTED_ZONE_ID_FIELD = SdkField.<String> builder(MarshallingType.STRING).memberName("HostedZoneId").getter(getter(AssociateVpcWithHostedZoneRequest::hostedZoneId)).setter(setter(Builder::hostedZoneId)).traits(LocationTrait.builder().location(MarshallLocation.PATH).locationName("Id").unmarshallLocationName("Id").build()).build();
 + private static final SdkField<String> HOSTED_ZONE_ID_FIELD = SdkField.<String> builder(MarshallingType.STRING).memberName("HostedZoneId").getter(getter(AssociateVpcWithHostedZoneRequest::hostedZoneId)).setter(setter(Builder::hostedZoneId)).traits(LocationTrait.builder().location(MarshallLocation.PATH).locationName("HostedZoneId").unmarshallLocationName("HostedZoneId").build()).build();

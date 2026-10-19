@@ -20,26 +20,29 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
-import software.amazon.awssdk.core.ClientEndpointProvider;
-import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
-import software.amazon.awssdk.core.client.config.SdkClientOption;
-import software.amazon.awssdk.http.SdkHttpFullRequest;
-import software.amazon.awssdk.protocols.xml.AwsXmlProtocolFactory;
-import software.amazon.awssdk.services.route53.model.GetHealthCheckLastFailureReasonRequest;
-import software.amazon.awssdk.services.route53.model.ListHealthChecksRequest;
-import software.amazon.awssdk.services.route53.transform.GetHealthCheckLastFailureReasonRequestMarshaller;
-import software.amazon.awssdk.services.route53.transform.ListHealthChecksRequestMarshaller;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.interceptor.Context;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
+import software.amazon.awssdk.http.AbortableInputStream;
+import software.amazon.awssdk.http.HttpExecuteResponse;
+import software.amazon.awssdk.http.SdkHttpRequest;
+import software.amazon.awssdk.http.SdkHttpResponse;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.testutils.service.http.MockSyncHttpClient;
+import software.amazon.awssdk.utils.StringInputStream;
 
+/**
+ * The request's query parameters and URI labels with reserved characters. Task 9.4 sends the requests through
+ * {@link Route53Client} and reads them at {@code beforeTransmission}, because the schema path generates no
+ * {@code transform} marshallers; the assertions are the ones the test made on the marshallers' output.
+ */
 public class QueryParamBindingTest {
-
-    protected static final AwsXmlProtocolFactory PROTOCOL_FACTORY = AwsXmlProtocolFactory
-        .builder()
-        .clientConfiguration(SdkClientConfiguration.builder()
-                                                   .option(SdkClientOption.CLIENT_ENDPOINT_PROVIDER,
-                                                           ClientEndpointProvider.forEndpointOverride(URI.create("http://localhost")))
-                                                   .build())
-        .build();
+    private static final String NAMESPACE = " xmlns=\"https://route53.amazonaws.com/doc/2013-04-01/\"";
 
     /**
      * Make sure the marshaller is able to handle @UriLabel parameter values
@@ -47,17 +50,15 @@ public class QueryParamBindingTest {
      */
     @Test
     public void testReservedCharInParamValue() {
-
         final String VALUE_WITH_SEMICOLON = ";foo";
         final String VALUE_WITH_AMPERSAND = "&bar";
         final String VALUE_WITH_QUESTION_MARK = "?charlie";
 
-        ListHealthChecksRequest listReq = ListHealthChecksRequest.builder()
-                .marker(VALUE_WITH_SEMICOLON)
-                .maxItems(VALUE_WITH_AMPERSAND)
-                .build();
+        SdkHttpRequest httpReq_List = send(
+            "<ListHealthChecksResponse" + NAMESPACE + "><HealthChecks/><IsTruncated>false</IsTruncated>"
+            + "<MaxItems>1</MaxItems></ListHealthChecksResponse>",
+            c -> c.listHealthChecks(r -> r.marker(VALUE_WITH_SEMICOLON).maxItems(VALUE_WITH_AMPERSAND)));
 
-        SdkHttpFullRequest httpReq_List = new ListHealthChecksRequestMarshaller(PROTOCOL_FACTORY).marshall(listReq);
         assertEquals("/2013-04-01/healthcheck", httpReq_List.encodedPath());
 
         Map<String, List<String>> queryParams = httpReq_List.rawQueryParameters();
@@ -65,13 +66,10 @@ public class QueryParamBindingTest {
         assertEquals(VALUE_WITH_SEMICOLON, queryParams.get("marker").get(0));
         assertEquals(VALUE_WITH_AMPERSAND, queryParams.get("maxitems").get(0));
 
-        GetHealthCheckLastFailureReasonRequest getFailureReq = GetHealthCheckLastFailureReasonRequest.builder()
-                .healthCheckId(VALUE_WITH_QUESTION_MARK)
-                .build();
-
-        SdkHttpFullRequest httpReq_GetFailure =
-                new GetHealthCheckLastFailureReasonRequestMarshaller(PROTOCOL_FACTORY).marshall(getFailureReq);
-        System.out.println(httpReq_GetFailure);
+        SdkHttpRequest httpReq_GetFailure = send(
+            "<GetHealthCheckLastFailureReasonResponse" + NAMESPACE + "><HealthCheckObservations/>"
+            + "</GetHealthCheckLastFailureReasonResponse>",
+            c -> c.getHealthCheckLastFailureReason(r -> r.healthCheckId(VALUE_WITH_QUESTION_MARK)));
         // parameter value should be URL encoded
         assertEquals(
                 "/2013-04-01/healthcheck/%3Fcharlie/lastfailurereason",
@@ -79,5 +77,33 @@ public class QueryParamBindingTest {
 
         queryParams = httpReq_GetFailure.rawQueryParameters();
         assertEquals(0, queryParams.size());
+    }
+
+    private static SdkHttpRequest send(String responseBody, Consumer<Route53Client> call) {
+        AtomicReference<SdkHttpRequest> sent = new AtomicReference<>();
+        MockSyncHttpClient http = new MockSyncHttpClient();
+        http.stubResponses(HttpExecuteResponse.builder()
+                                              .response(SdkHttpResponse.builder().statusCode(200).build())
+                                              .responseBody(AbortableInputStream.create(
+                                                  new StringInputStream(responseBody)))
+                                              .build());
+        ExecutionInterceptor recorder = new ExecutionInterceptor() {
+            @Override
+            public void beforeTransmission(Context.BeforeTransmission context, ExecutionAttributes attributes) {
+                sent.set(context.httpRequest());
+            }
+        };
+        try (Route53Client client =
+                 Route53Client.builder()
+                              .region(Region.AWS_GLOBAL)
+                              .endpointOverride(URI.create("http://localhost"))
+                              .credentialsProvider(StaticCredentialsProvider.create(
+                                  AwsBasicCredentials.create("ak", "sk")))
+                              .httpClient(http)
+                              .overrideConfiguration(o -> o.addExecutionInterceptor(recorder))
+                              .build()) {
+            call.accept(client);
+        }
+        return sent.get();
     }
 }
