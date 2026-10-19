@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Predicate;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -41,7 +42,7 @@ import org.xml.sax.SAXException;
 
 /**
  * The declared dependency graph of the Maven reactor, read from the {@code pom.xml} files without running Maven
- * (task 9.8, Requirement 1.7).
+ * (task 9.8, Requirement 1.7; task 9.14, Requirement 35.10).
  *
  * <p>{@link #load(Path)} starts at the root {@code pom.xml} and follows every {@code <module>}, including the modules of
  * profiles that are off by default (for example {@code services/pom.xml}'s {@code fleet-services}). A module's
@@ -49,7 +50,8 @@ import org.xml.sax.SAXException;
  * {@code <dependencies>}. A dependency without a {@code <scope>} takes the scope of the nearest matching
  * {@code <dependencyManagement>} entry in the parent chain, and is {@code compile} otherwise. Imported BOMs are not read.
  *
- * <p>{@link #smithyModelPath(String)} walks compile and runtime edges the way Maven resolves them: test and provided
+ * <p>{@link #dependencyPath(String, Predicate)} and {@link #smithyModelPath(String)} walk compile and runtime edges the
+ * way Maven resolves them: test and provided
  * dependencies are not transitive, optional dependencies count only for the module that declares them, and
  * {@code <exclusions>} apply below the dependency that declares them. Artifacts outside the reactor are not expanded.
  * Every {@code software.amazon.smithy} artifact except {@code smithy-utils} counts as carrying {@code smithy-model},
@@ -64,12 +66,22 @@ final class ReactorDependencyGraph {
     private static final Set<String> TRANSITIVE_SCOPES = new HashSet<>(Arrays.asList("compile", "runtime"));
 
     private final Map<String, List<Dependency>> dependencies;
+    private final Map<String, String> parents;
 
     /**
      * @param dependencies each reactor module ({@code groupId:artifactId}) to its effective dependencies
      */
     ReactorDependencyGraph(Map<String, List<Dependency>> dependencies) {
+        this(dependencies, Collections.emptyMap());
+    }
+
+    /**
+     * @param dependencies each reactor module ({@code groupId:artifactId}) to its effective dependencies
+     * @param parents each reactor module that has a {@code <parent>} to that parent ({@code groupId:artifactId})
+     */
+    ReactorDependencyGraph(Map<String, List<Dependency>> dependencies, Map<String, String> parents) {
         this.dependencies = Collections.unmodifiableMap(new LinkedHashMap<>(dependencies));
+        this.parents = Collections.unmodifiableMap(new LinkedHashMap<>(parents));
     }
 
     /**
@@ -94,10 +106,14 @@ final class ReactorDependencyGraph {
         }
 
         Map<String, List<Dependency>> graph = new LinkedHashMap<>();
+        Map<String, String> parents = new LinkedHashMap<>();
         for (PomFile pom : poms.values()) {
             graph.put(pom.key, effectiveDependencies(pom, poms));
+            if (pom.parentKey != null) {
+                parents.put(pom.key, pom.parentKey);
+            }
         }
-        return new ReactorDependencyGraph(graph);
+        return new ReactorDependencyGraph(graph, parents);
     }
 
     /**
@@ -116,17 +132,39 @@ final class ReactorDependencyGraph {
     }
 
     /**
+     * The reactor modules whose {@code <parent>} is {@code parent}, such as the service modules of
+     * {@code software.amazon.awssdk:services}.
+     */
+    Set<String> childrenOf(String parent) {
+        Set<String> children = new TreeSet<>();
+        parents.forEach((module, moduleParent) -> {
+            if (moduleParent.equals(parent)) {
+                children.add(module);
+            }
+        });
+        return children;
+    }
+
+    /**
      * A compile-scope or runtime-scope dependency path from {@code module} to an artifact that carries
      * {@code smithy-model}, starting with {@code module}, or empty if there is none.
      */
     Optional<List<String>> smithyModelPath(String module) {
-        Deque<String> path = new ArrayDeque<>();
-        path.add(module);
-        return search(module, true, Collections.emptySet(), path, new HashSet<>());
+        return dependencyPath(module, ReactorDependencyGraph::carriesSmithyModel);
     }
 
-    private Optional<List<String>> search(String node, boolean declaringModule, Set<String> exclusions,
-                                          Deque<String> path, Set<String> visited) {
+    /**
+     * A compile-scope or runtime-scope dependency path from {@code module} to an artifact ({@code groupId:artifactId})
+     * that matches {@code target}, starting with {@code module}, or empty if there is none.
+     */
+    Optional<List<String>> dependencyPath(String module, Predicate<String> target) {
+        Deque<String> path = new ArrayDeque<>();
+        path.add(module);
+        return search(module, target, true, Collections.emptySet(), path, new HashSet<>());
+    }
+
+    private Optional<List<String>> search(String node, Predicate<String> target, boolean declaringModule,
+                                          Set<String> exclusions, Deque<String> path, Set<String> visited) {
         if (!visited.add(node + exclusions)) {
             return Optional.empty();
         }
@@ -137,13 +175,13 @@ final class ReactorDependencyGraph {
                 continue;
             }
             path.addLast(dependency.key);
-            if (carriesSmithyModel(dependency.key)) {
+            if (target.test(dependency.key)) {
                 return Optional.of(new ArrayList<>(path));
             }
             if (dependencies.containsKey(dependency.key)) {
                 Set<String> childExclusions = new TreeSet<>(exclusions);
                 childExclusions.addAll(dependency.exclusions);
-                Optional<List<String>> found = search(dependency.key, false, childExclusions, path, visited);
+                Optional<List<String>> found = search(dependency.key, target, false, childExclusions, path, visited);
                 if (found.isPresent()) {
                     return found;
                 }
