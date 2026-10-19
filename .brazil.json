@@ -134,6 +134,7 @@
         "rest-xml-client-protocol": { "skipImport": true },
         "aws-query-client-protocol": { "skipImport": true },
         "dynamic-client": { "skipImport": true },
+        "test-utils-parent": { "skipImport": true },
         "client-mock-plugin": { "skipImport": true },
         "size-report": { "skipImport": true },
         "message-payloads": { "skipImport": true },

@@ -40,9 +40,9 @@ import software.amazon.awssdk.archtests.dependencies.ReactorDependencyGraph.Depe
  *
  * <p>A published module is one managed by {@code bom/pom.xml}. Requirement 1.7 exempts the codegen modules, the codegen
  * Maven plugin and test modules; the published ones that depend on {@code smithy-model} are listed with a reason in
- * {@link #BUILD_TIME_MODULES}. Unpublished modules (the test modules) are not checked. A published module under
- * {@code test/} that users put on their classpath, such as {@code client-mock-plugin}, is a runtime module and is
- * checked.
+ * {@link #BUILD_TIME_MODULES}. Unpublished modules (the test modules under {@code test/}) are not checked. A published
+ * test utility that users put on their classpath, such as {@code client-mock-plugin} under {@code test-utils/}, is a
+ * runtime module and is checked.
  *
  * <p>The check reads the declared dependency graph from the reactor's {@code pom.xml} files (see
  * {@link ReactorDependencyGraph}) and is transitive: a module that reaches {@code smithy-model} through another reactor

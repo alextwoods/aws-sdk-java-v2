@@ -74,6 +74,7 @@
         <module>archetypes</module>
         <module>third-party</module>
         <module>v2-migration</module>
+        <module>test-utils</module>
         <module>test/http-client-tests</module>
         <!-- Schema-serde branch (Requirement 32.9): the C2J-based test/protocol-tests and test/protocol-tests-core
              are no longer built; their sources stay on disk for the legacy disposition tool. -->
@@ -100,7 +101,6 @@
         <module>test/crt-unavailable-tests</module>
         <module>test/architecture-tests</module>
         <module>test/s3-tests</module>
-        <module>test/client-mock-plugin</module>
         <module>test/size-report</module>
     </modules>
     <scm>

@@ -19,12 +19,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>software.amazon.awssdk</groupId>
-        <artifactId>aws-sdk-java-pom</artifactId>
+        <artifactId>test-utils-parent</artifactId>
         <version>2.49.7-SNAPSHOT</version>
-        <relativePath>../../pom.xml</relativePath>
     </parent>
     <artifactId>client-mock-plugin</artifactId>
-    <name>AWS Java SDK :: Test :: Client Mock Plugin</name>
+    <name>AWS Java SDK :: Test Utils :: Client Mock Plugin</name>
     <description>The AWS SDK for Java - Client Mock Plugin module generates protocol responses from output shapes and
         modeled exceptions, and returns queued responses to clients for testing.
     </description>
