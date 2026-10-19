@@ -37,8 +37,8 @@ import software.amazon.awssdk.archtests.serde.MarshallerDependencyScanner.Rule;
 
 /**
  * Negative and positive fixtures for {@link MarshallerDependencyScanner}: ASM-generated classes that reference a
- * legacy serde type in each position the scanner reads, real legacy classes (the SQS client and its generated
- * marshallers, the legacy protocol modules), and classes that reference only the types the new path legitimately
+ * legacy serde type in each position the scanner reads, real legacy classes (the DynamoDB Streams client and its
+ * generated marshallers, the legacy protocol modules), and classes that reference only the types the new path legitimately
  * shares with the legacy path.
  */
 class MarshallerDependencyScannerTest {
@@ -216,13 +216,14 @@ class MarshallerDependencyScannerTest {
     }
 
     @Test
-    void scan_legacySqsClientAndMarshallers_areReported() throws IOException {
-        Map<String, byte[]> sqs = ClassFiles.read(NoMarshallerDependencyTest.locate("sqs"));
-        String marshaller = "software/amazon/awssdk/services/sqs/transform/SendMessageRequestMarshaller";
-        String client = "software/amazon/awssdk/services/sqs/DefaultSqsClient";
+    void scan_legacyDynamoDbStreamsClientAndMarshallers_areReported() throws IOException {
+        // DynamoDB Streams shares the dynamodb module and stays on the legacy path (task 9.2); SQS no longer does.
+        Map<String, byte[]> legacy = ClassFiles.read(NoMarshallerDependencyTest.locate("dynamodb"));
+        String marshaller = "software/amazon/awssdk/services/dynamodb/streams/transform/GetRecordsRequestMarshaller";
+        String client = "software/amazon/awssdk/services/dynamodb/streams/DefaultDynamoDbStreamsClient";
         Map<String, byte[]> subset = new TreeMap<>();
-        subset.put(marshaller, sqs.get(marshaller));
-        subset.put(client, sqs.get(client));
+        subset.put(marshaller, legacy.get(marshaller));
+        subset.put(client, legacy.get(client));
 
         List<String> violations = scan(subset);
 

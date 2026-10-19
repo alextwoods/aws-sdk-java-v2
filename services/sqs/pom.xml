@@ -43,6 +43,23 @@
                     </archive>
                 </configuration>
             </plugin>
+            <!--
+              SQS is in the root pom's japicmp includeModules. The 23 @SdkInternalApi <Operation>RequestMarshaller
+              classes are no longer generated on the schema path (tasks 5.1 and 9.2, Requirement 17.12); they are
+              listed in docs/design/schema-serde/porting-deviations.md, section "services/sqs and services/dynamodb
+              on the schema path (task 9.2)".
+            -->
+            <plugin>
+                <groupId>com.github.siom79.japicmp</groupId>
+                <artifactId>japicmp-maven-plugin</artifactId>
+                <configuration>
+                    <parameter>
+                        <excludes combine.children="append">
+                            <exclude>software.amazon.awssdk.services.sqs.transform.*</exclude>
+                        </excludes>
+                    </parameter>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
@@ -53,14 +70,10 @@
             <artifactId>schema</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The client protocol of the schema path (awsJson1_0, task 9.2). -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>aws-json-protocol</artifactId>
-            <version>${awsjavasdk.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>protocol-core</artifactId>
+            <artifactId>aws-json-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>

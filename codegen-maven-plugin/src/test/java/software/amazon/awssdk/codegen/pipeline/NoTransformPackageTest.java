@@ -78,7 +78,7 @@ class NoTransformPackageTest {
      * schema-based. Tasks 9.2–9.4 add to it.
      */
     private static final Set<String> SCHEMA_BASED_MODULES = Collections.unmodifiableSet(
-        new LinkedHashSet<>(Arrays.asList("cloudwatch")));
+        new LinkedHashSet<>(Arrays.asList("cloudwatch", "sqs")));
 
     @TempDir
     Path tmp;
