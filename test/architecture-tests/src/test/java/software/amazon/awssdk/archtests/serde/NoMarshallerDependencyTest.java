@@ -41,7 +41,8 @@ class NoMarshallerDependencyTest {
      * The services whose clients are fully routed through the new path (the {@code SCHEMA_BASED_MODULES} of
      * {@code NoTransformPackageTest}), by artifactId.
      */
-    static final List<String> SCHEMA_BASED_SERVICES = Collections.unmodifiableList(Arrays.asList("cloudwatch", "sqs"));
+    static final List<String> SCHEMA_BASED_SERVICES =
+        Collections.unmodifiableList(Arrays.asList("cloudwatch", "sqs", "secretsmanager"));
 
     /**
      * The new-path pipeline classes of {@code sdk-core} (design D.6), by internal name.
