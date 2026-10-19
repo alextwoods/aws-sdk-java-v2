@@ -1536,6 +1536,19 @@ A **schema-based service** is one whose client is routed by `SchemaOperationRout
 
 **Tests.** `ClassAttributorTest` (the category rules; exception-mapping and registry carves on ASM-generated classes, each equal to the size difference of the class generated with and without the members); `ServiceComparisonTest` (category changes add up to the total change, each change in its category, every class in one category, Requirement 36.3 and the grown categories); `SizeReportTest` (a report from synthetic JARs, JDK mismatch and missing-baseline failures, the service list); `ClassFileFingerprintTest` (with EqualsVerifier); `SizeReportDocumentTest`.
 
+## Racecar decision table (task 9.1)
+
+**Target.** `docs/design/schema-serde/racecar-decisions.yaml` (one entry per racecar phase), `scripts/schema-serde/racecar_decisions.py` (Python 3 standard library only), the generated `docs/design/schema-serde/racecar-decisions.md`, and `RacecarDecisionTableTest` in `test/architecture-tests`.
+
+| Task or design text | This task | Reason |
+|---|---|---|
+| Decisions from the D.6 table | Taken from D.6 and updated with what phases 2–4 implemented. Three decisions change: E14 (Superseded → Deferred: the generated union reader still uses the builder and its `EnumSet`), H4 and H10 (Applied → Deferred: `seedResolvedChecksumSpecs` is not called and the context factory still writes the client-level attributes, task 3.28). The Markdown lists them, and notes where a component differs from D.6's text | The implementation is the source of truth for what is applied |
+| YAML source | A YAML subset (flat entries, one JSON literal per line) that the script reads without a YAML library | No script in `scripts/` uses PyYAML; JSON literals are also valid YAML |
+| `RacecarDecisionTableTest` fails if the Markdown is stale, a phase id is missing, a decision is outside the vocabulary, or a phase 5 Applied row has no A/B record | The test runs `racecar_decisions.py --check`, which does all of these checks plus required fields and D2/H1/H5 staying Deferred, so the rules live in one place. It also runs `--list-classes` and loads every class an Applied or Superseded row names (`Class.forName` without initialization). The pom passes the script path and `racecar-decisions.python` (default `python3`) as surefire system properties | The classpath check needs the JVM; everything else is the script's, as `SizeReportDocumentTest` checks its generated report against a fresh run. Without the test: `python3 scripts/schema-serde/racecar_decisions.py --check` |
+| A row "changed to Applied in this phase" | `applied_in_phase: 5` requires `ab_record`, a path relative to the YAML's directory that must exist (task 9.19 writes `optimizations/<id>.md`) | Phase 2 rows predate the 9.19 procedure |
+
+**Tests.** `RacecarDecisionTableTest` (2 tests). The `--check` failures were tried by hand on mutated copies of the YAML (missing and repeated id, unknown decision, H5 not Deferred, empty reason, phase 5 Applied without a record, edited Markdown) and on an unknown class name.
+
 ## `test/architecture-tests` (task 1.19)
 
 `PortComplianceTest` (package `software.amazon.awssdk.archtests.portcompliance`) scans the compiled classes of every module in `PortComplianceTest.PORTED_MODULES` (the 15 artifacts from design "Module layout"; skeleton modules are listed so they are checked as soon as code lands). `PortComplianceCheckerTest` holds the negative fixtures: ASM-generated classes calling `List.of` and `String.isBlank`, referencing `Flow` in a field and in a method body, a record (class version 60), a sealed type (61), a version-53 class, a type with two visibility annotations, a public type without one, plus a javac-compiled unannotated public fixture (`fixtures/UnannotatedPublicPortFixture`).

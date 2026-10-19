@@ -1,0 +1,364 @@
+# Racecar decisions (design D.6, Requirement 37.1): one entry per racecar phase.
+#
+# scripts/schema-serde/racecar_decisions.py writes racecar-decisions.md from this file, and its --check mode (run by
+# RacecarDecisionTableTest in test/architecture-tests) fails when the Markdown is out of date or an entry is invalid.
+#
+# Format: a YAML subset that the script reads without a YAML library. Each entry starts with "- id: ..."; each further
+# key is indented by two spaces. Every value is on one line and is a JSON literal (a double-quoted string, an integer
+# or a list of strings), which is also valid YAML.
+#
+# Keys:
+#   id                required  racecar phase id, as in D.6
+#   optimization      required  what racecar did
+#   decision          required  one of "Applied (re-implemented here)", "Superseded",
+#                               "Deferred (later individual optimization)", "Rejected"
+#   component         required  the SDK component, or the mechanism that replaces racecar's ("—" when Rejected)
+#   reason            required
+#   classes           Applied and Superseded only, required there: fully qualified runtime classes named by the
+#                     component; RacecarDecisionTableTest loads each one
+#   applied_in_phase  Applied only, required there: the design phase that applied it (2 = with the new path's core)
+#   ab_record         path, relative to this directory, of the paired A/B record (task 9.19); required for a row
+#                     applied in phase 5, allowed on any row whose decision an experiment decided
+#   task              optional: the task that implemented it, or the task that will try it
+#   d6_decision       optional: the D.6 table's decision, when the implementation changed it (needs a note)
+#   note              optional: where the implementation differs from the D.6 table
+
+- id: "F"
+  optimization: "SigV4 fast-path header signer (`FastV4HeaderSigner`, `V4SigningResources`, `V4SigningKeyCache`)"
+  decision: "Deferred (later individual optimization)"
+  component: "`core/http-auth-aws` signer (`DefaultAwsV4HttpSigner`), unchanged by this design"
+  reason: "Independent of serde and of the new path; −41% signer time in racecar"
+  task: "9.20"
+
+- id: "B1"
+  optimization: "Shallow header copy-on-write (`LowCopyListMap`)"
+  decision: "Deferred (later individual optimization)"
+  component: "`http-client-spi` request and response builders"
+  reason: "Framework micro-optimization, not needed by the new path. `headers()` and `Builder.headers()` keep today's behavior (H1 stays deferred)"
+  task: "9.23"
+
+- id: "A"
+  optimization: "Materialized-body zero-copy contract (`ContentStreamProvider.contentAsByteBufferOrNull`, wrapper propagation, Apache5 `ByteArrayEntity`, `SimpleHttpContentPublisher`)"
+  decision: "Applied (re-implemented here)"
+  component: "Codec `ByteBufferOutputStream.toContentStreamProvider()` → `ContentStreamProvider.contentAsByteBufferOrNull()` → `SdkHttpClientTransport` (body passed unwrapped) and `SdkAsyncHttpClientTransport` (`SimpleHttpContentPublisher`); `Apache5HttpRequestFactory` sends the buffer as a `ByteArrayEntity`"
+  reason: "Requirement 13.6"
+  classes: ["software.amazon.awssdk.codecs.commons.ByteBufferOutputStream", "software.amazon.awssdk.http.ContentStreamProvider", "software.amazon.awssdk.core.internal.http.transport.SdkHttpClientTransport", "software.amazon.awssdk.core.internal.http.transport.SdkAsyncHttpClientTransport", "software.amazon.awssdk.core.internal.http.async.SimpleHttpContentPublisher", "software.amazon.awssdk.http.apache5.internal.impl.Apache5HttpRequestFactory"]
+  applied_in_phase: 2
+  task: "3.4, 3.17"
+
+- id: "E1"
+  optimization: "Marshall buffer sized from history (`MarshallBufferSizeHints`)"
+  decision: "Applied (re-implemented here)"
+  component: "`HttpClientProtocol.newRequestBodyBuffer`/`finishRequestBody`, backed by `MarshallBufferSizeTracker`: per protocol instance, an identity hash table of operations with a parallel `int[]` of size hints for `ByteBufferOutputStream`"
+  reason: "−42% batch-put allocation in racecar"
+  classes: ["software.amazon.awssdk.protocols.client.http.HttpClientProtocol", "software.amazon.awssdk.protocols.client.http.internal.MarshallBufferSizeTracker"]
+  applied_in_phase: 2
+  task: "3.19"
+  note: "D.6 indexes the `int[]` by operation ordinal. `ApiOperation` has no ordinal, so each protocol instance assigns slots in an identity hash table (task 3.19). awsQuery and ec2Query do not use the hint: `QueryFormSerializer` grows its own buffer from 1 KiB (task 7.15)"
+
+- id: "D1"
+  optimization: "User-agent prefix built once; Apache5 header filter loop"
+  decision: "Deferred (later individual optimization)"
+  component: "`Apache5HttpRequestFactory`"
+  reason: "The new path's cached user agent is covered by H9; the Apache5 loop is an HTTP client micro-optimization"
+  task: "9.24"
+
+- id: "G1"
+  optimization: "Straight-line sync pipeline"
+  decision: "Applied (re-implemented here)"
+  component: "`SyncApiCallPipeline`: one instance per client configuration; each call is a fixed sequence of direct method calls over the shared stages (`RequestMutationStages`, `RequestSigning`, `RetryDecisions`, `ProtocolMarshalling`, `ProtocolResponseHandling`)"
+  reason: "Base of the new path"
+  classes: ["software.amazon.awssdk.core.internal.http.SyncApiCallPipeline"]
+  applied_in_phase: 2
+  task: "3.26"
+
+- id: "G2"
+  optimization: "Straight-line async pipeline"
+  decision: "Applied (re-implemented here)"
+  component: "`AsyncApiCallPipeline`: one instance per client configuration; each call is one `AsyncCall` whose steps start each other directly, over the same shared stages as `SyncApiCallPipeline`"
+  reason: "Base of the new path"
+  classes: ["software.amazon.awssdk.core.internal.http.AsyncApiCallPipeline"]
+  applied_in_phase: 2
+  task: "3.27"
+
+- id: "E2.1"
+  optimization: "`FastJsonGenerator` (hand-rolled JSON writer)"
+  decision: "Superseded"
+  component: "Ported `SmithyJsonSerializer`"
+  reason: "Same idea; one JSON writer for schemas"
+  classes: ["software.amazon.awssdk.codecs.json.internal.SmithyJsonSerializer"]
+  task: "7.1"
+
+- id: "E2.2"
+  optimization: "`FieldPlan` per `SdkField`"
+  decision: "Superseded"
+  component: "`JsonSchemaExtensions`"
+  reason: "Plans move to schema extensions, computed once per schema"
+  classes: ["software.amazon.awssdk.codecs.json.internal.JsonSchemaExtensions"]
+  task: "7.1"
+
+- id: "E2.3"
+  optimization: "Container elements dispatched by known type"
+  decision: "Superseded"
+  component: "`ShapeType` dispatch in the codecs' `ShapeSerializer`/`ShapeDeserializer` implementations, plus the generated `<Svc>SharedSerde` list and map consumers"
+  reason: "Each list or map shape has one static writer and reader; elements are not type-tested per call"
+  classes: ["software.amazon.awssdk.schema.serde.ShapeSerializer", "software.amazon.awssdk.schema.serde.ShapeDeserializer"]
+  task: "3.7"
+
+- id: "E2.4"
+  optimization: "Pre-encoded field-name tokens"
+  decision: "Superseded"
+  component: "Pre-encoded member names in `JsonSchemaExtensions` and `CborSchemaExtensions`"
+  reason: "Names are encoded once per schema, not per call"
+  classes: ["software.amazon.awssdk.codecs.json.internal.JsonSchemaExtensions", "software.amazon.awssdk.codecs.cbor.internal.CborSchemaExtensions"]
+  task: "3.6, 7.1"
+
+- id: "E2.6"
+  optimization: "Generated `marshallJsonFields`"
+  decision: "Superseded"
+  component: "Generated `serializeMembers` (`SerializableStruct`)"
+  reason: "Every generated model class writes its members through the codec's `ShapeSerializer`, for every codec"
+  classes: ["software.amazon.awssdk.schema.SerializableStruct"]
+  task: "3.7"
+
+- id: "E3.1"
+  optimization: "Remove `JsonNode` detours"
+  decision: "Superseded"
+  component: "Streaming `SmithyJsonDeserializer`"
+  reason: "The codec reads tokens straight into the builder; there is no `JsonNode` tree"
+  classes: ["software.amazon.awssdk.codecs.json.internal.SmithyJsonDeserializer"]
+  task: "7.1"
+
+- id: "E3.2"
+  optimization: "Generated `readJsonFields`, `JsonMemberTable`"
+  decision: "Superseded"
+  component: "Generated `InnerDeserializer` (a `ShapeDeserializer.StructMemberConsumer`) plus `SmithyMemberLookup`"
+  reason: "Member tables live in the schema extensions; the generated consumer assigns builder fields directly"
+  classes: ["software.amazon.awssdk.schema.serde.ShapeDeserializer$StructMemberConsumer", "software.amazon.awssdk.codecs.json.internal.SmithyMemberLookup"]
+  task: "3.7, 7.1"
+
+- id: "E3.3"
+  optimization: "`FastJsonStructuredReader` (byte-level parser, packed-long member matching, string dedup)"
+  decision: "Superseded"
+  component: "Ported `SmithyJsonDeserializer`/`SmithyMemberLookup`"
+  reason: "Equivalent technique"
+  classes: ["software.amazon.awssdk.codecs.json.internal.SmithyJsonDeserializer", "software.amazon.awssdk.codecs.json.internal.SmithyMemberLookup"]
+  task: "7.1"
+
+- id: "E3.3 gate"
+  optimization: "Byte reader only when Content-Length is known"
+  decision: "Applied (re-implemented here)"
+  component: "`ResponseBodies.asByteBuffer`: an exact-size array for a valid `Content-Length`, else a doubling array from 1 KiB"
+  reason: "The first E3.3 run regressed small responses by +82–91%"
+  classes: ["software.amazon.awssdk.protocols.client.http.ResponseBodies"]
+  applied_in_phase: 2
+  task: "3.19"
+
+- id: "D2"
+  optimization: "Dense-array `ExecutionAttributes`"
+  decision: "Deferred (later individual optimization)"
+  component: "`ExecutionAttributes` (`sdk-core`)"
+  reason: "Changes `getAttributes()` to a snapshot; needs its own API review. The new path keeps today's behavior"
+
+- id: "B2.a"
+  optimization: "Idempotent re-signing (ignore `authorization` in canonicalization)"
+  decision: "Deferred (later individual optimization)"
+  component: "Signer"
+  reason: "The new path does not need it: `RequestSigning` signs each attempt from that attempt's unsigned request (task 3.25)"
+
+- id: "C"
+  optimization: "De-futuring (inline signing when identity is done)"
+  decision: "Applied (re-implemented here)"
+  component: "`RequestSigning.signAsync` signs inline and returns a completed future when the identity is resolved and there is no async body; `AsyncApiCallPipeline` then sends with no future chained"
+  reason: "−6.6% async small-get in racecar"
+  classes: ["software.amazon.awssdk.core.internal.http.RequestSigning", "software.amazon.awssdk.core.internal.http.AsyncApiCallPipeline"]
+  applied_in_phase: 2
+  task: "3.25, 3.27"
+
+- id: "B2.b"
+  optimization: "Retry-info header stamped in mutation"
+  decision: "Applied (re-implemented here)"
+  component: "`RequestMutationStages.prepare` stamps `amz-sdk-request: attempt=1; max=<n>` in its one mutation pass; `RetryDecisions.startAttempt` copies the request only for retries"
+  reason: "−649 B/op in racecar"
+  classes: ["software.amazon.awssdk.core.internal.http.RequestMutationStages", "software.amazon.awssdk.core.internal.http.RetryDecisions"]
+  applied_in_phase: 2
+  task: "3.25"
+  note: "Observable difference that D.6 does not list: `RetryPolicyContext.request()` and the DEBUG `Sending Request:` entry now show the `amz-sdk-request` header (task 3.25)"
+
+- id: "E4"
+  optimization: "Copy constructor adopts collections (response `toBuilder` tax)"
+  decision: "Superseded"
+  component: "`HttpClientProtocol.buildOutput` sets `sdkHttpResponse` and `responseMetadata` on the builder before `build()` (`SchemaSerdeSupport.buildResponse`); `ProtocolResponseHandling` copies through `toBuilder()` only when the output does not carry the response"
+  reason: "Removes the copy entirely"
+  classes: ["software.amazon.awssdk.protocols.client.http.HttpClientProtocol", "software.amazon.awssdk.core.schema.SchemaSerdeSupport", "software.amazon.awssdk.core.internal.http.ProtocolResponseHandling"]
+  task: "3.21, 3.24"
+  note: "Interceptor-visible difference accepted in task 3.29: `afterUnmarshalling`, `modifyResponse` and `afterExecution` see the output with `sdkHttpResponse` set (Baseline_Build: null)"
+
+- id: "E5"
+  optimization: "Union `EnumSet` → bitmask"
+  decision: "Rejected"
+  component: "—"
+  reason: "0.0% (escape analysis)"
+
+- id: "E6"
+  optimization: "String writer, 4 characters per iteration"
+  decision: "Deferred (later individual optimization)"
+  component: "Ported JSON writer's string-escape loop (`SmithyJsonSerializer`)"
+  reason: "−4…−7% in racecar; measure against the ported writer first. Task 7.1 ported smithy-java's `charAt` loop without its word copy"
+  task: "9.21"
+
+- id: "E7"
+  optimization: "Whitespace-skip fast path"
+  decision: "Deferred (later individual optimization)"
+  component: "Ported JSON reader (`SmithyJsonDeserializer`)"
+  reason: "−3.4% batch-get in racecar; measure against the ported reader first"
+  task: "9.22"
+
+- id: "E8"
+  optimization: "Grouped string scan on read"
+  decision: "Rejected"
+  component: "—"
+  reason: "+1…+4.5%"
+
+- id: "E9"
+  optimization: "`getChars` bulk extraction"
+  decision: "Rejected"
+  component: "—"
+  reason: "Mixed results"
+
+- id: "E10"
+  optimization: "Single-copy async response aggregation (`BufferedResponseBody`)"
+  decision: "Applied (re-implemented here)"
+  component: "`ResponseBodyAggregator` in `SdkAsyncHttpClientTransport`: each chunk is copied once into an array presized from `Content-Length`"
+  reason: "−128 KB/op on batch-get in racecar"
+  classes: ["software.amazon.awssdk.core.internal.http.transport.ResponseBodyAggregator", "software.amazon.awssdk.core.internal.http.transport.SdkAsyncHttpClientTransport"]
+  applied_in_phase: 2
+  task: "3.17"
+
+- id: "E11"
+  optimization: "Parse the owned async buffer directly"
+  decision: "Applied (re-implemented here)"
+  component: "`ResponseBodies.asByteBuffer` returns the async transport's buffer (`OwnedResponseBody`) without a copy, then `Codec.createDeserializer(ByteBuffer)`"
+  reason: "0 B/op body copy"
+  classes: ["software.amazon.awssdk.core.client.protocol.OwnedResponseBody", "software.amazon.awssdk.protocols.client.http.ResponseBodies", "software.amazon.awssdk.codecs.commons.Codec"]
+  applied_in_phase: 2
+  task: "3.17, 3.19"
+  note: "The owned-buffer marker is `OwnedResponseBody` in `core.client.protocol` (`@SdkProtectedApi`), not a transport-internal type, because the protocol modules read it (task 3.17)"
+
+- id: "E12"
+  optimization: "Direct CRT header array"
+  decision: "Deferred (later individual optimization)"
+  component: "`aws-crt-client` request adapter"
+  reason: "HTTP client micro-optimization"
+  task: "9.25"
+
+- id: "E13"
+  optimization: "Lazy auth-property rebuild"
+  decision: "Deferred (later individual optimization)"
+  component: "`AuthSchemeResolutionCache` (rebuild auth-scheme properties only on a cache miss)"
+  reason: "Micro-optimization; H7 caching covers the common case"
+  task: "9.26"
+  note: "D.6 names `AuthSchemeResolver`; the per-client cache that H7 added (task 3.25) is where task 9.26 applies it"
+
+- id: "E14"
+  optimization: "Unions read without a builder (`beginStruct`/`nextMember`, direct factories)"
+  decision: "Deferred (later individual optimization)"
+  component: "Generated union `BuilderImpl` and its `InnerDeserializer`"
+  reason: "The schema deserializer owns the member loop, but the generated union reader still sets the variant through the builder's fluent setters, which track it in an `EnumSet`. Reading through the direct `fromX` factories is not implemented; measure against racecar's −16% first"
+  d6_decision: "Superseded"
+  note: "D.6 records E14 as Superseded by a union `ShapeBuilder` whose `InnerDeserializer` calls the direct `fromX` factory with no `EnumSet`. Task 3.7 generated the builder-based reader instead (golden file `codegen/src/test/resources/.../poet/model/schemaserde/choice.java`), so the optimization is not in the code"
+
+- id: "E15"
+  optimization: "Latin-1 + SWAR string write"
+  decision: "Rejected"
+  component: "—"
+  reason: "Needs `Unsafe`; Java 8 release"
+
+- id: "E16"
+  optimization: "smithy-java HTTP client as SDK transport"
+  decision: "Rejected"
+  component: "—"
+  reason: "Java 21, Netty internals"
+
+- id: "H1"
+  optimization: "Flat strided-array request headers (`StridedHeaders`)"
+  decision: "Deferred (later individual optimization)"
+  component: "`http-client-spi` request headers"
+  reason: "Changes `Builder.headers()` to a snapshot; needs its own API review. The new path keeps today's behavior"
+
+- id: "H2"
+  optimization: "Per-entry header iteration (`FlatHeaderAccess`)"
+  decision: "Deferred (later individual optimization)"
+  component: "Signer, Apache5 and CRT adapters"
+  reason: "Depends on H1"
+
+- id: "H3"
+  optimization: "One-object structure construction"
+  decision: "Rejected"
+  component: "—"
+  reason: "+0.7…+2.2%"
+
+- id: "H4"
+  optimization: "Placeholder auth scheme once per client; `withHttpRequest`"
+  decision: "Deferred (later individual optimization)"
+  component: "`AuthSchemeResolutionCache.seedResolvedChecksumSpecs` (present, not called). The aws-core context factory (`AwsExecutionContextBuilder`) still writes `RESOLVED_CHECKSUM_SPECS`, which builds the placeholder auth scheme per call"
+  reason: "Calling it needs a new-path variant of `AwsExecutionContextBuilder` in aws-core, which the legacy path shares. Values are correct either way; only allocations differ"
+  d6_decision: "Applied (re-implemented here)"
+  note: "D.6 records H4 as Applied. Task 3.25 added the per-client placeholder, but tasks 3.26 and 3.28 left `RESOLVED_CHECKSUM_SPECS` to the context factory and deferred the call to the phase 5 pipeline optimizations, which have no task for it yet"
+
+- id: "H5"
+  optimization: "Interceptor chain built once; per-hook target arrays; checksum validation as a direct call"
+  decision: "Deferred (later individual optimization)"
+  component: "`ExecutionInterceptorChain`"
+  reason: "Changes interceptor list membership; needs its own API review. The new path keeps the legacy interceptor list and order (task 3.29)"
+
+- id: "H6"
+  optimization: "BDD endpoints and result cache"
+  decision: "Deferred (later individual optimization)"
+  component: "Generated endpoint provider (unchanged)"
+  reason: "Independent of the new path"
+
+- id: "H7"
+  optimization: "Auth resolution cached per client"
+  decision: "Applied (re-implemented here)"
+  component: "`AuthSchemeResolutionCache`: the auth scheme, identity provider and signer per scheme ID are looked up once per client when the call uses the client's auth schemes and identity providers; auth scheme options are still resolved per call"
+  reason: "Per-client configuration computed once"
+  classes: ["software.amazon.awssdk.core.internal.http.AuthSchemeResolutionCache"]
+  applied_in_phase: 2
+  task: "3.25"
+
+- id: "H8"
+  optimization: "Skip measurement with no metric publisher"
+  decision: "Applied (re-implemented here)"
+  component: "`MetricUtils.collectsMetrics`: the new path neither times nor reports metrics for a non-collecting collector, and both pipelines default a missing collector to `NoOpMetricCollector`"
+  reason: "Fewer per-call allocations"
+  classes: ["software.amazon.awssdk.core.internal.util.MetricUtils", "software.amazon.awssdk.metrics.NoOpMetricCollector"]
+  applied_in_phase: 2
+  task: "3.25, 3.28"
+
+- id: "H9"
+  optimization: "Cached User-Agent; fewer future links"
+  decision: "Applied (re-implemented here)"
+  component: "`UserAgentHeaderCache` in `RequestMutationStages`; `AsyncApiCallPipeline` adds a signing, aggregation or timeout future only when that step needs one"
+  reason: "Fewer per-call allocations"
+  classes: ["software.amazon.awssdk.core.internal.http.UserAgentHeaderCache", "software.amazon.awssdk.core.internal.http.RequestMutationStages", "software.amazon.awssdk.core.internal.http.AsyncApiCallPipeline"]
+  applied_in_phase: 2
+  task: "3.25, 3.27"
+
+- id: "H10"
+  optimization: "Execution attributes seeded from a template"
+  decision: "Deferred (later individual optimization)"
+  component: "`ExecutionAttributesTemplate` (built once per pipeline and applied to each call; it also seeds `CLIENT_PROTOCOL` and `ERROR_REGISTRY`). The aws-core context factory (`AwsExecutionContextBuilder`) still writes the same client-level attributes after it"
+  reason: "The template saves nothing per call until the context factory stops writing the values it seeds, which needs a new-path variant of `AwsExecutionContextBuilder` in aws-core"
+  d6_decision: "Applied (re-implemented here)"
+  note: "D.6 records H10 as Applied. Task 3.26 applies the template, but task 3.28 deferred trimming the context factory to the phase 5 pipeline optimizations, which have no task for it yet"
+
+- id: "H11"
+  optimization: "Stage graph built once per configuration (`PipelineCache`)"
+  decision: "Applied (re-implemented here)"
+  component: "`PipelineCache` in `BaseSyncClientHandler`/`BaseAsyncClientHandler`, over `SyncApiCallPipeline`/`AsyncApiCallPipeline`"
+  reason: "Requirement 37.4"
+  classes: ["software.amazon.awssdk.core.internal.http.PipelineCache"]
+  applied_in_phase: 2
+  task: "3.28, 3.30"
+  note: "The graph is built on the client's first new-path call, not when the client is built, and the cache keeps one configuration by identity. A request with plugins (a new configuration per call) builds a pipeline for that call only, as the legacy handlers build their stage graph per call (tasks 3.28, 3.30)"

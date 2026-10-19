@@ -39,6 +39,8 @@
           default build therefore freezes against a copy in target/; -P fleet-services uses the committed store.
         -->
         <archtests.freeze.storePath>${project.build.directory}/archunit_store</archtests.freeze.storePath>
+        <!-- RacecarDecisionTableTest (task 9.1) runs the racecar decision table generator in its check mode -->
+        <racecar-decisions.python>python3</racecar-decisions.python>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -386,6 +388,8 @@
                         <port.compliance.java18.signature>${org.codehaus.mojo.signature:java18:signature}</port.compliance.java18.signature>
                         <!-- Overrides archunit.properties (ArchUnit reads "archunit."-prefixed system properties) -->
                         <archunit.freeze.store.default.path>${archtests.freeze.storePath}</archunit.freeze.store.default.path>
+                        <racecar-decisions.python>${racecar-decisions.python}</racecar-decisions.python>
+                        <racecar-decisions.script>${project.basedir}/../../scripts/schema-serde/racecar_decisions.py</racecar-decisions.script>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
