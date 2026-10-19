@@ -171,6 +171,7 @@ public final class AsyncApiCallPipeline {
     private final Executor futureCompletionExecutor;
     private final Duration apiCallTimeout;
     private final Duration apiCallAttemptTimeout;
+    private final boolean crc32FromCompressedData;
 
     private AsyncApiCallPipeline(HttpClientDependencies dependencies, TypeRegistry errorRegistry) {
         SdkClientConfiguration config = dependencies.clientConfiguration();
@@ -185,6 +186,8 @@ public final class AsyncApiCallPipeline {
         this.futureCompletionExecutor = config.option(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR);
         this.apiCallTimeout = config.option(SdkClientOption.API_CALL_TIMEOUT);
         this.apiCallAttemptTimeout = config.option(SdkClientOption.API_CALL_ATTEMPT_TIMEOUT);
+        this.crc32FromCompressedData =
+            Boolean.TRUE.equals(config.option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED));
         CONSTRUCTIONS.incrementAndGet();
     }
 
@@ -890,8 +893,10 @@ public final class AsyncApiCallPipeline {
         }
 
         /**
-         * {@link ProtocolResponseHandling}, the response metrics of {@code AsyncApiCallAttemptMetricCollectionStage}, and
-         * the retry decision of {@code AsyncRetryableStage} for the response.
+         * The {@code x-amz-crc32} check of {@link Crc32ResponseValidation} (the legacy {@code BaseAsyncClientHandler}'s
+         * {@code crc32Validator}, applied to success and error responses), {@link ProtocolResponseHandling}, the
+         * response metrics of {@code AsyncApiCallAttemptMetricCollectionStage}, and the retry decision of
+         * {@code AsyncRetryableStage} for the response.
          */
         @SuppressWarnings({"unchecked", "rawtypes"})
         private void deserialize(SdkHttpFullRequest request, SdkHttpFullResponse response) {
@@ -899,8 +904,9 @@ public final class AsyncApiCallPipeline {
                 closeQuietly(response);
                 return;
             }
+            SdkHttpFullResponse validated = Crc32ResponseValidation.validate(attributes, response, crc32FromCompressedData);
             Response<R> result = (Response<R>) ProtocolResponseHandling.handle(executionContext, (ApiOperation) operation,
-                                                                               errorRegistry, request, response);
+                                                                               errorRegistry, request, validated);
             if (streamingOutput != null && Boolean.TRUE.equals(result.isSuccess())) {
                 // Only error responses of a streaming call are buffered, and the protocol read this one as a success.
                 throw SdkClientException.create("Unable to unmarshall error response: the protocol returned an output "

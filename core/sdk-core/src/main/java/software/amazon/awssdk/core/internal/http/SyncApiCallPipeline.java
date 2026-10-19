@@ -137,6 +137,7 @@ public final class SyncApiCallPipeline {
     private final ScheduledExecutorService timeoutExecutor;
     private final Duration apiCallTimeout;
     private final Duration apiCallAttemptTimeout;
+    private final boolean crc32FromCompressedData;
 
     private SyncApiCallPipeline(HttpClientDependencies dependencies, TypeRegistry errorRegistry) {
         SdkClientConfiguration config = dependencies.clientConfiguration();
@@ -148,6 +149,8 @@ public final class SyncApiCallPipeline {
         this.timeoutExecutor = config.option(SdkClientOption.SCHEDULED_EXECUTOR_SERVICE);
         this.apiCallTimeout = config.option(SdkClientOption.API_CALL_TIMEOUT);
         this.apiCallAttemptTimeout = config.option(SdkClientOption.API_CALL_ATTEMPT_TIMEOUT);
+        this.crc32FromCompressedData =
+            Boolean.TRUE.equals(config.option(SdkClientOption.CRC32_FROM_COMPRESSED_DATA_ENABLED));
         CONSTRUCTIONS.incrementAndGet();
     }
 
@@ -569,13 +572,15 @@ public final class SyncApiCallPipeline {
 
     /**
      * Same as {@code HandleResponseStage} with the new path's deserialization step: the response body is counted and
-     * the time-to-last-byte and throughput metrics are reported only when the attempt collects metrics.
+     * the time-to-last-byte and throughput metrics are reported only when the attempt collects metrics. The body of a
+     * non-streaming response is checked against {@code x-amz-crc32} first ({@link Crc32ResponseValidation}), as
+     * {@code AwsSyncClientHandler} does on the legacy path; streaming responses are not, as on the legacy path.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static <R> Response<R> handleResponse(SdkHttpFullRequest request,
-                                                  SdkHttpFullResponse response,
-                                                  RequestExecutionContext context,
-                                                  ApiCall<R> apiCall) throws Exception {
+    private <R> Response<R> handleResponse(SdkHttpFullRequest request,
+                                           SdkHttpFullResponse response,
+                                           RequestExecutionContext context,
+                                           ApiCall<R> apiCall) throws Exception {
         MetricCollector attemptCollector = context.attemptMetricCollector();
         boolean measure = MetricUtils.collectsMetrics(attemptCollector);
         SdkHttpFullResponse handled = measure ? trackBytesRead(response, context) : response;
@@ -583,8 +588,10 @@ public final class SyncApiCallPipeline {
         ApiOperation operation = apiCall.operation;
         Response<R> result;
         if (apiCall.transformer == null) {
+            SdkHttpFullResponse validated =
+                Crc32ResponseValidation.validate(executionContext.executionAttributes(), handled, crc32FromCompressedData);
             result = (Response<R>) ProtocolResponseHandling.handle(executionContext, operation, apiCall.errorRegistry,
-                                                                   request, handled);
+                                                                   request, validated);
         } else {
             result = ProtocolResponseHandling.handleStreaming(executionContext, operation, apiCall.errorRegistry, request,
                                                               handled, (ResponseTransformer) apiCall.transformer);
