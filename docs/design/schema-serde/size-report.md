@@ -26,7 +26,7 @@ Codegen customizations disabled in the feature build (from `disabled-customizati
 
 | Service | Compressed JAR | Change | Uncompressed class bytes | Change | `.class` entries | Requirement 36.3 |
 |---|---|---|---|---|---|---|
-| CloudWatch | 1,706,662 → 1,969,660 | +262,998 (+15.4%) | 5,349,563 → 5,844,064 | +494,501 (+9.2%) | 950 → 1,134 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| CloudWatch | 1,706,662 → 1,969,914 | +263,252 (+15.4%) | 5,349,563 → 5,844,064 | +494,501 (+9.2%) | 950 → 1,134 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
 
 ## CloudWatch (`cloudwatch`)
 
@@ -34,7 +34,7 @@ Service packages: `software.amazon.awssdk.services.cloudwatch`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 1,706,662 | 1,969,660 | +262,998 (+15.4%) |
+| Compressed main JAR | 1,706,662 | 1,969,914 | +263,252 (+15.4%) |
 | Uncompressed class-file bytes | 5,349,563 | 5,844,064 | +494,501 (+9.2%) |
 | `.class` entries | 950 | 1,134 | +184 |
 
@@ -110,18 +110,22 @@ Compressed JAR bytes of the `software.amazon.awssdk` runtime dependencies of the
 |---|---|---|---|---|
 | `apache5-client` | changed | 81,273 | 82,386 | +1,113 |
 | `aws-core` | changed | 202,055 | 204,497 | +2,442 |
+| `aws-json-client-protocol` | added | 0 | 17,521 | +17,521 |
 | `aws-json-protocol` | no longer a dependency | 150,973 | 0 | -150,973 |
+| `aws-query-client-protocol` | added | 0 | 47,263 | +47,263 |
 | `cbor-codec` | added | 0 | 54,883 | +54,883 |
-| `codec-commons` | added | 0 | 43,039 | +43,039 |
-| `http-binding` | added | 0 | 8,106 | +8,106 |
-| `http-client-protocol` | added | 0 | 37,868 | +37,868 |
+| `codec-commons` | added | 0 | 75,617 | +75,617 |
+| `http-binding` | added | 0 | 101,960 | +101,960 |
+| `http-client-protocol` | added | 0 | 83,455 | +83,455 |
 | `http-client-spi` | changed | 92,779 | 92,914 | +135 |
+| `json-codec` | added | 0 | 78,641 | +78,641 |
 | `protocol-core` | no longer a dependency | 44,674 | 0 | -44,674 |
-| `rpcv2-cbor-client-protocol` | added | 0 | 15,440 | +15,440 |
-| `schema` | added | 0 | 218,802 | +218,802 |
-| `sdk-core` | changed | 1,066,732 | 1,222,861 | +156,129 |
+| `rpcv2-cbor-client-protocol` | added | 0 | 16,096 | +16,096 |
+| `schema` | added | 0 | 224,109 | +224,109 |
+| `sdk-core` | changed | 1,066,732 | 1,260,355 | +193,623 |
 | `smithy-rpcv2-protocol` | no longer a dependency | 25,232 | 0 | -25,232 |
 | `third-party-jackson-dataformat-cbor` | no longer a dependency | 73,938 | 0 | -73,938 |
+| `xml-codec` | added | 0 | 123,693 | +123,693 |
 
 Unchanged (same content in both builds): `annotations`, `auth`, `checksums`, `checksums-spi`, `endpoints-spi`, `http-auth`, `http-auth-aws`, `http-auth-aws-eventstream`, `http-auth-spi`, `identity-spi`, `json-utils`, `metrics-spi`, `netty-nio-client`, `profiles`, `regions`, `retries`, `retries-spi`, `third-party-jackson-core`, `utils`, `utils-lite`.
 

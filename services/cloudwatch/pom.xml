@@ -175,6 +175,23 @@
             <artifactId>rpcv2-cbor-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- The other two protocols CloudWatch declares (aws.protocols#awsJson1_0 and aws.protocols#awsQuery), for a
+             protocol(...) override without regeneration (task 9.5, Requirements 12.2, 12.6, 12.7, 33.2). No CloudWatch
+             class references them: a user creates the override with ClientProtocolFactories.forId, which finds the
+             factories with ServiceLoader, or with the factory class, which needs a compile dependency of the user's
+             own. Hence runtime scope, which dependency:analyze (ignoreNonCompile) does not report as unused. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-json-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-query-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>runtime</scope>
+        </dependency>
         <!-- No legacy protocol module (aws-json-protocol, protocol-core, smithy-rpcv2-protocol): every call runs on the
              schema-based path (task 3.32) and no transform marshallers are generated (task 5.1). -->
         <dependency>
