@@ -1939,3 +1939,40 @@ The prototype services that tasks 9.2–9.4 move to the schema path (SQS, Dynamo
 | ec2Query (XML response) | 686 / 863 | 373,539 / 332,513 |
 **Running.** Build with `mvn clean install -pl :sdk-standard-benchmarks` (add `-P quick --am` the first time), then `java -jar test/sdk-standard-benchmarks/target/benchmarks.jar 'benchmark\.schema\.' -prof gc -rf json -rff schema-serde.json` (class defaults: 5 warmup and 5 measurement iterations, 2 forks). One case: `-p protocol=AWS_JSON_1_0 -p payload=LARGE`. The paired A/B runs, host settings and JVM options of design D.3 are tasks 9.17/9.18. The Baseline_Build arm has no counterpart of these services; design D.3's baseline arm is the existing `*MarshallBenchmark`s on Baseline_Build jars.
 **Tests.** `SchemaSerdeFixtureTest` (21): the size bounds above for each protocol, and each protocol's unmarshalled output equal by fields (`equalsBySdkFields`) to the payload, twice from the same fixture. `ZeroAllocationBenchmarkTest` (1). The existing `RestJson`/`RestXml` serde benchmarks were run once with `-foe true` on all 20 of their cases (the 6 `PutObject` cases included) after the model change.
+
+## Racecar E2E benchmark tooling (task 9.17)
+
+Ported from racecar, `feature/poc/racecar` at `dc26e4aee93` (the local branch and `fork/feature/poc/racecar` are the same commit), as benchmark tooling only (OD-16). No racecar runtime code comes with it.
+
+| Racecar source | Here | Change |
+|---|---|---|
+| `test/standalone-e2e-benchmarks/src/main/java/.../e2e/*.java` (16 classes) | `test/standalone-e2e-benchmarks/src/main/java/.../e2e/` | Copied. `AppCpuMeter`, `CpuTimeSource(s)`, `Driver`, `MockDdbServer`, `ServerStats`, `Warmup` and the scenario definitions are unchanged apart from the license header and the bind below |
+| `Workloads` | same | Only `v2-sync` (Apache5) and `v2-async` (CRT) are kept. The `v1`, `smithy` and `v2-bridged` arms are removed: every arm of a paired run here is a V2 build from a git ref, so all arms run the same workload code |
+| `BenchmarkItems`, `MetricsSupport`, `BuildProvenance` | same | V1 and smithy-java converters, the V1 metric collector, the OTel holder and the V1/smithy-java versions removed |
+| `Pipeline`, `PipelineCheck` (`STOCK`/`BRIDGED`, required per arm) | `STOCK`/`SCHEMA`, detected and reported | A probe call records the stack under credential resolution; `SyncApiCallPipeline`/`AsyncApiCallPipeline` frames mean the schema path (task 9.2). The result is printed and written to a new `pipeline` results column instead of failing the run, because the same harness runs on stock (Baseline_Build, racecar) and schema (feature) builds |
+| `BenchmarkRunner` results | same | New `alloc_bytes_per_op` column: `com.sun.management.ThreadMXBean.getTotalThreadAllocatedBytes()` over the measured window divided by the operation count, for all client-JVM threads (racecar measured B/op with async-profiler in `collect.sh`). Requirement 37.9 compares B/op against racecar |
+| `MockDdbServer` bound every interface | binds `127.0.0.1` | The server is unauthenticated (including `/stats`) and the launcher always runs the client on the same host |
+| `pom.xml` (V1, smithy-java, OTel, Netty BOM; release 21) | standalone `pom.xml`, release 21 | V2 `dynamodb`, `apache5-client`, `aws-crt-client` at `${aws.sdk.v2.version}` (default `2.49.7-SNAPSHOT`), Jetty `9.4.45.v20220203` (the root pom's managed `jetty.version`, also racecar's), `oshi-core` 7.6.0, `slf4j-nop` 2.0.9. Not in the root reactor and no parent, as in racecar: each arm builds this harness against a different SDK version. Java 21 source level as in racecar (records, text blocks, pattern matching); the SDK under test is still built for Java 8 |
+| `scripts/benchmark.sh`, `scripts/server.sh` | same | Copied; usage text trimmed to the V2 clients |
+| `scripts/paired-ab.sh` (prebuilt jars) | `scripts/schema-serde/paired-ab.sh` | Arms are git refs (`--arm LABEL=REF`), each SDK built `-P quick -am` in its own worktree with its own local repository chained in front of the shared one, as `build-size-baseline.sh` does; the current checkout's harness is built against each arm's SDK, so the harness is identical in every arm. `--null LABEL=REF` (or a prebuilt jar) runs one build as both arms. `--jar LABEL=PATH` and `--skip-build` reuse prebuilt jars. Same JDK (`JAVA_HOME`) for every build and run; default client JVM options are racecar's (`-Xms2g -Xmx2g -XX:+AlwaysPreTouch -XX:ParallelGCThreads=4 -XX:CICompilerCount=4`); offline unless `--online`. Interleaving and the even-repetition reversal are racecar's. Each run writes its own results file, so arms are identified by run, not by the jar's stamped label (racecar could not label a same-jar null experiment) |
+| `pipeline_benchmark2/analysis/scripts/paired_ab_summary.py` | `scripts/schema-serde/paired_ab_summary.py` | `collect` writes `paired-ab.json` from the run files; `summarize` reports per client/scenario and metric each arm's mean, 99.9% error (Student t, as JMH) and repetitions, the paired ratio to the first arm, its spread and the floor. A null experiment's floor is max(|ratio − 1|, spread of pairs) per scenario and metric; `--null` applies it to a comparison ("no measurable difference" within the floor). It flags mixed harness commits, failed runs and a null experiment whose arms ran different pipelines. `analyze()` returns the per-case structure 9.18's report writer reads. `--self-test` runs its stdlib `unittest` tests on fixture data |
+
+Not ported: racecar's `build-jar.sh`, `collect.sh` (profiles), `concurrency-sweep.sh`, `deploy-remote.sh`, `remote-run.sh`, `verify-pipelines.sh`, `verify-responses.sh` and its 40 KB README; `ResponseDigest` (the response diff tool) is ported.
+
+**Running the full experiments later** (on a quiet host; design D.3 names a c6g.metal with pinned cores):
+
+```
+# null experiment on the feature build (noise floor per scenario)
+scripts/schema-serde/paired-ab.sh --null feature=HEAD --pin-client 0-15 --pin-server 16-31
+# Baseline_Build vs racecar vs feature; the first arm is the baseline
+scripts/schema-serde/paired-ab.sh --arm baseline=fc8b74e9fe21 --arm racecar=feature/poc/racecar --arm feature=HEAD \
+    --pin-client 0-15 --pin-server 16-31
+python3 scripts/schema-serde/paired_ab_summary.py summarize <run>/paired-ab.json --null <null run>/paired-ab.json
+```
+
+Defaults: 7 repetitions, 50,000 measured and 10,000 warmup operations, both clients, all five scenarios. Output goes to `~/.cache/aws-sdk-java-v2/paired-ab/<run-id>/`; worktrees to `$TMPDIR/aws-sdk-paired-ab-<commit>` (and `-m2`).
+
+**Smoke runs only (task 9.17).** These prove the tooling works end to end; the numbers are not measurements (300 operations, laptop, unpinned, JIT still compiling):
+
+- `benchmark.sh --client v2-sync --scenario small-get --iterations 300` on the feature SDK: server `READY`, `pipeline detected: SYNC SCHEMA`, `alloc_bytes_per_op=72044`. `v2-async` `batch-get,describe-table`: `pipeline detected: ASYNC SCHEMA`.
+- `paired-ab.sh --null feature=<prebuilt jar> --reps 2 --iterations 300 --clients v2-sync --scenarios small-get,batch-put`: 8 interleaved runs, all ok, `paired-ab.json` and `summary.md` written, both arms `schema`, B/op ratios 0.994 and 1.001.
