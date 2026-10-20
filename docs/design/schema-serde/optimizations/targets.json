@@ -10,11 +10,11 @@
       "e2e": [{"scenarios": ["small-get", "small-put"], "metrics": ["app_cpu_us_per_op"]}],
       "jmh": {
         "module": "sdk-benchmarks",
-        "include": "benchmark\\.signer\\.Sigv4SignerBenchmark",
+        "include": "benchmark\\.signer\\.(AwsV4HttpSignerBenchmark|Sigv4SignerBenchmark)",
         "params": [],
-        "targets": [{"benchmark": "benchmark\\.signer\\.Sigv4SignerBenchmark\\.", "metrics": ["score"]}]
+        "targets": [{"benchmark": "benchmark\\.signer\\.AwsV4HttpSignerBenchmark\\.", "metrics": ["score"]}]
       },
-      "note": "Sigv4SignerBenchmark calls the internal V4RequestSigner. If 9.20's fast path sits above it (in DefaultAwsV4HttpSigner), add a benchmark on the public signer and point include/targets at it."
+      "note": "9.20's fast path sits in DefaultAwsV4HttpSigner, above the internal V4RequestSigner that Sigv4SignerBenchmark calls, so the target is AwsV4HttpSignerBenchmark (the public signer, added in the candidate commit on opt/F) and Sigv4SignerBenchmark is a guard. Both arms' benchmarks.jar must contain AwsV4HttpSignerBenchmark: bring the benchmark class to the feature build before the measurement."
     },
     "E6": {
       "task": "9.21",

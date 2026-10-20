@@ -101,7 +101,7 @@ The suggested final decision after a REVERT works as follows:
 
 | id | task | e2e targets | JMH targets |
 |---|---|---|---|
-| F | 9.20 | small-get, small-put, application CPU, both clients | `sdk-benchmarks` `Sigv4SignerBenchmark` score |
+| F | 9.20 | small-get, small-put, application CPU, both clients | `sdk-benchmarks` `AwsV4HttpSignerBenchmark` score (`Sigv4SignerBenchmark` is a guard) |
 | E6 | 9.21 | — (e2e is guard only) | `SchemaMarshallBenchmark` score, JSON protocols |
 | E7 | 9.22 | — (e2e is guard only) | `SchemaUnmarshallBenchmark` score, JSON protocols |
 | B1 | 9.23 | small-get, small-put, B/op, both clients | — |

@@ -29,6 +29,7 @@
   component: "`core/http-auth-aws` signer (`DefaultAwsV4HttpSigner`), unchanged by this design"
   reason: "Independent of serde and of the new path; −41% signer time in racecar"
   task: "9.20"
+  note: "candidate on branch opt/F (d1161cfc5ac), measurement pending (user decision)"
 
 - id: "B1"
   optimization: "Shallow header copy-on-write (`LowCopyListMap`)"
