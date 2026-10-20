@@ -37,6 +37,7 @@
   component: "`http-client-spi` request and response builders"
   reason: "Framework micro-optimization, not needed by the new path. `headers()` and `Builder.headers()` keep today's behavior (H1 stays deferred)"
   task: "9.23"
+  note: "candidate on branch opt/B1 (fe81b1f809f), measurement pending (user decision)"
 
 - id: "A"
   optimization: "Materialized-body zero-copy contract (`ContentStreamProvider.contentAsByteBufferOrNull`, wrapper propagation, Apache5 `ByteArrayEntity`, `SimpleHttpContentPublisher`)"
