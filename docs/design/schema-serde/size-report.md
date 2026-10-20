@@ -32,13 +32,13 @@ Codegen customizations disabled in the feature build (from `disabled-customizati
 
 | Service | Compressed JAR | Change | Uncompressed class bytes | Change | `.class` entries | Requirement 36.3 |
 |---|---|---|---|---|---|---|
-| SQS | 864,199 → 1,009,058 | +144,859 (+16.8%) | 2,750,861 → 3,049,924 | +299,063 (+10.9%) | 518 → 613 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| Secrets Manager | 752,302 → 848,328 | +96,026 (+12.8%) | 2,372,919 → 2,548,590 | +175,671 (+7.4%) | 422 → 491 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| Account | 473,889 → 550,224 | +76,335 (+16.1%) | 1,420,618 → 1,597,015 | +176,397 (+12.4%) | 287 → 343 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| Route 53 | 2,168,552 → 2,508,917 | +340,365 (+15.7%) | 7,031,368 → 7,857,798 | +826,430 (+11.8%) | 1,277 → 1,496 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| SNS | 1,105,536 → 1,296,664 | +191,128 (+17.3%) | 3,473,658 → 3,969,018 | +495,360 (+14.3%) | 714 → 830 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| SQS | 864,199 → 1,010,063 | +145,864 (+16.9%) | 2,750,861 → 3,049,924 | +299,063 (+10.9%) | 518 → 613 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| Secrets Manager | 752,302 → 849,617 | +97,315 (+12.9%) | 2,372,919 → 2,548,590 | +175,671 (+7.4%) | 422 → 491 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| Account | 473,889 → 551,687 | +77,798 (+16.4%) | 1,420,618 → 1,597,015 | +176,397 (+12.4%) | 287 → 343 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| Route 53 | 2,168,552 → 2,510,210 | +341,658 (+15.8%) | 7,031,368 → 7,857,798 | +826,430 (+11.8%) | 1,277 → 1,496 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| SNS | 1,105,536 → 1,297,957 | +192,421 (+17.4%) | 3,473,658 → 3,969,018 | +495,360 (+14.3%) | 714 → 830 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
 | CloudWatch | 1,706,662 → 1,969,997 | +263,335 (+15.4%) | 5,349,563 → 5,844,064 | +494,501 (+9.2%) | 950 → 1,134 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| DynamoDB | 2,916,473 → 3,305,790 | +389,317 (+13.3%) | 9,488,893 → 10,054,417 | +565,524 (+6.0%) | 1,533 → 1,837 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| DynamoDB | 2,916,473 → 3,307,156 | +390,683 (+13.4%) | 9,488,893 → 10,054,417 | +565,524 (+6.0%) | 1,533 → 1,837 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
 
 ### Change by category, all services (Requirement 36.2)
 
@@ -61,7 +61,7 @@ Service packages: `software.amazon.awssdk.services.sqs`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 864,199 | 1,009,058 | +144,859 (+16.8%) |
+| Compressed main JAR | 864,199 | 1,010,063 | +145,864 (+16.9%) |
 | Uncompressed class-file bytes | 2,750,861 | 3,049,924 | +299,063 (+10.9%) |
 | `.class` entries | 518 | 613 | +95 |
 
@@ -138,7 +138,7 @@ Service packages: `software.amazon.awssdk.services.secretsmanager`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 752,302 | 848,328 | +96,026 (+12.8%) |
+| Compressed main JAR | 752,302 | 849,617 | +97,315 (+12.9%) |
 | Uncompressed class-file bytes | 2,372,919 | 2,548,590 | +175,671 (+7.4%) |
 | `.class` entries | 422 | 491 | +69 |
 
@@ -213,7 +213,7 @@ Service packages: `software.amazon.awssdk.services.account`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 473,889 | 550,224 | +76,335 (+16.1%) |
+| Compressed main JAR | 473,889 | 551,687 | +77,798 (+16.4%) |
 | Uncompressed class-file bytes | 1,420,618 | 1,597,015 | +176,397 (+12.4%) |
 | `.class` entries | 287 | 343 | +56 |
 
@@ -297,7 +297,7 @@ Service packages: `software.amazon.awssdk.services.route53`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 2,168,552 | 2,508,917 | +340,365 (+15.7%) |
+| Compressed main JAR | 2,168,552 | 2,510,210 | +341,658 (+15.8%) |
 | Uncompressed class-file bytes | 7,031,368 | 7,857,798 | +826,430 (+11.8%) |
 | `.class` entries | 1,277 | 1,496 | +219 |
 
@@ -375,7 +375,7 @@ Service packages: `software.amazon.awssdk.services.sns`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 1,105,536 | 1,296,664 | +191,128 (+17.3%) |
+| Compressed main JAR | 1,105,536 | 1,297,957 | +192,421 (+17.4%) |
 | Uncompressed class-file bytes | 3,473,658 | 3,969,018 | +495,360 (+14.3%) |
 | `.class` entries | 714 | 830 | +116 |
 
@@ -528,7 +528,7 @@ Service packages: `software.amazon.awssdk.services.dynamodb.streams`, `software.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 2,916,473 | 3,305,790 | +389,317 (+13.3%) |
+| Compressed main JAR | 2,916,473 | 3,307,156 | +390,683 (+13.4%) |
 | Uncompressed class-file bytes | 9,488,893 | 10,054,417 | +565,524 (+6.0%) |
 | `.class` entries | 1,533 | 1,837 | +304 |
 
@@ -643,14 +643,14 @@ The Runtime_Schema_Module, the codecs, `http-binding` and the client protocol mo
 | `aws-core` | changed | 202,055 | 204,497 | +2,442 |
 | `aws-query-protocol` | no longer a dependency | 70,003 | 0 | -70,003 |
 | `aws-xml-protocol` | no longer a dependency | 103,308 | 0 | -103,308 |
-| `http-client-spi` | changed | 92,779 | 92,914 | +135 |
-| `sdk-core` | changed | 1,066,732 | 1,260,355 | +193,623 |
+| `http-client-spi` | changed | 92,779 | 93,237 | +458 |
+| `sdk-core` | changed | 1,066,732 | 1,260,487 | +193,755 |
 | `smithy-rpcv2-protocol` | no longer a dependency | 25,232 | 0 | -25,232 |
 | `third-party-jackson-dataformat-cbor` | no longer a dependency | 73,938 | 0 | -73,938 |
 
 Unchanged (same content in both builds): `annotations`, `auth`, `aws-json-protocol`, `checksums`, `checksums-spi`, `endpoints-spi`, `http-auth`, `http-auth-aws`, `http-auth-aws-eventstream`, `http-auth-spi`, `identity-spi`, `json-utils`, `metrics-spi`, `netty-nio-client`, `profiles`, `protocol-core`, `regions`, `retries`, `retries-spi`, `third-party-jackson-core`, `utils`, `utils-lite`.
 
-All runtime modules together: 4,857,218 → 5,634,377, a change of +777,159 (+16.0%).
+All runtime modules together: 4,857,218 → 5,634,832, a change of +777,614 (+16.0%).
 
 ## Size-reduction opportunities (Requirement 36.5)
 
@@ -672,8 +672,8 @@ Further reductions found during the prototype, measured on the feature build JAR
 | 10 | Generic schema-driven paginator for `@paginated` operations; the per-operation `*Iterable`/`*Publisher` classes keep only their public signatures | Client classes | -5,500 to -2,750 | -7,338 to -3,669 | -2,719 to -1,359 | -19,670 to -9,835 | -22,360 to -11,180 | -27,256 to -13,628 | -17,752 to -8,876 |
 | 11 | Move the operations still on the legacy path to the schema path: the marshallers, unmarshallers and exception-mapping code the feature build keeps | Removed marshallers and unmarshallers | — | — | — | — | — | — | -9,247 |
 | | **All opportunities** | | **-205,694 to -202,944** | **-172,098 to -168,429** | **-86,212 to -84,852** | **-497,264 to -487,429** | **-271,624 to -260,444** | **-483,255 to -469,627** | **-742,362 to -733,486** |
-| | JAR change today (Summary) | | +144,859 (+16.8%) | +96,026 (+12.8%) | +76,335 (+16.1%) | +340,365 (+15.7%) | +191,128 (+17.3%) | +263,335 (+15.4%) | +389,317 (+13.3%) |
-| | **JAR change with all opportunities** | | **-60,835 to -58,085** | **-76,072 to -72,403** | **-9,877 to -8,517** | **-156,899 to -147,064** | **-80,496 to -69,316** | **-219,920 to -206,292** | **-353,045 to -344,169** |
+| | JAR change today (Summary) | | +145,864 (+16.9%) | +97,315 (+12.9%) | +77,798 (+16.4%) | +341,658 (+15.8%) | +192,421 (+17.4%) | +263,335 (+15.4%) | +390,683 (+13.4%) |
+| | **JAR change with all opportunities** | | **-59,830 to -57,080** | **-74,783 to -71,114** | **-8,414 to -7,054** | **-155,606 to -145,771** | **-79,203 to -68,023** | **-219,920 to -206,292** | **-351,679 to -342,803** |
 | | Requirement 36.3 with all opportunities | | Meets | Meets | Meets | Meets | Meets | Meets | Meets |
 
 Row 10 applies the design's estimate (20–40% of the paginator classes go away) to the measured paginator bytes; every other row removes the selected code entirely, so its estimate is the measured compressed size. The estimates leave out the one-time cost of any shared runtime code an opportunity needs (for example a generic collection serde in `schema`), which is not part of the service JARs.
