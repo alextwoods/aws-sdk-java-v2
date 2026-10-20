@@ -1976,3 +1976,4 @@ Defaults: 7 repetitions, 50,000 measured and 10,000 warmup operations, both clie
 
 - `benchmark.sh --client v2-sync --scenario small-get --iterations 300` on the feature SDK: server `READY`, `pipeline detected: SYNC SCHEMA`, `alloc_bytes_per_op=72044`. `v2-async` `batch-get,describe-table`: `pipeline detected: ASYNC SCHEMA`.
 - `paired-ab.sh --null feature=<prebuilt jar> --reps 2 --iterations 300 --clients v2-sync --scenarios small-get,batch-put`: 8 interleaved runs, all ok, `paired-ab.json` and `summary.md` written, both arms `schema`, B/op ratios 0.994 and 1.001.
+- `paired-ab.sh --null feature=HEAD --reps 1 --iterations 300 --clients v2-sync --scenarios small-get` (the ref path): worktree created at `6e613352852`, SDK built `-P quick -am` (63 modules, about 2 minutes on a warm shared repository), harness built against it with the harness and SDK commits stamped, 2 runs ok, both arms `schema`, small-get about 64 KB/op.

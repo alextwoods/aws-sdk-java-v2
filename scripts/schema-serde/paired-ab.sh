@@ -180,6 +180,7 @@ build_harness() {  # <label> <sha> <m2> <version> -> builds $JARDIR/<label>.jar
     }
     cp "$copy/target/e2e-$label.jar" "$JARDIR/$label.jar"
     rm -rf "$copy"
+    rmdir "$RUNDIR/harness-build" 2>/dev/null || true
 }
 LABELS=()
 JARS=()
