@@ -91,6 +91,7 @@ Notes:
 - **E6**: candidate on branch opt/E6 (b5b8def9cdf), measurement pending (user decision).
 - **E7**: candidate on branch opt/E7 (49205e395d8), measurement pending (user decision).
 - **E11**: The owned-buffer marker is `OwnedResponseBody` in `core.client.protocol` (`@SdkProtectedApi`), not a transport-internal type, because the protocol modules read it (task 3.17).
+- **E12**: candidate on branch opt/E12 (d5afded9407), measurement pending (user decision).
 - **E13**: D.6 names `AuthSchemeResolver`; the per-client cache that H7 added (task 3.25) is where task 9.26 applies it.
 - **E14**: D.6 records E14 as Superseded by a union `ShapeBuilder` whose `InnerDeserializer` calls the direct `fromX` factory with no `EnumSet`. Task 3.7 generated the builder-based reader instead (golden file `codegen/src/test/resources/.../poet/model/schemaserde/choice.java`), so the optimization is not in the code.
 - **H4**: D.6 records H4 as Applied. Task 3.25 added the per-client placeholder, but tasks 3.26 and 3.28 left `RESOLVED_CHECKSUM_SPECS` to the context factory and deferred the call to the phase 5 pipeline optimizations, which have no task for it yet.

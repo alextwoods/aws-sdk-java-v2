@@ -256,6 +256,7 @@
   component: "`aws-crt-client` request adapter"
   reason: "HTTP client micro-optimization"
   task: "9.25"
+  note: "candidate on branch opt/E12 (d5afded9407), measurement pending (user decision)"
 
 - id: "E13"
   optimization: "Lazy auth-property rebuild"
