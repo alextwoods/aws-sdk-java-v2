@@ -41,6 +41,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import software.amazon.awssdk.codecs.cbor.internal.CborSchemaExtensions;
+import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableShape;
@@ -58,6 +59,8 @@ import software.amazon.awssdk.schema.traits.TimestampFormatTrait;
  */
 class Rpcv2CborCodecTest {
     private static final Rpcv2CborCodec CODEC = Rpcv2CborCodec.builder().build();
+    // The initial buffer of a CborSerializer created with a sink (CborSerializer.SINK_BUF_SIZE).
+    private static final int SINK_BUFFER_SIZE = 1024;
 
     private static final Schema STRING_LIST = Schema.listBuilder(ShapeId.from("test#StringList"))
                                                     .putMember("member", PreludeSchemas.STRING)
@@ -634,6 +637,130 @@ class Rpcv2CborCodecTest {
             }
         } finally {
             executor.shutdownNow();
+        }
+    }
+
+    // ---- Writing through a sink ----
+
+    @Test
+    void createSerializer_withBodyLargerThanBuffer_writesFullBuffersToSinkWithoutGrowing() {
+        Map<String, Document> items = new LinkedHashMap<>();
+        for (int i = 0; i < 400; i++) {
+            Map<String, Document> item = new LinkedHashMap<>();
+            item.put("id", Document.of(i));
+            item.put("text", Document.of(repeat("abcdefghij", 20)));
+            item.put("unicode", Document.of(repeat("\u00e9\u4e2d", 10)));
+            item.put("tags", Document.of(Arrays.asList(Document.of("a"), Document.of(true), Document.of(1.5))));
+            items.put("item" + i, Document.of(item));
+        }
+        Document document = Document.of(items);
+        WriteRecordingStream output = new WriteRecordingStream();
+
+        try (ShapeSerializer serializer = CODEC.createSerializer(output)) {
+            serializer.writeDocument(PreludeSchemas.DOCUMENT, document);
+        }
+
+        byte[] expected = toArray(CODEC.serialize(document));
+        assertThat(output.toByteArray()).isEqualTo(expected);
+        assertThat(expected.length).isGreaterThan(100_000);
+        assertThat(output.writes).isGreaterThan(1);
+        // The serializer's buffer is drained when full rather than grown to the document size.
+        assertThat(output.largestWrite).isLessThanOrEqualTo(SINK_BUFFER_SIZE);
+    }
+
+    @Test
+    void createSerializer_withValueLargerThanBuffer_drainsThenGrowsForThatValue() {
+        String large = repeat("y", 20_000);
+        byte[] blob = new byte[5_000];
+        Arrays.fill(blob, (byte) 7);
+        SerializableShape shape = s -> s.writeList(STRING_LIST, large, 3, (value, list) -> {
+            list.writeString(PreludeSchemas.STRING, repeat("z", SINK_BUFFER_SIZE - 10));
+            list.writeString(PreludeSchemas.STRING, value);
+            list.writeBlob(PreludeSchemas.BLOB, blob);
+        });
+        ByteBufferOutputStream output = new ByteBufferOutputStream(16);
+
+        try (ShapeSerializer serializer = CODEC.createSerializer(output)) {
+            shape.serialize(serializer);
+        }
+
+        assertThat(toArray(output.toByteBuffer())).isEqualTo(toArray(CODEC.serialize(shape)));
+    }
+
+    @Test
+    void createSerializer_withSmallDocument_writesToSinkOnceOnClose() {
+        SchemaStruct value = allTypes();
+        WriteRecordingStream output = new WriteRecordingStream();
+
+        try (ShapeSerializer serializer = CODEC.createSerializer(output)) {
+            serializer.writeStruct(ALL, value);
+            assertThat(output.writes).isZero();
+        }
+
+        assertThat(output.toByteArray()).isEqualTo(toArray(CODEC.serialize(value)));
+        assertThat(output.writes).isEqualTo(1);
+    }
+
+    /**
+     * Moves a structure of every member type, a string of each length below and a blob across the end of the sink
+     * buffer one byte at a time, so that every write starts at, ends at and straddles the point where the buffer is
+     * drained. The string lengths cover values whose reservation ({@code 5 + 3 * length}) just fits the buffer, just
+     * does not, and needs it to grow; the non-ASCII kinds also take the path that rewrites the length header.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sinkBufferStringKinds")
+    void createSerializer_atEveryBufferBoundary_matchesSerialize(String kind, String unit) {
+        int third = (SINK_BUFFER_SIZE - 5) / 3;
+        int[] valueLengths = {0, 1, 23, 24, third - 1, third, third + 1, SINK_BUFFER_SIZE - 1, SINK_BUFFER_SIZE,
+                              SINK_BUFFER_SIZE + 1, SINK_BUFFER_SIZE * 2 + 1};
+        SchemaStruct struct = allTypes();
+        for (int valueLength : valueLengths) {
+            String value = repeat(unit, valueLength);
+            // The structure is under 400 bytes, so the drain point passes through every write after the pad.
+            for (int pad = SINK_BUFFER_SIZE - 400; pad <= SINK_BUFFER_SIZE + 2; pad++) {
+                String padding = repeat("p", pad);
+                SerializableShape shape = s -> s.writeList(STRING_LIST, value, 5, (v, list) -> {
+                    list.writeString(PreludeSchemas.STRING, padding);
+                    list.writeStruct(ALL, struct);
+                    list.writeString(PreludeSchemas.STRING, v);
+                    list.writeBlob(PreludeSchemas.BLOB, new byte[] {1, 2, 3, 4, 5});
+                    list.writeString(PreludeSchemas.STRING, "tail");
+                });
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                try (ShapeSerializer serializer = CODEC.createSerializer(output)) {
+                    shape.serialize(serializer);
+                }
+
+                assertThat(output.toByteArray())
+                    .as("%s value of %d chars after %d pad chars", kind, valueLength, pad)
+                    .isEqualTo(toArray(CODEC.serialize(shape)));
+            }
+        }
+    }
+
+    static List<Arguments> sinkBufferStringKinds() {
+        return Arrays.asList(Arguments.of("ascii", "a"),
+                             Arguments.of("two-byte", "\u00e9"),
+                             Arguments.of("three-byte", "\u4e2d"),
+                             Arguments.of("surrogate pair", "\ud83d\ude00"));
+    }
+
+    private static byte[] toArray(ByteBuffer buffer) {
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.duplicate().get(bytes);
+        return bytes;
+    }
+
+    /** Records the number and largest length of the writes it receives. */
+    private static final class WriteRecordingStream extends ByteArrayOutputStream {
+        private int writes;
+        private int largestWrite;
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) {
+            writes++;
+            largestWrite = Math.max(largestWrite, len);
+            super.write(b, off, len);
         }
     }
 
