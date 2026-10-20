@@ -38,9 +38,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.json.internal.SmithyJsonSerdeProvider;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SerializableShape;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.serde.SerializationException;
@@ -50,6 +52,9 @@ import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.TimestampFormatTrait;
 
 public class JsonSerializerTest extends ProviderTestBase {
+
+    // The initial buffer of a SmithyJsonSerializer created with a sink (SmithyJsonSerializer.SINK_BUF_SIZE).
+    private static final int SINK_BUFFER_SIZE = 1024;
 
     @PerProvider
     public void writesNull(JsonSerdeProvider provider) {
@@ -537,9 +542,110 @@ public class JsonSerializerTest extends ProviderTestBase {
             assertThat(output.toByteArray()).isEqualTo(expected);
             assertThat(expected.length).isGreaterThan(100_000);
             assertThat(output.writes).isGreaterThan(1);
-            // The serializer's 8 KB buffer is drained when full rather than grown to the document size.
-            assertThat(output.largestWrite).isLessThanOrEqualTo(8192);
+            // The serializer's buffer is drained when full rather than grown to the document size.
+            assertThat(output.largestWrite).isLessThanOrEqualTo(SINK_BUFFER_SIZE);
         }
+    }
+
+    @Test
+    public void createSerializer_withBodyLargerThanBuffer_matchesSerializeThroughByteBufferOutputStream() {
+        Map<String, Document> items = new LinkedHashMap<>();
+        for (int i = 0; i < 100; i++) {
+            items.put("item" + i, Document.of(repeat("\u00e9x\"", 20)));
+        }
+        Document document = Document.of(items);
+        ByteBufferOutputStream output = new ByteBufferOutputStream(16);
+
+        try (JsonCodec codec = codec(SMITHY)) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                serializer.writeDocument(PreludeSchemas.DOCUMENT, document);
+            }
+
+            assertThat(toArray(output.toByteBuffer())).isEqualTo(toArray(codec.serialize(document)));
+            assertThat(output.size()).isGreaterThan(SINK_BUFFER_SIZE * 4);
+        }
+    }
+
+    @Test
+    public void createSerializer_withSmallDocument_writesToSinkOnceOnClose() {
+        SerializableShape shape = boundaryShape(10, "value");
+        WriteRecordingStream output = new WriteRecordingStream();
+
+        try (JsonCodec codec = codec(SMITHY)) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                shape.serialize(serializer);
+                assertThat(output.writes).isZero();
+            }
+
+            assertThat(output.toByteArray()).isEqualTo(toArray(codec.serialize(shape)));
+            assertThat(output.writes).isEqualTo(1);
+        }
+    }
+
+    /**
+     * Moves a structure, a numeric structure, a string of each length below and a blob across the end of the sink
+     * buffer one byte at a time, so that every write starts at, ends at and straddles the point where the buffer is
+     * drained. The string lengths cover values that just fit the buffer, just do not, and need it to grow.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sinkBufferStringKinds")
+    public void createSerializer_atEveryBufferBoundary_matchesSerialize(String kind, String unit) {
+        int[] valueLengths = {0, 1, SINK_BUFFER_SIZE / 6 - 1, SINK_BUFFER_SIZE / 6, SINK_BUFFER_SIZE / 6 + 1,
+                              SINK_BUFFER_SIZE - 3, SINK_BUFFER_SIZE - 2, SINK_BUFFER_SIZE - 1, SINK_BUFFER_SIZE,
+                              SINK_BUFFER_SIZE + 1, SINK_BUFFER_SIZE * 2 + 1};
+        try (JsonCodec codec = codec(SMITHY)) {
+            for (int valueLength : valueLengths) {
+                String value = repeat(unit, valueLength);
+                // The structures are under 320 bytes, so the drain point passes through every write after the pad.
+                for (int pad = SINK_BUFFER_SIZE - 320; pad <= SINK_BUFFER_SIZE + 2; pad++) {
+                    SerializableShape shape = boundaryShape(pad, value);
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                        shape.serialize(serializer);
+                    }
+
+                    assertThat(output.toByteArray())
+                        .as("%s value of %d chars after %d pad chars", kind, valueLength, pad)
+                        .isEqualTo(toArray(codec.serialize(shape)));
+                }
+            }
+        }
+    }
+
+    static List<Arguments> sinkBufferStringKinds() {
+        return listOf(Arguments.of("ascii", "a"),
+                      Arguments.of("escaped", "\""),
+                      Arguments.of("two-byte", "\u00e9"),
+                      Arguments.of("surrogate pair", "\ud83d\ude00"));
+    }
+
+    private static SerializableShape boundaryShape(int padLength, String value) {
+        SchemaStruct simple = SchemaStruct.builder(BenchModel.SIMPLE_STRUCT)
+                                          .set("name", "n")
+                                          .set("age", 42)
+                                          .set("active", true)
+                                          .set("score", 1.5)
+                                          .set("createdAt", Instant.ofEpochSecond(1_700_000_000L, 5_000_000))
+                                          .build();
+        SchemaStruct numeric = SchemaStruct.builder(BenchModel.NUMERIC_STRUCT)
+                                           .set("byteVal", (byte) -7)
+                                           .set("shortVal", (short) 300)
+                                           .set("intVal", Integer.MIN_VALUE)
+                                           .set("longVal", Long.MIN_VALUE)
+                                           .set("floatVal", 1.25f)
+                                           .set("doubleVal", -0.1)
+                                           .set("bigIntVal", BigInteger.TEN.pow(30))
+                                           .set("bigDecVal", new BigDecimal("1.5E-20"))
+                                           .build();
+        String pad = repeat("p", padLength);
+        return s -> s.writeList(PreludeSchemas.DOCUMENT, value, 6, (v, list) -> {
+            list.writeString(PreludeSchemas.STRING, pad);
+            list.writeStruct(BenchModel.SIMPLE_STRUCT, simple);
+            list.writeStruct(BenchModel.NUMERIC_STRUCT, numeric);
+            list.writeString(PreludeSchemas.STRING, v);
+            list.writeBlob(PreludeSchemas.BLOB, new byte[] {1, 2, 3, 4, 5});
+            list.writeString(PreludeSchemas.STRING, "tail");
+        });
     }
 
     @Test

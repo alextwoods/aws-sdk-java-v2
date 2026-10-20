@@ -49,14 +49,19 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * <p>SDK deviation: with a sink, a full buffer is written to the sink before the buffer grows, so the buffer stays at
  * its initial size unless a single value needs more. smithy-java grows the buffer to the whole document and writes it
  * to the sink on {@link #close}, which allocates every intermediate buffer and then copies the document again into a
- * sink that callers such as {@code HttpClientProtocol} have already sized for it.
+ * sink that callers such as {@code HttpClientProtocol} have already sized for it. Because of that, a serializer with a
+ * sink starts with a 1 KB buffer instead of smithy-java's 8 KB; the sink-less serializer keeps 8 KB.
  */
 @SdkInternalApi
 final class SmithyJsonSerializer implements ShapeSerializer {
 
     private static final int MAX_DEPTH = 64;
+    // The sink-less serializer holds the whole document, and Codec.serialize pools it, so it starts larger.
     private static final int DEFAULT_BUF_SIZE = 8192;
     private static final int MAX_CACHEABLE_BUF = DEFAULT_BUF_SIZE * 16;
+    // A serializer with a sink is allocated per call and drains its buffer to the sink when full (see grow), so a
+    // small buffer only adds sink writes for large documents.
+    private static final int SINK_BUF_SIZE = 1024;
 
     private static final StripedPool<SmithyJsonSerializer, JsonSettings> POOL = new JsonStripedPool();
 
@@ -83,7 +88,7 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         this.sink = sink;
         this.settings = settings;
         this.useJsonName = settings.useJsonName();
-        this.buf = new byte[DEFAULT_BUF_SIZE];
+        this.buf = new byte[sink == null ? DEFAULT_BUF_SIZE : SINK_BUF_SIZE];
     }
 
     /**
