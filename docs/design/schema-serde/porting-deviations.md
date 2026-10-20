@@ -2255,3 +2255,71 @@ The CloudWatch exclusions are those of task 5.1 (50 marshallers); nothing new wa
 None of the seven services has a document member, so the Legacy_Document fixture uses the `Document` API directly.
 
 Route 53 returns the hosted zone and change IDs without their `/hostedzone/` and `/change/` prefixes, because `Route53IdInterceptor` (also in the Baseline_Build) strips them from responses. The Route 53 test therefore compares with literal strings, not with the value the mock returned. Module run: 44 tests, 0 failures (`mvn -o clean verify -pl :schema-serde-source-compat` with checkstyle, SpotBugs and `dependency:analyze`).
+
+## Checkpoint 10: batch-put-large allocation
+
+**Finding.** The checkpoint 10 smoke A/B (run `20261020-135020`, null `20261020-134208`; 2 repetitions × 300 operations, v2-sync, `--metrics`) measured e2e DynamoDB `batch-put-large` at 358,882 B/op on the Baseline_Build (`fc8b74e9fe21`) and 433,899 B/op on the feature build (`b93a9b5e66c`): +75,017 B/op (+20.9%) against a null floor of 84 B. The scenario is one BatchWriteItem of 25 `BenchmarkItems.largeItem` rows (each a medium item plus 12 200-character strings: string, number, boolean, map and list attributes), a 104,740-byte request body. The response is 23 bytes (`{"UnprocessedItems":{}}`) and is only unmarshalled.
+
+**Method.** The harness ran 40,000 measured operations per build after the usual warm-up. async-profiler 4.4 (`asprof -e alloc --alloc 16k --total -d 6 -o collapsed`) was attached after the warm-up line. Each profile's bytes were scaled so its total equals that run's `alloc_bytes_per_op` (baseline 358,620, feature 433,627), so the per-site numbers carry about ±3% sampling error. JMH `-prof gc` on `SchemaMarshallBenchmark` (`AWS_JSON_1_0`, `LARGE`) was the cross-check.
+
+**Breakdown (B/op).**
+
+| Category | Baseline_Build | Feature | Feature + fix |
+|---|---:|---:|---:|
+| Request body buffers (JSON writer buffers and the body array) | 244,023 | 368,382 | 126,410 |
+| Request marshalling, other | 48,962 | 3,327 | 4,463 |
+| Signing | 24,165 | 24,309 | 22,573 |
+| Response unmarshalling | 163 | 369 | 334 |
+| HTTP client (Apache5) | 15,428 | 15,227 | 14,880 |
+| Metrics | 8,643 | 8,681 | 8,389 |
+| Other | 17,236 | 13,332 | 12,185 |
+| Total (measured) | 358,620 | 433,627 | 189,234 |
+
+| Site | Feature − baseline (sampled) | Exact per call |
+|---|---:|---:|
+| `SmithyJsonSerializer.grow` (`Arrays.copyOf`) | +240,186 | 245,824: arrays of 16,384, 32,768, 65,536 and 131,072 bytes |
+| `ByteBufferOutputStream.<init>` from `HttpClientProtocol.newRequestBodyBuffer` | +121,469 | 117,848: the E1 hint, 104,740 + 1/8 |
+| `SmithyJsonSerializer.<init>` (the serializer's own buffer) | +6,590 | 8,208 |
+| `SdkByteArrayOutputStream.write` growth under Jackson's `_flushBuffer` (legacy only) | −242,547 | The legacy body array and its growth chain |
+| `Arrays$ArrayItr` in `JsonProtocolMarshaller.doMarshall` (legacy only) | −42,695 | — |
+| `SdkByteArrayOutputStream.<init>` (legacy only) | −1,121 | — |
+| All other sites | −6,875 | — |
+
+**Cause.** `SmithyJsonSerializer`, ported from smithy-java, wrote the whole document into its private buffer, starting at 8 KB and doubling, and wrote it to the sink only on `close()`. `AwsJsonProtocol.createRequest` passes a sink, the `ByteBufferOutputStream` that `HttpClientProtocol` presizes from the operation's previous body (racecar E1). So each large request allocated the serializer's growth chain (8 K → 128 K) and then a second, presized copy of the body. The legacy path also grew a buffer (`SdkByteArrayOutputStream`, 242.5 KB of growth arrays here), but it handed that final array to the request without a further copy, and E1 had no effect on the serializer.
+
+**Suspects ruled out.**
+
+| Suspect | Result |
+|---|---|
+| `toByteArray` or `ByteBuffer.wrap` copy of the serialized body | Not on the request path. `SmithyJsonSerializer.extractResult` (`Arrays.copyOf`) serves only the sink-less `Codec.serialize`. `finishRequestBody` shares the `ByteBufferOutputStream` array through `toContentStreamProvider()` |
+| Body copied again for signing, `Content-Length` or checksums | No. SigV4's payload SHA-256 streams the body through `ChecksumUtil.readAll` with the same small read buffer in both builds (3.9 and 4.6 KB sampled; the frames differ only in lambda class names). Signing is 24.2 KB on both builds |
+| CRC32 response validation | Not visible: the response is 23 bytes, and response unmarshalling is under 0.4 KB/op on both builds |
+| Per-`AttributeValue` boxing or intermediate maps in the schema serializer (`SharedSerde`) | No. Marshalling allocates 3.3 KB/op outside the body buffers, against 49 KB/op on the legacy path |
+| The legacy path streamed directly where the new path materializes | Both materialize the body. The difference was the extra serializer buffer and its growth, as described under Cause |
+
+**Fix (`400f3fe99f2`, `perf(json-codec)`).** With a sink, `SmithyJsonSerializer.grow` now writes the buffered bytes to the sink and reuses the buffer. It grows the buffer only when a single value does not fit in it. Callers write at `pos` after `grow` returns and never refer back to earlier positions, so draining at that point is safe. `JsonPrettyPrinter` keeps its state across writes, so pretty output is unchanged. The output bytes are unchanged; the sink receives them in chunks of up to 8 KB instead of in one write. If serialization fails partway, the sink may hold a prefix of the document; protocols discard the body buffer on failure. The sink-less pooled path is unchanged. Deviation from smithy-java, recorded in the class Javadoc.
+
+| Item | Result |
+|---|---|
+| Tests | `JsonSerializerTest`: a 120 KB document of nested maps and lists, with ASCII and multi-byte strings, written through a sink matches `Codec.serialize` byte for byte, in more than one write, and no write is larger than 8,192 bytes. A test with a 20,000-character string written after an 8,000-character one covers draining followed by growth. The first test fails on the previous code (one write of the whole document) |
+| Module runs | `json-codec` (`mvn -o install`, with checkstyle and SpotBugs): 948 tests, 0 failures, 5 skipped. `http-client-protocol` 103 and `aws-json-client-protocol` 68 tests, `dynamodb` 65 tests, all 0 failures |
+| JMH cross-check (`SchemaMarshallBenchmark`, `AWS_JSON_1_0`, 3 × 2 s, 1 fork, `-prof gc`) | `LARGE`: 871,640 → 363,512 B/op (−508,128; the 16 K → 256 K growth chain is 507,984 bytes); 144.9 ± 14.8 → 137.0 ± 2.4 µs/op. `SMALL`: 10,416 → 10,360 B/op |
+| Other codecs | `CborSerializer` and `SmithyXmlSerializer` have the same grow-then-write-on-close buffer. Not changed: no prototype scenario measures them, and each needs its own check that nothing writes back into earlier positions |
+
+**Smoke A/B after the fix** (run `20261020-142028`, same settings: 2 repetitions × 300 operations, warm-up 200, v2-sync, `--metrics`, the same JVM options; the arms are the checkpoint 10 baseline and feature jars plus a harness jar built against `400f3fe99f2`).
+
+| Scenario | Body bytes | Baseline_Build B/op | Feature B/op | Feature + fix B/op | Fix vs feature | Fix vs baseline |
+|---|---:|---:|---:|---:|---:|---:|
+| batch-put-large | 104,740 | 358,910 | 433,978 | 188,018 | −245,960 | −170,892 (−47.6%) |
+| batch-put | 38,390 | 224,445 | 228,588 | 113,760 | −114,828 | −110,685 (−49.3%) |
+| small-put | 498 | 68,098 | 69,464 | 68,955 | −509 | +858 (+1.3%) |
+
+The batch-put-large and batch-put savings equal the removed growth chains (245,824 and 114,736 bytes). small-put's body never fills the 8 KB buffer, so the fix cannot change it. Its −509 B/op (pairs −187 and −831) is run-to-run and build variance: the fix jar's rebuilt modules were compiled incrementally and contain a few different synthetic classes. For batch-put-large, application CPU was 560.3 / 408.8 / 373.9 µs/op and `MarshallingDuration` 264.9 / 75.4 / 66.3 µs (baseline / feature / feature + fix). At two repetitions these CPU numbers are noise.
+
+**Still open.**
+
+| Item | Status |
+|---|---|
+| small-put stays above the Baseline_Build (+858 B/op in this run, +1,154 at checkpoint 10; null floor 106 B) | A profile of small-put (baseline 67,513, feature + fix 69,272 B/op) puts +5.6 KB/op in the request body buffers, almost all of it the serializer's per-call 8 KB buffer (8,208 B; the legacy Jackson generator's buffer does not appear per call in the baseline profile). About 3.9 KB/op saved elsewhere offsets part of it. Proposed, not implemented: start sink serializers at a smaller buffer (for example 1 KB, which with draining only adds `write` calls for large bodies), or take the buffer from a pool. It is a buffer-size trade-off that needs its own measurement |
+| `perf-report.md` | Not regenerated: this rerun covered 3 of the 5 scenarios, so the report's feature numbers predate `400f3fe99f2` |
+| Cold start (first call 1.82× slower on the feature build) | Not investigated (user decision) |
