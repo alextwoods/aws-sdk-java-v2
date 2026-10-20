@@ -137,6 +137,7 @@
         "test-utils-parent": { "skipImport": true },
         "client-mock-plugin": { "skipImport": true },
         "size-report": { "skipImport": true },
+        "schema-serde-source-compat": { "skipImport": true },
         "message-payloads": { "skipImport": true },
         "codegen-c2j-to-smithy": { "skipImport": true }
     },

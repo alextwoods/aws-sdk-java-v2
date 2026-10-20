@@ -102,6 +102,7 @@
         <module>test/architecture-tests</module>
         <module>test/s3-tests</module>
         <module>test/size-report</module>
+        <module>test/schema-serde-source-compat</module>
     </modules>
     <scm>
         <url>${scm.github.url}</url>
