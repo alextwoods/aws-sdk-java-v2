@@ -514,6 +514,70 @@ public class JsonSerializerTest extends ProviderTestBase {
     }
 
     @Test
+    public void createSerializer_withBodyLargerThanBuffer_writesFullBuffersToSinkWithoutGrowing() throws Exception {
+        // About 120 KB of compact JSON: nested maps and lists of short ASCII and multi-byte strings, none near 8 KB.
+        Map<String, Document> items = new LinkedHashMap<>();
+        for (int i = 0; i < 400; i++) {
+            Map<String, Document> item = new LinkedHashMap<>();
+            item.put("id", Document.of(i));
+            item.put("text", Document.of(repeat("abcdefghij", 20)));
+            item.put("unicode", Document.of(repeat("\u00e9\u4e2d", 10)));
+            item.put("tags", Document.of(listOf(Document.of("a"), Document.of(true), Document.of(1.5))));
+            items.put("item" + i, Document.of(item));
+        }
+        Document document = Document.of(items);
+        WriteRecordingStream output = new WriteRecordingStream();
+
+        try (JsonCodec codec = codec(SMITHY)) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                serializer.writeDocument(PreludeSchemas.DOCUMENT, document);
+            }
+            byte[] expected = toArray(codec.serialize(document));
+
+            assertThat(output.toByteArray()).isEqualTo(expected);
+            assertThat(expected.length).isGreaterThan(100_000);
+            assertThat(output.writes).isGreaterThan(1);
+            // The serializer's 8 KB buffer is drained when full rather than grown to the document size.
+            assertThat(output.largestWrite).isLessThanOrEqualTo(8192);
+        }
+    }
+
+    @Test
+    public void createSerializer_withValueLargerThanBuffer_drainsThenGrowsForThatValue() throws Exception {
+        String large = repeat("y", 20_000);
+        try (JsonCodec codec = codec(SMITHY); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                serializer.writeList(PreludeSchemas.DOCUMENT, large, 3, (value, s) -> {
+                    s.writeString(PreludeSchemas.STRING, repeat("z", 8000));
+                    s.writeString(PreludeSchemas.STRING, value);
+                    s.writeString(PreludeSchemas.STRING, "tail");
+                });
+            }
+            String expected = "[\"" + repeat("z", 8000) + "\",\"" + large + "\",\"tail\"]";
+            assertThat(new String(output.toByteArray(), StandardCharsets.UTF_8)).isEqualTo(expected);
+        }
+    }
+
+    private static byte[] toArray(ByteBuffer buffer) {
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.duplicate().get(bytes);
+        return bytes;
+    }
+
+    /** Records the number and largest length of the writes it receives. */
+    private static final class WriteRecordingStream extends ByteArrayOutputStream {
+        private int writes;
+        private int largestWrite;
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) {
+            writes++;
+            largestWrite = Math.max(largestWrite, len);
+            super.write(b, off, len);
+        }
+    }
+
+    @Test
     public void smithySerializerHandlesExactStringCapacityBoundary() throws Exception {
         String value = repeat("x", 8191);
         try (JsonCodec codec = codec(SMITHY); ByteArrayOutputStream output = new ByteArrayOutputStream()) {

@@ -45,6 +45,11 @@ import software.amazon.awssdk.schema.serde.document.Document;
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.json.smithy.SmithyJsonSerializer}. Documents are written by
  * type over the SDK {@link Document} accessors (see {@link #writeDocument}).
+ *
+ * <p>SDK deviation: with a sink, a full buffer is written to the sink before the buffer grows, so the buffer stays at
+ * its initial size unless a single value needs more. smithy-java grows the buffer to the whole document and writes it
+ * to the sink on {@link #close}, which allocates every intermediate buffer and then copies the document again into a
+ * sink that callers such as {@code HttpClientProtocol} have already sized for it.
  */
 @SdkInternalApi
 final class SmithyJsonSerializer implements ShapeSerializer {
@@ -385,7 +390,24 @@ final class SmithyJsonSerializer implements ShapeSerializer {
 
     // Separate cold grow method helps the JIT inline ensureCapacity's fast path
     private void grow(int needed) {
+        // With a sink, write out what is buffered and reuse the buffer; grow only if one value does not fit in it.
+        // Callers write at pos after this returns and never refer back to earlier positions, so draining is safe.
+        if (sink != null && pos > 0) {
+            drainToSink();
+            if (needed <= buf.length) {
+                return;
+            }
+        }
         buf = Arrays.copyOf(buf, Math.max(buf.length * 2, pos + needed));
+    }
+
+    private void drainToSink() {
+        try {
+            sink.write(buf, 0, pos);
+            pos = 0;
+        } catch (IOException e) {
+            throw new SerializationException(e);
+        }
     }
 
     /**
