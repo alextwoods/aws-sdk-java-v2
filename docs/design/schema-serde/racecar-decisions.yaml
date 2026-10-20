@@ -64,6 +64,7 @@
   component: "`Apache5HttpRequestFactory`"
   reason: "The new path's cached user agent is covered by H9; the Apache5 loop is an HTTP client micro-optimization"
   task: "9.24"
+  note: "candidate on branch opt/D1 (90d38512d28), measurement pending (user decision)"
 
 - id: "G1"
   optimization: "Straight-line sync pipeline"
