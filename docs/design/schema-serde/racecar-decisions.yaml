@@ -207,6 +207,7 @@
   component: "Ported JSON writer's string-escape loop (`SmithyJsonSerializer`)"
   reason: "−4…−7% in racecar; measure against the ported writer first. Task 7.1 ported smithy-java's `charAt` loop without its word copy"
   task: "9.21"
+  note: "candidate on branch opt/E6 (b5b8def9cdf), measurement pending (user decision)"
 
 - id: "E7"
   optimization: "Whitespace-skip fast path"
