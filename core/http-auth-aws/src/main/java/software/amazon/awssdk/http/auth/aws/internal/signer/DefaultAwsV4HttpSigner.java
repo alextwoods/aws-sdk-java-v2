@@ -59,6 +59,17 @@ public final class DefaultAwsV4HttpSigner implements AwsV4HttpSigner {
 
     @Override
     public SignedRequest sign(SignRequest<? extends AwsCredentialsIdentity> request) {
+        if (FastV4HeaderSigner.canSign(request)) {
+            return FastV4HeaderSigner.sign(request);
+        }
+        return signWithoutFastPath(request);
+    }
+
+    /**
+     * The composed checksummer, request-signer and payload-signer path, which handles every case. {@link #sign} uses
+     * {@link FastV4HeaderSigner} instead when it applies; tests call this method to compare the two.
+     */
+    SignedRequest signWithoutFastPath(SignRequest<? extends AwsCredentialsIdentity> request) {
         Checksummer checksummer = checksummer(request, null, checksumStore(request));
         V4Properties v4Properties = v4Properties(request);
         V4RequestSigner v4RequestSigner = v4RequestSigner(request, v4Properties);

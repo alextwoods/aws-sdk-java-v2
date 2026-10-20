@@ -42,7 +42,9 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
 @SdkInternalApi
 @Immutable
 public final class V4CanonicalRequest {
-    private static final List<String> HEADERS_TO_IGNORE_IN_LOWER_CASE =
+    // This list and the getCanonicalUri, getCanonicalQueryParams and addAndTrim helpers are package-private so that
+    // FastV4HeaderSigner canonicalizes exactly as this class does.
+    static final List<String> HEADERS_TO_IGNORE_IN_LOWER_CASE =
         Arrays.asList("connection", "x-amzn-trace-id", "user-agent", "expect", "transfer-encoding", "x-forwarded-for");
 
     private final SdkHttpRequest request;
@@ -243,7 +245,7 @@ public final class V4CanonicalRequest {
      * but does not create a Pattern object that needs to compile the match string; it also prevents us from having to make a
      * Matcher object as well.
      */
-    private static void addAndTrim(StringBuilder result, String value) {
+    static void addAndTrim(StringBuilder result, String value) {
         if (StringUtils.isEmpty(value)) {
             return;
         }
@@ -290,7 +292,7 @@ public final class V4CanonicalRequest {
      * <p>
      * If the path is empty, a single-forward slash ('/') is returned.
      */
-    private static String getCanonicalUri(SdkHttpRequest request, Options options) {
+    static String getCanonicalUri(SdkHttpRequest request, Options options) {
         String path = request.encodedPath();
         if (StringUtils.isEmpty(path) || "/".equals(path)) {
             return "/";
@@ -327,7 +329,7 @@ public final class V4CanonicalRequest {
     /**
      * Get the sorted map of query parameters that are to be signed.
      */
-    private static SortedMap<String, List<String>> getCanonicalQueryParams(SdkHttpRequest request) {
+    static SortedMap<String, List<String>> getCanonicalQueryParams(SdkHttpRequest request) {
         if (request.numRawQueryParameters() == 0) {
             return Collections.emptySortedMap();
         }
