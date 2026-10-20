@@ -264,7 +264,7 @@
   component: "`AuthSchemeResolutionCache` (rebuild auth-scheme properties only on a cache miss)"
   reason: "Micro-optimization; H7 caching covers the common case"
   task: "9.26"
-  note: "D.6 names `AuthSchemeResolver`; the per-client cache that H7 added (task 3.25) is where task 9.26 applies it"
+  note: "candidate on branch opt/E13 (d96199de214), measurement pending (user decision). D.6 names `AuthSchemeResolver`, and the candidate changes `AuthSchemeResolver.applyInterceptorModifiedProperties`, as racecar did: it runs on every call after endpoint resolution, not only on an `AuthSchemeResolutionCache` miss (task 9.26)"
 
 - id: "E14"
   optimization: "Unions read without a builder (`beginStruct`/`nextMember`, direct factories)"
