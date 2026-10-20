@@ -2304,7 +2304,7 @@ Route 53 returns the hosted zone and change IDs without their `/hostedzone/` and
 | Tests | `JsonSerializerTest`: a 120 KB document of nested maps and lists, with ASCII and multi-byte strings, written through a sink matches `Codec.serialize` byte for byte, in more than one write, and no write is larger than 8,192 bytes. A test with a 20,000-character string written after an 8,000-character one covers draining followed by growth. The first test fails on the previous code (one write of the whole document) |
 | Module runs | `json-codec` (`mvn -o install`, with checkstyle and SpotBugs): 948 tests, 0 failures, 5 skipped. `http-client-protocol` 103 and `aws-json-client-protocol` 68 tests, `dynamodb` 65 tests, all 0 failures |
 | JMH cross-check (`SchemaMarshallBenchmark`, `AWS_JSON_1_0`, 3 × 2 s, 1 fork, `-prof gc`) | `LARGE`: 871,640 → 363,512 B/op (−508,128; the 16 K → 256 K growth chain is 507,984 bytes); 144.9 ± 14.8 → 137.0 ± 2.4 µs/op. `SMALL`: 10,416 → 10,360 B/op |
-| Other codecs | `CborSerializer` and `SmithyXmlSerializer` have the same grow-then-write-on-close buffer. Not changed: no prototype scenario measures them, and each needs its own check that nothing writes back into earlier positions |
+| Other codecs | `CborSerializer` and `SmithyXmlSerializer` have the same grow-then-write-on-close buffer. Not changed: no prototype scenario measures them, and each needs its own check that nothing writes back into earlier positions. Changed in the follow-up below |
 
 **Smoke A/B after the fix** (run `20261020-142028`, same settings: 2 repetitions × 300 operations, warm-up 200, v2-sync, `--metrics`, the same JVM options; the arms are the checkpoint 10 baseline and feature jars plus a harness jar built against `400f3fe99f2`).
 
@@ -2320,6 +2320,83 @@ The batch-put-large and batch-put savings equal the removed growth chains (245,8
 
 | Item | Status |
 |---|---|
-| small-put stays above the Baseline_Build (+858 B/op in this run, +1,154 at checkpoint 10; null floor 106 B) | A profile of small-put (baseline 67,513, feature + fix 69,272 B/op) puts +5.6 KB/op in the request body buffers, almost all of it the serializer's per-call 8 KB buffer (8,208 B; the legacy Jackson generator's buffer does not appear per call in the baseline profile). About 3.9 KB/op saved elsewhere offsets part of it. Proposed, not implemented: start sink serializers at a smaller buffer (for example 1 KB, which with draining only adds `write` calls for large bodies), or take the buffer from a pool. It is a buffer-size trade-off that needs its own measurement |
-| `perf-report.md` | Not regenerated: this rerun covered 3 of the 5 scenarios, so the report's feature numbers predate `400f3fe99f2` |
+| small-put stays above the Baseline_Build (+858 B/op in this run, +1,154 at checkpoint 10; null floor 106 B) | A profile of small-put (baseline 67,513, feature + fix 69,272 B/op) puts +5.6 KB/op in the request body buffers, almost all of it the serializer's per-call 8 KB buffer (8,208 B; the legacy Jackson generator's buffer does not appear per call in the baseline profile). About 3.9 KB/op saved elsewhere offsets part of it. Resolved in the follow-up below (`24cd2b3ed74`: a 1 KB buffer for serializers with a sink) |
+| `perf-report.md` | Not regenerated: this rerun covered 3 of the 5 scenarios, so the report's feature numbers predate `400f3fe99f2`. Regenerated in the follow-up below |
 | Cold start (first call 1.82× slower on the feature build) | Not investigated (user decision) |
+
+### Follow-up: the sink buffer size, CBOR and XML
+
+**small-put: options for the initial buffer.** With draining, the buffer of a serializer that has a sink only sets how many `write` calls the sink receives, so its size is a per-call allocation with no other use. Options:
+
+| Option | Result |
+|---|---|
+| (a) A smaller fixed buffer for serializers with a sink (512 B, 1 KB, 2 KB) | Measured below. Chosen at 1 KB |
+| (b) Size the buffer from the sink: `ByteBufferOutputStream.array().length - size()`, the room `HttpClientProtocol` presized from the last body, clamped to 256 B…8 KB | Measured below (measurement build only). The same small-put allocation as 512 B, but large bodies keep the 8 KB buffer, and the serializer has to know the sink's type |
+| (c) Write directly into the presized body buffer's array | Not measured. `ByteBufferOutputStream` is `@SdkPublicApi` and has no way to commit bytes written into `array()`, so this needs a public API change |
+| (d) Pool serializers that have a sink, as `SmithyXmlSerializer` does | Not measured. Once (a) removes the 8 KB array, pooling could save at most the 1 KB buffer plus the serializer's own objects, about 1.2 KB. It needs a wrapper like `LazyXmlSerializer`, so that a write after `close()` cannot reach a serializer the pool has handed to another thread, and the wrapper adds a delegation step to every write |
+
+JMH `SchemaMarshallBenchmark` (`-prof gc`, 2 forks × 3 × 1 s). The variants ran from one measurement build of json-codec placed before `benchmarks.jar` on the class path, with a system property selecting the buffer; "8 KB control" is that build at 8 KB, the same code as HEAD.
+
+| Variant | AWS_JSON_1_0 SMALL B/op | µs/op | AWS_JSON_1_1 SMALL B/op | REST_JSON_1 SMALL B/op | AWS_JSON_1_0 LARGE B/op | µs/op | AWS_JSON_1_1 LARGE B/op | REST_JSON_1 LARGE B/op |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| HEAD (`53b2ee53299`, 8 KB) | 10,388 | 0.869 | 10,440 | 10,936 | 363,585 | 137.1 | 363,513 | 364,077 |
+| 8 KB control | 10,360 | 0.743 | 10,360 | 11,048 | 363,685 | 150.6 | 363,713 | 386,533 |
+| 512 B | 2,708 | 0.521 | 2,760 | 3,336 | 355,833 | 139.9 | 355,933 | 356,377 |
+| 1 KB | 3,220 | 0.708 | 3,204 | 3,880 | 367,645 ± 34,712 | 163.4 ± 105.7 | 356,517 | 368,129 ± 34,430 |
+| 2 KB | 4,216 | 0.652 | 4,216 | 4,904 | 357,541 | 156.7 | 357,541 | 380,393 |
+| Sized from the sink (b) | 2,680 | 0.423 | 2,732 | 3,368 | 363,685 | 149.1 | 363,657 | 375,313 ± 34,478 |
+
+SMALL falls by the buffer-size difference in every protocol. LARGE allocation falls by about 7 KB, the 8 KB buffer, for (a), and not for (b). REST_JSON_1 LARGE and the 1 KB LARGE row vary by about 22 KB between forks: the 8 KB control shows the same spread (364,077 vs 386,533) for code identical to HEAD, so the spread is run-to-run, not the buffer. The time columns are noise at these settings: the control is 10% slower than HEAD at LARGE for the same code.
+
+e2e: the harness jar built against `400f3fe99f2`, with its json-codec classes replaced by the measurement build and the variant chosen by system property, against the Baseline_Build jar; 3 interleaved repetitions × 2,000 operations, warm-up 1,000, v2-sync, `--metrics`. B/op are means over the 3 repetitions; application CPU and `MarshallingDuration` are means over repetitions 2 and 3, because repetition 1 was still compiling:
+
+| Arm | small-put B/op | small-put CPU µs | batch-put-large B/op | batch-put-large CPU µs | batch-put-large `MarshallingDuration` µs |
+|---|---:|---:|---:|---:|---:|
+| Baseline_Build | 67,404 | 52.6 | 358,655 | 437.3 | 209.0 |
+| HEAD (8 KB) | 69,089 | 45.5 | 187,785 | 345.3 | 63.5 |
+| 512 B | 61,341 | 46.3 | 180,123 | 341.1 | 61.9 |
+| 1 KB | 61,877 | 45.5 | 180,654 | 344.2 | 63.1 |
+| 2 KB | 62,685 | 45.0 | 181,825 | 347.4 | 63.2 |
+| Sized from the sink (b) | 61,259 | 45.4 | 187,745 | 347.1 | 64.0 |
+
+**Choice (`24cd2b3ed74`, `perf(json-codec)`).** A serializer created with a sink starts with a 1 KB buffer; the sink-less serializer that `Codec.serialize` pools keeps 8 KB. small-put goes from +1,685 to −5,527 B/op against the Baseline_Build in this run, and batch-put-large loses another 7.1 KB/op. No variant changed CPU or marshalling time measurably. 512 B and (b) save 536 and 618 B/op more on small-put. 1 KB was chosen because it is a fixed constant with no coupling to the sink's type; it drains half as often as 512 B on large bodies; and a non-ASCII string, whose reservation is 6 bytes per character, fits without growing the buffer up to about 170 characters instead of 85. The constant is private; the tests restate it.
+
+| Item | Result |
+|---|---|
+| Tests (`JsonSerializerTest`) | The large-document test now requires every write to be at most 1 KB, and fails on `53b2ee53299`. New: a `ByteBufferOutputStream` sink; a small document reaches the sink in one write on `close()`; and a boundary sweep. The sweep moves a pad string from 320 bytes before the end of the buffer to 2 bytes past it, one byte at a time, followed by a structure with string, int, boolean, double and timestamp members, a structure with every number type, a string, a blob and a tail. The string is ASCII, escaped (`"`), two-byte or a surrogate pair, at 0, 1, about 1/6 of the buffer (the 6-byte reservation boundary), the buffer size −3 to +1, and 2 × the buffer + 1 characters. Every case equals `Codec.serialize` byte for byte |
+| Module runs | `json-codec` 954 tests, 0 failures, 5 skipped (`mvn -o install`, checkstyle and SpotBugs) |
+
+**CBOR (`1ea51d0276c`, `perf(cbor-codec)`).** `CborSerializer` had the same buffer as the JSON serializer before `400f3fe99f2`: with a sink, a 4 KB buffer that doubled up to the whole document and was written to the sink on `close()`. `DefaultCborSerdeProvider.newSerializer` creates one per call, so the 4 KB is also a per-call allocation. Check for writes back to earlier positions: every write reserves its full size with `ensureCapacity` and then writes from `pos`. Lists and maps with a known size get a definite-length header written up front from that size; structures and lists or maps of unknown size are indefinite-length and end with a break byte, so no container header is backpatched. The one backpatch is a non-ASCII text string's length header (`encodeUtf8TextStringRewind`/`finishTextStringRewind`). It is rewritten inside that string's own `5 + 3 × length` reservation, with no capacity check between the reservation and the rewrite, so a drain never separates them. The drain-to-sink change is therefore safe for the whole buffer, and it is applied as in JSON, with a 1 KB initial buffer for serializers with a sink. The sink-less pooled path keeps 4 KB.
+
+| Variant (JMH, `RPCV2_CBOR`) | SMALL B/op | SMALL µs/op | LARGE B/op | LARGE µs/op |
+|---|---:|---:|---:|---:|
+| HEAD | 6,264 | 0.596 | 720,457 | 81.6 |
+| Drain, 4 KB | 6,264 | 0.589 | 204,265 | 76.7 |
+| Drain, 512 B | 2,680 | 0.421 | 200,777 | 101.7 ± 5.1 |
+| Drain, 1 KB (kept) | 3,192 | 0.402 | 201,193 | 78.2 |
+| Drain, 2 KB | 4,216 | 0.678 | 202,313 | 82.0 |
+
+The 512 B LARGE time was 30% above the other variants in this run. Not investigated, but it is a further reason to stay at 1 KB.
+
+**XML (`a2a15cc5486`, `perf(xml-codec)`).** `SmithyXmlSerializer` grew its buffer the same way. Check for writes back to earlier positions: every write appends at `pos`. A start tag is left open (`pendingClose`) while attributes are appended, then closed by appending `>`, and no element start offset is kept, so draining is safe and the change is applied unchanged. The initial size stays 4 KB: `LazyXmlSerializer` takes the serializer, buffer included, from a `StripedPool` and returns it on `close()`, so the buffer is not allocated per call. Before the change, a document over 16 KB also cost a new 4 KB buffer per call, because the pool drops buffers above 16 KB. JMH `REST_XML`: SMALL 4,660 → 4,664 B/op (unchanged), LARGE 1,840,682 → 796,050 B/op, 331.8 → 323.1 µs/op (noise).
+
+| Item | Result |
+|---|---|
+| Tests (`Rpcv2CborCodecTest`) | Large document through a sink equals `Codec.serialize`, in more than one write, none above 1 KB (fails on `53b2ee53299`); a value larger than the buffer after a near-full buffer (`ByteBufferOutputStream` sink); a small document in one write; and the boundary sweep with the `AllTypes` structure (every member type, including a non-ASCII string), pad from 400 bytes before the buffer end to 2 past it, strings ASCII, two-byte, three-byte or surrogate pair, at 0, 1, 23, 24 (CBOR header sizes), the `5 + 3 × length` reservation boundary ±1, the buffer size −1, 0 and +1, and twice the buffer size + 1 |
+| Tests (`XmlSerializerSinkBufferTest`, new) | `XmlCodec` has no sink-less path (`Codec.serialize` also writes through a sink), so the expected output is assembled member by member: each member serialized alone, which fits in the buffer, and the large pad and value strings as literal markup. Large document (4,000 list members, over 100 KB) in writes of at most 4 KB (fails on `53b2ee53299`); a 20 KB value after a near-full buffer; a small document in one write; and the boundary sweep with attributes, a structure of every number type, a blob, a list, a map with escaped keys and values and a namespaced structure, pad from 600 bytes before the buffer end to 2 past it, strings ASCII, escaped (`&`), two-byte, three-byte or surrogate pair |
+| Module runs | `cbor-codec` 226 and `xml-codec` 285 tests, 0 failures (`mvn -o install`). `http-client-protocol` 103, `rpcv2-cbor-client-protocol` 23, `aws-json-client-protocol` 68, `aws-query-client-protocol` 89, `rest-xml-client-protocol` 52 and `rest-json-client-protocol` 47 tests, 0 failures. `smithy-protocol-tests` 923 tests, 16 skipped: awsJson1_0 68/0/6, awsJson1_1 132/0/0, restJson1 264/0/7, restXml 200/0/1, awsQuery 81/0/0, ec2Query 67/0/0, rpcv2Cbor 74/0/2 (passed/failed/skipped, the same as task 7.21). `cloudwatch` 302 and `dynamodb` 65 tests, 0 failures |
+| Not changed | `QueryFormSerializer` (awsQuery, ec2Query) starts at 1 KB, grows by half, and hands its own array to the request body without a copy, so it has no second copy to remove |
+
+The xml-codec checkstyle run first failed on `NonJavaBaseModule` in files this change does not touch: the `build-tools` 1.0 jar in `~/.m2` had been replaced at 13:50 by a build without the xml-codec `java.xml` allowance (`3c07dd8d584`). Reinstalling `build-tools` from this branch fixed it.
+
+**Smoke A/B after the follow-up** (comparison `20261020-155725`, null experiment `20261020-160434` on the feature jar; 2 repetitions × 300 operations, warm-up 200, v2-sync, `--metrics`; both arms built by `paired-ab.sh` from `fc8b74e9fe21` and `a2a15cc5486` with the same harness). A first comparison (`20261020-154858`) used the checkpoint 10 Baseline_Build jar, whose harness was built from `b93a9b5e66c`; the harness sources are unchanged since then, but the script warns about the different harness commits, so the run was repeated. Its B/op agree with the repeat within 1.2%.
+
+| Scenario | Baseline_Build B/op | Feature B/op | Ratio | Null floor | 34.3 | Checkpoint 10 feature B/op | Baseline CPU µs | Feature CPU µs | Ratio | Null floor | 34.4 |
+|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---|
+| small-get | 74,442 | 67,251 | 0.903 | 1.1% | PASS | 74,538 | 58.2 | 57.8 | 0.993 | 1.9% | PASS, no measurable difference |
+| small-put | 67,821 | 61,902 | 0.913 | 1.5% | PASS | 69,521 | 59.3 | 57.0 | 0.961 | 5.2% | INCONCLUSIVE, floor > 5% |
+| batch-get | 547,750 | 466,938 | 0.852 | 0.2% | PASS | 474,090 | 206.9 | 156.2 | 0.755 | 3.3% | PASS |
+| batch-put | 224,353 | 106,788 | 0.476 | 0.1% | PASS | 228,657 | 286.7 | 170.4 | 0.594 | 2.8% | PASS |
+| batch-put-large | 358,909 | 180,958 | 0.504 | 0.3% | PASS | 433,899 | 454.6 | 358.6 | 0.789 | 0.9% | PASS |
+
+small-get also drops by about 7 KB, because GetItem's request body goes through the same serializer. batch-get's drop since checkpoint 10 (−7.2 KB) is the same buffer. For batch-put-large, `MarshallingDuration` is 209.6 µs on the baseline and 63.1 µs on the feature build. `perf-report.md` is regenerated from these runs with `--preliminary`, so its PRELIMINARY banner stays. Its cold-start rows are 3 new samples per arm: `build()` 0.885×, first call 1.536× (179.4 vs 116.8 ms). The cold start stays not investigated (user decision).
