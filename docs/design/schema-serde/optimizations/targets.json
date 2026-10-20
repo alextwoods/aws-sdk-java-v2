@@ -1,0 +1,65 @@
+{
+  "_comment": "Target scenarios and benchmarks per racecar id for scripts/schema-serde/optimization_experiment.sh (task 9.19). Lower is better for every metric. A candidate is kept only if every target metric that was measured improves by more than its null-experiment floor and no other measured metric (guard_metrics, every case) regresses by more than its floor. See README.md.",
+  "guard_metrics": {
+    "e2e": ["app_cpu_us_per_op", "alloc_bytes_per_op"],
+    "jmh": ["score", "gc.alloc.rate.norm"]
+  },
+  "targets": {
+    "F": {
+      "task": "9.20",
+      "e2e": [{"scenarios": ["small-get", "small-put"], "metrics": ["app_cpu_us_per_op"]}],
+      "jmh": {
+        "module": "sdk-benchmarks",
+        "include": "benchmark\\.signer\\.Sigv4SignerBenchmark",
+        "params": [],
+        "targets": [{"benchmark": "benchmark\\.signer\\.Sigv4SignerBenchmark\\.", "metrics": ["score"]}]
+      },
+      "note": "Sigv4SignerBenchmark calls the internal V4RequestSigner. If 9.20's fast path sits above it (in DefaultAwsV4HttpSigner), add a benchmark on the public signer and point include/targets at it."
+    },
+    "E6": {
+      "task": "9.21",
+      "e2e": [],
+      "jmh": {
+        "module": "sdk-standard-benchmarks",
+        "include": "benchmark\\.schema\\.SchemaMarshallBenchmark",
+        "params": ["protocol=AWS_JSON_1_0,AWS_JSON_1_1,REST_JSON_1"],
+        "targets": [{"benchmark": "benchmark\\.schema\\.SchemaMarshallBenchmark\\.", "metrics": ["score"]}]
+      },
+      "note": "Racecar measured -4 to -7% on its own writer; measured here against the ported JSON writer."
+    },
+    "E7": {
+      "task": "9.22",
+      "e2e": [],
+      "jmh": {
+        "module": "sdk-standard-benchmarks",
+        "include": "benchmark\\.schema\\.SchemaUnmarshallBenchmark",
+        "params": ["protocol=AWS_JSON_1_0,AWS_JSON_1_1,REST_JSON_1"],
+        "targets": [{"benchmark": "benchmark\\.schema\\.SchemaUnmarshallBenchmark\\.", "metrics": ["score"]}]
+      },
+      "note": "Racecar measured -3.4% on batch-get; measured here against the ported JSON reader."
+    },
+    "B1": {
+      "task": "9.23",
+      "e2e": [{"scenarios": ["small-get", "small-put"], "metrics": ["alloc_bytes_per_op"]}],
+      "jmh": null
+    },
+    "D1": {
+      "task": "9.24",
+      "e2e": [{"clients": ["v2-sync"], "scenarios": ["small-get", "small-put"], "metrics": ["app_cpu_us_per_op"]}],
+      "jmh": null,
+      "note": "Apache5 is the v2-sync client of the harness."
+    },
+    "E12": {
+      "task": "9.25",
+      "e2e": [{"clients": ["v2-async"], "scenarios": ["small-get", "small-put"], "metrics": ["alloc_bytes_per_op"]}],
+      "jmh": null,
+      "note": "CRT is the v2-async client of the harness."
+    },
+    "E13": {
+      "task": "9.26",
+      "e2e": [{"scenarios": ["small-get", "small-put"], "metrics": ["alloc_bytes_per_op"]}],
+      "jmh": null,
+      "note": "The rebuild happens on an AuthSchemeResolutionCache miss; if the warm cache hides it, the gain is within the floor and the row becomes Rejected."
+    }
+  }
+}
