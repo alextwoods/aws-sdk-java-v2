@@ -215,6 +215,7 @@
   component: "Ported JSON reader (`SmithyJsonDeserializer`)"
   reason: "−3.4% batch-get in racecar; measure against the ported reader first"
   task: "9.22"
+  note: "candidate on branch opt/E7 (49205e395d8), measurement pending (user decision)"
 
 - id: "E8"
   optimization: "Grouped string scan on read"

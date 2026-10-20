@@ -87,6 +87,7 @@ Notes:
 - **B2.b**: Observable difference that D.6 does not list: `RetryPolicyContext.request()` and the DEBUG `Sending Request:` entry now show the `amz-sdk-request` header (task 3.25).
 - **E4**: Interceptor-visible difference accepted in task 3.29: `afterUnmarshalling`, `modifyResponse` and `afterExecution` see the output with `sdkHttpResponse` set (Baseline_Build: null).
 - **E6**: candidate on branch opt/E6 (b5b8def9cdf), measurement pending (user decision).
+- **E7**: candidate on branch opt/E7 (49205e395d8), measurement pending (user decision).
 - **E11**: The owned-buffer marker is `OwnedResponseBody` in `core.client.protocol` (`@SdkProtectedApi`), not a transport-internal type, because the protocol modules read it (task 3.17).
 - **E13**: D.6 names `AuthSchemeResolver`; the per-client cache that H7 added (task 3.25) is where task 9.26 applies it.
 - **E14**: D.6 records E14 as Superseded by a union `ShapeBuilder` whose `InnerDeserializer` calls the direct `fromX` factory with no `EnumSet`. Task 3.7 generated the builder-based reader instead (golden file `codegen/src/test/resources/.../poet/model/schemaserde/choice.java`), so the optimization is not in the code.
