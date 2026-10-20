@@ -273,11 +273,16 @@
                     </archive>
                 </configuration>
             </plugin>
+            <!--
+              sdk-core holds the Legacy_Document (software.amazon.awssdk.core.document). Its baseline, the released
+              ${project.artifactId}:${awsjavasdk.previous.version} (2.49.6), must resolve (task 9.28, Requirement 16.7).
+            -->
             <plugin>
                 <groupId>com.github.siom79.japicmp</groupId>
                 <artifactId>japicmp-maven-plugin</artifactId>
                 <configuration>
                     <parameter>
+                        <ignoreMissingOldVersion>false</ignoreMissingOldVersion>
                         <excludes>
                             <exclude>software.amazon.awssdk.core.spi.identity.AuthSchemeOptionsResolver#resolve(software.amazon.awssdk.core.SdkRequest)</exclude>
                         </excludes>

@@ -48,6 +48,93 @@
                     </archive>
                 </configuration>
             </plugin>
+            <!--
+              API compatibility with the Baseline_Build (task 9.28, Requirement 16), as for CloudWatch (task 5.1).
+              The root pom's japicmp execution compares this module's jar with the released
+              ${project.artifactId}:${awsjavasdk.previous.version} (2.49.6). Its public and package-private API is
+              identical to the jar built from the merge base fc8b74e9fe21; see
+              docs/design/schema-serde/porting-deviations.md, section "API compatibility of the prototype services
+              (task 9.28)", which also lists each accepted change by fully qualified signature with its reason.
+              The baseline must resolve. Removed or changed public signatures fail the build and are named in its
+              output.
+              Of the root pom's overrides, METHOD_ADDED_TO_INTERFACE is dropped, so an abstract method declared on a
+              public client or builder interface fails the build (Requirement 16.3).
+              METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE is accepted here: japicmp 0.15.6 reports it for every
+              final model class that now implements SerializableStruct, because it does not count
+              SerializableStruct's default serialize() as implementing SerializableShape.serialize(). The
+              "interfaces" execution below checks the public interfaces without accepting it.
+            -->
+            <plugin>
+                <groupId>com.github.siom79.japicmp</groupId>
+                <artifactId>japicmp-maven-plugin</artifactId>
+                <configuration>
+                    <parameter>
+                        <includeModules combine.children="append">
+                            <includeModule>secretsmanager</includeModule>
+                        </includeModules>
+                        <!-- The 23 @SdkInternalApi <Operation>RequestMarshaller classes, no longer generated
+                             (Requirement 17.12); listed in porting-deviations.md (task 9.28). -->
+                        <excludes combine.children="append">
+                            <exclude>software.amazon.awssdk.services.secretsmanager.transform.*</exclude>
+                        </excludes>
+                        <ignoreMissingOldVersion>false</ignoreMissingOldVersion>
+                        <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
+                        <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+                        <overrideCompatibilityChangeParameters combine.self="override">
+                            <overrideCompatibilityChangeParameter>
+                                <compatibilityChange>METHOD_NEW_DEFAULT</compatibilityChange>
+                                <binaryCompatible>true</binaryCompatible>
+                                <sourceCompatible>true</sourceCompatible>
+                            </overrideCompatibilityChangeParameter>
+                            <overrideCompatibilityChangeParameter>
+                                <compatibilityChange>METHOD_ABSTRACT_NOW_DEFAULT</compatibilityChange>
+                                <binaryCompatible>true</binaryCompatible>
+                                <sourceCompatible>true</sourceCompatible>
+                            </overrideCompatibilityChangeParameter>
+                            <overrideCompatibilityChangeParameter>
+                                <compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
+                                <binaryCompatible>true</binaryCompatible>
+                                <sourceCompatible>true</sourceCompatible>
+                            </overrideCompatibilityChangeParameter>
+                        </overrideCompatibilityChangeParameters>
+                    </parameter>
+                </configuration>
+                <executions>
+                    <!--
+                      japicmp reports the same change for an interface that now extends an interface with abstract
+                      methods, which does break customer implementations. This second comparison covers the public
+                      client, builder and waiter interfaces without accepting it.
+                    -->
+                    <execution>
+                        <id>interfaces</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>cmp</goal>
+                        </goals>
+                        <configuration>
+                            <parameter>
+                                <includes>
+                                    <include>software.amazon.awssdk.services.secretsmanager.*Client</include>
+                                    <include>software.amazon.awssdk.services.secretsmanager.*Builder</include>
+                                    <include>software.amazon.awssdk.services.secretsmanager.*Waiter</include>
+                                </includes>
+                                <overrideCompatibilityChangeParameters combine.self="override">
+                                    <overrideCompatibilityChangeParameter>
+                                        <compatibilityChange>METHOD_NEW_DEFAULT</compatibilityChange>
+                                        <binaryCompatible>true</binaryCompatible>
+                                        <sourceCompatible>true</sourceCompatible>
+                                    </overrideCompatibilityChangeParameter>
+                                    <overrideCompatibilityChangeParameter>
+                                        <compatibilityChange>METHOD_ABSTRACT_NOW_DEFAULT</compatibilityChange>
+                                        <binaryCompatible>true</binaryCompatible>
+                                        <sourceCompatible>true</sourceCompatible>
+                                    </overrideCompatibilityChangeParameter>
+                                </overrideCompatibilityChangeParameters>
+                            </parameter>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
