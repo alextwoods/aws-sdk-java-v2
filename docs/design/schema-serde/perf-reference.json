@@ -1,0 +1,86 @@
+{
+ "schema_version": 1,
+ "description": "Recorded reference numbers for the perf report (task 9.18; Requirements 34.5, 37.9, 37.10; design D.6). Copied, not measured on this branch. app_cpu_us_per_op is application CPU µs/op with the paired spread % and repetition count from timing-tables.txt; alloc_bytes_per_op is client-JVM B/op from results.md section 4.3, which gives no spread or repetition count. All rows are v2-sync (the bridged build was sync only).",
+ "source": {
+  "branch": "feature/poc/racecar",
+  "file": "pipeline_benchmark3/results.md",
+  "data_file": "pipeline_benchmark3/data/timing-tables.txt",
+  "commit": "7cf5006daad16a03a2622c6629066a68e1ca6b89",
+  "branch_tip_when_copied": "dc26e4aee93",
+  "date": "2026-09-12",
+  "host": "EC2 c6g.metal (Graviton2 Neoverse-N1, 64 cores, Amazon Linux 2023)",
+  "jdk": "JDK 25.0.4",
+  "repetitions": "5 for small-get/small-put, 3 for batch-get/batch-put/describe-table",
+  "arms": {
+   "baseline": "v2-sync stock 2.54.0",
+   "racecar": "v2-sync OPTIMIZED (racecar before H11; design D.6 gives about 67 µs for small-get after H11)",
+   "bridged": "v2-bridged (smithy-java bridge, branch smithy-java-bridge-alexwoo-full)",
+   "smithy-java": "smithy-java 1.5.1"
+  }
+ },
+ "scenarios": {
+  "small-get": {
+   "app_cpu_us_per_op": {
+    "baseline": {"mean": 151.5, "spread_pct": 6.5, "n": 5},
+    "racecar": {"mean": 105.7, "spread_pct": 2.7, "n": 5},
+    "bridged": {"mean": 74.3, "spread_pct": 1.5, "n": 5},
+    "smithy-java": {"mean": 50.9, "spread_pct": 4.5, "n": 5}
+   },
+   "alloc_bytes_per_op": {
+    "baseline": {"mean": 63353},
+    "racecar": {"mean": 32709},
+    "bridged": {"mean": 49669},
+    "smithy-java": {"mean": 10689}
+   }
+  },
+  "small-put": {
+   "app_cpu_us_per_op": {
+    "baseline": {"mean": 146.0, "spread_pct": 4.7, "n": 5},
+    "racecar": {"mean": 102.0, "spread_pct": 1.9, "n": 5},
+    "bridged": {"mean": 68.3, "spread_pct": 6.3, "n": 5},
+    "smithy-java": {"mean": 47.6, "spread_pct": 6.3, "n": 5}
+   },
+   "alloc_bytes_per_op": {
+    "baseline": {"mean": 57573},
+    "racecar": {"mean": 27833},
+    "bridged": {"mean": 42735},
+    "smithy-java": {"mean": 7504}
+   }
+  },
+  "batch-get": {
+   "app_cpu_us_per_op": {
+    "baseline": {"mean": 670.3, "spread_pct": 1.9, "n": 3},
+    "racecar": {"mean": 335.0, "spread_pct": 2.1, "n": 3},
+    "bridged": {"mean": 481.0, "spread_pct": 1.1, "n": 3},
+    "smithy-java": {"mean": 345.5, "spread_pct": 0.4, "n": 3}
+   },
+   "alloc_bytes_per_op": {
+    "baseline": {"mean": 546219},
+    "racecar": {"mean": 295156},
+    "bridged": {"mean": 516752},
+    "smithy-java": {"mean": 224342}
+   }
+  },
+  "batch-put": {
+   "app_cpu_us_per_op": {
+    "baseline": {"mean": 817.6, "spread_pct": 4.1, "n": 3},
+    "racecar": {"mean": 290.2, "spread_pct": 0.9, "n": 3},
+    "bridged": {"mean": 431.5, "spread_pct": 0.8, "n": 3},
+    "smithy-java": {"mean": 303.6, "spread_pct": 1.8, "n": 3}
+   },
+   "alloc_bytes_per_op": {
+    "baseline": {"mean": 213471},
+    "racecar": {"mean": 71180},
+    "bridged": {"mean": 158978},
+    "smithy-java": {"mean": 124483}
+   }
+  },
+  "describe-table": {
+   "app_cpu_us_per_op": {
+    "baseline": {"mean": 191.5, "spread_pct": 3.4, "n": 3},
+    "racecar": {"mean": 133.0, "spread_pct": 5.2, "n": 3},
+    "bridged": {"mean": 102.8, "spread_pct": 3.4, "n": 3}
+   }
+  }
+ }
+}

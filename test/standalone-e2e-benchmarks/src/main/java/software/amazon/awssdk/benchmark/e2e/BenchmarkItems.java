@@ -168,8 +168,9 @@ public final class BenchmarkItems {
     }
 
     /**
-     * LARGE: a {@link #mediumItem} plus 12 200-character text attributes (~4.2 KB wire JSON; the 25-row batch body measured 104,740 bytes), so that
-     * {@link #BATCH_SIZE} of them make a BatchWriteItem request body of at least 100 KB (Requirement 34.2: marshalling
+     * LARGE: a {@link #mediumItem} plus 12 200-character text attributes (~4.2 KB wire JSON), so that
+     * {@link #BATCH_SIZE} of them make a BatchWriteItem request body of at least 100 KB (measured: 104,740 bytes).
+     * Requirement 34.2: marshalling
      * is reported separately from SigV4 payload hashing for request bodies of 100 KB or more). Added on this branch;
      * racecar's scenarios are unchanged.
      */

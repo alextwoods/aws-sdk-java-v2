@@ -1977,3 +1977,58 @@ Defaults: 7 repetitions, 50,000 measured and 10,000 warmup operations, both clie
 - `benchmark.sh --client v2-sync --scenario small-get --iterations 300` on the feature SDK: server `READY`, `pipeline detected: SYNC SCHEMA`, `alloc_bytes_per_op=72044`. `v2-async` `batch-get,describe-table`: `pipeline detected: ASYNC SCHEMA`.
 - `paired-ab.sh --null feature=<prebuilt jar> --reps 2 --iterations 300 --clients v2-sync --scenarios small-get,batch-put`: 8 interleaved runs, all ok, `paired-ab.json` and `summary.md` written, both arms `schema`, B/op ratios 0.994 and 1.001.
 - `paired-ab.sh --null feature=HEAD --reps 1 --iterations 300 --clients v2-sync --scenarios small-get` (the ref path): worktree created at `6e613352852`, SDK built `-P quick -am` (63 modules, about 2 minutes on a warm shared repository), harness built against it with the harness and SDK commits stamped, 2 runs ok, both arms `schema`, small-get about 64 KB/op.
+
+## E2E benchmarks and the performance report tooling (task 9.18)
+
+Tooling and correctness tests only. Per the user's decision for 9.17–9.26, the runs below are short smoke runs; the full measurements are deferred to a later run on a quiet host, and `perf-report.md` is marked **PRELIMINARY — smoke data, not measurements**.
+
+| Task text or design | This task | Reason |
+|---|---|---|
+| DynamoDB `small-get`/`small-put`/`batch-get`/`batch-put` paired A/B, `MARSHALLING_DURATION` reported separately for ≥ 100 KB batch bodies (34.2) | The four scenarios run on the 9.17 harness unchanged. The 25 × ~2 KB batches are about 50 KB, so a new `batch-put-large` scenario (25 × `BenchmarkItems.largeItem`, a medium item plus 12 × 200-character strings; measured request body 104,740 bytes) carries the ≥ 100 KB case. It is not in `all` | Racecar's scenarios keep their meaning and stay comparable with the recorded numbers |
+| Marshalling apart from SigV4 payload hashing | With `--metrics`, new `marshalling_us` (mean `MarshallingDuration`), `signing_us` (mean `SigningDuration`, which contains the payload SHA-256) and `request_body_bytes` (largest request body, from `Content-Length` or the body's length, via `MetricsSupport.RequestSizeInterceptor`) RESULT/CSV columns. `-1`/empty without `--metrics` | The publisher and interceptor change what is measured, so timing and B/op come from runs without `--metrics` and the split from a separate `--metrics` run |
+| `ClientColdStartBenchmark` in `test/standalone-e2e-benchmarks` (D.3), ≥ 10 fresh-JVM samples (34.7) | `ClientColdStartBenchmark` main class in the harness jar: configures the builder, times only `build()`, then only the first GetItem against `MockDdbServer`; `PipelineCheck` runs after both so its probe client cannot warm them. `benchmark.sh --main ClientColdStartBenchmark --repeat N` starts one server and N client JVMs. Output: a `COLDSTART` line and a CSV row (`build_ms`, `first_call_ms`, `jvm_uptime_at_main_ms`, `pipeline`, commits) | Lives where D.3 puts it and is built against each arm's SDK like the rest of the harness |
+| 34.7 "each Prototype_Service_Set service" | DynamoDB only | The harness's stub is a DynamoDB server; the other services need their own stub responses. Gap left for a later task |
+| `paired_ab_summary.py` writes `perf-report.md` (34.5, 37.10) | New `report` command: `report RUN_JSON --null NULL_JSON --reference perf-reference.json --notes perf-notes.json --out perf-report.md [--roles baseline=L,racecar=L,feature=L] [--cold-start LABEL=CSV ...] [--metrics-run METRICS_JSON] [--preliminary] [--strict]`. Roles default to first arm = baseline, last arm = feature, an arm labelled `racecar` = racecar | |
+| Pass/fail: time ≤ 1.05×, B/op ≤ baseline + floor, B/op ≤ racecar final | Time is `app_cpu_us_per_op`, memory `alloc_bytes_per_op`; ratios are arm means over all repetitions (34.3/34.4 say "mean across all repetitions"). Time: ratio > 1.05 is `FAIL: regression` even when the floor is wider (34.10's "exceeds the threshold"); otherwise a floor > 5% is `INCONCLUSIVE` (34.11); a difference within the floor is `PASS: no measurable difference`. B/op: floor in bytes = floor % × baseline mean. Racecar (37.9): strict `≤`, against the racecar arm measured in the same run (`NOT RUN` without one); recorded racecar numbers are context only, because they come from another host and JDK. No floor means `NO FLOOR`, never a pass | 34.10 and 34.11 overlap when the floor is above 5% and the ratio above 1.05; the stricter reading is used |
+| Smithy-java and the D.6 bridged column | Recorded numbers only, in `perf-reference.json`, because `paired-ab.sh` builds V2 refs and the bridged build lives on another branch. "Vs bridged" scales the feature mean by recorded baseline / measured baseline before comparing, so a different host or JDK cancels out to first order. Each difference above 5% needs a note keyed `scenario/metric` in `perf-notes.json` (seeded from the D.6 table); a missing note is shown as **MISSING NOTE** and raised as a warning (`--strict` exits 1) | |
+| `RuntimeCodegenMode` deferral (OD-6) in the report template | A fixed section of every generated report (34.8: decision **defer**, and why the Java 8 measurements could not be taken) | |
+| `hot_path_check.sh` runs async-profiler on the 34.1 benchmarks | `scripts/schema-serde/hot_path_check.sh` runs `SchemaMarshallBenchmark`/`SchemaUnmarshallBenchmark` (override with `--bench`) under JMH `-prof async` with collapsed output, once with `event=cpu` and once with `event=alloc`. JMH profiles measurement iterations only, so warm-up is excluded. The matcher is `scripts/schema-serde/hot_path_frames.py` (stdlib). It looks only above the `_jmhStub` frame (JMH calls the stub through `Method.invoke`), and fails on `java.lang.reflect`/`jdk.internal.reflect` frames, `ShapeId.hashCode`/`equals` under a `HashMap`/`ConcurrentHashMap` lookup, and `ClassValue` or `Class.hashCode`/`Object.hashCode`/`System.identityHashCode` under a map lookup. A `$$Lambda` allocation is a warning only (D.3's per-member lambda rule; the task names reflect and keyed lookups as the failures). Library from `ASYNC_PROFILER_HOME`, then Homebrew, `/usr/local/opt`, `/opt/async-profiler` | Identity hashes are intrinsics, so a Class-keyed `HashMap.get` may leave no hash frame; the 0 B/op assertions of the 9.16 trait/extension benchmarks cover those paths as well |
+
+**Reference provenance.** `perf-reference.json` copies `pipeline_benchmark3/results.md` from `feature/poc/racecar` (last changed in `7cf5006daad16a03a2622c6629066a68e1ca6b89`; branch tip `dc26e4aee93`), run 2026-09-12 on EC2 c6g.metal with JDK 25.0.4: application CPU µs/op with paired spread and repetitions (5 for small, 3 for batch and describe-table) from `pipeline_benchmark3/data/timing-tables.txt`, and B/op from results.md §4.3 (no spread or repetition count given). Arms: stock 2.54.0 v2-sync, racecar optimized v2-sync (before H11; D.6 gives about 67 µs for small-get after it), the smithy-java bridge, smithy-java 1.5.1.
+
+**Tests.** `paired_ab_summary.py --self-test`: 9 (5 from 9.17, 4 new: the time verdict incl. threshold, floor and inconclusive; the B/op and racecar verdicts; the bridged normalization; the report's missing-note warning, preliminary banner and OD-6 section). `hot_path_frames.py --self-test`: 6 (reflection below the stub ignored, reflection above it flagged, ShapeId under `HashMap.get` flagged but not outside a lookup, `ClassValue` and identity-hash lookups flagged, non-benchmark threads ignored, lambda allocation a warning).
+
+**Smoke runs (not measurements; Apple M4 Pro laptop, unpinned, JDK 21.0.2, JIT still compiling):**
+- `benchmark.sh --client v2-sync --scenario small-get,batch-put-large --iterations 200 --metrics`: `pipeline=schema`; small-get `marshalling_us=18.7 signing_us=81.6 request_body_bytes=66`; batch-put-large `marshalling_us=147.3 signing_us=92.9 request_body_bytes=104740`.
+- `benchmark.sh --main ClientColdStartBenchmark --repeat 3 --client v2-sync`: `build_ms` 207.0/206.8/209.0, `first_call_ms` 158.1/143.0/139.6, `pipeline=schema`.
+- `paired-ab.sh --null feature=<prebuilt jar> --reps 2 --iterations 300 --warmup 200 --clients v2-sync --scenarios small-get,small-put,batch-get,batch-put,batch-put-large --metrics`: 20 runs ok. `perf-report.md` was generated from it with `--roles baseline=feature-a,feature=feature-b --preliminary` and the 3 cold-start samples; its warnings are the same-build roles, two inconclusive floors (13.4%, 28.9%) and fewer than 10 cold-start samples.
+- `hot_path_check.sh --bench 'benchmark\.schema\.SchemaMarshallBenchmark' -- -wi 2 -i 2 -f 1 -w 1s -r 2s -p protocol=AWS_JSON_1_0 -p payload=LARGE` (benchmarks.jar built from a `/tmp` copy of the module): cpu, 403 samples, 201 of 204 stacks under the JMH stub, no violations; alloc, no violations, one lambda-allocation warning (`LowCopyListMap$ForBuildable` allocating a `$$Lambda` in its constructor, in the SDK HTTP request builder, not in the serde). PASS.
+
+**Full run later** (quiet host, pinned cores, D.3's JVM options are `paired-ab.sh`'s defaults):
+```
+# 1. null experiment on the feature build, with the >= 100 KB scenario
+scripts/schema-serde/paired-ab.sh --null feature=HEAD --pin-client 0-15 --pin-server 16-31 \
+    --scenarios small-get,small-put,describe-table,batch-get,batch-put,batch-put-large
+# 2. Baseline_Build vs racecar vs feature (timing and B/op, no metric publisher)
+scripts/schema-serde/paired-ab.sh --arm baseline=fc8b74e9fe21 --arm racecar=feature/poc/racecar --arm feature=HEAD \
+    --pin-client 0-15 --pin-server 16-31 \
+    --scenarios small-get,small-put,describe-table,batch-get,batch-put,batch-put-large
+# 3. marshalling vs signing split (34.2), a separate --metrics run
+scripts/schema-serde/paired-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=HEAD --metrics --reps 3 \
+    --clients v2-sync --scenarios batch-put-large --pin-client 0-15 --pin-server 16-31
+# 4. cold start, >= 10 fresh JVMs per arm, from each arm's harness jar (built by step 2 under <out>/jars/)
+for arm in baseline feature; do
+  test/standalone-e2e-benchmarks/scripts/benchmark.sh --jar ~/.cache/aws-sdk-java-v2/paired-ab/jars/$arm.jar \
+      --main ClientColdStartBenchmark \
+      --repeat 10 --client v2-sync --append-to-results-file /tmp/cold-$arm.csv
+done
+# 5. the report (drop --preliminary); --strict fails on any failed or undecidable criterion or missing note
+python3 scripts/schema-serde/paired_ab_summary.py report <run2>/paired-ab.json --null <run1>/paired-ab.json \
+    --reference docs/design/schema-serde/perf-reference.json --notes docs/design/schema-serde/perf-notes.json \
+    --metrics-run <run3>/paired-ab.json \
+    --cold-start baseline=/tmp/cold-baseline.csv --cold-start feature=/tmp/cold-feature.csv \
+    --out docs/design/schema-serde/perf-report.md
+# 6. hot-path check on the 34.1 benchmarks at the class defaults
+mvn -o install -pl :sdk-standard-benchmarks -P quick && scripts/schema-serde/hot_path_check.sh
+```
+`--metrics-run` takes the marshalling/signing split from step 3 instead of the timing run.

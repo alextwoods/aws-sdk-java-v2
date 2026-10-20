@@ -1,0 +1,15 @@
+{
+ "schema_version": 1,
+ "description": "Expected cause of each difference above 5% between the feature build and the recorded bridged build (Requirement 37.10), keyed scenario/metric. Taken from design D.6's comparison table; the report flags any >5% difference without a note here. Revise each note once the full run confirms or contradicts it.",
+ "notes": {
+  "small-get/app_cpu_us_per_op": "Expected near or below the bridge once the H11-style pipeline cache applies (racecar measured about 67 µs). The remaining gap to smithy-java is the HTTP client (37 of 67 µs) and signing (D.6).",
+  "small-put/app_cpu_us_per_op": "Same as small-get (D.6).",
+  "describe-table/app_cpu_us_per_op": "The bridge skips the V2 framework; the schema deserializer should be comparable (D.6).",
+  "batch-get/app_cpu_us_per_op": "Expected below the bridge: the bridge converts SdkPojo to smithy-java shapes and back, while the schema path deserializes straight into the POJOs (D.6).",
+  "batch-put/app_cpu_us_per_op": "Same as batch-get, plus racecar E1 request-buffer sizing (D.6).",
+  "small-get/alloc_bytes_per_op": "Expected below the bridge, which allocates adapter objects. smithy-java's lower number reflects its own HTTP client (D.6).",
+  "small-put/alloc_bytes_per_op": "Same as small-get (D.6).",
+  "batch-get/alloc_bytes_per_op": "Expected below the bridge, whose conversion copies every item (D.6).",
+  "batch-put/alloc_bytes_per_op": "Expected below the bridge: no conversion copies, and E1 buffer sizing is kept (D.6)."
+ }
+}
