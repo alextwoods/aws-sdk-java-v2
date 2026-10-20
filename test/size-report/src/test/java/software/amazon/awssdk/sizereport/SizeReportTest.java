@@ -38,6 +38,9 @@ import java.util.zip.ZipEntry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SizeReportTest {
     private static final String JAVA_VERSION = "21.0.2";
@@ -109,10 +112,30 @@ class SizeReportTest {
             .contains("| `model.FooOperations` | Feature build | Client classes | Type_Registries | 1 method, "
                       + "1 static field (`ERROR_REGISTRY`), 1 `<clinit>` segment")
             .contains("| `test.svc.transform` | 1 |")
-            .contains("| `schema` | added | 0 |")
+            .contains("### Change by category, all services (Requirement 36.2)")
+            .contains("| Category | Foo | All services |")
+            .contains("### Model-version differences")
+            .contains("### Schema-serde modules")
+            .contains("| `schema` | Runtime_Schema_Module | added | 0 |")
             .contains("| `sdk-core` | changed |")
             .contains("| `protocol-core` | no longer a dependency |")
-            .contains("Unchanged (same content in both builds): `utils`.");
+            .contains("Unchanged (same content in both builds): `utils`.")
+            .contains("## Size-reduction opportunities (Requirement 36.5)")
+            .contains("| | JAR change today (Summary) | |")
+            .contains("| | Requirement 36.3 with all opportunities | |");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"schema,Runtime_Schema_Module", "codec-commons,Codec", "json-codec,Codec", "http-binding,HTTP binding",
+                "aws-json-client-protocol,Client protocol"})
+    void moduleKind_schemaSerdeModule_namesItsKind(String artifactId, String kind) {
+        assertThat(SizeReportWriter.moduleKind(artifactId)).isEqualTo(kind);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"sdk-core", "aws-json-protocol", "protocol-core", "json-utils"})
+    void moduleKind_otherModule_isNull(String artifactId) {
+        assertThat(SizeReportWriter.moduleKind(artifactId)).isNull();
     }
 
     @Test

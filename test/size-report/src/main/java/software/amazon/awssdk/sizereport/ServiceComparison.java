@@ -111,15 +111,8 @@ final class ServiceComparison {
      * change first.
      */
     List<ClassGroupChange> largestChanges(int limit) {
-        Map<String, ClassGroupChange> groups = new TreeMap<>();
-        for (ClassAttribution attribution : baseline.classes()) {
-            groups.computeIfAbsent(outerClass(attribution.className()), ClassGroupChange::new).addBaseline(attribution);
-        }
-        for (ClassAttribution attribution : feature.classes()) {
-            groups.computeIfAbsent(outerClass(attribution.className()), ClassGroupChange::new).addFeature(attribution);
-        }
         List<ClassGroupChange> result = new ArrayList<>();
-        for (ClassGroupChange group : groups.values()) {
+        for (ClassGroupChange group : groups().values()) {
             if (group.change() != 0) {
                 result.add(group);
             }
@@ -127,6 +120,49 @@ final class ServiceComparison {
         result.sort(Comparator.comparingLong((ClassGroupChange g) -> -Math.abs(g.change()))
                               .thenComparing(ClassGroupChange::name));
         return result.size() > limit ? result.subList(0, limit) : result;
+    }
+
+    /**
+     * The top-level classes (each with its nested classes) that exist in only one build and are not code this design
+     * adds or removes: neither marshallers or unmarshallers (category), Schemas or Type_Registries (category), nor
+     * {@code <Prefix>Operations} or {@code <Prefix>SharedSerde}. They come from a different model version of the
+     * service, so their bytes are not a cost or saving of the design. Sorted by name.
+     */
+    List<ClassGroupChange> modelVersionDifferences() {
+        List<String> names = new ArrayList<>();
+        for (ClassAttribution attribution : feature.classes()) {
+            names.add(attribution.className());
+        }
+        ClassAttributor attributor = ClassAttributor.forClasses(names);
+        List<ClassGroupChange> result = new ArrayList<>();
+        for (ClassGroupChange group : groups().values()) {
+            if (group.baselineClasses() != 0 && group.featureClasses() != 0) {
+                continue;
+            }
+            SizeCategory category = group.category();
+            if (category == SizeCategory.MARSHALLER || category == SizeCategory.SCHEMAS
+                || category == SizeCategory.TYPE_REGISTRY) {
+                continue;
+            }
+            ClassAttributor.Location location = attributor.locate(group.name());
+            if (location != null && (location.outer().equals(location.prefix() + "Operations")
+                                     || location.outer().equals(location.prefix() + "SharedSerde"))) {
+                continue;
+            }
+            result.add(group);
+        }
+        return result;
+    }
+
+    private Map<String, ClassGroupChange> groups() {
+        Map<String, ClassGroupChange> groups = new TreeMap<>();
+        for (ClassAttribution attribution : baseline.classes()) {
+            groups.computeIfAbsent(outerClass(attribution.className()), ClassGroupChange::new).addBaseline(attribution);
+        }
+        for (ClassAttribution attribution : feature.classes()) {
+            groups.computeIfAbsent(outerClass(attribution.className()), ClassGroupChange::new).addFeature(attribution);
+        }
+        return groups;
     }
 
     private static String outerClass(String internalName) {

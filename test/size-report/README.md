@@ -13,7 +13,7 @@ flags and compiler options as the feature build (Requirement 36.7). The released
 built by the release pipeline with JDK 17.
 
 ```bash
-scripts/schema-serde/build-size-baseline.sh            # --modules cloudwatch by default
+scripts/schema-serde/build-size-baseline.sh            # all seven prototype services by default
 ```
 
 The script checks the commit out into a worktree under `$TMPDIR`, runs
@@ -39,10 +39,19 @@ mvn clean install -pl :size-report -Dsize-report.update=true  # rewrites size-re
 or if the class files of the two builds show different compiler options. Any change to a reported service's
 generated code changes the report, so regenerate and commit `size-report.md` with such changes.
 
-## Adding services (task 9.27)
+## Adding services
+
+The report covers the seven Prototype_Service_Set services (`size-report.services` in `pom.xml`). To add one:
 
 1. Add the service as a `test`-scoped dependency in `pom.xml` and to `size-report.services`
-   (`artifactId=Display name`, comma-separated, report order).
+   (`artifactId=Display name`, comma-separated, report order; the display name is the one
+   `disabled-customizations.md` uses).
 2. Rebuild the baseline with every reported service: `scripts/schema-serde/build-size-baseline.sh --modules
-   cloudwatch,sqs,...`.
+   <all reported services>`.
 3. Regenerate the report.
+
+## Size-reduction opportunities
+
+`ReductionOpportunity` lists the further reductions of Requirement 36.5. Each one selects the feature build code it
+would remove (whole classes, or members of `model` classes), and the report measures that code in every service JAR.
+Add an opportunity there, not in `size-report.md`.

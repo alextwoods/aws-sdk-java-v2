@@ -114,6 +114,7 @@ public final class SizeReport {
         }
 
         List<ServiceComparison> comparisons = new ArrayList<>();
+        Map<String, Map<ReductionOpportunity, ReductionOpportunity.Measurement>> opportunities = new LinkedHashMap<>();
         List<byte[]> baselineClasses = new ArrayList<>();
         List<byte[]> featureClasses = new ArrayList<>();
         for (Map.Entry<String, String> service : services.entrySet()) {
@@ -128,8 +129,10 @@ public final class SizeReport {
             }
             baselineClasses.addAll(baseline.classes().values());
             featureClasses.addAll(feature.classes().values());
+            ServiceSizes featureSizes = ServiceSizes.measure(feature);
             comparisons.add(new ServiceComparison(service.getKey(), service.getValue(), ServiceSizes.measure(baseline),
-                                                  ServiceSizes.measure(feature)));
+                                                  featureSizes));
+            opportunities.put(service.getKey(), ReductionOpportunity.measureAll(feature, featureSizes));
         }
         ClassFileFingerprint baselineFingerprint = ClassFileFingerprint.of(baselineClasses);
         ClassFileFingerprint featureFingerprint = ClassFileFingerprint.of(featureClasses);
@@ -147,7 +150,7 @@ public final class SizeReport {
         }
 
         return new SizeReportWriter(buildInfo, featureJavaVersion, featureJavaVendor, baselineFingerprint,
-                                    featureFingerprint, disabled, comparisons, modules).render();
+                                    featureFingerprint, disabled, comparisons, modules, opportunities).render();
     }
 
     private Properties loadBuildInfo() throws IOException {

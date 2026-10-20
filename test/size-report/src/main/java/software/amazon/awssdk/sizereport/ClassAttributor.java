@@ -161,6 +161,14 @@ final class ClassAttributor {
      * The category of a class by name (rules 1-6 of the class documentation).
      */
     public SizeCategory category(String className) {
+        Location location = locate(className);
+        return location == null ? SizeCategory.OTHER : category(location.prefix(), location.sub(), location.outer());
+    }
+
+    /**
+     * Where a class sits relative to its service package, or {@code null} if it is outside every service package.
+     */
+    Location locate(String className) {
         int slash = className.lastIndexOf('/');
         String pkg = slash < 0 ? "" : className.substring(0, slash);
         String simple = className.substring(slash + 1);
@@ -172,13 +180,50 @@ final class ClassAttributor {
             if (!pkg.equals(servicePackage) && !pkg.startsWith(servicePackage + "/")) {
                 continue;
             }
-            String prefix = entry.getValue();
             String sub = pkg.length() == servicePackage.length() ? "" : pkg.substring(servicePackage.length() + 1);
             int subSlash = sub.indexOf('/');
             String top = subSlash < 0 ? sub : sub.substring(0, subSlash);
-            return category(prefix, top, outer);
+            return new Location(entry.getValue(), top, outer, dollar >= 0);
         }
-        return SizeCategory.OTHER;
+        return null;
+    }
+
+    /**
+     * A class in a service package: the service's class-name prefix, the first package segment below the service
+     * package ({@code sub}, empty for the service package itself), and the class's top-level simple name
+     * ({@code S}).
+     */
+    static final class Location {
+        private final String prefix;
+        private final String sub;
+        private final String outer;
+        private final boolean nested;
+
+        Location(String prefix, String sub, String outer, boolean nested) {
+            this.prefix = prefix;
+            this.sub = sub;
+            this.outer = outer;
+            this.nested = nested;
+        }
+
+        String prefix() {
+            return prefix;
+        }
+
+        String sub() {
+            return sub;
+        }
+
+        String outer() {
+            return outer;
+        }
+
+        /**
+         * Whether the class is a nested, inner, local or anonymous class ({@code $} in its simple name).
+         */
+        boolean nested() {
+            return nested;
+        }
     }
 
     private static SizeCategory category(String prefix, String top, String outer) {

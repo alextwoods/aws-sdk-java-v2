@@ -33,14 +33,14 @@
 #
 # Usage: scripts/schema-serde/build-size-baseline.sh [--ref <commit>] [--modules <a,b>] [--out <dir>] [--online]
 #   --ref      Baseline_Build commit (default: fc8b74e9fe21, the merge base with feature/master/smithy-migration)
-#   --modules  comma-separated service artifactIds (default: cloudwatch)
+#   --modules  comma-separated service artifactIds (default: the seven Prototype_Service_Set services)
 #   --out      output directory (default: ~/.cache/aws-sdk-java-v2/size-baseline/<12-char commit>)
 #   --online   let Maven download missing artifacts (default: offline, -o)
 #
 set -euo pipefail
 
 REF="fc8b74e9fe21"
-MODULES="cloudwatch"
+MODULES="sqs,secretsmanager,account,route53,sns,cloudwatch,dynamodb"
 OUT=""
 OFFLINE="-o"
 

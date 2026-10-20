@@ -113,6 +113,25 @@ class ServiceComparisonTest {
         assertThat(comparison.largestChanges(2)).hasSize(2);
     }
 
+    @Test
+    void modelVersionDifferences_featureOnlyModelClass_listedWithoutDesignClasses() {
+        Map<String, byte[]> feature = featureClasses();
+        String newRequest = SERVICE + "/model/NewOperationRequest";
+        String sharedSerde = SERVICE + "/model/FooSharedSerde";
+        feature.put(newRequest, SyntheticClasses.plain(newRequest, 2));
+        feature.put(newRequest + "$Builder", SyntheticClasses.plain(newRequest + "$Builder", 1));
+        feature.put(sharedSerde, SyntheticClasses.plain(sharedSerde, 1));
+        ServiceComparison comparison = new ServiceComparison("foo", "Foo", ServiceSizes.measure(jar(1, baselineClasses())),
+                                                             ServiceSizes.measure(jar(1, feature)));
+
+        // Not listed: the removed marshaller, FooSchemas, FooOperations and FooSharedSerde, which this design adds or
+        // removes, and the classes in both builds.
+        assertThat(comparison.modelVersionDifferences())
+            .extracting(ServiceComparison.ClassGroupChange::name)
+            .containsExactly(COPIER, newRequest);
+        assertThat(comparison.modelVersionDifferences().get(1).featureClasses()).isEqualTo(2);
+    }
+
     private static ServiceComparison compare(long baselineJarBytes, long featureJarBytes) {
         return new ServiceComparison("foo", "Foo", ServiceSizes.measure(jar(baselineJarBytes, baselineClasses())),
                                      ServiceSizes.measure(jar(featureJarBytes, featureClasses())));

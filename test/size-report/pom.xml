@@ -38,8 +38,11 @@
         -->
         <size-report.baselineCommit>fc8b74e9fe21</size-report.baselineCommit>
         <size-report.baselineDir>${user.home}/.cache/aws-sdk-java-v2/size-baseline/${size-report.baselineCommit}</size-report.baselineDir>
-        <!-- Prototype_Service_Set services in the report: artifactId=display name, comma-separated (task 9.27 adds the rest) -->
-        <size-report.services>cloudwatch=CloudWatch</size-report.services>
+        <!--
+          The Prototype_Service_Set services in the report: artifactId=display name, comma-separated, in report order.
+          Each display name is the one disabled-customizations.md uses.
+        -->
+        <size-report.services>sqs=SQS,secretsmanager=Secrets Manager,account=Account,route53=Route 53,sns=SNS,cloudwatch=CloudWatch,dynamodb=DynamoDB</size-report.services>
         <!-- true: rewrite size-report.md instead of failing when it is out of date -->
         <size-report.update>false</size-report.update>
         <size-report.docsDir>${project.basedir}/../../docs/design/schema-serde</size-report.docsDir>
@@ -78,7 +81,43 @@
         -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sqs</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>secretsmanager</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>account</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>route53</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
             <artifactId>cloudwatch</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
             <version>${awsjavasdk.version}</version>
             <scope>test</scope>
         </dependency>
@@ -117,11 +156,13 @@
                 <artifactId>maven-dependency-plugin</artifactId>
                 <configuration>
                     <!--
-                      The attribution names schema types as class-file descriptor strings; the analyzer reads those
-                      as uses of the schema module, which is only on the test classpath (through cloudwatch).
+                      The attribution names schema and protocol-core types (ExceptionMetadata) as class-file descriptor
+                      strings; the analyzer reads those as uses of these modules, which are only on the test classpath
+                      (through the services).
                     -->
                     <ignoredUsedUndeclaredDependencies combine.children="append">
                         <ignoredUsedUndeclaredDependency>software.amazon.awssdk:schema</ignoredUsedUndeclaredDependency>
+                        <ignoredUsedUndeclaredDependency>software.amazon.awssdk:protocol-core</ignoredUsedUndeclaredDependency>
                     </ignoredUsedUndeclaredDependencies>
                 </configuration>
                 <executions>
