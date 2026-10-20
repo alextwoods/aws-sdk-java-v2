@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License").
+  ~ You may not use this file except in compliance with the License.
+  ~ A copy of the License is located at
+  ~
+  ~  http://aws.amazon.com/apache2.0
+  ~
+  ~ or in the "license" file accompanying this file. This file is distributed
+  ~ on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+  ~ express or implied. See the License for the specific language governing
+  ~ permissions and limitations under the License.
+  -->
+
+<!--
+  Standalone E2E DynamoDB benchmark harness, ported from racecar (feature/poc/racecar) as benchmark tooling only.
+
+  Deliberately NOT a module of the root reactor and NOT a child of aws-sdk-java-pom, as in racecar: each arm of a
+  paired A/B run builds this same harness against a different SDK build (Baseline_Build, racecar, feature,
+  candidate), selected with -Daws.sdk.v2.version and -Dmaven.repo.local. Inheriting the root pom would tie the
+  harness to this checkout's SDK version and build plugins. Build it with:
+
+      mvn -o -f test/standalone-e2e-benchmarks/pom.xml package                      # against this branch's SDK
+      scripts/schema-serde/paired-ab.sh ...                                        # per arm, from git refs
+
+  The harness uses Java 21 language features (records, text blocks, pattern matching), as racecar's does, so it
+  is compiled with release 21. The SDK under test is still built for Java 8 by its own build.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>software.amazon.awssdk.benchmark</groupId>
+    <artifactId>standalone-e2e-benchmarks</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+    <name>Standalone E2E DynamoDB Benchmarks</name>
+    <description>
+        Fixed-iteration DynamoDB benchmarks for the V2 SDK (sync and async) against an out-of-process Jetty mock
+        server over loopback. Ported from racecar as benchmark tooling only.
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>21</maven.compiler.release>
+        <!-- The SDK build under test. Defaults to this branch's root pom version; paired-ab.sh overrides it per arm
+             (the racecar arm is 2.54.18-SNAPSHOT) and points -Dmaven.repo.local at that arm's own repository. -->
+        <aws.sdk.v2.version>2.49.7-SNAPSHOT</aws.sdk.v2.version>
+        <!-- The root pom's managed Jetty version (jetty.version in /pom.xml), which is also racecar's. -->
+        <jetty.version>9.4.45.v20220203</jetty.version>
+        <!-- Provenance stamped into the jar (benchmark-provenance.properties). paired-ab.sh sets benchmark.phase to
+             the arm label and benchmark.sdk.commit to the arm's commit. -->
+        <benchmark.phase>unspecified</benchmark.phase>
+        <!-- Fallbacks when git-commit-id finds no git metadata (it then sets nothing). paired-ab.sh passes the
+             harness commit explicitly, because it builds from a copy of this directory. -->
+        <git.commit.id>unknown</git.commit.id>
+        <git.branch>unknown</git.branch>
+        <git.dirty>unknown</git.dirty>
+        <benchmark.git.commit>${git.commit.id}</benchmark.git.commit>
+        <benchmark.git.branch>${git.branch}</benchmark.git.branch>
+        <benchmark.git.dirty>${git.dirty}</benchmark.git.dirty>
+        <benchmark.sdk.commit>unrecorded</benchmark.sdk.commit>
+        <benchmark.build.time>${maven.build.timestamp}</benchmark.build.time>
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <benchmark.jar.name>e2e-${benchmark.phase}</benchmark.jar.name>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+        <!-- Both transports are named explicitly, as in racecar: dynamodb brings more than one SdkHttpService
+             transitively, and the workloads pin Apache5 (sync) and CRT (async) in code. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache5-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-crt-client</artifactId>
+            <version>${aws.sdk.v2.version}</version>
+        </dependency>
+        <!-- Mock HTTP server -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-servlet</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+        <!-- Process CPU time with a user/system split (Linux procfs, macOS proc_pidinfo) -->
+        <dependency>
+            <groupId>com.github.oshi</groupId>
+            <artifactId>oshi-core</artifactId>
+            <version>7.6.0</version>
+        </dependency>
+        <!-- Silence SDK logging so stdout stays clean -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>2.0.9</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <!-- Only the provenance file is filtered. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>benchmark-provenance.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>benchmark-provenance.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <!-- Stamp the harness commit into the jar. Non-fatal without git metadata. -->
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>7.0.0</version>
+                <executions>
+                    <execution>
+                        <id>resolve-git-properties</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
+                    <generateGitPropertiesFile>false</generateGitPropertiesFile>
+                    <injectAllReactorProjects>true</injectAllReactorProjects>
+                    <dirty>-dirty</dirty>
+                    <includeOnlyProperties>
+                        <property>^git.commit.id$</property>
+                        <property>^git.branch$</property>
+                        <property>^git.dirty$</property>
+                    </includeOnlyProperties>
+                </configuration>
+            </plugin>
+            <!-- Self-contained shaded jar per arm, so arms switch without any Maven reinstall. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+                            <finalName>${benchmark.jar.name}</finalName>
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>software.amazon.awssdk.benchmark.e2e.BenchmarkRunner</mainClass>
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                                <!-- MANDATORY: V2 discovers SdkHttpService/SdkAsyncHttpService through
+                                     META-INF/services. -->
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- V2's global execution interceptors live in a resource present in several jars. -->
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>software/amazon/awssdk/global/handlers/execution.interceptors</resource>
+                                </transformer>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/INDEX.LIST</exclude>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- The runtime classpath, for runs without the shaded jar
+                 (java -cp "target/classes:$(cat target/classpath.txt)"). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>build-classpath</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <outputFile>${project.build.directory}/classpath.txt</outputFile>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
