@@ -46,8 +46,9 @@ public final class BenchmarkRunner {
                                   v2-sync   V2 sync, Apache5
                                   v2-async  V2 async, CRT
           --scenario X[,Y...]   small-get, small-put, batch-get, batch-put, or all (default: all).
-                                describe-table (structure-heavy read) is not in "all";
-                                request it by name.
+                                describe-table (structure-heavy read) and batch-put-large
+                                (BatchWriteItem with a request body >= 100 KB) are not in
+                                "all"; request them by name.
           --iterations N        measured operations per scenario (default: 10000)
           --warmup N            warmup operations per scenario, unmeasured (default: min(2000, iterations))
           --warmup-mode X       quiesce | fixed (default: quiesce). `quiesce` runs --warmup and then
@@ -66,7 +67,9 @@ public final class BenchmarkRunner {
                                 future — which is what earlier collections measured. Comparing the two
                                 separates the programming model from the transport.
           --endpoint URL        server endpoint (default: http://127.0.0.1:19080)
-          --metrics             collect SDK-internal metrics and print a per-scenario summary
+          --metrics             collect SDK-internal metrics and print a per-scenario summary;
+                                also fills the marshalling_us, signing_us and
+                                request_body_bytes RESULT/CSV columns (-1 / empty without it)
           --metrics-file PATH   write metric summaries to PATH instead of stdout (implies --metrics)
           --progress-seconds N  progress/ETA print interval, 0 disables (default: 10). Values
                                 between 1 and 9 are raised to 10: progress output is for watching a
@@ -113,6 +116,21 @@ public final class BenchmarkRunner {
 
             CompletableFuture<?> runAsync(Workloads.Workload w) {
                 return w.batchPutAsync();
+            }
+        },
+        /**
+         * BatchWriteItem of 25 {@link BenchmarkItems#largeItem} rows, a request body of at least 100 KB. Added on this
+         * branch for Requirement 34.2: with {@code --metrics}, its RESULT line carries {@code marshalling_us} (request
+         * marshalling only) separately from {@code signing_us} (which contains SigV4's payload SHA-256). Outside
+         * {@link #DEFAULT_SCENARIOS}, so racecar's four scenarios keep their meaning; ask for it by name.
+         */
+        BATCH_PUT_LARGE("batch-put-large") {
+            void run(Workloads.Workload w) throws Exception {
+                w.batchPutLarge();
+            }
+
+            CompletableFuture<?> runAsync(Workloads.Workload w) {
+                return w.batchPutLargeAsync();
             }
         },
         /**
@@ -386,6 +404,12 @@ public final class BenchmarkRunner {
             reporter.join();
         }
         Driver.LatencyStats latency = samples.stats();
+        // Read after the window (Requirement 34.2). MARSHALLING_DURATION is request marshalling only; SigV4's payload
+        // SHA-256 is inside SIGNING_DURATION, so the two columns separate serde cost from payload hashing. All three
+        // are -1 without --metrics, so timing runs carry no metric publisher.
+        SerdeMetrics serde = new SerdeMetrics(workload.metricMeanMicros("MarshallingDuration"),
+                                              workload.metricMeanMicros("SigningDuration"),
+                                              workload.maxRequestBodyBytes());
 
         // Independent check on the warmup gate. A quiet stretch before the window does not guarantee
         // a quiet window: compilation tails off in bursts, and async runs have been observed settling
@@ -438,7 +462,8 @@ public final class BenchmarkRunner {
                           + " ops_per_cpu_sec=%.1f%s cpu_us_per_op=%.1f%s avg_us_per_op=%.1f"
                           + " mean_lat_us=%.1f p50_us=%.1f p90_us=%.1f p99_us=%.1f p999_us=%.1f"
                           + " max_us=%.1f jit_ms=%d gc_ms=%d gc_count=%d steady_state=%s"
-                          + " warmup_ops=%d warmup_settled=%s alloc_bytes_per_op=%s pipeline=%s%s%n",
+                          + " warmup_ops=%d warmup_settled=%s alloc_bytes_per_op=%s pipeline=%s"
+                          + " marshalling_us=%s signing_us=%s request_body_bytes=%s%s%n",
                           client, workload.transport(), scenario.cliName, iterations, concurrency,
                           asyncMode, wallSec * 1e3, iterations / wallSec,
                           cpuSec * 1e3, cpuSplit, cpuSec > 0 ? iterations / cpuSec : 0.0, userRate,
@@ -450,18 +475,34 @@ public final class BenchmarkRunner {
                           warmupResult.ops(), warmupResult.quiesced(),
                           allocBytes < 0 ? "unavailable" : String.format(Locale.US, "%.0f", (double) allocBytes / iterations),
                           PipelineCheck.detectedName(),
+                          serde.marshallingText("-1"), serde.signingText("-1"), serde.bodyText("-1"),
                           server.summary(iterations));
 
         if (resultsFile != null) {
             appendResultsCsv(resultsFile, client, workload.transport(), scenario, iterations,
                              concurrency, asyncMode, wallNanos, cpu, split, latency, server,
-                             appCpuNanos, compileMillis, gc, steadyState, warmupResult, allocBytes);
+                             appCpuNanos, compileMillis, gc, steadyState, warmupResult, allocBytes, serde);
         }
 
         if (metrics) {
             metricsOut.printf("--- metrics client=%s scenario=%s iterations=%,d ---%n",
                               client, scenario.cliName, iterations);
             workload.printMetrics(metricsOut);
+        }
+    }
+
+    /** Metric-derived columns of one scenario; negative values mean "not collected" (no {@code --metrics}). */
+    record SerdeMetrics(double marshallingUs, double signingUs, long requestBodyBytes) {
+        String marshallingText(String missing) {
+            return marshallingUs < 0 ? missing : String.format(Locale.US, "%.1f", marshallingUs);
+        }
+
+        String signingText(String missing) {
+            return signingUs < 0 ? missing : String.format(Locale.US, "%.1f", signingUs);
+        }
+
+        String bodyText(String missing) {
+            return requestBodyBytes < 0 ? missing : Long.toString(requestBodyBytes);
         }
     }
 
@@ -483,7 +524,10 @@ public final class BenchmarkRunner {
         + "warmup_ops,warmup_settled,"
         // Added on this branch: bytes allocated per operation across the client JVM's threads, and the request
         // pipeline PipelineCheck detected (stock or schema).
-        + "alloc_bytes_per_op,pipeline";
+        + "alloc_bytes_per_op,pipeline,"
+        // Added on this branch (Requirement 34.2), filled only with --metrics: mean MARSHALLING_DURATION and
+        // SIGNING_DURATION in µs, and the largest request body in bytes.
+        + "marshalling_us,signing_us,request_body_bytes";
 
     /**
      * Append one CSV row per RESULT line to {@code file}, creating it with a header row first if
@@ -496,7 +540,8 @@ public final class BenchmarkRunner {
                                          long wallNanos, CpuTimeSource.Snapshot cpu, boolean split,
                                          Driver.LatencyStats latency, ServerStats server,
                                          long appCpuNanos, long compileMillis, JvmActivity.Gc gc,
-                                         boolean steadyState, Warmup.Result warmup, long allocBytes)
+                                         boolean steadyState, Warmup.Result warmup, long allocBytes,
+                                         SerdeMetrics serde)
             throws IOException {
         double wallSec = wallNanos / 1e9;
         double cpuSec = cpu.totalNanos() / 1e9;
@@ -505,7 +550,7 @@ public final class BenchmarkRunner {
         String row = String.format(Locale.US,
                                    "%s,%s,%d,%.0f,%.1f,%.0f,%s,%s,%.1f,%s,%.1f,%s,%s,%s,"
                                    + "%d,%s,%s,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%s,%s,%s,"
-                                   + "%s,%s,%s,%s,%d,%d,%s,%d,%s,%s,%s",
+                                   + "%s,%s,%s,%s,%d,%d,%s,%d,%s,%s,%s,%s,%s,%s",
                                    client, scenario.cliName, iterations,
                                    wallSec * 1e3, iterations / wallSec, cpuSec * 1e3,
                                    split ? String.format(Locale.US, "%.0f", cpu.userNanos() / 1e6) : "",
@@ -535,7 +580,8 @@ public final class BenchmarkRunner {
                                    gc.millis(), gc.count(), Boolean.toString(steadyState),
                                    warmup.ops(), Boolean.toString(warmup.quiesced()),
                                    allocBytes < 0 ? "" : String.format(Locale.US, "%.0f", (double) allocBytes / iterations),
-                                   PipelineCheck.detectedName());
+                                   PipelineCheck.detectedName(),
+                                   serde.marshallingText(""), serde.signingText(""), serde.bodyText(""));
         boolean needsHeader = !Files.exists(file) || Files.size(file) == 0;
         String content = needsHeader ? CSV_HEADER + "\n" + row + "\n" : row + "\n";
         Files.writeString(file, content, StandardOpenOption.CREATE, StandardOpenOption.APPEND);

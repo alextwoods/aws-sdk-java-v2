@@ -14,6 +14,7 @@ was copied and what changed.
 | `describe-table` | DescribeTable | structure-heavy response (46 nested structures); not part of `all` |
 | `batch-get` | BatchGetItem | 25 ~2 KB items (~38 KB response) |
 | `batch-put` | BatchWriteItem | 25 ~2 KB items in the request |
+| `batch-put-large` | BatchWriteItem | 25 ~4.2 KB items, a request body of at least 100 KB (104,740 bytes); not part of `all` |
 
 Clients: `v2-sync` (Apache5) and `v2-async` (CRT). Each run first makes a probe call and reports which request
 pipeline the SDK on the classpath ran (`stock` = the legacy pipeline, `schema` = the schema path), in the
@@ -22,6 +23,25 @@ pipeline the SDK on the classpath ran (`stock` = the legacy pipeline, `schema` =
 Every results row also has `alloc_bytes_per_op`: heap bytes allocated by all client-JVM threads in the measured
 window divided by the operation count (Requirement 37.9). The mock server runs in its own JVM, so its allocation
 is not counted.
+
+With `--metrics`, rows also carry `marshalling_us` (mean `MarshallingDuration`: request marshalling only),
+`signing_us` (mean `SigningDuration`, which contains SigV4's payload SHA-256) and `request_body_bytes` (the largest
+request body sent). Together they report marshalling separately from payload hashing for bodies of 100 KB or more
+(Requirement 34.2). The metric publisher changes what is measured, so take timing and B/op from runs without
+`--metrics` and the split from a separate `--metrics` run.
+
+## Cold start
+
+`ClientColdStartBenchmark` times one client builder `build()` and the first GetItem against the mock server, in a
+fresh JVM (Requirement 34.7). It runs from the same jar, so every arm gets it:
+
+```
+test/standalone-e2e-benchmarks/scripts/benchmark.sh --jar target/e2e-feature.jar --main ClientColdStartBenchmark \
+    --repeat 10 --client v2-sync --append-to-results-file /tmp/cold-start.csv
+```
+
+`--repeat N` starts one server and N client JVMs. Each prints a `COLDSTART` line with `build_ms`, `first_call_ms`
+and the JVM's uptime when `main` started.
 
 ## Build
 
@@ -48,7 +68,7 @@ test/standalone-e2e-benchmarks/scripts/benchmark.sh --jar target/e2e-feature.jar
 
 `benchmark.sh` starts the mock server, waits for its `READY` line, runs `BenchmarkRunner` and stops the server.
 `BenchmarkRunner --help` lists the runner options; `benchmark.sh` adds `--port`, `--tls`, `--profile`,
-`--jvm-args`, `--server-jvm-args`, `--pin-client` and `--pin-server`. `scripts/server.sh` runs the server alone.
+`--jvm-args`, `--server-jvm-args`, `--pin-client`, `--pin-server`, `--main` and `--repeat`. `scripts/server.sh` runs the server alone.
 `ResponseDigest <endpoint>` prints every scenario's response field by field, so two arms can be diffed as text.
 
 ## Paired A/B runs

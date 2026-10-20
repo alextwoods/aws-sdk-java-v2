@@ -22,9 +22,11 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-
-
-
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.interceptor.Context;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.metrics.MetricCollection;
 import software.amazon.awssdk.metrics.MetricPublisher;
 import software.amazon.awssdk.metrics.MetricRecord;
@@ -74,6 +76,21 @@ final class MetricsSupport {
             counts.clear();
         }
 
+        /**
+         * Mean of one Duration metric in µs since the last {@link #reset()}, or -1 when it was not reported. Used for
+         * the {@code marshalling_us} and {@code signing_us} results columns: {@code MARSHALLING_DURATION} is request
+         * marshalling only, and SigV4's payload SHA-256 is inside {@code SIGNING_DURATION}, so the two columns
+         * separate serde cost from payload hashing (Requirement 34.2).
+         */
+        double meanMicros(String metricName) {
+            AtomicLong total = totalNanos.get(metricName);
+            AtomicLong count = counts.get(metricName);
+            if (total == null || count == null || count.get() == 0) {
+                return -1;
+            }
+            return (double) total.get() / count.get() / 1e3;
+        }
+
         void print(PrintStream out) {
             for (Map.Entry<String, AtomicLong> e : new TreeMap<>(totalNanos).entrySet()) {
                 long count = counts.get(e.getKey()).get();
@@ -85,6 +102,36 @@ final class MetricsSupport {
 
         @Override
         public void close() {
+        }
+    }
+
+    /**
+     * Records the largest request {@code Content-Length} sent, for the {@code request_body_bytes} results column, so
+     * a results row states whether its request body was at least 100 KB (Requirement 34.2). Registered only with
+     * {@code --metrics}, as the publisher is, so timing runs carry neither.
+     */
+    static final class RequestSizeInterceptor implements ExecutionInterceptor {
+        private final AtomicLong maxBytes = new AtomicLong(-1);
+
+        @Override
+        public void beforeTransmission(Context.BeforeTransmission context, ExecutionAttributes executionAttributes) {
+            // The header when a stage has set it; otherwise the body's own length (sync, then async).
+            long bytes = context.httpRequest().firstMatchingHeader("Content-Length")
+                                .map(value -> Long.parseLong(value.trim()))
+                                .orElseGet(() -> context.requestBody()
+                                                        .flatMap(RequestBody::optionalContentLength)
+                                                        .orElseGet(() -> context.asyncRequestBody()
+                                                                                .flatMap(AsyncRequestBody::contentLength)
+                                                                                .orElse(-1L)));
+            maxBytes.accumulateAndGet(bytes, Math::max);
+        }
+
+        long maxBytes() {
+            return maxBytes.get();
+        }
+
+        void reset() {
+            maxBytes.set(-1);
         }
     }
 

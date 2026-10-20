@@ -36,6 +36,8 @@ import java.util.Random;
  *   <li>SMALL: 12 mixed-type attributes, ~0.4 KB of wire JSON. Used by small-get / small-put.</li>
  *   <li>MEDIUM: fat "user profile" row, ~2 KB of wire JSON. {@link #BATCH_SIZE} of these make up
  *       a batch (~50 KB per request/response). Used by batch-get / batch-put.</li>
+ *   <li>LARGE: MEDIUM plus 12 text attributes, ~4.2 KB of wire JSON; a batch is a request body of at
+ *       least 100 KB. Used by batch-put-large.</li>
  * </ul>
  */
 public final class BenchmarkItems {
@@ -162,6 +164,21 @@ public final class BenchmarkItems {
         }
         item.put("recentEvents", Attr.l(events));
         item.put("active", Attr.bool(true));
+        return item;
+    }
+
+    /**
+     * LARGE: a {@link #mediumItem} plus 12 200-character text attributes (~4.2 KB wire JSON; the 25-row batch body measured 104,740 bytes), so that
+     * {@link #BATCH_SIZE} of them make a BatchWriteItem request body of at least 100 KB (Requirement 34.2: marshalling
+     * is reported separately from SigV4 payload hashing for request bodies of 100 KB or more). Added on this branch;
+     * racecar's scenarios are unchanged.
+     */
+    public static Map<String, Attr> largeItem(int index) {
+        Map<String, Attr> item = mediumItem(index);
+        Random r = new Random(4242 + index);
+        for (int i = 0; i < 12; i++) {
+            item.put("textAttr" + i, Attr.s(randomString(r, 200)));
+        }
         return item;
     }
 

@@ -21,6 +21,11 @@
 #   --profile-file PATH   exact profiler output path (default: <profile-out>/<client>-<mode>-<ts>.<ext>)
 #   --profile-out DIR     profiler output directory (default: ./profiles)
 #   --jvm-args "..."      extra JVM args for the client JVM
+#   --main NAME           client main class in software.amazon.awssdk.benchmark.e2e (default:
+#                        BenchmarkRunner; ClientColdStartBenchmark for cold-start samples)
+#   --repeat N            launch the client N times against the one server, each in a fresh JVM
+#                        (default: 1). ClientColdStartBenchmark needs one JVM per sample
+#                        (Requirement 34.7: >= 10 samples per build).
 #
 # Environment:
 #   ASYNC_PROFILER_LIB  path to libasyncProfiler (auto-detected from common install locations)
@@ -43,6 +48,8 @@ PIN_SERVER=""
 TLS=0
 RUNNER_ARGS=()
 CLIENT="client"
+MAIN_CLASS="BenchmarkRunner"
+REPEAT=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -58,6 +65,8 @@ while [[ $# -gt 0 ]]; do
         --pin-server)  PIN_SERVER="$2"; shift 2 ;;
         --tls)         TLS=1; shift ;;
         --jar)         JAR="$2"; shift 2 ;;
+        --main)        MAIN_CLASS="$2"; shift 2 ;;
+        --repeat)      REPEAT="$2"; shift 2 ;;
         --endpoint)    ENDPOINT="$2"; LAUNCH_SERVER=0; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         --client)      CLIENT="$2"; RUNNER_ARGS+=("$1" "$2"); shift 2 ;;
         *)             RUNNER_ARGS+=("$1"); shift ;;
@@ -299,6 +308,11 @@ fi
 if [[ -n "$PIN_CLIENT" || -n "$PIN_SERVER" ]]; then
     echo "pinning: client=[${PIN_CLIENT:-unpinned}] server=[${PIN_SERVER:-unpinned}]"
 fi
-${CLIENT_PREFIX[@]+"${CLIENT_PREFIX[@]}"} \
-    java "${JVM_ARGS[@]}" -cp "$CP" \
-    software.amazon.awssdk.benchmark.e2e.BenchmarkRunner "${RUNNER_ARGS[@]}"
+for (( run = 1; run <= REPEAT; run++ )); do
+    if [[ $REPEAT -gt 1 ]]; then
+        echo "=== launch $run/$REPEAT"
+    fi
+    ${CLIENT_PREFIX[@]+"${CLIENT_PREFIX[@]}"} \
+        java "${JVM_ARGS[@]}" -cp "$CP" \
+        "software.amazon.awssdk.benchmark.e2e.$MAIN_CLASS" "${RUNNER_ARGS[@]}"
+done

@@ -104,10 +104,29 @@ interface Workloads {
             throw new UnsupportedOperationException("describe-table is not implemented for this client");
         }
 
+        /** BatchWriteItem of 25 {@link BenchmarkItems#largeItem} rows: a request body of at least 100 KB. */
+        default void batchPutLarge() throws Exception {
+            throw new UnsupportedOperationException("batch-put-large is not implemented for this client");
+        }
+
+        default CompletableFuture<?> batchPutLargeAsync() {
+            throw new UnsupportedOperationException("batch-put-large is not implemented for this client");
+        }
+
         default void resetMetrics() {
         }
 
         default void printMetrics(PrintStream out) {
+        }
+
+        /** Mean of a Duration metric in µs since {@link #resetMetrics()}; -1 without {@code --metrics}. */
+        default double metricMeanMicros(String metricName) {
+            return -1;
+        }
+
+        /** Largest request body in bytes since {@link #resetMetrics()}; -1 without {@code --metrics}. */
+        default long maxRequestBodyBytes() {
+            return -1;
         }
     }
 
@@ -161,20 +180,22 @@ interface Workloads {
 
     // ==================== V2 shared ====================
 
-    private static StaticCredentialsProvider v2Creds() {
+    static StaticCredentialsProvider v2Creds() {
         return StaticCredentialsProvider.create(AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY));
     }
 
-    private static ClientOverrideConfiguration v2Override(boolean metrics, MetricsSupport.V2Publisher publisher) {
+    static ClientOverrideConfiguration v2Override(boolean metrics, MetricsSupport.V2Publisher publisher,
+                                                  MetricsSupport.RequestSizeInterceptor requestSize) {
         ClientOverrideConfiguration.Builder b = ClientOverrideConfiguration.builder()
                                                                            .retryStrategy(RetryMode.STANDARD);
         if (metrics) {
             b.addMetricPublisher(publisher);
+            b.addExecutionInterceptor(requestSize);
         }
         return b.build();
     }
 
-    private static software.amazon.awssdk.services.dynamodb.model.GetItemRequest v2GetReq() {
+    static software.amazon.awssdk.services.dynamodb.model.GetItemRequest v2GetReq() {
         return software.amazon.awssdk.services.dynamodb.model.GetItemRequest.builder()
             .tableName(BenchmarkItems.TABLE_NAME)
             .key(Map.of("pk", software.amazon.awssdk.services.dynamodb.model.AttributeValue
@@ -203,11 +224,16 @@ interface Workloads {
     }
 
     private static software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest v2BatchPutReq() {
+        return v2BatchPutReq(false);
+    }
+
+    private static software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest v2BatchPutReq(boolean large) {
         List<software.amazon.awssdk.services.dynamodb.model.WriteRequest> writes = new ArrayList<>();
         for (int i = 0; i < BenchmarkItems.BATCH_SIZE; i++) {
+            Map<String, BenchmarkItems.Attr> item = large ? BenchmarkItems.largeItem(i) : BenchmarkItems.mediumItem(i);
             writes.add(software.amazon.awssdk.services.dynamodb.model.WriteRequest.builder()
                 .putRequest(software.amazon.awssdk.services.dynamodb.model.PutRequest.builder()
-                                .item(BenchmarkItems.toV2(BenchmarkItems.mediumItem(i))).build())
+                                .item(BenchmarkItems.toV2(item)).build())
                 .build());
         }
         return software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest.builder()
@@ -239,16 +265,18 @@ interface Workloads {
         // schema path), so a results row can never be attributed to the wrong pipeline.
         PipelineCheck.report(endpoint, PipelineCheck.ClientKind.SYNC);
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
+        MetricsSupport.RequestSizeInterceptor requestSize = new MetricsSupport.RequestSizeInterceptor();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
             .httpClientBuilder(httpClientBuilder)
-            .overrideConfiguration(v2Override(metrics, publisher))
+            .overrideConfiguration(v2Override(metrics, publisher, requestSize))
             .build();
 
         var getReq = v2GetReq();
         var putReq = v2PutReq();
         var batchGetReq = v2BatchGetReq();
         var batchPutReq = v2BatchPutReq();
+        var batchPutLargeReq = v2BatchPutReq(true);
         var describeReq = v2DescribeReq();
 
         return new Workload() {
@@ -272,16 +300,29 @@ interface Workloads {
                 ddb.describeTable(describeReq);
             }
 
+            public void batchPutLarge() {
+                ddb.batchWriteItem(batchPutLargeReq);
+            }
+
             public String transport() {
                 return transportName;
             }
 
             public void resetMetrics() {
                 publisher.reset();
+                requestSize.reset();
             }
 
             public void printMetrics(PrintStream out) {
                 publisher.print(out);
+            }
+
+            public double metricMeanMicros(String metricName) {
+                return publisher.meanMicros(metricName);
+            }
+
+            public long maxRequestBodyBytes() {
+                return requestSize.maxBytes();
             }
 
             public void close() {
@@ -303,16 +344,18 @@ interface Workloads {
                                     String transportName) {
         PipelineCheck.report(endpoint, PipelineCheck.ClientKind.ASYNC);
         MetricsSupport.V2Publisher publisher = new MetricsSupport.V2Publisher();
+        MetricsSupport.RequestSizeInterceptor requestSize = new MetricsSupport.RequestSizeInterceptor();
         var ddb = software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient.builder()
             .endpointOverride(endpoint).region(Region.US_EAST_1).credentialsProvider(v2Creds())
             .httpClient(httpClient)
-            .overrideConfiguration(v2Override(metrics, publisher))
+            .overrideConfiguration(v2Override(metrics, publisher, requestSize))
             .build();
 
         var getReq = v2GetReq();
         var putReq = v2PutReq();
         var batchGetReq = v2BatchGetReq();
         var batchPutReq = v2BatchPutReq();
+        var batchPutLargeReq = v2BatchPutReq(true);
         var describeReq = v2DescribeReq();
 
         return new Workload() {
@@ -334,6 +377,10 @@ interface Workloads {
 
             public void describeTable() {
                 ddb.describeTable(describeReq).join();
+            }
+
+            public void batchPutLarge() {
+                ddb.batchWriteItem(batchPutLargeReq).join();
             }
 
             public boolean supportsAsync() {
@@ -360,16 +407,29 @@ interface Workloads {
                 return ddb.describeTable(describeReq);
             }
 
+            public CompletableFuture<?> batchPutLargeAsync() {
+                return ddb.batchWriteItem(batchPutLargeReq);
+            }
+
             public String transport() {
                 return transportName;
             }
 
             public void resetMetrics() {
                 publisher.reset();
+                requestSize.reset();
             }
 
             public void printMetrics(PrintStream out) {
                 publisher.print(out);
+            }
+
+            public double metricMeanMicros(String metricName) {
+                return publisher.meanMicros(metricName);
+            }
+
+            public long maxRequestBodyBytes() {
+                return requestSize.maxBytes();
             }
 
             public void close() {
