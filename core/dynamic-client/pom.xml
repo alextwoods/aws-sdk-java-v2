@@ -101,6 +101,11 @@
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
+            <artifactId>metrics-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
             <artifactId>http-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
@@ -186,6 +191,12 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>json-codec</artifactId>
             <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test only: the recording async HTTP client reads request bodies and publishes response bodies. -->
+        <dependency>
+            <groupId>org.reactivestreams</groupId>
+            <artifactId>reactive-streams</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

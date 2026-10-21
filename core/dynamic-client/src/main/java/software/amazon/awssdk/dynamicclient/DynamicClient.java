@@ -15,15 +15,21 @@
 
 package software.amazon.awssdk.dynamicclient;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
 import software.amazon.awssdk.annotations.NotThreadSafe;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.annotations.ThreadSafe;
 import software.amazon.awssdk.awscore.AwsClient;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.awscore.auth.AuthSchemePreferenceResolver;
 import software.amazon.awssdk.awscore.client.builder.AwsAsyncClientBuilder;
 import software.amazon.awssdk.awscore.client.builder.AwsClientBuilder;
@@ -31,41 +37,60 @@ import software.amazon.awssdk.awscore.client.builder.AwsDefaultClientBuilder;
 import software.amazon.awssdk.awscore.client.builder.AwsSyncClientBuilder;
 import software.amazon.awssdk.awscore.client.builder.ClientProtocolSupport;
 import software.amazon.awssdk.awscore.client.config.AwsClientOption;
+import software.amazon.awssdk.awscore.client.handler.AwsAsyncClientHandler;
+import software.amazon.awssdk.awscore.client.handler.AwsSyncClientHandler;
 import software.amazon.awssdk.awscore.endpoint.AwsClientEndpointProvider;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.core.ClientType;
+import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.SdkPlugin;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
+import software.amazon.awssdk.core.client.handler.AsyncClientHandler;
+import software.amazon.awssdk.core.client.handler.ClientExecutionParams;
+import software.amazon.awssdk.core.client.handler.SyncClientHandler;
 import software.amazon.awssdk.core.client.protocol.AsyncClientTransport;
 import software.amazon.awssdk.core.client.protocol.ClientProtocol;
 import software.amazon.awssdk.core.client.protocol.ClientTransport;
 import software.amazon.awssdk.core.client.protocol.HttpMessageExchange;
 import software.amazon.awssdk.core.client.protocol.MessageExchange;
 import software.amazon.awssdk.core.client.protocol.ProtocolSettings;
+import software.amazon.awssdk.core.metrics.CoreMetric;
 import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.dynamicclient.internal.DynamicAuthSchemes;
+import software.amazon.awssdk.dynamicclient.internal.DynamicCallResolvers;
 import software.amazon.awssdk.dynamicclient.internal.DynamicProtocolSelection;
 import software.amazon.awssdk.dynamicclient.internal.DynamicServiceClientConfigurationBuilder;
 import software.amazon.awssdk.dynamicclient.internal.DynamicServiceMetadata;
 import software.amazon.awssdk.dynamicclient.internal.ModelAuthSchemeResolver;
 import software.amazon.awssdk.dynamicclient.internal.RulesEndpointProvider;
 import software.amazon.awssdk.dynamicclient.schema.SchemaConverter;
+import software.amazon.awssdk.dynamicclient.schema.StructDocument;
+import software.amazon.awssdk.dynamicclient.schema.internal.ModelConversions;
 import software.amazon.awssdk.http.auth.aws.scheme.AwsV4aAuthScheme;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthScheme;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthSchemeProvider;
+import software.amazon.awssdk.metrics.MetricCollector;
+import software.amazon.awssdk.metrics.MetricPublisher;
+import software.amazon.awssdk.metrics.NoOpMetricCollector;
 import software.amazon.awssdk.regions.ServiceMetadataAdvancedOption;
 import software.amazon.awssdk.retries.api.RetryStrategy;
 import software.amazon.awssdk.schema.ApiService;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.serde.SerializationException;
+import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.utils.AttributeMap;
+import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.IoUtils;
 import software.amazon.awssdk.utils.Logger;
 import software.amazon.awssdk.utils.Validate;
 import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.knowledge.TopDownIndex;
+import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
+import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
@@ -77,8 +102,15 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * builder (region, credentials provider, HTTP clients, override configuration, plugins, ...), and an option that is
  * not set resolves to the same default as on a generated client builder.
  *
- * <p>Input and output are documents in the Smithy data model of the service: structure and member names are the ones
- * the model declares, not protocol-specific names such as {@code jsonName}. A dynamic client is both synchronous and
+ * <p>Call an operation by name with {@link #call(String, Document)} or {@link #callAsync(String, Document)}. Input and
+ * output are documents in the Smithy data model of the service: structure and member names are the ones the model
+ * declares, not protocol-specific names such as {@code jsonName}. The input is coerced to the operation's input schema
+ * with the rules of {@link #createStruct}, and the output is a structure document whose discriminator is the
+ * operation's output ShapeId. Calls run through the same client handler and request pipeline as a generated client's,
+ * with a {@link DynamicOperation} as the operation and {@link DynamicRequest} and {@link DynamicResponse} as the
+ * request and response that interceptors see.
+ *
+ * <p>A dynamic client is both synchronous and
  * asynchronous, so it resolves the configuration of a generated synchronous client and of a generated asynchronous
  * client from the same builder: it uses the configured {@code SdkHttpClient} and {@code SdkAsyncHttpClient}, or creates
  * the default ones, and {@link #close()} closes what it created.
@@ -95,13 +127,28 @@ public final class DynamicClient implements AwsClient {
     private final SchemaConverter schemaConverter;
     private final ApiService service;
     private final String serviceName;
+    private final String sdkId;
+    private final DynamicAuthSchemes authSchemes;
     private final SdkClientConfiguration syncClientConfiguration;
     private final SdkClientConfiguration asyncClientConfiguration;
+    private final SyncClientHandler syncClientHandler;
+    private final AsyncClientHandler asyncClientHandler;
+
+    /**
+     * The operations in the service's closure, by shape name (with the service's renames applied).
+     */
+    private final Map<String, OperationShape> operationShapes;
+
+    /**
+     * The operations created so far, by name: each is created on first use and then reused (Requirement 28.9).
+     */
+    private final ConcurrentMap<String, DynamicOperation> operations = new ConcurrentHashMap<>();
 
     private DynamicClient(Model model,
                           DynamicServiceMetadata metadata,
                           SchemaConverter schemaConverter,
                           Schema serviceSchema,
+                          DynamicAuthSchemes authSchemes,
                           SdkClientConfiguration syncClientConfiguration,
                           SdkClientConfiguration asyncClientConfiguration) {
         this.model = model;
@@ -109,8 +156,17 @@ public final class DynamicClient implements AwsClient {
         this.schemaConverter = schemaConverter;
         this.service = () -> serviceSchema;
         this.serviceName = metadata.signingName().isEmpty() ? metadata.endpointPrefix() : metadata.signingName();
+        this.sdkId = metadata.sdkId();
+        this.authSchemes = authSchemes;
         this.syncClientConfiguration = syncClientConfiguration;
         this.asyncClientConfiguration = asyncClientConfiguration;
+        this.syncClientHandler = new AwsSyncClientHandler(syncClientConfiguration);
+        this.asyncClientHandler = new AwsAsyncClientHandler(asyncClientConfiguration);
+        Map<String, OperationShape> shapes = new HashMap<>();
+        for (OperationShape operation : TopDownIndex.of(model).getContainedOperations(serviceShape)) {
+            shapes.put(operation.getId().getName(serviceShape), operation);
+        }
+        this.operationShapes = Collections.unmodifiableMap(shapes);
     }
 
     /**
@@ -154,8 +210,318 @@ public final class DynamicClient implements AwsClient {
      */
     @Override
     public void close() {
-        syncClientConfiguration.close();
-        asyncClientConfiguration.close();
+        syncClientHandler.close();
+        asyncClientHandler.close();
+    }
+
+    /**
+     * Calls an operation with no input members: the same as {@link #call(String, Document)} with an empty map.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @return the output, a structure document whose discriminator is the operation's output ShapeId
+     * @see #call(String, Document, AwsRequestOverrideConfiguration)
+     */
+    public Document call(String operationName) {
+        return call(operationName, Document.EMPTY_MAP, null);
+    }
+
+    /**
+     * Calls an operation.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @return the output, a structure document whose discriminator is the operation's output ShapeId
+     * @see #call(String, Document, AwsRequestOverrideConfiguration)
+     */
+    public Document call(String operationName, Document input) {
+        return call(operationName, input, null);
+    }
+
+    /**
+     * Calls an operation, with configuration that applies to this call only.
+     *
+     * <p>The input is coerced to the operation's input schema before any interceptor runs (see
+     * {@link #createStruct}); interceptors see the coerced document in the {@link DynamicRequest} of
+     * {@code context.request()}. The output is a structure document keyed by Smithy member name, whose
+     * discriminator is the operation's output ShapeId; modeled members that the response does not contain are absent.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @param overrideConfiguration the configuration of this call (the same options as a generated client's request
+     *     override configuration), or null
+     * @return the output
+     * @throws IllegalArgumentException if the service has no operation of this name; no request is sent
+     * @throws SerializationException if the input cannot be coerced to the operation's input schema; no request is sent
+     * @throws software.amazon.awssdk.core.exception.SdkException if the call fails, as for a generated client
+     */
+    public Document call(String operationName, Document input, AwsRequestOverrideConfiguration overrideConfiguration) {
+        DynamicOperation operation = getOperation(operationName);
+        DynamicRequest request = request(operation, input, overrideConfiguration);
+        return execute(operation, request).document();
+    }
+
+    /**
+     * Calls an operation with no input members, asynchronously: the same as {@link #callAsync(String, Document)} with
+     * an empty map.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @return a future of the output
+     * @see #callAsync(String, Document, AwsRequestOverrideConfiguration)
+     */
+    public CompletableFuture<Document> callAsync(String operationName) {
+        return callAsync(operationName, Document.EMPTY_MAP, null);
+    }
+
+    /**
+     * Calls an operation asynchronously.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @return a future of the output
+     * @see #callAsync(String, Document, AwsRequestOverrideConfiguration)
+     */
+    public CompletableFuture<Document> callAsync(String operationName, Document input) {
+        return callAsync(operationName, input, null);
+    }
+
+    /**
+     * Calls an operation asynchronously, with configuration that applies to this call only. The call is the same as
+     * {@link #call(String, Document, AwsRequestOverrideConfiguration)}, through the client's asynchronous
+     * configuration.
+     *
+     * <p>This method does not throw: every failure, including an unknown operation and an input that cannot be
+     * coerced, completes the returned future exceptionally (Requirement 28.12).
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @param overrideConfiguration the configuration of this call, or null
+     * @return a future of the output
+     */
+    public CompletableFuture<Document> callAsync(String operationName, Document input,
+                                                 AwsRequestOverrideConfiguration overrideConfiguration) {
+        try {
+            DynamicOperation operation = getOperation(operationName);
+            DynamicRequest request = request(operation, input, overrideConfiguration);
+            CompletableFuture<DynamicResponse> responseFuture = executeAsync(operation, request);
+            CompletableFuture<Document> result = responseFuture.thenApply(DynamicResponse::document);
+            return CompletableFutureUtils.forwardExceptionTo(result, responseFuture);
+        } catch (Throwable t) {
+            return CompletableFutureUtils.failedFuture(t);
+        }
+    }
+
+    /**
+     * Returns an operation of the service. The operation is created on the first call that names it, and the same
+     * instance is returned afterwards; it is also the instance the request pipeline exposes to interceptors as
+     * {@code SdkExecutionAttribute.API_OPERATION}.
+     *
+     * @param operationName the shape name of an operation bound to the service or to one of its resources,
+     *     case-sensitive
+     * @return the operation
+     * @throws IllegalArgumentException if the service has no operation of this name
+     */
+    public DynamicOperation getOperation(String operationName) {
+        Validate.paramNotNull(operationName, "operationName");
+        DynamicOperation operation = operations.get(operationName);
+        if (operation != null) {
+            return operation;
+        }
+        OperationShape shape = operationShapes.get(operationName);
+        if (shape == null) {
+            throw new IllegalArgumentException("Operation " + operationName + " not found in service "
+                                               + serviceShape.getId());
+        }
+        DynamicOperation created = DynamicOperation.create(shape, serviceShape, schemaConverter,
+                                                           effectiveAuthSchemes(shape), service);
+        DynamicOperation raced = operations.putIfAbsent(operationName, created);
+        return raced != null ? raced : created;
+    }
+
+    /**
+     * Creates a structure document of a structure in the model from a map or structure document, with the coercion
+     * rules of a call's input:
+     * <ul>
+     *     <li>members are matched by Smithy member name, and a name that is not a member fails;</li>
+     *     <li>each value must fit its member: a map or structure for a structure, a list for a list, a number for a
+     *     number, and so on;</li>
+     *     <li>byte, short, integer, intEnum, long and bigInteger members need an integral number in their range;</li>
+     *     <li>a timestamp member takes a timestamp, a number of epoch seconds (with the fraction kept down to
+     *     milliseconds) or an RFC 3339 {@code date-time} string;</li>
+     *     <li>a blob member takes only a blob document ({@code Document.of(byte[])}); a string is rejected;</li>
+     *     <li>a union may have only one member set.</li>
+     * </ul>
+     *
+     * @param shapeId the ShapeId of a structure shape in the model
+     * @param value a map or structure document keyed by Smithy member name
+     * @return the structure document, whose discriminator is {@code shapeId}
+     * @throws IllegalArgumentException if the model has no structure shape with this ShapeId
+     * @throws SerializationException if the value cannot be coerced; the message names the member
+     */
+    public Document createStruct(ShapeId shapeId, Document value) {
+        Validate.paramNotNull(shapeId, "shapeId");
+        Validate.paramNotNull(value, "value");
+        Shape shape = model.getShape(shapeId).orElse(null);
+        if (shape == null) {
+            throw new IllegalArgumentException("Shape " + shapeId + " is not in the model");
+        }
+        if (!shape.isStructureShape()) {
+            throw new IllegalArgumentException("Shape " + shapeId + " is a " + shape.getType() + ", not a structure");
+        }
+        return StructDocument.coerce(schemaConverter.getSchema(shape), value, service.schema().id());
+    }
+
+    /**
+     * Coerces the input to the operation's input schema, before any interceptor runs (Requirement 28.3).
+     */
+    private DynamicRequest request(DynamicOperation operation, Document input,
+                                   AwsRequestOverrideConfiguration overrideConfiguration) {
+        Validate.paramNotNull(input, "input");
+        StructDocument document = StructDocument.coerce(operation.inputSchema(), input, service.schema().id());
+        return DynamicRequest.builder().document(document).overrideConfiguration(overrideConfiguration).build();
+    }
+
+    /**
+     * Runs a call through the client handler, as a generated synchronous client does.
+     */
+    private DynamicResponse execute(DynamicOperation operation, DynamicRequest request) {
+        SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, syncClientConfiguration);
+        List<MetricPublisher> metricPublishers =
+            resolveMetricPublishers(clientConfiguration, request.overrideConfiguration().orElse(null));
+        MetricCollector apiCallMetricCollector = apiCallMetricCollector(metricPublishers, operation);
+        try {
+            return syncClientHandler.execute(executionParams(operation, request, clientConfiguration,
+                                                             apiCallMetricCollector));
+        } finally {
+            publish(metricPublishers, apiCallMetricCollector);
+        }
+    }
+
+    /**
+     * Runs a call through the asynchronous client handler, as a generated asynchronous client does.
+     */
+    private CompletableFuture<DynamicResponse> executeAsync(DynamicOperation operation, DynamicRequest request) {
+        SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, asyncClientConfiguration);
+        List<MetricPublisher> metricPublishers =
+            resolveMetricPublishers(clientConfiguration, request.overrideConfiguration().orElse(null));
+        MetricCollector apiCallMetricCollector = apiCallMetricCollector(metricPublishers, operation);
+        try {
+            CompletableFuture<DynamicResponse> executeFuture =
+                asyncClientHandler.execute(executionParams(operation, request, clientConfiguration,
+                                                           apiCallMetricCollector));
+            CompletableFuture<DynamicResponse> whenCompleted =
+                executeFuture.whenComplete((r, e) -> publish(metricPublishers, apiCallMetricCollector));
+            return CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
+        } catch (Throwable t) {
+            publish(metricPublishers, apiCallMetricCollector);
+            return CompletableFutureUtils.failedFuture(t);
+        }
+    }
+
+    /**
+     * The parameters of a call on the schema-based pipeline. {@code withOperation} routes the call to the pipeline that
+     * generated clients use, with the operation as {@code SdkExecutionAttribute.API_OPERATION}.
+     */
+    private static ClientExecutionParams<DynamicRequest, DynamicResponse> executionParams(
+        DynamicOperation operation, DynamicRequest request, SdkClientConfiguration clientConfiguration,
+        MetricCollector apiCallMetricCollector) {
+        return new ClientExecutionParams<DynamicRequest, DynamicResponse>()
+            .withOperation(operation)
+            .withRequestConfiguration(clientConfiguration)
+            .withInput(request)
+            .withMetricCollector(apiCallMetricCollector)
+            .withAuthSchemeOptionsResolver(DynamicCallResolvers.authSchemeOptionsResolver())
+            .withEndpointResolver(DynamicCallResolvers.endpointResolver());
+    }
+
+    private MetricCollector apiCallMetricCollector(List<MetricPublisher> metricPublishers, DynamicOperation operation) {
+        MetricCollector collector = metricPublishers.isEmpty() ? NoOpMetricCollector.create()
+                                                               : MetricCollector.create("ApiCall");
+        collector.reportMetric(CoreMetric.SERVICE_ID, sdkId);
+        collector.reportMetric(CoreMetric.OPERATION_NAME, operation.name());
+        return collector;
+    }
+
+    private static void publish(List<MetricPublisher> metricPublishers, MetricCollector apiCallMetricCollector) {
+        metricPublishers.forEach(p -> p.publish(apiCallMetricCollector.collect()));
+    }
+
+    /**
+     * The metric publishers of the call's override configuration, else of the client, as a generated client resolves
+     * them.
+     */
+    private static List<MetricPublisher> resolveMetricPublishers(SdkClientConfiguration clientConfiguration,
+                                                                 RequestOverrideConfiguration overrideConfiguration) {
+        List<MetricPublisher> publishers = null;
+        if (overrideConfiguration != null) {
+            publishers = overrideConfiguration.metricPublishers();
+        }
+        if (publishers == null || publishers.isEmpty()) {
+            publishers = clientConfiguration.option(SdkClientOption.METRIC_PUBLISHERS);
+        }
+        return publishers == null ? Collections.emptyList() : publishers;
+    }
+
+    /**
+     * Applies the plugins of the call's override configuration to a copy of the client configuration, as a generated
+     * client does.
+     */
+    private static SdkClientConfiguration updateSdkClientConfiguration(DynamicRequest request,
+                                                                       SdkClientConfiguration clientConfiguration) {
+        List<SdkPlugin> plugins = request.overrideConfiguration().map(c -> c.plugins()).orElse(Collections.emptyList());
+        return applyPlugins(clientConfiguration, plugins);
+    }
+
+    /**
+     * Runs plugins on a {@link DynamicServiceClientConfiguration.Builder} that writes through to a copy of the
+     * configuration, then applies their retry settings, as the generated builder and client do.
+     */
+    private static SdkClientConfiguration applyPlugins(SdkClientConfiguration config, List<SdkPlugin> plugins) {
+        if (plugins.isEmpty()) {
+            return config;
+        }
+        SdkClientConfiguration.Builder configuration = config.toBuilder();
+        DynamicServiceClientConfigurationBuilder serviceConfigBuilder =
+            new DynamicServiceClientConfigurationBuilder(configuration);
+        for (SdkPlugin plugin : plugins) {
+            plugin.configureClient(serviceConfigBuilder);
+        }
+        updateRetryStrategyClientConfiguration(configuration);
+        return configuration.build();
+    }
+
+    private List<software.amazon.awssdk.schema.ShapeId> effectiveAuthSchemes(OperationShape operation) {
+        DynamicAuthSchemes.OperationAuth auth = authSchemes.operation(ModelConversions.shapeId(operation.getId()));
+        List<software.amazon.awssdk.schema.ShapeId> ids = new ArrayList<>(auth.schemes().size());
+        for (DynamicAuthSchemes.EffectiveAuthScheme scheme : auth.schemes()) {
+            ids.add(software.amazon.awssdk.schema.ShapeId.from(scheme.schemeId()));
+        }
+        return ids;
+    }
+
+    /**
+     * Applies the retry settings a plugin made through the override configuration, as the generated builder does.
+     */
+    private static void updateRetryStrategyClientConfiguration(SdkClientConfiguration.Builder configuration) {
+        ClientOverrideConfiguration.Builder builder = configuration.asOverrideConfigurationBuilder();
+        RetryMode retryMode = builder.retryMode();
+        if (retryMode != null) {
+            configuration.option(SdkClientOption.RETRY_STRATEGY, AwsRetryStrategy.forRetryMode(retryMode));
+        } else {
+            Consumer<RetryStrategy.Builder<?, ?>> configurator = builder.retryStrategyConfigurator();
+            if (configurator != null) {
+                RetryStrategy.Builder<?, ?> defaultBuilder = AwsRetryStrategy.defaultRetryStrategy().toBuilder();
+                configurator.accept(defaultBuilder);
+                configuration.option(SdkClientOption.RETRY_STRATEGY, defaultBuilder.build());
+            } else {
+                RetryStrategy retryStrategy = builder.retryStrategy();
+                if (retryStrategy != null) {
+                    configuration.option(SdkClientOption.RETRY_STRATEGY, retryStrategy);
+                }
+            }
+        }
+        configuration.option(SdkClientOption.CONFIGURED_RETRY_MODE, null);
+        configuration.option(SdkClientOption.CONFIGURED_RETRY_STRATEGY, null);
+        configuration.option(SdkClientOption.CONFIGURED_RETRY_CONFIGURATOR, null);
     }
 
     Model model() {
@@ -355,7 +721,8 @@ public final class DynamicClient implements AwsClient {
                     throw e;
                 }
                 warnAboutMissingAuthSchemes(sync, resolvedService);
-                return new DynamicClient(resolvedModel, resolvedService, converter, serviceSchema, sync, async);
+                return new DynamicClient(resolvedModel, resolvedService, converter, serviceSchema, buildState.authSchemes,
+                                         sync, async);
             } finally {
                 state = null;
             }
@@ -438,18 +805,7 @@ public final class DynamicClient implements AwsClient {
          */
         @Override
         protected SdkClientConfiguration invokePlugins(SdkClientConfiguration config) {
-            List<SdkPlugin> plugins = plugins();
-            if (plugins.isEmpty()) {
-                return config;
-            }
-            SdkClientConfiguration.Builder configuration = config.toBuilder();
-            DynamicServiceClientConfigurationBuilder serviceConfigBuilder =
-                new DynamicServiceClientConfigurationBuilder(configuration);
-            for (SdkPlugin plugin : plugins) {
-                plugin.configureClient(serviceConfigBuilder);
-            }
-            updateRetryStrategyClientConfiguration(configuration);
-            return configuration.build();
+            return applyPlugins(config, plugins());
         }
 
         private BuildState resolvedState() {
@@ -530,31 +886,6 @@ public final class DynamicClient implements AwsClient {
             return transport == null ? HttpMessageExchange.INSTANCE : transport.messageExchange();
         }
 
-        /**
-         * Applies the retry settings a plugin made through the override configuration, as the generated builder does.
-         */
-        private static void updateRetryStrategyClientConfiguration(SdkClientConfiguration.Builder configuration) {
-            ClientOverrideConfiguration.Builder builder = configuration.asOverrideConfigurationBuilder();
-            RetryMode retryMode = builder.retryMode();
-            if (retryMode != null) {
-                configuration.option(SdkClientOption.RETRY_STRATEGY, AwsRetryStrategy.forRetryMode(retryMode));
-            } else {
-                Consumer<RetryStrategy.Builder<?, ?>> configurator = builder.retryStrategyConfigurator();
-                if (configurator != null) {
-                    RetryStrategy.Builder<?, ?> defaultBuilder = AwsRetryStrategy.defaultRetryStrategy().toBuilder();
-                    configurator.accept(defaultBuilder);
-                    configuration.option(SdkClientOption.RETRY_STRATEGY, defaultBuilder.build());
-                } else {
-                    RetryStrategy retryStrategy = builder.retryStrategy();
-                    if (retryStrategy != null) {
-                        configuration.option(SdkClientOption.RETRY_STRATEGY, retryStrategy);
-                    }
-                }
-            }
-            configuration.option(SdkClientOption.CONFIGURED_RETRY_MODE, null);
-            configuration.option(SdkClientOption.CONFIGURED_RETRY_STRATEGY, null);
-            configuration.option(SdkClientOption.CONFIGURED_RETRY_CONFIGURATOR, null);
-        }
     }
 
     /**

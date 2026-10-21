@@ -33,6 +33,8 @@ final class DynamicTestModels {
     private static final Model WEATHER_MODEL = assemble("weather.smithy");
     private static final Model TWO_SERVICES_MODEL = assemble("two-services.smithy");
     private static final Model NO_SERVICE_MODEL = assemble("no-service.smithy");
+    private static final Model JSON10_MODEL = assemble("json10.smithy");
+    private static final Model REST_JSON_MODEL = assemble("rest-json.smithy");
 
     private DynamicTestModels() {
     }
@@ -56,6 +58,21 @@ final class DynamicTestModels {
      */
     static Model noService() {
         return NO_SERVICE_MODEL;
+    }
+
+    /**
+     * An awsJson1_0 and sigv4 service ({@code test.json10#JsonTen}) whose {@code PutItem} input has a member of every
+     * coercion rule, with a resource operation, an operation without input, and operation and service errors.
+     */
+    static Model json10() {
+        return JSON10_MODEL;
+    }
+
+    /**
+     * A restJson1 and sigv4 service ({@code test.restjson#RestWidgets}) with label, query, header and body members.
+     */
+    static Model restJson() {
+        return REST_JSON_MODEL;
     }
 
     /**

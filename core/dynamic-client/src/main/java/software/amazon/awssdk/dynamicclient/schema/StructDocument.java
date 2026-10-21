@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
 import software.amazon.awssdk.schema.PreludeSchemas;
@@ -133,6 +134,45 @@ public final class StructDocument implements Document, SerializableStruct {
             return (StructDocument) convertDocument(schema, delegate, service);
         }
         throw new IllegalArgumentException("Document must be a map, structure, or union, but got " + delegateType);
+    }
+
+    /**
+     * Converts an untyped document to a structure document with the dynamic client's strict input rules (design C.3,
+     * Requirements 28.3 to 28.6, 28.10 and 28.11), where {@link #of(Schema, Document, ShapeId)} is lenient:
+     * <ul>
+     *     <li>a name that is not a member of its structure fails instead of being ignored;</li>
+     *     <li>a value whose document type does not fit its member fails, naming the member;</li>
+     *     <li>byte, short, integer, intEnum, long and bigInteger members need an integral number in their range, with
+     *     no narrowing;</li>
+     *     <li>a timestamp member takes a timestamp, a number of epoch seconds (with the fraction kept down to
+     *     milliseconds) or a {@code date-time} string;</li>
+     *     <li>a blob member takes only a blob document;</li>
+     *     <li>a union may have only one member set.</li>
+     * </ul>
+     *
+     * <p>A document that already has this schema is returned as is.
+     *
+     * @param schema the structure schema
+     * @param value the map or structure document
+     * @param service the shape ID of the service the document belongs to, as for
+     *     {@link #of(Schema, Document, ShapeId)}
+     * @return the structure document
+     * @throws IllegalArgumentException if the schema is not a structure schema
+     * @throws software.amazon.awssdk.schema.serde.SerializationException if the value cannot be coerced; the message
+     *     names the member and never includes the value
+     */
+    @SdkInternalApi
+    public static StructDocument coerce(Schema schema, Document value, ShapeId service) {
+        Validate.paramNotNull(schema, "schema");
+        Validate.paramNotNull(value, "value");
+        Validate.paramNotNull(service, "service");
+        if (schema.type() != ShapeType.STRUCTURE) {
+            throw new IllegalArgumentException("Schema must be a structure, got " + schema.type());
+        }
+        if (value instanceof StructDocument && ((StructDocument) value).schema == schema) {
+            return (StructDocument) value;
+        }
+        return StrictDocumentCoercion.coerceStructure(schema, value, service);
     }
 
     private static int findSetMember(Document[] values) {
