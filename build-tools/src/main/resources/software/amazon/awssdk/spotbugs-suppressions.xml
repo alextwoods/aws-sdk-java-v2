@@ -347,6 +347,9 @@
             <Class name="~software\.amazon\.awssdk\.auth\.credentials\.InstanceProfileCredentialsProvider" />
 
             <Class name="~software\.amazon\.awssdk\.messagemanager\.sns\.internal\.SnsHostProvider" />
+            <!-- The dynamic client's endpoint resolver waits for its endpoint provider, as a generated client's
+                 resolveEndpoint does: the request pipeline's EndpointResolver is synchronous. -->
+            <Class name="~software\.amazon\.awssdk\.dynamicclient\.internal\.DynamicCallResolvers" />
 
             <!-- test modules are allowed to make blocking call as parts of their testing -->
             <Class name="~.*testutils.*" />
