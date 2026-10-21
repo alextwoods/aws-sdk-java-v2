@@ -1,0 +1,1 @@
+{"Records":[{"eventVersion":"2.1","eventSource":"aws:s3","awsRegion":"us-west-2","eventTime":null,"userIdentity":null,"requestParameters":{},"responseElements":{},"s3":{"bucket":null,"object":null}}]}

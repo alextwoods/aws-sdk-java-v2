@@ -16,12 +16,21 @@
 package software.amazon.awssdk.eventnotifications.s3.model;
 
 
+import static software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde.writeNullable;
+
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 @SdkPublicApi
-public class RequestParameters {
+public class RequestParameters implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.REQUEST_PARAMETERS;
+    private static final Schema M_SOURCE_IP_ADDRESS = SCHEMA.member("sourceIPAddress");
 
     private final String sourceIpAddress;
 
@@ -31,6 +40,28 @@ public class RequestParameters {
 
     public String getSourceIpAddress() {
         return sourceIpAddress;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes {@code sourceIPAddress}, as {@code null} when it is null.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        writeNullable(serializer, M_SOURCE_IP_ADDRESS, sourceIpAddress);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        if (member.memberIndex() == 0) {
+            return (T) SchemaUtils.validateSameMember(M_SOURCE_IP_ADDRESS, member, sourceIpAddress);
+        }
+        throw SchemaUtils.notAMember(SCHEMA, member);
     }
 
     @Override

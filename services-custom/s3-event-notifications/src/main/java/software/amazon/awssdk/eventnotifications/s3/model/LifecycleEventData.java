@@ -18,6 +18,11 @@ package software.amazon.awssdk.eventnotifications.s3.model;
 
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
@@ -26,7 +31,9 @@ import software.amazon.awssdk.utils.ToString;
  *     S3 Lifecycle transition</a> related events.
  */
 @SdkPublicApi
-public class LifecycleEventData {
+public class LifecycleEventData implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.LIFECYCLE_EVENT_DATA;
+    private static final Schema M_TRANSITION_EVENT_DATA = SCHEMA.member("transitionEventData");
 
     private final TransitionEventData transitionEventData;
 
@@ -36,6 +43,30 @@ public class LifecycleEventData {
 
     public TransitionEventData getTransitionEventData() {
         return transitionEventData;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes {@code transitionEventData} only when it is set.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        if (transitionEventData != null) {
+            serializer.writeStruct(M_TRANSITION_EVENT_DATA, transitionEventData);
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        if (member.memberIndex() == 0) {
+            return (T) SchemaUtils.validateSameMember(M_TRANSITION_EVENT_DATA, member, transitionEventData);
+        }
+        throw SchemaUtils.notAMember(SCHEMA, member);
     }
 
     @Override

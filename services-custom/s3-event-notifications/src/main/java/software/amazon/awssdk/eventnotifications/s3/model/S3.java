@@ -15,9 +15,16 @@
 
 package software.amazon.awssdk.eventnotifications.s3.model;
 
+import static software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde.writeNullable;
+
 import java.util.List;
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
@@ -26,7 +33,13 @@ import software.amazon.awssdk.utils.ToString;
  * type in the response).
  */
 @SdkPublicApi
-public class S3 {
+public class S3 implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.S3;
+    private static final Schema M_S3_SCHEMA_VERSION = SCHEMA.member("s3SchemaVersion");
+    private static final Schema M_CONFIGURATION_ID = SCHEMA.member("configurationId");
+    private static final Schema M_BUCKET = SCHEMA.member("bucket");
+    private static final Schema M_OBJECT = SCHEMA.member("object");
+    private static final Schema M_OBJECT_ANNOTATION = SCHEMA.member("objectAnnotation");
 
     private final String configurationId;
     private final S3Bucket bucket;
@@ -75,6 +88,45 @@ public class S3 {
 
     public List<S3ObjectAnnotation> getObjectAnnotation() {
         return objectAnnotation;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes every member but {@code objectAnnotation} even when it is null, as {@code null}, and
+     * {@code objectAnnotation} only when it is set.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        writeNullable(serializer, M_S3_SCHEMA_VERSION, s3SchemaVersion);
+        writeNullable(serializer, M_CONFIGURATION_ID, configurationId);
+        writeNullable(serializer, M_BUCKET, bucket);
+        writeNullable(serializer, M_OBJECT, object);
+        if (objectAnnotation != null) {
+            S3EventNotificationSerde.writeAnnotations(serializer, M_OBJECT_ANNOTATION, objectAnnotation);
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        switch (member.memberIndex()) {
+            case 0:
+                return (T) SchemaUtils.validateSameMember(M_S3_SCHEMA_VERSION, member, s3SchemaVersion);
+            case 1:
+                return (T) SchemaUtils.validateSameMember(M_CONFIGURATION_ID, member, configurationId);
+            case 2:
+                return (T) SchemaUtils.validateSameMember(M_BUCKET, member, bucket);
+            case 3:
+                return (T) SchemaUtils.validateSameMember(M_OBJECT, member, object);
+            case 4:
+                return (T) SchemaUtils.validateSameMember(M_OBJECT_ANNOTATION, member, objectAnnotation);
+            default:
+                throw SchemaUtils.notAMember(SCHEMA, member);
+        }
     }
 
     @Override

@@ -16,18 +16,30 @@
 package software.amazon.awssdk.eventnotifications.s3.model;
 
 
+import static software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde.writeNullable;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
  * Bucket information.
  */
 @SdkPublicApi
-public class S3Bucket {
+public class S3Bucket implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.S3_BUCKET;
+    private static final Schema M_NAME = SCHEMA.member("name");
+    private static final Schema M_OWNER_IDENTITY = SCHEMA.member("ownerIdentity");
+    private static final Schema M_ARN = SCHEMA.member("arn");
+    private static final Schema M_AWS_GENERATED_TAGS = SCHEMA.member("awsGeneratedTags");
 
     private final String name;
     private final UserIdentity ownerIdentity;
@@ -74,6 +86,47 @@ public class S3Bucket {
      */
     public Map<String, String> getAwsGeneratedTags() {
         return awsGeneratedTags;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes {@code name}, {@code ownerIdentity} and {@code arn} even when they are null, as {@code null}; an owner
+     * identity without a principal ID is written as {@code null} too. {@code awsGeneratedTags} is written only when it
+     * is set and not empty.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        writeNullable(serializer, M_NAME, name);
+        if (ownerIdentity == null || ownerIdentity.getPrincipalId() == null) {
+            serializer.writeNull(M_OWNER_IDENTITY);
+        } else {
+            serializer.writeStruct(M_OWNER_IDENTITY, ownerIdentity);
+        }
+        writeNullable(serializer, M_ARN, arn);
+        if (awsGeneratedTags != null && !awsGeneratedTags.isEmpty()) {
+            S3EventNotificationSerde.writeTags(serializer, M_AWS_GENERATED_TAGS, awsGeneratedTags);
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        switch (member.memberIndex()) {
+            case 0:
+                return (T) SchemaUtils.validateSameMember(M_NAME, member, name);
+            case 1:
+                return (T) SchemaUtils.validateSameMember(M_OWNER_IDENTITY, member, ownerIdentity);
+            case 2:
+                return (T) SchemaUtils.validateSameMember(M_ARN, member, arn);
+            case 3:
+                return (T) SchemaUtils.validateSameMember(M_AWS_GENERATED_TAGS, member, awsGeneratedTags);
+            default:
+                throw SchemaUtils.notAMember(SCHEMA, member);
+        }
     }
 
     @Override

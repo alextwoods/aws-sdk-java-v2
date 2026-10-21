@@ -15,16 +15,26 @@
 
 package software.amazon.awssdk.eventnotifications.s3.model;
 
+import static software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde.writeNullable;
+
 import java.time.Instant;
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
  * The RestoreEventData contains attributes that are related to the restore request.
  */
 @SdkPublicApi
-public class RestoreEventData {
+public class RestoreEventData implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.RESTORE_EVENT_DATA;
+    private static final Schema M_LIFECYCLE_RESTORATION_EXPIRY_TIME = SCHEMA.member("lifecycleRestorationExpiryTime");
+    private static final Schema M_LIFECYCLE_RESTORE_STORAGE_CLASS = SCHEMA.member("lifecycleRestoreStorageClass");
 
     private final Instant lifecycleRestorationExpiryTime;
     private final String lifecycleRestoreStorageClass;
@@ -47,6 +57,42 @@ public class RestoreEventData {
      */
     public String getLifecycleRestoreStorageClass() {
         return lifecycleRestoreStorageClass;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes every member, as {@code null} when it is null. {@code lifecycleRestorationExpiryTime} is written in the
+     * {@code ISO_INSTANT} format.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        writeNullable(serializer, M_LIFECYCLE_RESTORATION_EXPIRY_TIME, lifecycleRestorationExpiryTime);
+        writeNullable(serializer, M_LIFECYCLE_RESTORE_STORAGE_CLASS, lifecycleRestoreStorageClass);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code lifecycleRestorationExpiryTime} is returned as its {@code ISO_INSTANT} string, the member's schema type.
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        switch (member.memberIndex()) {
+            case 0:
+                return (T) SchemaUtils.validateSameMember(
+                    M_LIFECYCLE_RESTORATION_EXPIRY_TIME, member,
+                    S3EventNotificationSerde.formatInstant(lifecycleRestorationExpiryTime));
+            case 1:
+                return (T) SchemaUtils.validateSameMember(M_LIFECYCLE_RESTORE_STORAGE_CLASS, member,
+                                                          lifecycleRestoreStorageClass);
+            default:
+                throw SchemaUtils.notAMember(SCHEMA, member);
+        }
     }
 
     @Override

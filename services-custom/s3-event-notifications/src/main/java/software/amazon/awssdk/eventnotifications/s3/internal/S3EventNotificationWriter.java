@@ -36,11 +36,11 @@ public interface S3EventNotificationWriter
     String writeToString(S3EventNotification event);
 
     static S3EventNotificationWriter create() {
-        return DefaultS3EventNotificationWriter.create();
+        return CodecS3EventNotificationWriter.create();
     }
 
     static Builder builder() {
-        return DefaultS3EventNotificationWriter.builder();
+        return CodecS3EventNotificationWriter.builder();
     }
 
     interface Builder extends CopyableBuilder<Builder, S3EventNotificationWriter> {

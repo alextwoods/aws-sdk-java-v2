@@ -286,7 +286,7 @@
             <Class name="software.amazon.awssdk.http.nio.netty.internal.http2.FlushOnReadHandler"/>
             <Class name="software.amazon.awssdk.http.apache.internal.conn.IdleConnectionReaper"/>
             <Class name="software.amazon.awssdk.http.apache5.internal.conn.IdleConnectionReaper"/>
-            <Class name="software.amazon.awssdk.eventnotifications.s3.internal.DefaultS3EventNotificationWriter"/>
+            <Class name="software.amazon.awssdk.eventnotifications.s3.internal.CodecS3EventNotificationWriter"/>
             <Class name="software.amazon.awssdk.policybuilder.iam.internal.DefaultIamPolicyWriter"/>
         </Or>
         <Bug pattern="MS_EXPOSE_REP"/>

@@ -21,7 +21,12 @@ import java.util.List;
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationReader;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
 import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationWriter;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
@@ -32,7 +37,9 @@ import software.amazon.awssdk.utils.ToString;
  * json.
  */
 @SdkPublicApi
-public class S3EventNotification {
+public class S3EventNotification implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.S3_EVENT_NOTIFICATION;
+    private static final Schema M_RECORDS = SCHEMA.member("Records");
 
     private final List<S3EventNotificationRecord> records;
 
@@ -101,6 +108,28 @@ public class S3EventNotification {
                                                                     .prettyPrint(true)
                                                                     .build();
         return writer.writeToString(this);
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes {@code Records}, as {@code null} when it is null.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        S3EventNotificationSerde.writeRecords(serializer, M_RECORDS, records);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        if (member.memberIndex() == 0) {
+            return (T) SchemaUtils.validateSameMember(M_RECORDS, member, records);
+        }
+        throw SchemaUtils.notAMember(SCHEMA, member);
     }
 
     @Override

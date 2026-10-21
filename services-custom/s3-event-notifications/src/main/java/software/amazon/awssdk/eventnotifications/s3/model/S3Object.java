@@ -15,18 +15,32 @@
 
 package software.amazon.awssdk.eventnotifications.s3.model;
 
+import static software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde.writeNullable;
+
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
  * Object information.
  */
 @SdkPublicApi
-public class S3Object {
+public class S3Object implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.S3_OBJECT;
+    private static final Schema M_KEY = SCHEMA.member("key");
+    private static final Schema M_SIZE = SCHEMA.member("size");
+    private static final Schema M_E_TAG = SCHEMA.member("eTag");
+    private static final Schema M_VERSION_ID = SCHEMA.member("versionId");
+    private static final Schema M_SEQUENCER = SCHEMA.member("sequencer");
+    private static final Schema M_HAS_OBJECT_ANNOTATION = SCHEMA.member("hasObjectAnnotation");
 
     private final String key;
     private final Long size;
@@ -108,6 +122,48 @@ public class S3Object {
      */
     public Boolean getHasObjectAnnotation() {
         return hasObjectAnnotation;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes every member but {@code hasObjectAnnotation} even when it is null, as {@code null}, and
+     * {@code hasObjectAnnotation} only when it is set.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        writeNullable(serializer, M_KEY, key);
+        writeNullable(serializer, M_SIZE, size);
+        writeNullable(serializer, M_E_TAG, eTag);
+        writeNullable(serializer, M_VERSION_ID, versionId);
+        writeNullable(serializer, M_SEQUENCER, sequencer);
+        if (hasObjectAnnotation != null) {
+            serializer.writeBoolean(M_HAS_OBJECT_ANNOTATION, hasObjectAnnotation);
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        switch (member.memberIndex()) {
+            case 0:
+                return (T) SchemaUtils.validateSameMember(M_KEY, member, key);
+            case 1:
+                return (T) SchemaUtils.validateSameMember(M_SIZE, member, size);
+            case 2:
+                return (T) SchemaUtils.validateSameMember(M_E_TAG, member, eTag);
+            case 3:
+                return (T) SchemaUtils.validateSameMember(M_VERSION_ID, member, versionId);
+            case 4:
+                return (T) SchemaUtils.validateSameMember(M_SEQUENCER, member, sequencer);
+            case 5:
+                return (T) SchemaUtils.validateSameMember(M_HAS_OBJECT_ANNOTATION, member, hasObjectAnnotation);
+            default:
+                throw SchemaUtils.notAMember(SCHEMA, member);
+        }
     }
 
     @Override

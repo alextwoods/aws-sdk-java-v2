@@ -17,6 +17,11 @@ package software.amazon.awssdk.eventnotifications.s3.model;
 
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
@@ -25,7 +30,9 @@ import software.amazon.awssdk.utils.ToString;
  * <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/restoring-objects.html">Restoring an archived object</a>
  */
 @SdkPublicApi
-public class GlacierEventData {
+public class GlacierEventData implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.GLACIER_EVENT_DATA;
+    private static final Schema M_RESTORE_EVENT_DATA = SCHEMA.member("restoreEventData");
 
     private final RestoreEventData restoreEventData;
 
@@ -35,6 +42,30 @@ public class GlacierEventData {
 
     public RestoreEventData getRestoreEventData() {
         return restoreEventData;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes {@code restoreEventData} only when it is set.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        if (restoreEventData != null) {
+            serializer.writeStruct(M_RESTORE_EVENT_DATA, restoreEventData);
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        if (member.memberIndex() == 0) {
+            return (T) SchemaUtils.validateSameMember(M_RESTORE_EVENT_DATA, member, restoreEventData);
+        }
+        throw SchemaUtils.notAMember(SCHEMA, member);
     }
 
     @Override

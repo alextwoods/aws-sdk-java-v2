@@ -15,10 +15,17 @@
 
 package software.amazon.awssdk.eventnotifications.s3.model;
 
+import static software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde.writeNullable;
+
 import java.time.Instant;
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.annotations.SdkTestInternalApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
@@ -28,7 +35,21 @@ import software.amazon.awssdk.utils.ToString;
  * notification record.
  */
 @SdkPublicApi
-public class S3EventNotificationRecord {
+public class S3EventNotificationRecord implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.S3_EVENT_NOTIFICATION_RECORD;
+    private static final Schema M_EVENT_VERSION = SCHEMA.member("eventVersion");
+    private static final Schema M_EVENT_SOURCE = SCHEMA.member("eventSource");
+    private static final Schema M_AWS_REGION = SCHEMA.member("awsRegion");
+    private static final Schema M_EVENT_TIME = SCHEMA.member("eventTime");
+    private static final Schema M_EVENT_NAME = SCHEMA.member("eventName");
+    private static final Schema M_USER_IDENTITY = SCHEMA.member("userIdentity");
+    private static final Schema M_REQUEST_PARAMETERS = SCHEMA.member("requestParameters");
+    private static final Schema M_RESPONSE_ELEMENTS = SCHEMA.member("responseElements");
+    private static final Schema M_S3 = SCHEMA.member("s3");
+    private static final Schema M_GLACIER_EVENT_DATA = SCHEMA.member("glacierEventData");
+    private static final Schema M_REPLICATION_EVENT_DATA = SCHEMA.member("replicationEventData");
+    private static final Schema M_INTELLIGENT_TIERING_EVENT_DATA = SCHEMA.member("intelligentTieringEventData");
+    private static final Schema M_LIFECYCLE_EVENT_DATA = SCHEMA.member("lifecycleEventData");
 
     private String awsRegion;
     private String eventName;
@@ -271,6 +292,82 @@ public class S3EventNotificationRecord {
 
     public void setEventTime(Instant eventTime) {
         this.eventTime = eventTime;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes the members up to {@code s3} even when they are null, as {@code null}, and the event data members only
+     * when they are set. {@code eventTime} is written in the {@code ISO_INSTANT} format.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        writeNullable(serializer, M_EVENT_VERSION, eventVersion);
+        writeNullable(serializer, M_EVENT_SOURCE, eventSource);
+        writeNullable(serializer, M_AWS_REGION, awsRegion);
+        writeNullable(serializer, M_EVENT_TIME, eventTime);
+        writeNullable(serializer, M_EVENT_NAME, eventName);
+        writeNullable(serializer, M_USER_IDENTITY, userIdentity);
+        writeNullable(serializer, M_REQUEST_PARAMETERS, requestParameters);
+        writeNullable(serializer, M_RESPONSE_ELEMENTS, responseElements);
+        writeNullable(serializer, M_S3, s3);
+        if (glacierEventData != null) {
+            serializer.writeStruct(M_GLACIER_EVENT_DATA, glacierEventData);
+        }
+        if (replicationEventData != null) {
+            serializer.writeStruct(M_REPLICATION_EVENT_DATA, replicationEventData);
+        }
+        if (intelligentTieringEventData != null) {
+            serializer.writeStruct(M_INTELLIGENT_TIERING_EVENT_DATA, intelligentTieringEventData);
+        }
+        if (lifecycleEventData != null) {
+            serializer.writeStruct(M_LIFECYCLE_EVENT_DATA, lifecycleEventData);
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@code eventTime} is returned as its {@code ISO_INSTANT} string, the member's schema type.
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        switch (member.memberIndex()) {
+            case 0:
+                return (T) SchemaUtils.validateSameMember(M_EVENT_VERSION, member, eventVersion);
+            case 1:
+                return (T) SchemaUtils.validateSameMember(M_EVENT_SOURCE, member, eventSource);
+            case 2:
+                return (T) SchemaUtils.validateSameMember(M_AWS_REGION, member, awsRegion);
+            case 3:
+                return (T) SchemaUtils.validateSameMember(M_EVENT_TIME, member,
+                                                          S3EventNotificationSerde.formatInstant(eventTime));
+            case 4:
+                return (T) SchemaUtils.validateSameMember(M_EVENT_NAME, member, eventName);
+            case 5:
+                return (T) SchemaUtils.validateSameMember(M_USER_IDENTITY, member, userIdentity);
+            case 6:
+                return (T) SchemaUtils.validateSameMember(M_REQUEST_PARAMETERS, member, requestParameters);
+            case 7:
+                return (T) SchemaUtils.validateSameMember(M_RESPONSE_ELEMENTS, member, responseElements);
+            case 8:
+                return (T) SchemaUtils.validateSameMember(M_S3, member, s3);
+            case 9:
+                return (T) SchemaUtils.validateSameMember(M_GLACIER_EVENT_DATA, member, glacierEventData);
+            case 10:
+                return (T) SchemaUtils.validateSameMember(M_REPLICATION_EVENT_DATA, member, replicationEventData);
+            case 11:
+                return (T) SchemaUtils.validateSameMember(M_INTELLIGENT_TIERING_EVENT_DATA, member,
+                                                          intelligentTieringEventData);
+            case 12:
+                return (T) SchemaUtils.validateSameMember(M_LIFECYCLE_EVENT_DATA, member, lifecycleEventData);
+            default:
+                throw SchemaUtils.notAMember(SCHEMA, member);
+        }
     }
 
     @Override

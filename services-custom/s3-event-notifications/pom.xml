@@ -56,7 +56,12 @@
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>json-utils</artifactId>
+            <artifactId>schema</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>json-codec</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
@@ -68,6 +73,14 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>utils</artifactId>
             <version>${awsjavasdk.version}</version>
+        </dependency>
+        <!-- The JsonNodeParser/JsonWriter reader and writer that fromJson and toJson used before the JSON codec. They are
+             kept in test scope for S3EventNotificationParityTest. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>json-utils</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <dependency>
@@ -94,6 +107,29 @@
 
     <build>
         <plugins>
+            <!-- Generates only the schemas of src/main/smithy/s3-event-notification.smithy (types-only codegen, design
+                 D.7); the model classes are hand-written. -->
+            <plugin>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>codegen-maven-plugin</artifactId>
+                <version>${awsjavasdk.version}</version>
+                <executions>
+                    <execution>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate-types</goal>
+                        </goals>
+                        <configuration>
+                            <service>software.amazon.awssdk.eventnotifications.s3#S3EventNotifications</service>
+                            <rootShapes>
+                                <rootShape>software.amazon.awssdk.eventnotifications.s3#S3EventNotification</rootShape>
+                            </rootShapes>
+                            <packageName>software.amazon.awssdk.eventnotifications.s3.internal</packageName>
+                            <classPrefix>S3EventNotification</classPrefix>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>

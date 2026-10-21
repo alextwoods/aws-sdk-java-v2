@@ -15,8 +15,15 @@
 
 package software.amazon.awssdk.eventnotifications.s3.model;
 
+import static software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde.writeNullable;
+
 import java.util.Objects;
 import software.amazon.awssdk.annotations.SdkPublicApi;
+import software.amazon.awssdk.eventnotifications.s3.internal.S3EventNotificationSerde;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SchemaUtils;
+import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.utils.ToString;
 
 /**
@@ -26,7 +33,10 @@ import software.amazon.awssdk.utils.ToString;
  * to the request.
  */
 @SdkPublicApi
-public class ResponseElements {
+public class ResponseElements implements SerializableStruct {
+    private static final Schema SCHEMA = S3EventNotificationSerde.RESPONSE_ELEMENTS;
+    private static final Schema M_X_AMZ_REQUEST_ID = SCHEMA.member("xAmzRequestId");
+    private static final Schema M_X_AMZ_ID2 = SCHEMA.member("xAmzId2");
 
     private final String xAmzId2;
     private final String xAmzRequestId;
@@ -42,6 +52,33 @@ public class ResponseElements {
 
     public String getXAmzRequestId() {
         return xAmzRequestId;
+    }
+
+    @Override
+    public Schema sdkSchema() {
+        return SCHEMA;
+    }
+
+    /**
+     * Writes {@code x-amz-request-id} and {@code x-amz-id-2}, as {@code null} when they are null.
+     */
+    @Override
+    public void serializeMembers(ShapeSerializer serializer) {
+        writeNullable(serializer, M_X_AMZ_REQUEST_ID, xAmzRequestId);
+        writeNullable(serializer, M_X_AMZ_ID2, xAmzId2);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T getMemberValue(Schema member) {
+        switch (member.memberIndex()) {
+            case 0:
+                return (T) SchemaUtils.validateSameMember(M_X_AMZ_REQUEST_ID, member, xAmzRequestId);
+            case 1:
+                return (T) SchemaUtils.validateSameMember(M_X_AMZ_ID2, member, xAmzId2);
+            default:
+                throw SchemaUtils.notAMember(SCHEMA, member);
+        }
     }
 
     @Override

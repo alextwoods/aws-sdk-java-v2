@@ -31,7 +31,7 @@ public interface S3EventNotificationReader {
      * @return
      */
     static S3EventNotificationReader create() {
-        return new DefaultS3EventNotificationReader();
+        return CodecS3EventNotificationReader.create();
     }
 
     /**

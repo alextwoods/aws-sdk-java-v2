@@ -1,0 +1,1 @@
+{"Records":[{"s3":{"bucket":{"name":"first","ownerIdentity":{"principalId":"p"}}},"s3":{"object":{"key":"second"}},"eventName":"a","eventName":"b"}],"Records":[]}

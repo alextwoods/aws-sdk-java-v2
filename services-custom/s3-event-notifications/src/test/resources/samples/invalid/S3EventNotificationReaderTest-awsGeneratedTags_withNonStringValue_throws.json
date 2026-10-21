@@ -1,0 +1,12 @@
+{
+  "Records" : [ {
+    "s3" : {
+      "bucket" : {
+        "name" : "mybucket",
+        "awsGeneratedTags" : {
+          "aws:resource:owner" : 123
+        }
+      }
+    }
+  } ]
+}
