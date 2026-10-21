@@ -95,7 +95,7 @@ final class LegacyRouteParity {
     private static final Pattern JAVADOC_LINE_BREAK = Pattern.compile("\\s*\\R\\s*\\*(?!/) ?");
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
     private static final Pattern SCHEMA_GENERATOR_OUTPUT = Pattern.compile(
-        "(.*/model/[A-Za-z0-9]+(Schemas\\d*|SchemaIndex|Operations|SharedSerde)\\.java)"
+        "(.*/model/[A-Za-z0-9]+(Schemas\\d*|SchemaIndex|Operations|SharedSerde|TypeRegistry)\\.java)"
         + "|(.*/internal/[A-Za-z0-9]+ServiceSchemas\\.java)"
         + "|(.*META-INF/services/software\\.amazon\\.awssdk\\.schema\\.SchemaIndex)");
     /**
@@ -424,8 +424,9 @@ final class LegacyRouteParity {
 
     /**
      * Whether a file is one of the schema classes (or their {@code ServiceLoader} entry) that only the pipeline
-     * generates (tasks 1.27 and 3.15, {@code <Svc>Operations}). The legacy route has no Smithy model to generate them from, so they are left out of the
-     * comparison, which covers the files both routes generate.
+     * generates (tasks 1.27, 3.15 and 11.16: {@code <Svc>Operations}, {@code <Svc>TypeRegistry}). The legacy route has
+     * no Smithy model to generate them from, so they are left out of the comparison, which covers the files both routes
+     * generate.
      */
     static boolean isSchemaGeneratorOutput(String file) {
         return SCHEMA_GENERATOR_OUTPUT.matcher(file).matches();
