@@ -32,13 +32,13 @@ Codegen customizations disabled in the feature build (from `disabled-customizati
 
 | Service | Compressed JAR | Change | Uncompressed class bytes | Change | `.class` entries | Requirement 36.3 |
 |---|---|---|---|---|---|---|
-| SQS | 864,199 → 1,010,063 | +145,864 (+16.9%) | 2,750,861 → 3,049,924 | +299,063 (+10.9%) | 518 → 613 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| Secrets Manager | 752,302 → 849,617 | +97,315 (+12.9%) | 2,372,919 → 2,548,590 | +175,671 (+7.4%) | 422 → 491 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| Account | 473,889 → 551,687 | +77,798 (+16.4%) | 1,420,618 → 1,597,015 | +176,397 (+12.4%) | 287 → 343 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| Route 53 | 2,168,552 → 2,510,210 | +341,658 (+15.8%) | 7,031,368 → 7,857,798 | +826,430 (+11.8%) | 1,277 → 1,496 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| SNS | 1,105,536 → 1,297,957 | +192,421 (+17.4%) | 3,473,658 → 3,969,018 | +495,360 (+14.3%) | 714 → 830 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| CloudWatch | 1,706,662 → 1,969,997 | +263,335 (+15.4%) | 5,349,563 → 5,844,064 | +494,501 (+9.2%) | 950 → 1,134 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
-| DynamoDB | 2,916,473 → 3,307,156 | +390,683 (+13.4%) | 9,488,893 → 10,054,417 | +565,524 (+6.0%) | 1,533 → 1,837 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| SQS | 864,199 → 1,010,652 | +146,453 (+16.9%) | 2,750,861 → 3,050,641 | +299,780 (+10.9%) | 518 → 614 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| Secrets Manager | 752,302 → 850,262 | +97,960 (+13.0%) | 2,372,919 → 2,549,362 | +176,443 (+7.4%) | 422 → 492 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| Account | 473,889 → 552,302 | +78,413 (+16.5%) | 1,420,618 → 1,597,752 | +177,134 (+12.5%) | 287 → 344 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| Route 53 | 2,168,552 → 2,510,817 | +342,265 (+15.8%) | 7,031,368 → 7,858,535 | +827,167 (+11.8%) | 1,277 → 1,497 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| SNS | 1,105,536 → 1,298,546 | +193,010 (+17.5%) | 3,473,658 → 3,969,735 | +496,077 (+14.3%) | 714 → 831 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| CloudWatch | 1,706,662 → 1,970,630 | +263,968 (+15.5%) | 5,349,563 → 5,844,816 | +495,253 (+9.3%) | 950 → 1,135 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
+| DynamoDB | 2,916,473 → 3,307,776 | +391,303 (+13.4%) | 9,488,893 → 10,055,159 | +566,266 (+6.0%) | 1,533 → 1,838 | **Fails**: the JAR grows; categories with a net increase: Schemas, Type_Registries, Generated_Model_Class classes, Other |
 
 ### Change by category, all services (Requirement 36.2)
 
@@ -47,13 +47,13 @@ Change in uncompressed class-file bytes. Each service column adds up to the serv
 | Category | SQS | Secrets Manager | Account | Route 53 | SNS | CloudWatch | DynamoDB | All services |
 |---|---|---|---|---|---|---|---|---|
 | Schemas | +40,175 | +44,249 | +28,887 | +131,157 | +57,907 | +93,999 | +140,000 | +536,374 |
-| Type_Registries | +3,586 | +1,768 | +1,185 | +8,194 | +5,504 | +2,662 | +4,286 | +27,185 |
+| Type_Registries | +4,303 | +2,540 | +1,922 | +8,931 | +6,221 | +3,414 | +5,028 | +32,359 |
 | Generated_Model_Class classes | +368,904 | +218,294 | +225,637 | +935,175 | +543,667 | +507,412 | +616,064 | +3,415,153 |
 | Client classes | -21,552 | -20,217 | -846 | -40,622 | -18,056 | -40,470 | -57,485 | -199,248 |
 | Removed marshallers and unmarshallers | -98,704 | -100,598 | -68,733 | -330,502 | -181,314 | -217,124 | -247,728 | -1,244,703 |
 | Removed exception-mapping code | -112,928 | -53,782 | -25,678 | -28,878 | -14,720 | -137,682 | -319,468 | -693,136 |
 | Other | +119,582 | +85,957 | +15,945 | +151,906 | +102,372 | +285,704 | +429,855 | +1,191,321 |
-| **Total** | **+299,063** | **+175,671** | **+176,397** | **+826,430** | **+495,360** | **+494,501** | **+565,524** | **+3,032,946** |
+| **Total** | **+299,780** | **+176,443** | **+177,134** | **+827,167** | **+496,077** | **+495,253** | **+566,266** | **+3,038,120** |
 
 ## SQS (`sqs`)
 
@@ -61,22 +61,22 @@ Service packages: `software.amazon.awssdk.services.sqs`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 864,199 | 1,010,063 | +145,864 (+16.9%) |
-| Uncompressed class-file bytes | 2,750,861 | 3,049,924 | +299,063 (+10.9%) |
-| `.class` entries | 518 | 613 | +95 |
+| Compressed main JAR | 864,199 | 1,010,652 | +146,453 (+16.9%) |
+| Uncompressed class-file bytes | 2,750,861 | 3,050,641 | +299,780 (+10.9%) |
+| `.class` entries | 518 | 614 | +96 |
 
 ### Change by category (Requirement 36.2)
 
 | Category | Baseline_Build | Feature build | Change |
 |---|---|---|---|
 | Schemas | 0 | 40,175 | +40,175 |
-| Type_Registries | 0 | 3,586 | +3,586 |
+| Type_Registries | 0 | 4,303 | +4,303 |
 | Generated_Model_Class classes | 1,767,203 | 2,136,107 | +368,904 |
 | Client classes | 313,937 | 292,385 | -21,552 |
 | Removed marshallers and unmarshallers | 98,704 | 0 | -98,704 |
 | Removed exception-mapping code | 112,928 | 0 | -112,928 |
 | Other | 458,089 | 577,671 | +119,582 |
-| **Total** | 2,750,861 | 3,049,924 | **+299,063** |
+| **Total** | 2,750,861 | 3,050,641 | **+299,780** |
 
 The category changes add up to the change in uncompressed class-file bytes.
 
@@ -128,7 +128,7 @@ None: apart from the code this design adds or removes, both builds have the same
 | `software.amazon.awssdk.services.sqs.endpoints.internal` | 44 | 140,890 | 44 | 140,890 | 0 |
 | `software.amazon.awssdk.services.sqs.internal` | 5 | 33,027 | 6 | 36,527 | +3,500 |
 | `software.amazon.awssdk.services.sqs.internal.batchmanager` | 26 | 170,004 | 26 | 170,004 | 0 |
-| `software.amazon.awssdk.services.sqs.model` | 376 | 1,849,670 | 493 | 2,399,745 | +550,075 |
+| `software.amazon.awssdk.services.sqs.model` | 376 | 1,849,670 | 494 | 2,400,462 | +550,792 |
 | `software.amazon.awssdk.services.sqs.paginators` | 12 | 36,206 | 12 | 36,206 | 0 |
 | `software.amazon.awssdk.services.sqs.transform` | 23 | 98,704 | 0 | 0 | -98,704 |
 
@@ -138,22 +138,22 @@ Service packages: `software.amazon.awssdk.services.secretsmanager`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 752,302 | 849,617 | +97,315 (+12.9%) |
-| Uncompressed class-file bytes | 2,372,919 | 2,548,590 | +175,671 (+7.4%) |
-| `.class` entries | 422 | 491 | +69 |
+| Compressed main JAR | 752,302 | 850,262 | +97,960 (+13.0%) |
+| Uncompressed class-file bytes | 2,372,919 | 2,549,362 | +176,443 (+7.4%) |
+| `.class` entries | 422 | 492 | +70 |
 
 ### Change by category (Requirement 36.2)
 
 | Category | Baseline_Build | Feature build | Change |
 |---|---|---|---|
 | Schemas | 0 | 44,249 | +44,249 |
-| Type_Registries | 0 | 1,768 | +1,768 |
+| Type_Registries | 0 | 2,540 | +2,540 |
 | Generated_Model_Class classes | 1,645,632 | 1,863,926 | +218,294 |
 | Client classes | 314,915 | 294,698 | -20,217 |
 | Removed marshallers and unmarshallers | 100,598 | 0 | -100,598 |
 | Removed exception-mapping code | 53,782 | 0 | -53,782 |
 | Other | 257,992 | 343,949 | +85,957 |
-| **Total** | 2,372,919 | 2,548,590 | **+175,671** |
+| **Total** | 2,372,919 | 2,549,362 | **+176,443** |
 
 The category changes add up to the change in uncompressed class-file bytes.
 
@@ -203,7 +203,7 @@ None: apart from the code this design adds or removes, both builds have the same
 | `software.amazon.awssdk.services.secretsmanager.endpoints` | 5 | 12,838 | 5 | 12,838 | 0 |
 | `software.amazon.awssdk.services.secretsmanager.endpoints.internal` | 44 | 147,416 | 44 | 147,416 | 0 |
 | `software.amazon.awssdk.services.secretsmanager.internal` | 4 | 18,278 | 5 | 21,735 | +3,457 |
-| `software.amazon.awssdk.services.secretsmanager.model` | 307 | 1,703,813 | 398 | 2,071,807 | +367,994 |
+| `software.amazon.awssdk.services.secretsmanager.model` | 307 | 1,703,813 | 399 | 2,072,579 | +368,766 |
 | `software.amazon.awssdk.services.secretsmanager.paginators` | 18 | 47,546 | 18 | 47,546 | 0 |
 | `software.amazon.awssdk.services.secretsmanager.transform` | 23 | 100,598 | 0 | 0 | -100,598 |
 
@@ -213,22 +213,22 @@ Service packages: `software.amazon.awssdk.services.account`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 473,889 | 551,687 | +77,798 (+16.4%) |
-| Uncompressed class-file bytes | 1,420,618 | 1,597,015 | +176,397 (+12.4%) |
-| `.class` entries | 287 | 343 | +56 |
+| Compressed main JAR | 473,889 | 552,302 | +78,413 (+16.5%) |
+| Uncompressed class-file bytes | 1,420,618 | 1,597,752 | +177,134 (+12.5%) |
+| `.class` entries | 287 | 344 | +57 |
 
 ### Change by category (Requirement 36.2)
 
 | Category | Baseline_Build | Feature build | Change |
 |---|---|---|---|
 | Schemas | 0 | 28,887 | +28,887 |
-| Type_Registries | 0 | 1,185 | +1,185 |
+| Type_Registries | 0 | 1,922 | +1,922 |
 | Generated_Model_Class classes | 897,271 | 1,122,908 | +225,637 |
 | Client classes | 221,952 | 221,106 | -846 |
 | Removed marshallers and unmarshallers | 68,733 | 0 | -68,733 |
 | Removed exception-mapping code | 25,678 | 0 | -25,678 |
 | Other | 206,984 | 222,929 | +15,945 |
-| **Total** | 1,420,618 | 1,597,015 | **+176,397** |
+| **Total** | 1,420,618 | 1,597,752 | **+177,134** |
 
 The category changes add up to the change in uncompressed class-file bytes.
 
@@ -287,7 +287,7 @@ Top-level classes (with their nested classes) that exist in only one build and a
 | `software.amazon.awssdk.services.account.endpoints` | 5 | 11,837 | 5 | 11,837 | 0 |
 | `software.amazon.awssdk.services.account.endpoints.internal` | 44 | 144,390 | 44 | 144,390 | 0 |
 | `software.amazon.awssdk.services.account.internal` | 4 | 17,788 | 5 | 22,257 | +4,469 |
-| `software.amazon.awssdk.services.account.model` | 191 | 910,256 | 262 | 1,194,107 | +283,851 |
+| `software.amazon.awssdk.services.account.model` | 191 | 910,256 | 263 | 1,194,844 | +284,588 |
 | `software.amazon.awssdk.services.account.paginators` | 6 | 17,938 | 6 | 17,938 | 0 |
 | `software.amazon.awssdk.services.account.transform` | 16 | 68,733 | 0 | 0 | -68,733 |
 
@@ -297,22 +297,22 @@ Service packages: `software.amazon.awssdk.services.route53`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 2,168,552 | 2,510,210 | +341,658 (+15.8%) |
-| Uncompressed class-file bytes | 7,031,368 | 7,857,798 | +826,430 (+11.8%) |
-| `.class` entries | 1,277 | 1,496 | +219 |
+| Compressed main JAR | 2,168,552 | 2,510,817 | +342,265 (+15.8%) |
+| Uncompressed class-file bytes | 7,031,368 | 7,858,535 | +827,167 (+11.8%) |
+| `.class` entries | 1,277 | 1,497 | +220 |
 
 ### Change by category (Requirement 36.2)
 
 | Category | Baseline_Build | Feature build | Change |
 |---|---|---|---|
 | Schemas | 0 | 131,157 | +131,157 |
-| Type_Registries | 0 | 8,194 | +8,194 |
+| Type_Registries | 0 | 8,931 | +8,931 |
 | Generated_Model_Class classes | 5,504,921 | 6,440,096 | +935,175 |
 | Client classes | 808,529 | 767,907 | -40,622 |
 | Removed marshallers and unmarshallers | 330,502 | 0 | -330,502 |
 | Removed exception-mapping code | 28,878 | 0 | -28,878 |
 | Other | 358,538 | 510,444 | +151,906 |
-| **Total** | 7,031,368 | 7,857,798 | **+826,430** |
+| **Total** | 7,031,368 | 7,858,535 | **+827,167** |
 
 The category changes add up to the change in uncompressed class-file bytes.
 
@@ -363,7 +363,7 @@ None: apart from the code this design adds or removes, both builds have the same
 | `software.amazon.awssdk.services.route53.endpoints.internal` | 44 | 146,980 | 44 | 146,980 | 0 |
 | `software.amazon.awssdk.services.route53.internal` | 5 | 37,166 | 6 | 49,239 | +12,073 |
 | `software.amazon.awssdk.services.route53.jmespath.internal` | 3 | 25,367 | 3 | 25,367 | 0 |
-| `software.amazon.awssdk.services.route53.model` | 1,074 | 5,622,125 | 1,363 | 6,897,251 | +1,275,126 |
+| `software.amazon.awssdk.services.route53.model` | 1,074 | 5,622,125 | 1,364 | 6,897,988 | +1,275,863 |
 | `software.amazon.awssdk.services.route53.paginators` | 42 | 131,837 | 42 | 131,837 | 0 |
 | `software.amazon.awssdk.services.route53.transform` | 71 | 330,502 | 0 | 0 | -330,502 |
 | `software.amazon.awssdk.services.route53.waiters` | 10 | 49,489 | 10 | 49,489 | 0 |
@@ -375,22 +375,22 @@ Service packages: `software.amazon.awssdk.services.sns`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 1,105,536 | 1,297,957 | +192,421 (+17.4%) |
-| Uncompressed class-file bytes | 3,473,658 | 3,969,018 | +495,360 (+14.3%) |
-| `.class` entries | 714 | 830 | +116 |
+| Compressed main JAR | 1,105,536 | 1,298,546 | +193,010 (+17.5%) |
+| Uncompressed class-file bytes | 3,473,658 | 3,969,735 | +496,077 (+14.3%) |
+| `.class` entries | 714 | 831 | +117 |
 
 ### Change by category (Requirement 36.2)
 
 | Category | Baseline_Build | Feature build | Change |
 |---|---|---|---|
 | Schemas | 0 | 57,907 | +57,907 |
-| Type_Registries | 0 | 5,504 | +5,504 |
+| Type_Registries | 0 | 6,221 | +6,221 |
 | Generated_Model_Class classes | 2,482,397 | 3,026,064 | +543,667 |
 | Client classes | 539,803 | 521,747 | -18,056 |
 | Removed marshallers and unmarshallers | 181,314 | 0 | -181,314 |
 | Removed exception-mapping code | 14,720 | 0 | -14,720 |
 | Other | 255,424 | 357,796 | +102,372 |
-| **Total** | 3,473,658 | 3,969,018 | **+495,360** |
+| **Total** | 3,473,658 | 3,969,735 | **+496,077** |
 
 The category changes add up to the change in uncompressed class-file bytes.
 
@@ -440,7 +440,7 @@ None: apart from the code this design adds or removes, both builds have the same
 | `software.amazon.awssdk.services.sns.endpoints` | 5 | 11,265 | 5 | 11,265 | 0 |
 | `software.amazon.awssdk.services.sns.endpoints.internal` | 44 | 140,976 | 44 | 140,976 | 0 |
 | `software.amazon.awssdk.services.sns.internal` | 4 | 17,508 | 5 | 23,157 | +5,649 |
-| `software.amazon.awssdk.services.sns.model` | 550 | 2,548,828 | 707 | 3,288,797 | +739,969 |
+| `software.amazon.awssdk.services.sns.model` | 550 | 2,548,828 | 708 | 3,289,514 | +740,686 |
 | `software.amazon.awssdk.services.sns.paginators` | 48 | 149,742 | 48 | 149,742 | 0 |
 | `software.amazon.awssdk.services.sns.transform` | 42 | 181,314 | 0 | 0 | -181,314 |
 
@@ -450,22 +450,22 @@ Service packages: `software.amazon.awssdk.services.cloudwatch`.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 1,706,662 | 1,969,997 | +263,335 (+15.4%) |
-| Uncompressed class-file bytes | 5,349,563 | 5,844,064 | +494,501 (+9.2%) |
-| `.class` entries | 950 | 1,134 | +184 |
+| Compressed main JAR | 1,706,662 | 1,970,630 | +263,968 (+15.5%) |
+| Uncompressed class-file bytes | 5,349,563 | 5,844,816 | +495,253 (+9.3%) |
+| `.class` entries | 950 | 1,135 | +185 |
 
 ### Change by category (Requirement 36.2)
 
 | Category | Baseline_Build | Feature build | Change |
 |---|---|---|---|
 | Schemas | 0 | 93,999 | +93,999 |
-| Type_Registries | 0 | 2,662 | +2,662 |
+| Type_Registries | 0 | 3,414 | +3,414 |
 | Generated_Model_Class classes | 3,848,527 | 4,355,939 | +507,412 |
 | Client classes | 730,572 | 690,102 | -40,470 |
 | Removed marshallers and unmarshallers | 217,124 | 0 | -217,124 |
 | Removed exception-mapping code | 137,682 | 0 | -137,682 |
 | Other | 415,658 | 701,362 | +285,704 |
-| **Total** | 5,349,563 | 5,844,064 | **+494,501** |
+| **Total** | 5,349,563 | 5,844,816 | **+495,253** |
 
 The category changes add up to the change in uncompressed class-file bytes.
 
@@ -516,7 +516,7 @@ None: apart from the code this design adds or removes, both builds have the same
 | `software.amazon.awssdk.services.cloudwatch.endpoints.internal` | 44 | 145,177 | 44 | 145,177 | 0 |
 | `software.amazon.awssdk.services.cloudwatch.internal` | 4 | 17,998 | 5 | 24,750 | +6,752 |
 | `software.amazon.awssdk.services.cloudwatch.jmespath.internal` | 3 | 25,535 | 3 | 25,535 | 0 |
-| `software.amazon.awssdk.services.cloudwatch.model` | 751 | 4,042,670 | 984 | 4,965,357 | +922,687 |
+| `software.amazon.awssdk.services.cloudwatch.model` | 751 | 4,042,670 | 985 | 4,966,109 | +923,439 |
 | `software.amazon.awssdk.services.cloudwatch.paginators` | 60 | 183,379 | 60 | 183,379 | 0 |
 | `software.amazon.awssdk.services.cloudwatch.transform` | 50 | 217,124 | 0 | 0 | -217,124 |
 | `software.amazon.awssdk.services.cloudwatch.waiters` | 10 | 70,827 | 10 | 70,827 | 0 |
@@ -528,22 +528,22 @@ Service packages: `software.amazon.awssdk.services.dynamodb.streams`, `software.
 
 | Measure | Baseline_Build | Feature build | Change |
 |---|---|---|---|
-| Compressed main JAR | 2,916,473 | 3,307,156 | +390,683 (+13.4%) |
-| Uncompressed class-file bytes | 9,488,893 | 10,054,417 | +565,524 (+6.0%) |
-| `.class` entries | 1,533 | 1,837 | +304 |
+| Compressed main JAR | 2,916,473 | 3,307,776 | +391,303 (+13.4%) |
+| Uncompressed class-file bytes | 9,488,893 | 10,055,159 | +566,266 (+6.0%) |
+| `.class` entries | 1,533 | 1,838 | +305 |
 
 ### Change by category (Requirement 36.2)
 
 | Category | Baseline_Build | Feature build | Change |
 |---|---|---|---|
 | Schemas | 0 | 140,000 | +140,000 |
-| Type_Registries | 0 | 4,286 | +4,286 |
+| Type_Registries | 0 | 5,028 | +5,028 |
 | Generated_Model_Class classes | 7,091,910 | 7,707,974 | +616,064 |
 | Client classes | 996,746 | 939,261 | -57,485 |
 | Removed marshallers and unmarshallers | 265,035 | 17,307 | -247,728 |
 | Removed exception-mapping code | 327,826 | 8,358 | -319,468 |
 | Other | 807,376 | 1,237,231 | +429,855 |
-| **Total** | 9,488,893 | 10,054,417 | **+565,524** |
+| **Total** | 9,488,893 | 10,055,159 | **+566,266** |
 
 The category changes add up to the change in uncompressed class-file bytes.
 
@@ -598,7 +598,7 @@ None: apart from the code this design adds or removes, both builds have the same
 | `software.amazon.awssdk.services.dynamodb.endpoints.internal` | 44 | 180,254 | 44 | 180,254 | 0 |
 | `software.amazon.awssdk.services.dynamodb.internal` | 4 | 17,858 | 5 | 24,445 | +6,587 |
 | `software.amazon.awssdk.services.dynamodb.jmespath.internal` | 3 | 25,423 | 3 | 25,423 | 0 |
-| `software.amazon.awssdk.services.dynamodb.model` | 1,264 | 7,438,596 | 1,624 | 8,669,071 | +1,230,475 |
+| `software.amazon.awssdk.services.dynamodb.model` | 1,264 | 7,438,596 | 1,625 | 8,669,813 | +1,231,217 |
 | `software.amazon.awssdk.services.dynamodb.paginators` | 42 | 112,731 | 42 | 112,731 | 0 |
 | `software.amazon.awssdk.services.dynamodb.streams` | 13 | 127,982 | 13 | 127,982 | 0 |
 | `software.amazon.awssdk.services.dynamodb.streams.auth.scheme` | 3 | 6,131 | 3 | 6,131 | 0 |
@@ -623,17 +623,17 @@ The Runtime_Schema_Module, the codecs, `http-binding` and the client protocol mo
 |---|---|---|---|---|---|
 | `aws-json-client-protocol` | Client protocol | added | 0 | 17,521 | +17,521 |
 | `aws-query-client-protocol` | Client protocol | added | 0 | 47,263 | +47,263 |
-| `cbor-codec` | Codec | added | 0 | 54,883 | +54,883 |
+| `cbor-codec` | Codec | added | 0 | 69,868 | +69,868 |
 | `codec-commons` | Codec | added | 0 | 77,420 | +77,420 |
 | `http-binding` | HTTP binding | added | 0 | 101,960 | +101,960 |
 | `http-client-protocol` | Client protocol | added | 0 | 83,455 | +83,455 |
-| `json-codec` | Codec | added | 0 | 77,946 | +77,946 |
+| `json-codec` | Codec | added | 0 | 95,901 | +95,901 |
 | `rest-json-client-protocol` | Client protocol | added | 0 | 11,853 | +11,853 |
 | `rest-xml-client-protocol` | Client protocol | added | 0 | 16,885 | +16,885 |
 | `rpcv2-cbor-client-protocol` | Client protocol | added | 0 | 16,096 | +16,096 |
-| `schema` | Runtime_Schema_Module | added | 0 | 224,109 | +224,109 |
-| `xml-codec` | Codec | added | 0 | 122,936 | +122,936 |
-| **Total** | | | 0 | 852,327 | **+852,327** |
+| `schema` | Runtime_Schema_Module | added | 0 | 245,268 | +245,268 |
+| `xml-codec` | Codec | added | 0 | 123,039 | +123,039 |
+| **Total** | | | 0 | 906,529 | **+906,529** |
 
 ### Other runtime modules
 
@@ -644,13 +644,13 @@ The Runtime_Schema_Module, the codecs, `http-binding` and the client protocol mo
 | `aws-query-protocol` | no longer a dependency | 70,003 | 0 | -70,003 |
 | `aws-xml-protocol` | no longer a dependency | 103,308 | 0 | -103,308 |
 | `http-client-spi` | changed | 92,779 | 93,237 | +458 |
-| `sdk-core` | changed | 1,066,732 | 1,260,487 | +193,755 |
+| `sdk-core` | changed | 1,066,732 | 1,262,848 | +196,116 |
 | `smithy-rpcv2-protocol` | no longer a dependency | 25,232 | 0 | -25,232 |
 | `third-party-jackson-dataformat-cbor` | no longer a dependency | 73,938 | 0 | -73,938 |
 
 Unchanged (same content in both builds): `annotations`, `auth`, `aws-json-protocol`, `checksums`, `checksums-spi`, `endpoints-spi`, `http-auth`, `http-auth-aws`, `http-auth-aws-eventstream`, `http-auth-spi`, `identity-spi`, `json-utils`, `metrics-spi`, `netty-nio-client`, `profiles`, `protocol-core`, `regions`, `retries`, `retries-spi`, `third-party-jackson-core`, `utils`, `utils-lite`.
 
-All runtime modules together: 4,857,218 → 5,634,832, a change of +777,614 (+16.0%).
+All runtime modules together: 4,857,218 → 5,691,395, a change of +834,177 (+17.2%).
 
 ## Size-reduction opportunities (Requirement 36.5)
 
@@ -672,8 +672,8 @@ Further reductions found during the prototype, measured on the feature build JAR
 | 10 | Generic schema-driven paginator for `@paginated` operations; the per-operation `*Iterable`/`*Publisher` classes keep only their public signatures | Client classes | -5,500 to -2,750 | -7,338 to -3,669 | -2,719 to -1,359 | -19,670 to -9,835 | -22,360 to -11,180 | -27,256 to -13,628 | -17,752 to -8,876 |
 | 11 | Move the operations still on the legacy path to the schema path: the marshallers, unmarshallers and exception-mapping code the feature build keeps | Removed marshallers and unmarshallers | — | — | — | — | — | — | -9,247 |
 | | **All opportunities** | | **-205,694 to -202,944** | **-172,098 to -168,429** | **-86,212 to -84,852** | **-497,264 to -487,429** | **-271,624 to -260,444** | **-483,255 to -469,627** | **-742,362 to -733,486** |
-| | JAR change today (Summary) | | +145,864 (+16.9%) | +97,315 (+12.9%) | +77,798 (+16.4%) | +341,658 (+15.8%) | +192,421 (+17.4%) | +263,335 (+15.4%) | +390,683 (+13.4%) |
-| | **JAR change with all opportunities** | | **-59,830 to -57,080** | **-74,783 to -71,114** | **-8,414 to -7,054** | **-155,606 to -145,771** | **-79,203 to -68,023** | **-219,920 to -206,292** | **-351,679 to -342,803** |
+| | JAR change today (Summary) | | +146,453 (+16.9%) | +97,960 (+13.0%) | +78,413 (+16.5%) | +342,265 (+15.8%) | +193,010 (+17.5%) | +263,968 (+15.5%) | +391,303 (+13.4%) |
+| | **JAR change with all opportunities** | | **-59,241 to -56,491** | **-74,138 to -70,469** | **-7,799 to -6,439** | **-154,999 to -145,164** | **-78,614 to -67,434** | **-219,287 to -205,659** | **-351,059 to -342,183** |
 | | Requirement 36.3 with all opportunities | | Meets | Meets | Meets | Meets | Meets | Meets | Meets |
 
 Row 10 applies the design's estimate (20–40% of the paginator classes go away) to the measured paginator bytes; every other row removes the selected code entirely, so its estimate is the measured compressed size. The estimates leave out the one-time cost of any shared runtime code an opportunity needs (for example a generic collection serde in `schema`), which is not part of the service JARs.
