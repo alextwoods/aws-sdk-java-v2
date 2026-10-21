@@ -43,6 +43,11 @@
           Each display name is the one disabled-customizations.md uses.
         -->
         <size-report.services>sqs=SQS,secretsmanager=Secrets Manager,account=Account,route53=Route 53,sns=SNS,cloudwatch=CloudWatch,dynamodb=DynamoDB</size-report.services>
+        <!--
+          The higher-level libraries of the Library_Integration_Analysis (design D.7, task 11.23) in the report:
+          artifactId=display name, comma-separated, in report order.
+        -->
+        <size-report.libraries>s3-event-notifications=S3 Event Notifications,sns-message-manager=SNS Message Manager,message-payloads=Message payloads</size-report.libraries>
         <!-- true: rewrite size-report.md instead of failing when it is out of date -->
         <size-report.update>false</size-report.update>
         <size-report.docsDir>${project.basedir}/../../docs/design/schema-serde</size-report.docsDir>
@@ -121,6 +126,25 @@
             <version>${awsjavasdk.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- The feature build of each reported library (size-report.libraries), read the same way. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3-event-notifications</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns-message-manager</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>message-payloads</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -191,6 +215,7 @@
                         <size-report.baselineDir>${size-report.baselineDir}</size-report.baselineDir>
                         <size-report.featureJarsDir>${project.build.directory}/size-report/feature-jars</size-report.featureJarsDir>
                         <size-report.services>${size-report.services}</size-report.services>
+                        <size-report.libraries>${size-report.libraries}</size-report.libraries>
                         <size-report.update>${size-report.update}</size-report.update>
                         <size-report.document>${size-report.docsDir}/size-report.md</size-report.document>
                         <size-report.disabledCustomizations>${size-report.docsDir}/disabled-customizations.md</size-report.disabledCustomizations>

@@ -176,6 +176,46 @@ class SizeReportTest {
     }
 
     @Test
+    void generate_withLibraries_rendersChangedAndNewLibrariesOutsideTheModules() throws IOException {
+        writeBuildInfo("foo", JAVA_VERSION, JAVA_VENDOR, "lib", "newlib");
+        writeJar(baselineDir.resolve("jars/lib.jar"),
+                 Collections.singletonMap("lib/Reader", SyntheticClasses.plain("lib/Reader", 3)));
+        Map<String, byte[]> lib = new LinkedHashMap<>();
+        lib.put("lib/Reader", SyntheticClasses.plain("lib/Reader", 1));
+        lib.put("lib/Serde", SyntheticClasses.plain("lib/Serde", 5));
+        writeJar(featureDir.resolve("lib.jar"), lib);
+        writeJar(featureDir.resolve("newlib.jar"),
+                 Collections.singletonMap("newlib/Payloads", SyntheticClasses.plain("newlib/Payloads", 2)));
+
+        String report = libraryReport().generate();
+
+        assertThat(report)
+            .contains("## Libraries (Requirement 38.2)")
+            .containsPattern("\\| Lib \\(`lib`\\) \\| changed \\| [0-9,]+ → [0-9,]+ \\| [-+][0-9,]+ \\([-+][0-9.]+%\\) "
+                             + "\\| [0-9,]+ → [0-9,]+ \\| \\+[0-9,]+ \\(\\+[0-9.]+%\\) \\| 1 → 2 \\|")
+            .containsPattern("\\| New lib \\(`newlib`\\) \\| new \\(not in the Baseline_Build commit\\) "
+                             + "\\| 0 → [0-9,]+ \\| \\+[0-9,]+ \\| 0 → [0-9,]+ \\| \\+[0-9,]+ \\| 0 → 1 \\|")
+            .contains("- **Libraries (38.2).**")
+            .doesNotContain("| `lib` |")
+            .doesNotContain("| `newlib` |");
+    }
+
+    @Test
+    void generate_libraryMissingFromBaselineBuild_failsWithRebuildCommand() throws IOException {
+        writeBuildInfo("foo", JAVA_VERSION, JAVA_VENDOR, "lib", "");
+
+        assertThatThrownBy(() -> libraryReport().generate())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("does not include [newlib]")
+            .hasMessageContaining("--modules foo --libraries lib,newlib");
+    }
+
+    @Test
+    void generate_withoutLibraries_omitsTheLibrariesSection() throws IOException {
+        assertThat(report().generate()).doesNotContain("## Libraries").doesNotContain("**Libraries (38.2).**");
+    }
+
+    @Test
     void parseServices_list_keepsOrder() {
         assertThat(SizeReport.parseServices("cloudwatch=CloudWatch, sqs=SQS"))
             .containsExactly(entry("cloudwatch", "CloudWatch"), entry("sqs", "SQS"));
@@ -198,10 +238,31 @@ class SizeReportTest {
                          .build();
     }
 
+    private SizeReport libraryReport() {
+        Map<String, String> libraries = new LinkedHashMap<>();
+        libraries.put("lib", "Lib");
+        libraries.put("newlib", "New lib");
+        return SizeReport.builder()
+                         .baselineDir(baselineDir)
+                         .featureJarsDir(featureDir)
+                         .services(Collections.singletonMap("foo", "Foo"))
+                         .libraries(libraries)
+                         .disabledCustomizations(disabled)
+                         .featureJdk(JAVA_VERSION, JAVA_VENDOR)
+                         .build();
+    }
+
     private void writeBuildInfo(String modules, String javaVersion, String javaVendor) throws IOException {
+        writeBuildInfo(modules, javaVersion, javaVendor, "", "");
+    }
+
+    private void writeBuildInfo(String modules, String javaVersion, String javaVendor, String libraries,
+                                String absentLibraries) throws IOException {
         Files.write(baselineDir.resolve("build-info.properties"), Arrays.asList(
             "baseline.commit=0123456789abcdef0123456789abcdef01234567",
             "baseline.modules=" + modules,
+            "baseline.libraries=" + libraries,
+            "baseline.absentLibraries=" + absentLibraries,
             "java.version=" + javaVersion,
             "java.vendor=" + javaVendor,
             "maven.version=3.9.16",

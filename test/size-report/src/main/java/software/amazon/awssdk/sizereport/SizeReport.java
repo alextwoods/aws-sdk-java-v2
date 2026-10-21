@@ -22,13 +22,14 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.TreeMap;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 
@@ -36,8 +37,8 @@ import software.amazon.awssdk.annotations.SdkInternalApi;
  * Builds the Size_Report (Requirement 36) from the Baseline_Build and feature build JARs.
  *
  * <p>The Baseline_Build directory is written by {@code scripts/schema-serde/build-size-baseline.sh}: it holds
- * {@code jars/<artifactId>.jar} (each service and its {@code software.amazon.awssdk} runtime dependencies) and
- * {@code build-info.properties}. The feature directory holds the same JARs from the feature build.
+ * {@code jars/<artifactId>.jar} (each service and library and its {@code software.amazon.awssdk} runtime dependencies)
+ * and {@code build-info.properties}. The feature directory holds the same JARs from the feature build.
  *
  * <p>{@link #generate()} fails if the two builds were not compiled with the same JDK version and compiler options
  * (Requirement 36.7), as far as the JARs show it: the Baseline_Build's recorded JDK must be the JDK running the
@@ -51,6 +52,7 @@ public final class SizeReport {
     private final Path baselineDir;
     private final Path featureJarsDir;
     private final Map<String, String> services;
+    private final Map<String, String> libraries;
     private final Path disabledCustomizations;
     private final String featureJavaVersion;
     private final String featureJavaVendor;
@@ -59,6 +61,7 @@ public final class SizeReport {
         this.baselineDir = Objects.requireNonNull(builder.baselineDir, "baselineDir");
         this.featureJarsDir = Objects.requireNonNull(builder.featureJarsDir, "featureJarsDir");
         this.services = Collections.unmodifiableMap(new LinkedHashMap<>(builder.services));
+        this.libraries = Collections.unmodifiableMap(new LinkedHashMap<>(builder.libraries));
         this.disabledCustomizations = Objects.requireNonNull(builder.disabledCustomizations, "disabledCustomizations");
         this.featureJavaVersion = Objects.requireNonNull(builder.featureJavaVersion, "featureJavaVersion");
         this.featureJavaVendor = Objects.requireNonNull(builder.featureJavaVendor, "featureJavaVendor");
@@ -75,7 +78,7 @@ public final class SizeReport {
     }
 
     /**
-     * Parse a service list of the form {@code artifactId=Display name,artifactId=Display name}.
+     * Parse a service or library list of the form {@code artifactId=Display name,artifactId=Display name}.
      */
     public static Map<String, String> parseServices(String spec) {
         Map<String, String> result = new LinkedHashMap<>();
@@ -141,7 +144,25 @@ public final class SizeReport {
                                             + " 36.7). Baseline_Build: " + baselineFingerprint + "; feature build: "
                                             + featureFingerprint);
         }
-        ModuleComparison modules = ModuleComparison.compare(baselineJars, featureJars, services.keySet());
+        List<LibraryComparison> libraryComparisons = new ArrayList<>();
+        List<String> absent = listProperty(buildInfo, "baseline.absentLibraries");
+        for (Map.Entry<String, String> library : libraries.entrySet()) {
+            JarContents baseline = absent.contains(library.getKey())
+                                   ? null
+                                   : requireJar(baselineJars, library.getKey(), "Baseline_Build",
+                                                baselineDir.resolve("jars"));
+            JarContents feature = requireJar(featureJars, library.getKey(), "feature build", featureJarsDir);
+            if (baseline != null && !Objects.equals(baseline.buildJdkSpec(), feature.buildJdkSpec())) {
+                throw new IllegalStateException(
+                    library.getKey() + ": the Baseline_Build JAR was built by JDK " + baseline.buildJdkSpec()
+                    + " and the feature JAR by JDK " + feature.buildJdkSpec() + " (Build-Jdk-Spec). Rebuild one of"
+                    + " them with the other's JDK (Requirement 36.7).");
+            }
+            libraryComparisons.add(LibraryComparison.compare(library.getKey(), library.getValue(), baseline, feature));
+        }
+        Set<String> notModules = new HashSet<>(services.keySet());
+        notModules.addAll(libraries.keySet());
+        ModuleComparison modules = ModuleComparison.compare(baselineJars, featureJars, notModules);
 
         Map<String, List<String>> disabled = new LinkedHashMap<>();
         for (Map.Entry<String, String> service : services.entrySet()) {
@@ -150,34 +171,56 @@ public final class SizeReport {
         }
 
         return new SizeReportWriter(buildInfo, featureJavaVersion, featureJavaVendor, baselineFingerprint,
-                                    featureFingerprint, disabled, comparisons, modules, opportunities).render();
+                                    featureFingerprint, disabled, comparisons, modules, libraryComparisons,
+                                    opportunities).render();
     }
 
     private Properties loadBuildInfo() throws IOException {
         Path file = baselineDir.resolve("build-info.properties");
         if (!Files.isRegularFile(file)) {
             throw new IllegalStateException(
-                "No Baseline_Build in " + baselineDir + ". Build it once with " + BUILD_SCRIPT + " --modules "
-                + String.join(",", services.keySet()) + " (see test/size-report/README.md), or point"
-                + " -Dsize-report.baselineDir at an existing one.");
+                "No Baseline_Build in " + baselineDir + ". Build it once with " + rebuildCommand()
+                + " (see test/size-report/README.md), or point -Dsize-report.baselineDir at an existing one.");
         }
         Properties properties = new Properties();
         try (InputStream in = Files.newInputStream(file)) {
             properties.load(in);
         }
-        List<String> built = Arrays.asList(properties.getProperty("baseline.modules", "").split(","));
+        List<String> built = listProperty(properties, "baseline.modules");
         List<String> missing = new ArrayList<>();
         for (String service : services.keySet()) {
             if (!built.contains(service)) {
                 missing.add(service);
             }
         }
+        List<String> builtLibraries = listProperty(properties, "baseline.libraries");
+        List<String> absentLibraries = listProperty(properties, "baseline.absentLibraries");
+        for (String library : libraries.keySet()) {
+            if (!builtLibraries.contains(library) && !absentLibraries.contains(library)) {
+                missing.add(library);
+            }
+        }
         if (!missing.isEmpty()) {
             throw new IllegalStateException(
-                "The Baseline_Build in " + baselineDir + " does not include " + missing + ". Rerun " + BUILD_SCRIPT
-                + " --modules " + String.join(",", services.keySet()) + ".");
+                "The Baseline_Build in " + baselineDir + " does not include " + missing + ". Rerun "
+                + rebuildCommand() + ".");
         }
         return properties;
+    }
+
+    private String rebuildCommand() {
+        String command = BUILD_SCRIPT + " --modules " + String.join(",", services.keySet());
+        return libraries.isEmpty() ? command : command + " --libraries " + String.join(",", libraries.keySet());
+    }
+
+    private static List<String> listProperty(Properties properties, String name) {
+        List<String> result = new ArrayList<>();
+        for (String item : properties.getProperty(name, "").split(",")) {
+            if (!item.trim().isEmpty()) {
+                result.add(item.trim());
+            }
+        }
+        return result;
     }
 
     private static Map<String, JarContents> readJars(Path dir, String build) throws IOException {
@@ -209,6 +252,7 @@ public final class SizeReport {
         private Path baselineDir;
         private Path featureJarsDir;
         private Map<String, String> services = new LinkedHashMap<>();
+        private Map<String, String> libraries = new LinkedHashMap<>();
         private Path disabledCustomizations;
         private String featureJavaVersion;
         private String featureJavaVendor;
@@ -237,6 +281,14 @@ public final class SizeReport {
          */
         public Builder services(Map<String, String> services) {
             this.services = new LinkedHashMap<>(services);
+            return this;
+        }
+
+        /**
+         * The reported higher-level libraries (design D.7), artifactId to display name, in report order. Optional.
+         */
+        public Builder libraries(Map<String, String> libraries) {
+            this.libraries = new LinkedHashMap<>(libraries);
             return this;
         }
 

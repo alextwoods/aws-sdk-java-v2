@@ -16,9 +16,9 @@
 # Builds the Size_Report Baseline_Build (Requirements 36.1 and 36.7) for test/size-report.
 #
 # The Baseline_Build is the SDK built from the merge base of the schema-serde branch. This script checks that commit
-# out into a git worktree, builds the requested service modules (and the modules they need) there with the JDK and
-# Maven that run this script, with the same flags as the feature build (-P quick), and copies each service JAR and
-# its software.amazon.awssdk runtime dependencies to
+# out into a git worktree, builds the requested service and library modules (and the modules they need) there with
+# the JDK and Maven that run this script, with the same flags as the feature build (-P quick), and copies each service
+# and library JAR and its software.amazon.awssdk runtime dependencies to
 #
 #   <out>/jars/<artifactId>.jar
 #   <out>/build-info.properties      JDK, Maven, compiler options and commit of the build
@@ -28,19 +28,25 @@
 # Isolation: the worktree build installs into its own local repository (<worktree>-m2), chained in front of the
 # shared one (read-only), so the baseline's 2.x-SNAPSHOT artifacts never replace the feature build's.
 #
-# The script fails if the effective maven-compiler-plugin configuration of a service differs between the baseline
-# commit and the current checkout, or if a baseline service JAR still looks like a feature build.
+# The script fails if the effective maven-compiler-plugin configuration of a service or library differs between the
+# baseline commit and the current checkout, or if a baseline service JAR still looks like a feature build. A library
+# with no services-custom/<artifactId> module at the commit is not built and is recorded in
+# baseline.absentLibraries (the report shows it as new).
 #
-# Usage: scripts/schema-serde/build-size-baseline.sh [--ref <commit>] [--modules <a,b>] [--out <dir>] [--online]
-#   --ref      Baseline_Build commit (default: fc8b74e9fe21, the merge base with feature/master/smithy-migration)
-#   --modules  comma-separated service artifactIds (default: the seven Prototype_Service_Set services)
-#   --out      output directory (default: ~/.cache/aws-sdk-java-v2/size-baseline/<12-char commit>)
-#   --online   let Maven download missing artifacts (default: offline, -o)
+# Usage: scripts/schema-serde/build-size-baseline.sh [--ref <commit>] [--modules <a,b>] [--libraries <a,b>]
+#                                                    [--out <dir>] [--online]
+#   --ref        Baseline_Build commit (default: fc8b74e9fe21, the merge base with feature/master/smithy-migration)
+#   --modules    comma-separated service artifactIds (default: the seven Prototype_Service_Set services)
+#   --libraries  comma-separated services-custom library artifactIds (default: the three Library_Integration_Analysis
+#                libraries, size-report.libraries in test/size-report/pom.xml)
+#   --out        output directory (default: ~/.cache/aws-sdk-java-v2/size-baseline/<12-char commit>)
+#   --online     let Maven download missing artifacts (default: offline, -o)
 #
 set -euo pipefail
 
 REF="fc8b74e9fe21"
 MODULES="sqs,secretsmanager,account,route53,sns,cloudwatch,dynamodb"
+LIBRARIES="s3-event-notifications,sns-message-manager,message-payloads"
 OUT=""
 OFFLINE="-o"
 
@@ -48,9 +54,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --ref) REF="$2"; shift 2 ;;
         --modules) MODULES="$2"; shift 2 ;;
+        --libraries) LIBRARIES="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
         --online) OFFLINE=""; shift ;;
-        -h|--help) sed -n '16,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '16,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -88,7 +95,20 @@ fi
 
 PL=""
 for m in ${MODULES//,/ }; do PL="$PL,:$m"; done
+BUILT_LIBRARIES=""
+ABSENT_LIBRARIES=""
+for m in ${LIBRARIES//,/ }; do
+    if [[ -f "$WORKTREE/services-custom/$m/pom.xml" ]]; then
+        PL="$PL,:$m"
+        BUILT_LIBRARIES="$BUILT_LIBRARIES,$m"
+    else
+        echo "Library $m is not in the Baseline_Build commit; recording it as absent"
+        ABSENT_LIBRARIES="$ABSENT_LIBRARIES,$m"
+    fi
+done
 PL="${PL#,}"
+BUILT_LIBRARIES="${BUILT_LIBRARIES#,}"
+ABSENT_LIBRARIES="${ABSENT_LIBRARIES#,}"
 
 echo "Building $PL (and required modules) with -P quick; log: $LOG_DIR/build.log"
 (cd "$WORKTREE" && "${MVN[@]}" clean install -P quick -pl "$PL" -am) > "$LOG_DIR/build.log" 2>&1 || {
@@ -104,17 +124,23 @@ java_vendor="$(sed -n 's/^Java version: [^,]*, vendor: \([^,]*\),.*/\1/p' <<< "$
 maven_version="$(sed -n 's/^Apache Maven \([^ ]*\).*/\1/p' <<< "$mvn_version_out")"
 
 compiler_options=""
-for m in ${MODULES//,/ }; do
-    module_dir="$(cd "$WORKTREE" && find services -maxdepth 2 -name pom.xml -path "services/$m/pom.xml" -exec dirname {} \;)"
-    jar="$(ls "$WORKTREE/$module_dir"/target/*.jar | grep -v -e '-sources.jar$' -e '-javadoc.jar$' -e '-tests.jar$' | head -n 1)"
-    entries="$(unzip -Z1 "$jar")"
-    if grep -q 'Schemas.class$' <<< "$entries"; then
-        echo "$jar contains generated Schemas classes; it is not a Baseline_Build JAR" >&2
-        exit 1
+for m in ${MODULES//,/ } ${BUILT_LIBRARIES//,/ }; do
+    if [[ ",$MODULES," == *",$m,"* ]]; then
+        module_dir="services/$m"
+    else
+        module_dir="services-custom/$m"
     fi
-    if ! grep -q '/transform/' <<< "$entries"; then
-        echo "$jar has no transform package; it is not a Baseline_Build JAR" >&2
-        exit 1
+    jar="$(ls "$WORKTREE/$module_dir"/target/*.jar | grep -v -e '-sources.jar$' -e '-javadoc.jar$' -e '-tests.jar$' | head -n 1)"
+    if [[ "$module_dir" == services/* ]]; then
+        entries="$(unzip -Z1 "$jar")"
+        if grep -q 'Schemas.class$' <<< "$entries"; then
+            echo "$jar contains generated Schemas classes; it is not a Baseline_Build JAR" >&2
+            exit 1
+        fi
+        if ! grep -q '/transform/' <<< "$entries"; then
+            echo "$jar has no transform package; it is not a Baseline_Build JAR" >&2
+            exit 1
+        fi
     fi
     cp "$jar" "$OUT/jars/$m.jar"
 
@@ -144,6 +170,8 @@ cat > "$OUT/build-info.properties" <<EOF
 # Written by scripts/schema-serde/build-size-baseline.sh
 baseline.commit=$BASE_SHA
 baseline.modules=$MODULES
+baseline.libraries=$BUILT_LIBRARIES
+baseline.absentLibraries=$ABSENT_LIBRARIES
 java.version=$java_version
 java.vendor=$java_vendor
 maven.version=$maven_version

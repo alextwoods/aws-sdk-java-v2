@@ -3,8 +3,9 @@
 Builds the Size_Report (Requirement 36) and checks it against `docs/design/schema-serde/size-report.md`. The report
 compares the Baseline_Build with the feature build for each reported Prototype_Service_Set service: compressed JAR
 bytes, uncompressed class bytes, class count, bytes per package, the seven-category breakdown of Requirement 36.2,
-and the runtime module JARs (Requirement 36.6). The report's Method section documents the category rules and the
-ASM attribution.
+and the runtime module JARs (Requirement 36.6). It also measures the JARs of the higher-level libraries in the
+Library_Integration_Analysis (Requirement 38.2, `size-report.libraries`). The report's Method section documents the
+category rules and the ASM attribution.
 
 ## Baseline_Build
 
@@ -13,7 +14,7 @@ flags and compiler options as the feature build (Requirement 36.7). The released
 built by the release pipeline with JDK 17.
 
 ```bash
-scripts/schema-serde/build-size-baseline.sh            # all seven prototype services by default
+scripts/schema-serde/build-size-baseline.sh            # all seven prototype services and the three libraries by default
 ```
 
 The script checks the commit out into a worktree under `$TMPDIR`, runs
@@ -48,6 +49,18 @@ The report covers the seven Prototype_Service_Set services (`size-report.service
    `disabled-customizations.md` uses).
 2. Rebuild the baseline with every reported service: `scripts/schema-serde/build-size-baseline.sh --modules
    <all reported services>`.
+3. Regenerate the report.
+
+## Adding libraries
+
+The report also measures the `services-custom` libraries of the Library_Integration_Analysis (`size-report.libraries`
+in `pom.xml`: S3 Event Notifications, SNS Message Manager and `message-payloads`). Each row is the library's own JAR:
+compressed bytes, uncompressed class bytes and class count, with no categories.
+`scripts/schema-serde/library_integration_analysis.py` reads these rows. To add a library:
+
+1. Add it as a `test`-scoped dependency in `pom.xml` and to `size-report.libraries`.
+2. Rebuild the baseline with `--libraries <all reported libraries>`. A library with no module in the Baseline_Build
+   commit is recorded in `baseline.absentLibraries` and reported as new, with 0 bytes in the Baseline_Build.
 3. Regenerate the report.
 
 ## Size-reduction opportunities

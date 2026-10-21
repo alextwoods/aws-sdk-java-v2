@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The inputs come from the module's {@code pom.xml}: {@code size-report.baselineDir} (written by
  * {@code scripts/schema-serde/build-size-baseline.sh}), the feature JARs copied by {@code maven-dependency-plugin},
- * and {@code size-report.services}.
+ * {@code size-report.services} and {@code size-report.libraries}.
  */
 class SizeReportDocumentTest {
 
@@ -42,6 +42,7 @@ class SizeReportDocumentTest {
                                       .baselineDir(path("size-report.baselineDir"))
                                       .featureJarsDir(path("size-report.featureJarsDir"))
                                       .services(SizeReport.parseServices(property("size-report.services")))
+                                      .libraries(SizeReport.parseServices(property("size-report.libraries")))
                                       .disabledCustomizations(path("size-report.disabledCustomizations"))
                                       // Surefire forks the JDK that runs Maven, which compiled the feature build.
                                       .featureJdk(System.getProperty("java.version"),
