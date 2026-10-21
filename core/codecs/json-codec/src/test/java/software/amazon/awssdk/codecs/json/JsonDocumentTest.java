@@ -17,6 +17,7 @@
 package software.amazon.awssdk.codecs.json;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static software.amazon.awssdk.codecs.json.TestCollections.listOf;
@@ -24,7 +25,9 @@ import static software.amazon.awssdk.codecs.json.TestCollections.listOf;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,14 +36,34 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import software.amazon.awssdk.schema.PreludeSchemas;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
+import software.amazon.awssdk.schema.serde.document.DiscriminatorException;
 import software.amazon.awssdk.schema.serde.document.Document;
+import software.amazon.awssdk.schema.traits.JsonNameTrait;
+import software.amazon.awssdk.schema.traits.TimestampFormatTrait;
 
 public class JsonDocumentTest extends ProviderTestBase {
 
+    private static final String FOO_B64 = "Zm9v";
+
+    // Adapted: the source's hand-written TestPojo; SchemaStruct reads and writes the same schema.
+    private static final Schema NUMBERS_LIST = Schema.listBuilder(ShapeId.from("smithy.example#Numbers"))
+                                                     .putMember("member", PreludeSchemas.INTEGER)
+                                                     .build();
+
+    private static final Schema TEST_POJO =
+        Schema.structureBuilder(ShapeId.from("smithy.example#Foo"))
+              .putMember("name", PreludeSchemas.STRING)
+              .putMember("binary", PreludeSchemas.BLOB, new JsonNameTrait("BINARY"))
+              .putMember("date", PreludeSchemas.TIMESTAMP, new TimestampFormatTrait(TimestampFormatTrait.DATE_TIME))
+              .putMember("numbers", NUMBERS_LIST)
+              .build();
 
     @PerProvider
     public void convertsNumberToNumber(JsonSerdeProvider provider) {
@@ -81,6 +104,27 @@ public class JsonDocumentTest extends ProviderTestBase {
     }
 
     @PerProvider
+    public void convertsToTimestampWithEpochSeconds(JsonSerdeProvider provider) {
+        JsonCodec codec = codec(provider);
+        ShapeDeserializer de = codec.createDeserializer("0".getBytes(StandardCharsets.UTF_8));
+
+        Document document = de.readDocument();
+        assertThat(document.type()).isEqualTo(ShapeType.INTEGER);
+        assertThat(document.asTimestamp()).isEqualTo(Instant.EPOCH);
+    }
+
+    @PerProvider
+    public void convertsToTimestampWithDefaultStringFormat(JsonSerdeProvider provider) {
+        Instant now = Instant.now();
+        JsonCodec codec = codecBuilder(provider).defaultTimestampFormat(TimestampFormatTrait.Format.DATE_TIME).build();
+        ShapeDeserializer de = codec.createDeserializer(("\"" + now + "\"").getBytes(StandardCharsets.UTF_8));
+
+        Document document = de.readDocument();
+        assertThat(document.type()).isEqualTo(ShapeType.STRING);
+        assertThat(document.asTimestamp()).isEqualTo(now);
+    }
+
+    @PerProvider
     public void convertsToTimestampFailsOnUnknownType(JsonSerdeProvider provider) {
         JsonCodec codec = codec(provider);
         ShapeDeserializer de = codec.createDeserializer("true".getBytes(StandardCharsets.UTF_8));
@@ -88,6 +132,18 @@ public class JsonDocumentTest extends ProviderTestBase {
 
         SerializationException e = Assertions.assertThrows(SerializationException.class, document::asTimestamp);
         assertThat(e.getMessage()).contains("Expected a timestamp document");
+    }
+
+    @PerProvider
+    public void convertsToBlob(JsonSerdeProvider provider) {
+        JsonCodec codec = codec(provider);
+        ShapeDeserializer de = codec.createDeserializer(("\"" + FOO_B64 + "\"").getBytes(StandardCharsets.UTF_8));
+        Document document = de.readDocument();
+
+        assertThat(document.type()).isEqualTo(ShapeType.STRING);
+
+        // Reading here as a blob will base64 decode the value.
+        assertThat(document.asBlob()).isEqualTo(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
     }
 
     @PerProvider
@@ -223,8 +279,7 @@ public class JsonDocumentTest extends ProviderTestBase {
         ShapeSerializer se = codec.createSerializer(sink);
         ShapeDeserializer de = codec.createDeserializer(json.getBytes(StandardCharsets.UTF_8));
         Document document = de.readDocument();
-        // Adapted: SDK Document has no serializeContents yet; serialize() writes the same value.
-        document.serialize(se);
+        document.serializeContents(se);
         se.flush();
 
         assertThat(new String(sink.toByteArray(), StandardCharsets.UTF_8)).isEqualTo(json);
@@ -307,4 +362,78 @@ public class JsonDocumentTest extends ProviderTestBase {
         assertThat(Document.equals(json, Document.of(true))).isEqualTo(true);
     }
 
+    @PerProvider
+    public void deserializesIntoBuilderWithJsonNameAndTimestampFormat(JsonSerdeProvider provider) {
+        String date = Instant.EPOCH.toString();
+        String json = "{\"name\":\"Hank\",\"BINARY\":\"" + FOO_B64 + "\",\"date\":\"" + date + "\",\"numbers\":[1,2,3]}";
+        JsonCodec codec = codecBuilder(provider).useTimestampFormat(true).useJsonName(true).build();
+        ShapeDeserializer de = codec.createDeserializer(json.getBytes(StandardCharsets.UTF_8));
+        Document document = de.readDocument();
+
+        SchemaStruct.Builder builder = SchemaStruct.builder(TEST_POJO);
+        document.deserializeInto(builder);
+        SchemaStruct pojo = builder.build();
+
+        assertThat(pojo.get("name")).isEqualTo("Hank");
+        assertThat(pojo.get("binary")).isEqualTo(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
+        assertThat(pojo.get("date")).isEqualTo(Instant.EPOCH);
+        assertThat(pojo.get("numbers")).isEqualTo(listOf(1, 2, 3));
+    }
+
+    @PerProvider
+    public void deserializesIntoBuilder(JsonSerdeProvider provider) {
+        String json = "{\"name\":\"Hank\",\"binary\":\"" + FOO_B64 + "\",\"date\":0,\"numbers\":[1,2,3]}";
+        JsonCodec codec = codec(provider);
+        ShapeDeserializer de = codec.createDeserializer(json.getBytes(StandardCharsets.UTF_8));
+        Document document = de.readDocument();
+
+        SchemaStruct.Builder builder = SchemaStruct.builder(TEST_POJO);
+        document.deserializeInto(builder);
+        SchemaStruct pojo = builder.build();
+
+        assertThat(pojo.get("name")).isEqualTo("Hank");
+        assertThat(pojo.get("binary")).isEqualTo(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
+        assertThat(pojo.get("date")).isEqualTo(Instant.EPOCH);
+        assertThat(pojo.get("numbers")).isEqualTo(listOf(1, 2, 3));
+    }
+
+    @PerProvider
+    public void returnsNullWhenGettingDisciminatorOfWrongType(JsonSerdeProvider provider) {
+        JsonCodec codec = codec(provider);
+        ShapeDeserializer de = codec.createDeserializer("\"hi\"".getBytes(StandardCharsets.UTF_8));
+        Document json = de.readDocument();
+
+        assertThat(json.getDiscriminator()).isNull();
+    }
+
+    @PerProvider
+    public void findsDiscriminatorForAbsoluteShapeId(JsonSerdeProvider provider) {
+        JsonCodec codec = codec(provider);
+        ShapeDeserializer de = codec.createDeserializer("{\"__type\":\"com.example#Foo\"}"
+                                                            .getBytes(StandardCharsets.UTF_8));
+        Document json = de.readDocument();
+
+        assertThat(json.getDiscriminator()).isEqualTo(ShapeId.from("com.example#Foo"));
+    }
+
+    @PerProvider
+    public void findsDiscriminatorForRelativeShapeId(JsonSerdeProvider provider) {
+        JsonCodec codec = codecBuilder(provider).defaultNamespace("com.foo").build();
+        ShapeDeserializer de = codec.createDeserializer("{\"__type\":\"Foo\"}".getBytes(StandardCharsets.UTF_8));
+        Document json = de.readDocument();
+
+        assertThat(json.getDiscriminator()).isEqualTo(ShapeId.from("com.foo#Foo"));
+    }
+
+    @PerProvider
+    public void failsToParseRelativeDiscriminatorWithNoDefaultNamespace(JsonSerdeProvider provider) {
+        JsonCodec codec = codec(provider);
+        ShapeDeserializer de = codec.createDeserializer("{\"__type\":\"Foo\"}".getBytes(StandardCharsets.UTF_8));
+        Document json = de.readDocument();
+
+        // Adapted: the source only reads the document; the discriminator read is what fails.
+        assertThatThrownBy(json::getDiscriminator)
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessageContaining("no default namespace was configured: Foo");
+    }
 }

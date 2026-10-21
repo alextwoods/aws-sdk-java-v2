@@ -30,6 +30,7 @@ import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
 import software.amazon.awssdk.codecs.commons.internal.ByteArrays;
 import software.amazon.awssdk.codecs.commons.internal.NumberCodec;
+import software.amazon.awssdk.codecs.json.JsonDocuments;
 import software.amazon.awssdk.codecs.json.JsonSettings;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeType;
@@ -548,13 +549,11 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
     }
 
     /**
-     * Reads any JSON value as a schema-free SDK {@link Document}: {@code null} as null, booleans, strings, integers as
-     * {@code INTEGER}, {@code LONG} or {@code BIG_INTEGER} documents by magnitude, other numbers as {@code DOUBLE}, or
-     * as {@code BIG_DECIMAL} when a double does not hold the exact value, arrays as list documents (null elements kept)
-     * and objects as map documents in input order.
-     *
-     * <p>smithy-java returns {@code JsonDocuments}, which also convert strings to blobs and timestamps, resolve
-     * {@code __type} discriminators and deserialize into shapes. Those land with the Protocol_Documents.
+     * Reads any JSON value as a {@link JsonDocuments} document that holds this deserializer's settings: {@code null} as
+     * null, booleans, strings, integers as {@code INTEGER}, {@code LONG} or {@code BIG_INTEGER} documents by magnitude,
+     * other numbers as {@code DOUBLE}, or as {@code BIG_DECIMAL} when a double does not hold the exact value, arrays as
+     * list documents (null elements kept) and objects as map documents in input order. The documents read blobs and
+     * timestamps, the {@code __type} discriminator and shapes with the settings (see {@link JsonDocuments}).
      */
     @Override
     public Document readDocument() {
@@ -568,12 +567,12 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
                 return null;
             case 't':
                 expectLiteral("true");
-                return Document.of(true);
+                return JsonDocuments.of(true, settings);
             case 'f':
                 expectLiteral("false");
-                return Document.of(false);
+                return JsonDocuments.of(false, settings);
             case '"':
-                return Document.of(readStringValue());
+                return JsonDocuments.of(readStringValue(), settings);
             case '[':
                 return readDocumentList();
             case '{':
@@ -800,7 +799,7 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
         }
         expect(']');
         depth--;
-        return Document.of(values);
+        return JsonDocuments.of(values, settings);
     }
 
     private Document readDocumentMap() {
@@ -818,7 +817,7 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
         }
         expect('}');
         depth--;
-        return Document.of(values);
+        return JsonDocuments.of(values, settings);
     }
 
     private void readDocumentEntry(Map<String, Document> values) {
@@ -858,7 +857,8 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
             } else {
                 String numStr = new String(buf, pos, len, StandardCharsets.US_ASCII);
                 BigInteger value = new BigInteger(numStr);
-                number = value.bitLength() < 64 ? integralDocument(value.longValue()) : Document.of(value);
+                number = value.bitLength() < 64 ? integralDocument(value.longValue())
+                                                : JsonDocuments.of(value, settings);
             }
         }
         pos = newPos;
@@ -876,19 +876,19 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
         double value = parsedDouble;
         if (Double.isFinite(value) && Math.abs(value) >= Double.MIN_NORMAL
             && significantDigits(buf, pos, numberEnd) <= 15) {
-            return Document.of(value);
+            return JsonDocuments.of(value, settings);
         }
         BigDecimal exact;
         try {
             exact = new BigDecimal(new String(buf, pos, numberEnd - pos, StandardCharsets.US_ASCII));
         } catch (NumberFormatException e) {
             // The exponent does not fit a BigDecimal scale: keep the double (infinity or zero), as smithy-java does.
-            return Document.of(value);
+            return JsonDocuments.of(value, settings);
         }
         if (Double.isFinite(value) && BigDecimal.valueOf(value).compareTo(exact) == 0) {
-            return Document.of(value);
+            return JsonDocuments.of(value, settings);
         }
-        return Document.of(exact);
+        return JsonDocuments.of(exact, settings);
     }
 
     /**
@@ -908,11 +908,11 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
         return digits;
     }
 
-    private static Document integralDocument(long value) {
+    private Document integralDocument(long value) {
         if (value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE) {
-            return Document.of((int) value);
+            return JsonDocuments.of((int) value, settings);
         }
-        return Document.of(value);
+        return JsonDocuments.of(value, settings);
     }
 
     /**

@@ -296,8 +296,8 @@ final class SmithyJsonSerializer implements ShapeSerializer {
      * default format), lists as arrays, maps as objects, and a null document as {@code null}.
      *
      * <p>smithy-java writes documents through {@code Document.serializeContents}, and writes structure documents with a
-     * {@code __type} member when {@link JsonSettings#serializeTypeInDocuments()} is on. The SDK {@link Document} has
-     * neither yet (they land with the Protocol_Documents), so structure and union documents are rejected.
+     * {@code __type} member when {@link JsonSettings#serializeTypeInDocuments()} is on. Writing structure documents
+     * and their discriminators is not ported yet (task 11.9), so structure and union documents are rejected.
      *
      * @throws SerializationException for a structure or union document
      */
