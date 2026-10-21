@@ -2663,3 +2663,49 @@ The existing tests already covered first-wins `compose` for lookups, `compose(em
 - The Primary_Type_Registry is empty for every service until Smithy adds the service `shapes` property. When it does, `SchemaCodegen.create` should pass `service.getShapes()` (or the equivalent) to `serviceShapes`. A listed structure outside the operation closure will also need a schema field, because the partitions hold only closure shapes; until then such a listing fails generation.
 - OD-18 suggests that a customization could also register every structure lazily for document-heavy services. That is not implemented. With `putLazyType` it costs one `putLazyType` call and one lambda per structure.
 - As with `ERROR_REGISTRY`, an entry reads the partition field. A structure that several request or response classes share (task 3.7) has no shape class or builder on its partition field, so resolving it through the registry throws `IllegalStateException` (`... has no shape class that implements SerializableStruct`). Operation inputs and outputs are not normally listed in `shapes`, so this does not affect the registry today.
+
+## No per-shape document code (task 11.18)
+
+**Target.** `codegen-maven-plugin` tests, package `software.amazon.awssdk.codegen.pipeline`, next to `NoTransformPackageTest`: the new `NoPerShapeDocumentCodeTest`, the scanner it uses, `PerShapeDocumentCodeScanner`, and the scanner's own test, `PerShapeDocumentCodeScannerTest`. `PerOperationSerdeScanner.javaFiles` and `read` become package-private so the new scanner reuses them. No production code changes; Codegen already generates no per-shape document code (design B.6), and the test keeps it that way.
+
+**What is scanned.** Design B.6 says "generated sources" and Requirement 24.1 says the output of Codegen for a Prototype_Service_Set service. The test does what `NoTransformPackageTest` does: each of the seven `LegacyRouteParity.PROTOTYPE_MODULES` is generated through the `CodegenPipeline`, as `GenerationMojo` does, into a temporary directory, and `src` and `tests` are scanned. This checks the code the current codegen produces, not a stale `services/*/target` tree or a hand-maintained fixture. No prototype service has a member that targets a `document` shape, so the Legacy_Document exemption never appears in their output. The test therefore also scans the codegen golden files (`codegen/src/test/resources/software/amazon/awssdk/codegen/poet`, 293 `.java` files). The codegen generator tests compare these files with generator output, and they include model classes with `document` members (`putdocrequest.java`, `docssharedserde.java`, which call `SchemaSerdeSupport.wrapLegacy`).
+
+**Rules** (matched after comments are removed with `LegacyRouteParity.withoutComments`; string literals are kept; each rule is reported once per file, with its first match):
+
+| Rule | Pattern | Covers (Requirement 24.1) |
+|---|---|---|
+| `DOCUMENT_METHOD` | the identifier `toDocument` or `fromDocument`, declared, called or referenced (`Foo::toDocument`) | per-shape `toDocument`/`fromDocument` methods, and fields of that name |
+| `DOCUMENT_CONVERSION_TYPE` | a declared type (`class`/`interface`/`enum`) named `*DocumentConverter`, `*DocumentSerializer` or `*DocumentDeserializer` with any prefix, or a reference to such a type whose name has a prefix before `Document` | per-shape converter classes, serializers and deserializers |
+
+**Exempt list** (Requirement 24.1's three exemptions; design B.6 calls them "the exempt registries"):
+
+| Exemption | How it is applied |
+|---|---|
+| Primary_Type_Registry (Requirement 22) | In a file named `<Svc>TypeRegistry.java`, the declaration `TypeRegistry INSTANCE = ...;` is removed before matching |
+| Error_Registry (Requirement 23) | In a file named `<Svc>Operations.java`, the declaration `ErrorRegistry ERROR_REGISTRY = ...;` is removed before matching |
+| Legacy_Document handling of `document` members (Requirement 21) | Not matched by construction. Generated code calls `SchemaSerdeSupport.wrapLegacy`/`unwrapLegacy`, which may delegate to the runtime `core.document.DocumentConverter`. A bare `DocumentConverter` or `DocumentDeserializer` reference is not reported; only a declaration or a prefixed name is |
+
+The rest of `<Svc>TypeRegistry` and `<Svc>Operations` is still scanned. `NoPerShapeDocumentCodeTest` also checks that each module's output contains both registry declarations, and so do the golden files (`RegistryTypeRegistry.java`, `OpsOperations.java`). If a registry is renamed, the test fails instead of silently scanning the renamed registry as ordinary code.
+
+| Task, design or source | Port | Reason |
+|---|---|---|
+| Task text and design B.6: `*DocumentConverter`/`*DocumentSerializer` types | Also `*DocumentDeserializer` | Requirement 24.1 names "per-shape Document serializers or deserializers" |
+| Design B.6: "outside the exempt registries" | Only the registry field declarations are exempt, not the whole `<Svc>TypeRegistry` or `<Svc>Operations` class | `<Svc>Operations` holds every operation's schema-side wiring as well, so exempting the whole file would hide code that is not a registry |
+| — | The Legacy_Document exemption is a property of the rules (bare runtime names are allowed), not a removed region | The handling is a call to shared runtime methods inside each model class's `serializeMembers`/`deserialize`, not a separate declaration that could be cut out |
+| — | Names are matched exactly (`toDocument`, `fromDocument`), not variants such as `fooToDocument` or `toFooDocument` | The design names exactly these. Broader patterns would also match runtime names such as `DocumentConverter.toSchemaDocument` |
+
+**Negative tests.** `PerShapeDocumentCodeScannerTest` (19 runs) feeds synthetic sources to the scanner:
+- Each forbidden form is reported: a `toDocument` method, a `fromDocument` static method, a `Foo::toDocument` reference, a `fromDocument` field, declared `FooDocumentConverter`/`FooDocumentSerializer`/`FooDocumentDeserializer`/`DocumentConverter`/`DocumentSerializer` types, and prefixed references.
+- A model class with Legacy_Document handling, documentation and line comments that mention the forbidden names, and references to the runtime `DocumentConverter` and `DocumentDeserializer` is not reported.
+- A forbidden name inside an exempt declaration is not reported. The same text in another file, or in a file named just `TypeRegistry.java` or `Operations.java`, is reported, and so is a `toDocument` method outside the declaration in an exempt file.
+- A temp-dir tree is reported by relative path.
+
+The real scan was also checked by hand: appending `class Injected { Object toDocument() { return null; } }` to the golden file `putdocrequest.java` made `codegenGoldenFiles_containNoPerShapeDocumentCode` fail with `model/schemaserde/putdocrequest.java: DOCUMENT_METHOD: toDocument`. The file was then restored.
+
+**Fix to task 11.16's parity test.** `LegacyRouteParityTest` failed for all seven modules with `src/.../model/<Svc>TypeRegistry.java: only generated by the pipeline`. Task 11.16 added the class but did not add it to `LegacyRouteParity.SCHEMA_GENERATOR_OUTPUT`, the list of schema classes that only the pipeline can generate, and task 11.16 did not run the `codegen-maven-plugin` module. `TypeRegistry` is added to that pattern in a separate commit. The seven parity lists are unchanged.
+
+**Module run** (`mvn -o clean install -pl :codegen-maven-plugin`, in the workspace): 94 tests, all passing, 0 Checkstyle violations, SpotBugs clean. That includes `NoPerShapeDocumentCodeTest` with 8 runs (7 modules plus the golden files, 6.7 s), `PerShapeDocumentCodeScannerTest` with 19, `LegacyRouteParityTest` with 7 and `NoTransformPackageTest` with 8.
+
+**Open questions.**
+- Requirements 24.2–24.4 are runtime properties (`Document.of` and `asShape` use only `serializeMembers` and `deserialize`, with no opt-in). Task 11.18 does not test them; design B.2 says they hold by construction.
+- A member named `toDocument` or `fromDocument` in some future service model would generate a getter that `DOCUMENT_METHOD` reports. No prototype service has one. If such a member appears, the rule could skip getters whose name matches a modeled member.
