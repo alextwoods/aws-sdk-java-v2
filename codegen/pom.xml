@@ -294,6 +294,14 @@
             <version>${awsjavasdk.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Dynamic client, test scope only: its trait lists are checked against DefaultTraitInclusion, and its
+             Schema_Converter against the generated schemas of a prototype service. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamic-client</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Protocol test runtime support, test scope only: the protocol test generator tests compile the generated
              tests against it. Generated code references its types by name (ProtocolTestRuntimeTypes). -->
         <dependency>

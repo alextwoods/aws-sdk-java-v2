@@ -21,9 +21,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.URLClassLoader;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -31,21 +29,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import software.amazon.awssdk.codegen.model.config.customization.CustomizationConfig;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeModel;
 import software.amazon.awssdk.codegen.model.intermediate.ShapeType;
-import software.amazon.awssdk.codegen.pipeline.CodegenPipeline;
-import software.amazon.awssdk.codegen.pipeline.ServiceInputs;
 import software.amazon.awssdk.codegen.poet.model.ModelPackageCompiler;
 import software.amazon.awssdk.codegen.schema.RuntimeCompiler;
 import software.amazon.awssdk.codegen.schema.TraitInitializers;
-import software.amazon.awssdk.codegen.utils.ModelLoaderUtils;
 import software.amazon.awssdk.schema.serde.ErrorRegistry;
 import software.amazon.smithy.model.shapes.ShapeId;
 
@@ -197,35 +190,14 @@ class PrototypeErrorRegistryTest {
     }
 
     private static TraitInitializers initializers() {
-        return TraitInitializers.load(PrototypeErrorRegistryTest.class.getClassLoader());
+        return PrototypeServices.initializers();
     }
 
     private IntermediateModel prepare(String service) {
-        Path dir = directory(service);
-        Assumptions.assumeTrue(Files.isRegularFile(dir.resolve("service-2.json")), "C2J model of " + service
-                                                                                   + " not found");
-        CustomizationConfig config = ModelLoaderUtils.loadOptionalModel(CustomizationConfig.class,
-                                                                        dir.resolve("customization.config").toFile(),
-                                                                        true)
-                                                     .orElse(CustomizationConfig.create());
-        ServiceInputs inputs = ServiceInputs.builder()
-                                            .serviceName(service)
-                                            .customizationConfig(config)
-                                            .c2jModelDirectory(dir)
-                                            .sourcesDirectory(tmp.resolve(service + "/src"))
-                                            .resourcesDirectory(tmp.resolve(service + "/resources"))
-                                            .testsDirectory(tmp.resolve(service + "/tests"))
-                                            .buildDirectory(tmp.resolve(service + "/build"))
-                                            .classLoader(CodegenPipeline.class.getClassLoader())
-                                            .build();
-        return CodegenPipeline.create().prepare(inputs).intermediateModel();
+        return PrototypeServices.prepare(service, tmp);
     }
 
     private static Path directory(String service) {
-        Path dir = Paths.get("..", "services", service, "src", "main", "resources", "codegen-resources");
-        if (!Files.isRegularFile(dir.resolve("service-2.json"))) {
-            dir = dir.resolve(service);
-        }
-        return dir;
+        return PrototypeServices.directory(service);
     }
 }

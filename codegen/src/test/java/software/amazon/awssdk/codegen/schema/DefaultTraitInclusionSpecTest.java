@@ -45,6 +45,23 @@ class DefaultTraitInclusionSpecTest {
             .isEqualTo(strings(DefaultTraitInclusion.HARD_EXCLUDED_NAMESPACES));
     }
 
+    /**
+     * The dynamic client checks in this class's output (task 13.1); it must hold the same lists.
+     */
+    @Test
+    void dynamicClientConstants_matchTheCodegenLists() {
+        assertThat(software.amazon.awssdk.dynamicclient.schema.internal.DefaultTraitInclusion.DEFAULT_TRAITS)
+            .isEqualTo(strings(DefaultTraitInclusion.DEFAULT_TRAITS));
+        assertThat(software.amazon.awssdk.dynamicclient.schema.internal.DefaultTraitInclusion.EXCLUDED_CONSTRAINT_TRAITS)
+            .isEqualTo(strings(DefaultTraitInclusion.EXCLUDED_CONSTRAINT_TRAITS));
+        assertThat(software.amazon.awssdk.dynamicclient.schema.internal.DefaultTraitInclusion.HARD_EXCLUDED_TRAITS)
+            .isEqualTo(strings(DefaultTraitInclusion.HARD_EXCLUDED_TRAITS));
+        assertThat(software.amazon.awssdk.dynamicclient.schema.internal.DefaultTraitInclusion.HARD_EXCLUDED_NAMESPACES)
+            .isEqualTo(strings(DefaultTraitInclusion.HARD_EXCLUDED_NAMESPACES));
+        assertThat(NAME.reflectionName())
+            .isEqualTo(software.amazon.awssdk.dynamicclient.schema.internal.DefaultTraitInclusion.class.getName());
+    }
+
     @Test
     void generationIsDeterministic() {
         JavaFile first = PoetUtils.buildJavaFile(new DefaultTraitInclusionSpec(NAME));
