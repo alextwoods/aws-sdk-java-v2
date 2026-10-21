@@ -54,6 +54,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.codecs.cbor.CborDocuments;
 import software.amazon.awssdk.codecs.cbor.CborSettings;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeType;
@@ -595,11 +596,11 @@ final class CborDeserializer implements ShapeDeserializer {
         int len = itemLength;
         long fp = CborReadUtil.readLong(payload, Token.FLOAT, idx, len);
         if (len == 8) {
-            return Document.of(Double.longBitsToDouble(fp));
+            return CborDocuments.of(Double.longBitsToDouble(fp), settings);
         } else if (len == 4) {
-            return Document.of(Float.intBitsToFloat((int) fp));
+            return CborDocuments.of(Float.intBitsToFloat((int) fp), settings);
         }
-        return Document.of(float16((int) fp));
+        return CborDocuments.of(float16((int) fp), settings);
     }
 
     // https://stackoverflow.com/questions/6162651/half-precision-floating-point-in-java/6162687
@@ -670,13 +671,13 @@ final class CborDeserializer implements ShapeDeserializer {
     }
 
     /**
-     * Reads the current value as a schema-free document: integers as long documents, floats as float or double
-     * documents (by their encoded width), tag 1 values as timestamps, bignums as big integers, decimal fractions as
-     * big decimals, arrays as list documents and maps as map documents. CBOR null reads as {@code null}.
+     * Reads the current value as a {@link CborDocuments} document that holds this deserializer's settings: integers as
+     * long documents, floats as float or double documents (by their encoded width), tag 1 values as timestamps, byte
+     * strings as blobs, bignums as big integers, decimal fractions as big decimals, arrays as list documents and maps
+     * as map documents, which resolve a {@code __type} discriminator with the settings. CBOR null reads as
+     * {@code null}.
      *
-     * <p>smithy-java returns maps as {@code CborDocuments} map documents, which resolve a {@code __type}
-     * discriminator with the codec settings. The SDK {@code Document} has no discriminator yet, so maps are returned
-     * as plain map documents.
+     * <p>smithy-java returns only maps as {@code CborDocuments} documents, and other values as untyped documents.
      */
     @Override
     public Document readDocument() {
@@ -686,28 +687,28 @@ final class CborDeserializer implements ShapeDeserializer {
                 throw new SerializationException("No CBOR value to read");
             case Token.POS_INT:
             case Token.NEG_INT:
-                return Document.of(readLong(null));
+                return CborDocuments.of(readLong(null), settings);
             case Token.NULL:
                 return null;
             case Token.TEXT_STRING:
-                return Document.of(readString(null));
+                return CborDocuments.of(readString(null), settings);
             case Token.BYTE_STRING:
-                return Document.of(readBlob(null));
+                return CborDocuments.of(readBlob(null), settings);
             case Token.TRUE:
-                return Document.of(true);
+                return CborDocuments.of(true, settings);
             case Token.FALSE:
-                return Document.of(false);
+                return CborDocuments.of(false, settings);
             case Token.EPOCH_INEG:
             case Token.EPOCH_IPOS:
             case Token.EPOCH_F:
-                return Document.of(readTimestamp(null));
+                return CborDocuments.of(readTimestamp(null), settings);
             case Token.FLOAT:
                 return readFloatingPointDocument();
             case Token.POS_BIGINT:
             case Token.NEG_BIGINT:
-                return Document.of(readBigInteger(null));
+                return CborDocuments.of(readBigInteger(null), settings);
             case Token.BIG_DECIMAL:
-                return Document.of(readBigDecimal(null));
+                return CborDocuments.of(readBigDecimal(null), settings);
             case Token.START_ARRAY:
                 return readListDocument();
             case Token.START_OBJECT:
@@ -724,7 +725,7 @@ final class CborDeserializer implements ShapeDeserializer {
             values.add(readDocument());
         }
         depth--;
-        return Document.of(values);
+        return CborDocuments.of(values, settings);
     }
 
     private Document readMapDocument() {
@@ -739,7 +740,7 @@ final class CborDeserializer implements ShapeDeserializer {
             values.put(key, readDocument());
         }
         depth--;
-        return Document.of(values);
+        return CborDocuments.of(values, settings);
     }
 
     private void enterContainer() {

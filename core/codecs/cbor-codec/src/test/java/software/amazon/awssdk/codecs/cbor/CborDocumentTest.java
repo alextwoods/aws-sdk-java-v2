@@ -21,7 +21,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,10 +33,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import software.amazon.awssdk.schema.PreludeSchemas;
+import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
+import software.amazon.awssdk.schema.serde.document.DiscriminatorException;
 import software.amazon.awssdk.schema.serde.document.Document;
+import software.amazon.awssdk.schema.traits.JsonNameTrait;
+import software.amazon.awssdk.schema.traits.TimestampFormatTrait;
 
 /**
  * Port of smithy-java {@code software.amazon.smithy.java.cbor.CborDocumentTest}.
@@ -42,14 +50,30 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * <p>The smithy-java tests build their input from JSON text with the JSON codec, which is not ported yet (task 7.1);
  * these build the same values with {@link Document#of}, write them with the CBOR codec and read them back. The JSON
  * integers become long documents and the JSON decimals double documents, as the smithy-java JSON documents serialize.
- * Hamcrest matchers become AssertJ assertions. The discriminator tests and {@code deserializesIntoBuilder} are not
- * ported: the SDK {@code Document} has no discriminator or {@code deserializeInto} yet (design B.1, task 11.5).
+ * Hamcrest matchers become AssertJ assertions. {@code deserializesIntoBuilder} uses {@link SchemaStruct} in place of
+ * the source's hand-written {@code TestPojo}, with the same schema.
  */
 class CborDocumentTest {
     private static final Rpcv2CborCodec CODEC = Rpcv2CborCodec.builder().build();
 
+    private static final Schema NUMBERS_LIST = Schema.listBuilder(ShapeId.from("smithy.example#Numbers"))
+                                                     .putMember("member", PreludeSchemas.INTEGER)
+                                                     .build();
+
+    private static final Schema TEST_POJO =
+        Schema.structureBuilder(ShapeId.from("smithy.example#Foo"))
+              .putMember("name", PreludeSchemas.STRING)
+              .putMember("binary", PreludeSchemas.BLOB, new JsonNameTrait("BINARY"))
+              .putMember("date", PreludeSchemas.TIMESTAMP, new TimestampFormatTrait(TimestampFormatTrait.DATE_TIME))
+              .putMember("numbers", NUMBERS_LIST)
+              .build();
+
     private static ShapeDeserializer toCbor(Document d) {
-        return CODEC.createDeserializer(CODEC.serialize(d));
+        return toCbor(d, CODEC);
+    }
+
+    private static ShapeDeserializer toCbor(Document d, Rpcv2CborCodec codec) {
+        return codec.createDeserializer(codec.serialize(d));
     }
 
     private static Map<String, Document> map(Object... keysAndValues) {
@@ -274,5 +298,57 @@ class CborDocumentTest {
         Document cbor = toCbor(Document.of(true)).readDocument();
 
         assertThat(Document.equals(cbor, Document.of(true))).isTrue();
+    }
+
+    @Test
+    void deserializesIntoBuilder() {
+        SchemaStruct base = SchemaStruct.builder(TEST_POJO)
+                                        .set("name", "Hank")
+                                        .set("binary", ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)))
+                                        .set("date", Instant.now().truncatedTo(ChronoUnit.SECONDS))
+                                        .set("numbers", Arrays.asList(1, 2, 3))
+                                        .build();
+        Document document = CODEC.createDeserializer(CODEC.serialize(base)).readDocument();
+
+        SchemaStruct.Builder builder = SchemaStruct.builder(TEST_POJO);
+        document.deserializeInto(builder);
+        SchemaStruct pojo = builder.build();
+
+        assertThat(pojo.get("name")).isEqualTo(base.get("name"));
+        assertThat(pojo.get("binary")).isEqualTo(base.get("binary"));
+        assertThat(pojo.get("date")).isEqualTo(base.get("date"));
+        assertThat(pojo.get("numbers")).isEqualTo(base.get("numbers"));
+    }
+
+    @Test
+    void returnsNullWhenGettingDisciminatorOfWrongType() {
+        Document cbor = toCbor(Document.of("hi")).readDocument();
+
+        assertThat(cbor.getDiscriminator()).isNull();
+    }
+
+    @Test
+    void findsDiscriminatorForAbsoluteShapeId() {
+        Document cbor = toCbor(Document.of(map("__type", Document.of("com.example#Foo")))).readDocument();
+
+        assertThat(cbor.getDiscriminator()).isEqualTo(ShapeId.from("com.example#Foo"));
+    }
+
+    @Test
+    void findsDiscriminatorForRelativeShapeId() {
+        Rpcv2CborCodec codec = Rpcv2CborCodec.builder().defaultNamespace("com.foo").build();
+        Document cbor = toCbor(Document.of(map("__type", Document.of("Foo"))), codec).readDocument();
+
+        assertThat(cbor.getDiscriminator()).isEqualTo(ShapeId.from("com.foo#Foo"));
+    }
+
+    @Test
+    void failsToParseRelativeDiscriminatorWithNoDefaultNamespace() {
+        Document cbor = toCbor(Document.of(map("__type", Document.of("Foo")))).readDocument();
+
+        // Adapted: the source only reads the document; the discriminator read is what fails.
+        assertThatThrownBy(cbor::getDiscriminator)
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessageContaining("no default namespace was configured: Foo");
     }
 }
