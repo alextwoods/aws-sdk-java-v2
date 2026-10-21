@@ -169,6 +169,8 @@ class JsonDocumentsTest {
             Arguments.of("4294967296", Instant.ofEpochSecond(4294967296L)),
             Arguments.of("1398796238.123", Instant.ofEpochSecond(1398796238L, 123_000_000)),
             Arguments.of("1.123456789", Instant.ofEpochSecond(1, 123_456_789)),
+            // (long) (1.001 * 1000) is 1000; the exact conversion keeps the millisecond.
+            Arguments.of("1.001", Instant.ofEpochSecond(1, 1_000_000)),
             Arguments.of("1398796238.123456789", Instant.ofEpochSecond(1398796238L, 123_456_789)),
             Arguments.of("1398796238.1234567891", Instant.ofEpochSecond(1398796238L, 123_456_789)),
             Arguments.of("-1.5", Instant.ofEpochSecond(-2, 500_000_000)),
