@@ -22,6 +22,8 @@ import java.time.Instant;
 import java.util.Map;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.ShapeIdSyntaxException;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 
@@ -50,6 +52,35 @@ public class DocumentDeserializer implements ShapeDeserializer {
      */
     public DocumentDeserializer(Document value) {
         this.value = value;
+    }
+
+    /**
+     * Parses a document discriminator, such as the value of a JSON or CBOR {@code __type} member, into a ShapeId.
+     *
+     * <p>An absolute ShapeId ({@code namespace#Name}) is returned as-is. A relative ShapeId (a shape name with no
+     * namespace) is resolved against {@code defaultNamespace}.
+     *
+     * @param text the discriminator text, or null if the document has none
+     * @param defaultNamespace the namespace of relative discriminators, or null if relative discriminators are not
+     *     allowed
+     * @return the ShapeId, or null if {@code text} is null
+     * @throws DiscriminatorException if {@code text} is not a valid ShapeId, or is relative and
+     *     {@code defaultNamespace} is null
+     */
+    public static ShapeId parseDiscriminator(String text, String defaultNamespace) {
+        if (text == null) {
+            return null;
+        }
+        try {
+            return ShapeId.fromOptionalNamespace(defaultNamespace, text);
+        } catch (ShapeIdSyntaxException e) {
+            if (defaultNamespace == null && text.indexOf('#') < 0) {
+                throw new DiscriminatorException("Attempted to parse a document discriminator that only provides a "
+                                                 + "shape name, but no default namespace was configured: " + text, e);
+            }
+            throw new DiscriminatorException("Unable to parse the document discriminator into a valid shape ID: "
+                                             + text, e);
+        }
     }
 
     /**

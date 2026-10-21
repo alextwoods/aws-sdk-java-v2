@@ -379,4 +379,33 @@ class TypedDocumentTest {
         assertThat((Object) deserializer.readNull()).isNull();
         assertThat(deserializer.readDocument()).isNull();
     }
+
+    @Test
+    void parseDiscriminator_absoluteOrRelative_resolvesTheShapeId() {
+        assertThat(DocumentDeserializer.parseDiscriminator("com.example#Foo", null))
+            .isEqualTo(ShapeId.from("com.example#Foo"));
+        assertThat(DocumentDeserializer.parseDiscriminator("com.example#Foo", "com.other"))
+            .isEqualTo(ShapeId.from("com.example#Foo"));
+        assertThat(DocumentDeserializer.parseDiscriminator("Foo", "com.other"))
+            .isEqualTo(ShapeId.from("com.other#Foo"));
+        assertThat(DocumentDeserializer.parseDiscriminator(null, "com.other")).isNull();
+    }
+
+    @Test
+    void parseDiscriminator_relativeWithoutDefaultNamespace_throwsDiscriminatorException() {
+        assertThatThrownBy(() -> DocumentDeserializer.parseDiscriminator("Foo", null))
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessage("Attempted to parse a document discriminator that only provides a shape name, but no default "
+                        + "namespace was configured: Foo");
+    }
+
+    @Test
+    void parseDiscriminator_invalidShapeId_throwsDiscriminatorException() {
+        assertThatThrownBy(() -> DocumentDeserializer.parseDiscriminator("com.example#", null))
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessage("Unable to parse the document discriminator into a valid shape ID: com.example#");
+        assertThatThrownBy(() -> DocumentDeserializer.parseDiscriminator("not valid", "com.other"))
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessage("Unable to parse the document discriminator into a valid shape ID: not valid");
+    }
 }
