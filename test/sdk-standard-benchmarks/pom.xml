@@ -46,6 +46,13 @@
             Name of the benchmark Uber-JAR to generate.
           -->
         <uberjar.name>benchmarks</uberjar.name>
+
+        <!--
+            S3EventNotificationBenchmark (task 11.23): the library module, and where its previous reader and writer
+            are copied to.
+          -->
+        <s3-event-notifications.dir>${project.basedir}/../../services-custom/s3-event-notifications</s3-event-notifications.dir>
+        <s3-event-notifications.legacySources>${project.build.directory}/generated-sources/s3-event-notifications-legacy</s3-event-notifications.legacySources>
     </properties>
 
     <dependencies>
@@ -224,6 +231,13 @@
             <artifactId>json-codec</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- S3EventNotificationBenchmark (task 11.23): the library on schemas. Its previous JsonNode reader and
+             JsonWriter writer are copied from the library's test sources at build time (see below). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3-event-notifications</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>client-mock-plugin</artifactId>
@@ -393,6 +407,67 @@
                             <resources>
                                 <resource>
                                     <directory>${project.build.directory}/generated-sources/sdk</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                    <!-- S3EventNotificationBenchmark: the previous reader and writer (copied below) and the valid
+                         JSON samples of the library's test suite. -->
+                    <execution>
+                        <id>s3-event-notifications-legacy-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${s3-event-notifications.legacySources}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>s3-event-notifications-samples</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>add-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <directory>${s3-event-notifications.dir}/src/test/resources/samples/valid</directory>
+                                    <targetPath>s3-event-notifications/samples/valid</targetPath>
+                                    <includes>
+                                        <include>*.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+              S3EventNotificationBenchmark compares the library with the JsonNode reader and JsonWriter writer it
+              replaced (task 11.19). Those classes are in the library's test sources and are not published, so they
+              are copied from there unchanged at build time instead of being duplicated in this module.
+            -->
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-s3-event-notifications-legacy-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${s3-event-notifications.legacySources}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${s3-event-notifications.dir}/src/test/java</directory>
+                                    <includes>
+                                        <include>software/amazon/awssdk/eventnotifications/s3/internal/DefaultS3EventNotificationReader.java</include>
+                                        <include>software/amazon/awssdk/eventnotifications/s3/internal/DefaultS3EventNotificationWriter.java</include>
+                                    </includes>
                                 </resource>
                             </resources>
                         </configuration>

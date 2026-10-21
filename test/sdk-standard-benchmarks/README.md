@@ -144,6 +144,28 @@ java -jar target/benchmarks.jar SchemaMarshallBenchmark -p protocol=AWS_JSON_1_0
 # Smoke run
 java -jar target/benchmarks.jar 'benchmark\.schema\.' -wi 1 -i 1 -f 1 -w 1s -r 1s -prof gc
 ```
+
+### S3 Event Notifications
+
+`S3EventNotificationBenchmark` compares the S3 Event Notifications library on schemas
+(`S3EventNotification.fromJson(String)` and `toJson()`, task 11.19) with the `JsonNode` reader
+and `JsonWriter` writer it replaced (`implementation`: `LEGACY`, `SCHEMA`). The previous
+classes are in the library's test sources, so the build copies them from
+`services-custom/s3-event-notifications/src/test/java` unchanged, together with the valid JSON
+samples of its test suite (`sampleSet`: `ALL_SAMPLES`, the 50 samples per operation, or
+`OBJECT_CREATED_PUT`, one typical event). Setup fails if the two implementations read a sample
+differently; `S3EventNotificationBenchmarkTest` checks the fixture in the module build.
+
+The result feeds the Library_Integration_Analysis
+(`scripts/schema-serde/library_integration_analysis.py`):
+
+```bash
+# Full run (class defaults), written where the analysis reads it; then regenerate the analysis
+java -jar target/benchmarks.jar S3EventNotificationBenchmark -prof gc -rf json \
+  -rff ../../docs/design/schema-serde/library-integration-jmh.json
+# Smoke run (the analysis marks it PRELIMINARY)
+java -jar target/benchmarks.jar S3EventNotificationBenchmark -wi 1 -i 2 -f 1 -w 1s -r 1s -prof gc
+```
 ## General JMH options
 
 ```bash
