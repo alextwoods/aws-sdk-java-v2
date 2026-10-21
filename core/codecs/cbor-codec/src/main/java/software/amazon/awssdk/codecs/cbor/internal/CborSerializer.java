@@ -47,16 +47,17 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
 import java.util.function.BiConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.internal.StripedPool;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.MapSerializer;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
+import software.amazon.awssdk.schema.serde.SpecificShapeSerializer;
 import software.amazon.awssdk.schema.serde.document.Document;
 
 /**
@@ -90,6 +91,9 @@ final class CborSerializer implements ShapeSerializer {
     private static final int SINK_BUF_SIZE = 1024;
 
     private static final StripedPool<CborSerializer, Void> POOL = new CborStripedPool();
+
+    // The "__type" key written before the members of a structure document with a discriminator.
+    private static final byte[] TYPE_FIELD_BYTES = encodeMemberName("__type");
 
     byte[] buf;
     int pos;
@@ -353,9 +357,22 @@ final class CborSerializer implements ShapeSerializer {
 
     @Override
     public void writeStruct(Schema schema, SerializableStruct struct) {
+        writeStruct(schema, struct, null);
+    }
+
+    /**
+     * Writes a structure, with a {@code __type} member first when {@code discriminator} is not null.
+     */
+    private void writeStruct(Schema schema, SerializableStruct struct, ShapeId discriminator) {
         ensureCapacity(1);
         buf[pos++] = (byte) MAP_STREAM;
         startCollection(true);
+        if (discriminator != null) {
+            ensureCapacity(TYPE_FIELD_BYTES.length);
+            System.arraycopy(TYPE_FIELD_BYTES, 0, buf, pos, TYPE_FIELD_BYTES.length);
+            pos += TYPE_FIELD_BYTES.length;
+            writeStringValue(discriminator.toString());
+        }
 
         byte[][] savedTable = currentFieldNameTable;
         Schema structSchema = schema.isMember() ? schema.memberTarget() : schema;
@@ -584,78 +601,28 @@ final class CborSerializer implements ShapeSerializer {
     }
 
     /**
-     * Writes a document by its type: scalars as the matching CBOR value, list documents as arrays and map documents as
-     * maps, with null elements and values as CBOR null.
+     * Writes a document through {@link Document#serializeContents}: scalars as the matching CBOR value, list documents
+     * as arrays, map documents as maps, and a null document as CBOR null. The settings of the codec that read a
+     * document are not used.
      *
-     * <p>smithy-java delegates to {@code Document.serializeContents} and writes structure documents with a
-     * {@code __type} discriminator. The SDK {@code Document} does not have {@code serializeContents} or structure
-     * documents yet, so structure and union documents are rejected.
+     * <p>A structure document is written as an indefinite-length map of its members. When the document has a
+     * {@link Document#getDiscriminator() discriminator}, its absolute ShapeId is written first as the {@code __type}
+     * member; CBOR has no setting to turn this off, as in smithy-java. Only the document's own structure gets
+     * {@code __type}; structures nested in its members do not, but a document nested in its members is written by
+     * this method again.
+     *
+     * @throws SerializationException if a structure document does not write a structure
+     * @throws software.amazon.awssdk.schema.serde.document.DiscriminatorException if reading the discriminator fails
      */
     @Override
     public void writeDocument(Schema schema, Document value) {
         if (value == null) {
             writeNull(schema);
-            return;
+        } else if (value.type() != ShapeType.STRUCTURE) {
+            value.serializeContents(this);
+        } else {
+            value.serializeContents(new DocumentStructSerializer(value.getDiscriminator()));
         }
-        switch (value.type()) {
-            case BOOLEAN:
-                writeBoolean(schema, value.asBoolean());
-                break;
-            case BYTE:
-            case SHORT:
-            case INTEGER:
-            case INT_ENUM:
-            case LONG:
-                writeLong(value.asLong());
-                break;
-            case FLOAT:
-                writeFloat(schema, value.asFloat());
-                break;
-            case DOUBLE:
-                writeDouble(schema, value.asDouble());
-                break;
-            case BIG_INTEGER:
-                writeBigInteger(value.asBigInteger());
-                break;
-            case BIG_DECIMAL:
-                writeBigDecimal(schema, value.asBigDecimal());
-                break;
-            case STRING:
-            case ENUM:
-                writeStringValue(value.asString());
-                break;
-            case BLOB:
-                writeBlob(schema, value.asBlob());
-                break;
-            case TIMESTAMP:
-                writeTimestamp(schema, value.asTimestamp());
-                break;
-            case LIST:
-                writeDocumentList(schema, value.asList());
-                break;
-            case MAP:
-                writeDocumentMap(schema, value.asMap());
-                break;
-            default:
-                throw new SerializationException("Unsupported document type: " + value.type());
-        }
-    }
-
-    private void writeDocumentList(Schema schema, List<Document> elements) {
-        startArray(elements.size());
-        for (Document element : elements) {
-            writeDocument(schema, element);
-        }
-        endCollection();
-    }
-
-    private void writeDocumentMap(Schema schema, Map<String, Document> entries) {
-        startMap(entries.size());
-        for (Map.Entry<String, Document> entry : entries.entrySet()) {
-            writeStringValue(entry.getKey());
-            writeDocument(schema, entry.getValue());
-        }
-        endCollection();
     }
 
     private void writeBigInteger(BigInteger value) {
@@ -891,6 +858,29 @@ final class CborSerializer implements ShapeSerializer {
         private void putName(byte[] nameBytes) {
             System.arraycopy(nameBytes, 0, buf, pos, nameBytes.length);
             pos += nameBytes.length;
+        }
+    }
+
+    /**
+     * Receives the contents of a structure document, which must be a single structure, and writes it with the
+     * document's discriminator (null for none) as its {@code __type} member.
+     */
+    private final class DocumentStructSerializer extends SpecificShapeSerializer {
+        private final ShapeId discriminator;
+
+        DocumentStructSerializer(ShapeId discriminator) {
+            this.discriminator = discriminator;
+        }
+
+        @Override
+        protected RuntimeException throwForInvalidState(String message, Schema schema) {
+            return new SerializationException("A structure document must write a structure, but wrote a value of "
+                                              + "type " + schema.type() + " with schema " + schema.id());
+        }
+
+        @Override
+        public void writeStruct(Schema schema, SerializableStruct struct) {
+            CborSerializer.this.writeStruct(schema, struct, discriminator);
         }
     }
 

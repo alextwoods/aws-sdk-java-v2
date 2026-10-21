@@ -49,6 +49,13 @@
             <artifactId>test-utils</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Cross-codec document tests: JSON documents written by CBOR and the reverse. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>json-codec</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
