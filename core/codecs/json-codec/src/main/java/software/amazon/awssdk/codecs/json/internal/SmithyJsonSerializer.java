@@ -22,8 +22,6 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
 import java.util.function.BiConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.ByteBufferUtils;
@@ -31,12 +29,14 @@ import software.amazon.awssdk.codecs.commons.TimestampFormatter;
 import software.amazon.awssdk.codecs.commons.internal.NumberCodec;
 import software.amazon.awssdk.codecs.commons.internal.StripedPool;
 import software.amazon.awssdk.codecs.json.JsonSettings;
-import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
+import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.MapSerializer;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
+import software.amazon.awssdk.schema.serde.SpecificShapeSerializer;
 import software.amazon.awssdk.schema.serde.document.Document;
 
 /**
@@ -44,7 +44,7 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * {@link SmithyJsonSchemaExtensions}. Output is compact (no whitespace); {@link JsonPrettyPrinter} indents it.
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.json.smithy.SmithyJsonSerializer}. Documents are written by
- * type over the SDK {@link Document} accessors (see {@link #writeDocument}).
+ * contents, with a {@code __type} member for structure documents (see {@link #writeDocument}).
  *
  * <p>SDK deviation: with a sink, a full buffer is written to the sink before the buffer grows, so the buffer stays at
  * its initial size unless a single value needs more. smithy-java grows the buffer to the whole document and writes it
@@ -64,6 +64,9 @@ final class SmithyJsonSerializer implements ShapeSerializer {
     private static final int SINK_BUF_SIZE = 1024;
 
     private static final StripedPool<SmithyJsonSerializer, JsonSettings> POOL = new JsonStripedPool();
+
+    // The "__type": field name token written before the members of a structure document with a discriminator.
+    private static final byte[] TYPE_FIELD_NAME_BYTES = JsonWriteUtils.encodeFieldNameToken("__type");
 
     private final OutputStream sink;
     private final JsonSettings settings;
@@ -247,9 +250,23 @@ final class SmithyJsonSerializer implements ShapeSerializer {
 
     @Override
     public void writeStruct(Schema schema, SerializableStruct struct) {
+        writeStruct(schema, struct, null);
+    }
+
+    /**
+     * Writes a structure, with a {@code __type} member first when {@code discriminator} is not null.
+     */
+    private void writeStruct(Schema schema, SerializableStruct struct, ShapeId discriminator) {
         ensureCapacity(2);
         buf[pos++] = '{';
         enterContainer();
+
+        if (discriminator != null) {
+            String typeValue = discriminator.toString();
+            ensureCapacity(TYPE_FIELD_NAME_BYTES.length + 1 + typeValue.length() + 2);
+            writeFieldNameBytesUnchecked(TYPE_FIELD_NAME_BYTES);
+            writeQuotedStringExact(typeValue);
+        }
 
         // Resolve the field name table once per structure for all member writes.
         byte[][] savedTable = currentFieldNameTable;
@@ -292,70 +309,28 @@ final class SmithyJsonSerializer implements ShapeSerializer {
     }
 
     /**
-     * Writes a document by its type: scalars as their JSON values (blobs as base64 strings and timestamps in the
-     * default format), lists as arrays, maps as objects, and a null document as {@code null}.
+     * Writes a document inline through {@link Document#serializeContents}, with this serializer's settings: scalars
+     * as their JSON values (blobs as base64 strings, timestamps in the resolved format), lists as arrays, maps as
+     * objects, and a null document as {@code null}. The settings of the codec that read a document are not used.
      *
-     * <p>smithy-java writes documents through {@code Document.serializeContents}, and writes structure documents with a
-     * {@code __type} member when {@link JsonSettings#serializeTypeInDocuments()} is on. Writing structure documents
-     * and their discriminators is not ported yet (task 11.9), so structure and union documents are rejected.
+     * <p>A structure document is written as an object of its members, named by {@code jsonName} when the settings
+     * use it. When {@link JsonSettings#serializeTypeInDocuments()} is on and the document has a
+     * {@link Document#getDiscriminator() discriminator}, its absolute ShapeId is written first as the {@code __type}
+     * member. Only the document's own structure gets {@code __type}; structures nested in its members do not, but a
+     * document nested in its members is written by this method again.
      *
-     * @throws SerializationException for a structure or union document
+     * @throws SerializationException if a structure document does not write a structure
+     * @throws software.amazon.awssdk.schema.serde.document.DiscriminatorException if reading the discriminator fails
      */
     @Override
     public void writeDocument(Schema schema, Document value) {
         if (value == null) {
             writeNull(schema);
-            return;
-        }
-        switch (value.type()) {
-            case BOOLEAN:
-                writeBoolean(PreludeSchemas.BOOLEAN, value.asBoolean());
-                break;
-            case BYTE:
-                writeByte(PreludeSchemas.BYTE, value.asByte());
-                break;
-            case SHORT:
-                writeShort(PreludeSchemas.SHORT, value.asShort());
-                break;
-            case INTEGER:
-            case INT_ENUM:
-                writeInteger(PreludeSchemas.INTEGER, value.asInteger());
-                break;
-            case LONG:
-                writeLong(PreludeSchemas.LONG, value.asLong());
-                break;
-            case FLOAT:
-                writeFloat(PreludeSchemas.FLOAT, value.asFloat());
-                break;
-            case DOUBLE:
-                writeDouble(PreludeSchemas.DOUBLE, value.asDouble());
-                break;
-            case BIG_INTEGER:
-                writeBigInteger(PreludeSchemas.BIG_INTEGER, value.asBigInteger());
-                break;
-            case BIG_DECIMAL:
-                writeBigDecimal(PreludeSchemas.BIG_DECIMAL, value.asBigDecimal());
-                break;
-            case STRING:
-            case ENUM:
-                writeString(PreludeSchemas.STRING, value.asString());
-                break;
-            case BLOB:
-                writeBlob(PreludeSchemas.BLOB, value.asBlob());
-                break;
-            case TIMESTAMP:
-                writeTimestamp(PreludeSchemas.TIMESTAMP, value.asTimestamp());
-                break;
-            case LIST:
-                List<Document> elements = value.asList();
-                writeList(PreludeSchemas.DOCUMENT, elements, elements.size(), SmithyJsonSerializer::writeDocumentElements);
-                break;
-            case MAP:
-                Map<String, Document> entries = value.asMap();
-                writeMap(PreludeSchemas.DOCUMENT, entries, entries.size(), SmithyJsonSerializer::writeDocumentEntries);
-                break;
-            default:
-                throw new SerializationException("Unsupported document type: " + value.type());
+        } else if (value.type() != ShapeType.STRUCTURE) {
+            value.serializeContents(this);
+        } else {
+            ShapeId discriminator = settings.serializeTypeInDocuments() ? value.getDiscriminator() : null;
+            value.serializeContents(new DocumentStructSerializer(discriminator));
         }
     }
 
@@ -364,19 +339,6 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         ensureCapacity(JsonWriteUtils.NULL_BYTES.length);
         System.arraycopy(JsonWriteUtils.NULL_BYTES, 0, buf, pos, JsonWriteUtils.NULL_BYTES.length);
         pos += JsonWriteUtils.NULL_BYTES.length;
-    }
-
-    private static void writeDocumentElements(List<Document> elements, ShapeSerializer serializer) {
-        for (Document element : elements) {
-            serializer.writeDocument(PreludeSchemas.DOCUMENT, element);
-        }
-    }
-
-    private static void writeDocumentEntries(Map<String, Document> entries, MapSerializer serializer) {
-        for (Map.Entry<String, Document> entry : entries.entrySet()) {
-            serializer.writeEntry(PreludeSchemas.STRING, entry.getKey(), entry.getValue(),
-                                  (v, s) -> s.writeDocument(PreludeSchemas.DOCUMENT, v));
-        }
     }
 
     private void enterContainer() {
@@ -773,6 +735,29 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         public void writeNull(Schema schema) {
             writeCommaIfNeeded();
             SmithyJsonSerializer.this.writeNull(schema);
+        }
+    }
+
+    /**
+     * Receives the contents of a structure document, which must be a single structure, and writes it with the
+     * document's discriminator (null for none) as its {@code __type} member.
+     */
+    private final class DocumentStructSerializer extends SpecificShapeSerializer {
+        private final ShapeId discriminator;
+
+        DocumentStructSerializer(ShapeId discriminator) {
+            this.discriminator = discriminator;
+        }
+
+        @Override
+        protected RuntimeException throwForInvalidState(String message, Schema schema) {
+            return new SerializationException("A structure document must write a structure, but wrote a value of "
+                                              + "type " + schema.type() + " with schema " + schema.id());
+        }
+
+        @Override
+        public void writeStruct(Schema schema, SerializableStruct struct) {
+            SmithyJsonSerializer.this.writeStruct(schema, struct, discriminator);
         }
     }
 

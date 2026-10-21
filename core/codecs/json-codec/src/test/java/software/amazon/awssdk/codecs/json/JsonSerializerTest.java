@@ -141,8 +141,7 @@ public class JsonSerializerTest extends ProviderTestBase {
     public void serializesJsonValues(JsonSerdeProvider provider, Document value, String expected) throws Exception {
         try (JsonCodec codec = codec(provider); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             try (ShapeSerializer serializer = codec.createSerializer(output)) {
-                // Adapted: SDK Document has no serializeContents yet; serialize() calls writeDocument.
-                value.serialize(serializer);
+                value.serializeContents(serializer);
             }
             String result = new String(output.toByteArray(), StandardCharsets.UTF_8);
             assertThat(result).isEqualTo(expected);
@@ -312,6 +311,74 @@ public class JsonSerializerTest extends ProviderTestBase {
             }
             String result = new String(output.toByteArray(), StandardCharsets.UTF_8);
             assertThat(result).isEqualTo("{\"number\":10}");
+        }
+    }
+
+    @PerProvider
+    public void writesDunderTypeAndMoreMembers(JsonSerdeProvider provider) throws Exception {
+        Document document = Document.of(new NestedStruct());
+        try (JsonCodec codec = codec(provider); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                document.serialize(serializer);
+            }
+            String result = new String(output.toByteArray(), StandardCharsets.UTF_8);
+            assertThat(result).isEqualTo("{\"__type\":\"smithy.example#Nested\",\"number\":10}");
+        }
+    }
+
+    @PerProvider
+    public void writesNestedDunderType(JsonSerdeProvider provider) throws Exception {
+        Document document = Document.of(new NestedStruct());
+        Document map = Document.of(mapOf("a", document));
+        try (JsonCodec codec = codec(provider); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                map.serialize(serializer);
+            }
+            String result = new String(output.toByteArray(), StandardCharsets.UTF_8);
+            assertThat(result).isEqualTo("{\"a\":{\"__type\":\"smithy.example#Nested\",\"number\":10}}");
+        }
+    }
+
+    @PerProvider
+    public void writesModeledStructureDocumentInsideStructure(JsonSerdeProvider provider) throws Exception {
+        Schema schema = Schema.structureBuilder(ShapeId.from("smithy.example#Outer"))
+                              .putMember("payload", PreludeSchemas.DOCUMENT)
+                              .build();
+        SerializableStruct value = new SerializableStruct() {
+            @Override
+            public Schema sdkSchema() {
+                return schema;
+            }
+
+            @Override
+            public void serializeMembers(ShapeSerializer serializer) {
+                serializer.writeDocument(schema.member("payload"), Document.of(new NestedStruct()));
+            }
+
+            @Override
+            public <T> T getMemberValue(Schema member) {
+                return null;
+            }
+        };
+        try (JsonCodec codec = codecBuilder(provider).serializeTypeInDocuments(false).build();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                serializer.writeStruct(schema, value);
+            }
+            assertThat(new String(output.toByteArray(), StandardCharsets.UTF_8))
+                .isEqualTo("{\"payload\":{\"number\":10}}");
+        }
+    }
+
+    @PerProvider
+    public void writesDunderTypeForEmptyStruct(JsonSerdeProvider provider) throws Exception {
+        Document document = Document.of(new EmptyStruct());
+        try (JsonCodec codec = codec(provider); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            try (ShapeSerializer serializer = codec.createSerializer(output)) {
+                document.serialize(serializer);
+            }
+            String result = new String(output.toByteArray(), StandardCharsets.UTF_8);
+            assertThat(result).isEqualTo("{\"__type\":\"smithy.example#Nested\"}");
         }
     }
 
