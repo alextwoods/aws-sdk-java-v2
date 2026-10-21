@@ -13,7 +13,7 @@
  * permissions and limitations under the License.
  */
 
-package software.amazon.awssdk.core.schema;
+package software.amazon.awssdk.core.schema.internal;
 
 import java.io.InvalidObjectException;
 import java.io.ObjectInputStream;
@@ -35,15 +35,18 @@ import java.util.Set;
 import java.util.function.Function;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.SdkNumber;
+import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.SerializationException;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.utils.BinaryUtils;
 
 /**
  * Lazy views between the SDK's Legacy_Document ({@link software.amazon.awssdk.core.document.Document}) and the schema
- * {@link Document} (design B.4). Neither direction copies a tree: a list or map view converts an element or value
- * when it is read, so a document member is converted only as far as a codec walks it.
+ * {@link Document} (design B.4), behind {@code SchemaSerdeSupport.wrapLegacy}/{@code unwrapLegacy} (generated code) and
+ * {@code DocumentConverter} (customers). Neither direction copies a tree: a list or map view converts an element or
+ * value when it is read, so a document member is converted only as far as a codec walks it.
  *
  * <p>Schema views of a Legacy_Document compare like other schema documents ({@link Document#equals(Object, Object)}).
  * Legacy views of a schema document are the SDK's own {@code ListDocument}/{@code MapDocument}/scalar classes over lazy
@@ -51,7 +54,15 @@ import software.amazon.awssdk.utils.BinaryUtils;
  * collections serialize (Java serialization) as a {@link ArrayList} or {@link LinkedHashMap} copy.
  */
 @SdkInternalApi
-final class LegacyDocumentViews {
+public final class LegacyDocumentAdapter {
+    /**
+     * The schema document of a top-level Legacy_Document null, for {@code DocumentConverter}. The schema module has no
+     * null document (a Smithy null is a Java {@code null}), so this view is the only one: its {@code type()} is
+     * {@link ShapeType#DOCUMENT}, it writes {@code writeNull}, and {@link #toLegacy} returns
+     * {@code Document.fromNull()} for it.
+     */
+    public static final Document NULL = new NullView();
+
     /**
      * An integral number with more digits than this is a big decimal document rather than a big integer, so that a
      * number such as {@code 1E+999999999} does not expand into a billion-digit integer.
@@ -59,13 +70,13 @@ final class LegacyDocumentViews {
     private static final int MAX_BIG_INTEGER_DIGITS = 1000;
     private static final int DOUBLE_DIGITS = 15;
 
-    private LegacyDocumentViews() {
+    private LegacyDocumentAdapter() {
     }
 
     /**
      * @return the schema view of a Legacy_Document, or null for null or a null document
      */
-    static Document toSchema(software.amazon.awssdk.core.document.Document legacy) {
+    public static Document toSchema(software.amazon.awssdk.core.document.Document legacy) {
         if (legacy == null || legacy.isNull()) {
             return null;
         }
@@ -89,9 +100,9 @@ final class LegacyDocumentViews {
 
     /**
      * @return the Legacy_Document view of a schema document: the original Legacy_Document of a view made by
-     *     {@link #toSchema}, {@code Document.fromNull()} for null
+     *     {@link #toSchema}, {@code Document.fromNull()} for null and {@link #NULL}
      */
-    static software.amazon.awssdk.core.document.Document toLegacy(Document document) {
+    public static software.amazon.awssdk.core.document.Document toLegacy(Document document) {
         if (document == null) {
             return software.amazon.awssdk.core.document.Document.fromNull();
         }
@@ -137,9 +148,13 @@ final class LegacyDocumentViews {
 
     /**
      * Epoch seconds with at most three fraction digits, as the JSON protocols write {@code epoch-seconds} timestamps.
+     * Digits below a millisecond are dropped toward negative infinity, as {@link Instant#toEpochMilli()} drops them,
+     * but without its overflow: every {@link Instant} converts.
      */
     private static BigDecimal epochSeconds(Instant timestamp) {
-        BigDecimal seconds = BigDecimal.valueOf(timestamp.toEpochMilli(), 3).stripTrailingZeros();
+        BigDecimal seconds = BigDecimal.valueOf(timestamp.getEpochSecond())
+                                       .add(BigDecimal.valueOf(timestamp.getNano() / 1_000_000, 3))
+                                       .stripTrailingZeros();
         return seconds.scale() < 0 ? seconds.setScale(0) : seconds;
     }
 
@@ -211,6 +226,42 @@ final class LegacyDocumentViews {
         @Override
         public final int hashCode() {
             return Document.hash(this);
+        }
+    }
+
+    /**
+     * {@link #NULL}: a Legacy_Document null as a document value. Every {@code as<Type>} method except
+     * {@code asObject()} (null) throws, {@code getMember} returns null, and it is written with {@code writeNull}.
+     */
+    private static final class NullView extends AbstractSchemaView {
+        @Override
+        public software.amazon.awssdk.core.document.Document legacy() {
+            return software.amazon.awssdk.core.document.Document.fromNull();
+        }
+
+        @Override
+        public ShapeType type() {
+            return ShapeType.DOCUMENT;
+        }
+
+        @Override
+        public void serializeContents(ShapeSerializer serializer) {
+            serializer.writeNull(PreludeSchemas.DOCUMENT);
+        }
+
+        @Override
+        public Object asObject() {
+            return null;
+        }
+
+        @Override
+        public Document getMember(String memberName) {
+            return null;
+        }
+
+        @Override
+        public String toString() {
+            return "Document(null)";
         }
     }
 
@@ -418,7 +469,7 @@ final class LegacyDocumentViews {
 
         @Override
         public Set<Entry<String, Document>> entrySet() {
-            return new ConvertingEntrySet<>(entries, LegacyDocumentViews::toSchema);
+            return new ConvertingEntrySet<>(entries, LegacyDocumentAdapter::toSchema);
         }
     }
 
@@ -486,7 +537,7 @@ final class LegacyDocumentViews {
 
         @Override
         public Set<Entry<String, software.amazon.awssdk.core.document.Document>> entrySet() {
-            return new ConvertingEntrySet<>(entries, LegacyDocumentViews::toLegacy);
+            return new ConvertingEntrySet<>(entries, LegacyDocumentAdapter::toLegacy);
         }
 
         private Object writeReplace() {

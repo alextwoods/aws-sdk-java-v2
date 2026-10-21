@@ -24,6 +24,7 @@ import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.SdkResponse;
 import software.amazon.awssdk.core.document.Document;
+import software.amazon.awssdk.core.schema.internal.LegacyDocumentAdapter;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
@@ -98,13 +99,15 @@ public final class SchemaSerdeSupport {
      * writing a {@code document} member with {@code ShapeSerializer.writeDocument}. Nothing is copied: list elements and
      * map values are converted as they are read. A number keeps its {@link software.amazon.awssdk.core.SdkNumber};
      * its {@code type()} is the first of integer, long, bigInteger, double and bigDecimal that holds the value exactly.
-     * {@link #unwrapLegacy} of the view returns {@code document}.
+     * {@link #unwrapLegacy} of the view returns {@code document}. This is
+     * {@link software.amazon.awssdk.core.document.DocumentConverter#toSchemaDocument} with the codecs' null: Java
+     * {@code null} instead of a null-valued document, and no exception for a null argument.
      *
      * @param document the Legacy_Document, or null
      * @return the view, or null if {@code document} is null or a null document (a Smithy null)
      */
     public static software.amazon.awssdk.schema.serde.document.Document wrapLegacy(Document document) {
-        return LegacyDocumentViews.toSchema(document);
+        return LegacyDocumentAdapter.toSchema(document);
     }
 
     /**
@@ -114,13 +117,14 @@ public final class SchemaSerdeSupport {
      * {@code ListDocument}/{@code MapDocument}, so {@code equals}, {@code hashCode} and {@code toString} are unchanged.
      * Numbers become {@link software.amazon.awssdk.core.SdkNumber}s of the value's Java type; blobs become base64
      * strings, timestamps epoch seconds with at most three fraction digits, structures and unions maps of their members.
-     * A view made by {@link #wrapLegacy} returns the original Legacy_Document.
+     * A view made by {@link #wrapLegacy} returns the original Legacy_Document. This is
+     * {@link software.amazon.awssdk.core.document.DocumentConverter#toLegacy} with a null argument allowed.
      *
      * @param document the schema document, or null
      * @return the Legacy_Document; {@code Document.fromNull()} if {@code document} is null (a Smithy null)
      */
     public static Document unwrapLegacy(software.amazon.awssdk.schema.serde.document.Document document) {
-        return LegacyDocumentViews.toLegacy(document);
+        return LegacyDocumentAdapter.toLegacy(document);
     }
 
     /**
