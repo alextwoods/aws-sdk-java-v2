@@ -58,21 +58,23 @@ public class DocumentDeserializer implements ShapeDeserializer {
      * Parses a document discriminator, such as the value of a JSON or CBOR {@code __type} member, into a ShapeId.
      *
      * <p>An absolute ShapeId ({@code namespace#Name}) is returned as-is. A relative ShapeId (a shape name with no
-     * namespace) is resolved against {@code defaultNamespace}.
+     * namespace) is resolved against {@code defaultNamespace}. A discriminator names a shape, so a member ShapeId
+     * ({@code namespace#Name$member} or {@code Name$member}) is rejected.
      *
      * @param text the discriminator text, or null if the document has none
      * @param defaultNamespace the namespace of relative discriminators, or null if relative discriminators are not
      *     allowed
      * @return the ShapeId, or null if {@code text} is null
-     * @throws DiscriminatorException if {@code text} is not a valid ShapeId, or is relative and
+     * @throws DiscriminatorException if {@code text} is not a valid ShapeId, is a member ShapeId, or is relative and
      *     {@code defaultNamespace} is null
      */
     public static ShapeId parseDiscriminator(String text, String defaultNamespace) {
         if (text == null) {
             return null;
         }
+        ShapeId result;
         try {
-            return ShapeId.fromOptionalNamespace(defaultNamespace, text);
+            result = ShapeId.fromOptionalNamespace(defaultNamespace, text);
         } catch (ShapeIdSyntaxException e) {
             if (defaultNamespace == null && text.indexOf('#') < 0) {
                 throw new DiscriminatorException("Attempted to parse a document discriminator that only provides a "
@@ -81,6 +83,10 @@ public class DocumentDeserializer implements ShapeDeserializer {
             throw new DiscriminatorException("Unable to parse the document discriminator into a valid shape ID: "
                                              + text, e);
         }
+        if (result.hasMember()) {
+            throw new DiscriminatorException("A document discriminator must name a shape, not a member: " + text);
+        }
+        return result;
     }
 
     /**

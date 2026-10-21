@@ -28,11 +28,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableShape;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.ShapeIdSyntaxException;
 import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.RecordingShapeSerializer;
 import software.amazon.awssdk.schema.serde.SerializationException;
@@ -407,5 +410,34 @@ class TypedDocumentTest {
         assertThatThrownBy(() -> DocumentDeserializer.parseDiscriminator("not valid", "com.other"))
             .isInstanceOf(DiscriminatorException.class)
             .hasMessage("Unable to parse the document discriminator into a valid shape ID: not valid");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "#Foo", "com.example#Foo#Bar", "com..example#Foo", "1Foo", "com.example#Foo$"})
+    void parseDiscriminator_malformedText_throwsDiscriminatorException(String text) {
+        assertThatThrownBy(() -> DocumentDeserializer.parseDiscriminator(text, "com.other"))
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessage("Unable to parse the document discriminator into a valid shape ID: " + text)
+            .hasCauseInstanceOf(ShapeIdSyntaxException.class);
+    }
+
+    @Test
+    void parseDiscriminator_relativeName_keepsTheNameAndTakesTheDefaultNamespace() {
+        ShapeId id = DocumentDeserializer.parseDiscriminator("_Foo1", "com.example.nested");
+
+        assertThat(id.getNamespace()).isEqualTo("com.example.nested");
+        assertThat(id.getName()).isEqualTo("_Foo1");
+        assertThat(id.hasMember()).isFalse();
+        assertThat(id).hasToString("com.example.nested#_Foo1");
+    }
+
+    @Test
+    void parseDiscriminator_memberShapeId_throwsDiscriminatorException() {
+        assertThatThrownBy(() -> DocumentDeserializer.parseDiscriminator("com.example#Foo$bar", null))
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessage("A document discriminator must name a shape, not a member: com.example#Foo$bar");
+        assertThatThrownBy(() -> DocumentDeserializer.parseDiscriminator("Foo$bar", "com.other"))
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessage("A document discriminator must name a shape, not a member: Foo$bar");
     }
 }
