@@ -185,7 +185,11 @@ final class PerOperationSerdeScanner {
         return null;
     }
 
-    private static List<Path> javaFiles(Path root) {
+    /**
+     * The {@code .java} files under the root, sorted by path, or none if the root is not a directory. Also used by
+     * {@link PerShapeDocumentCodeScanner}.
+     */
+    static List<Path> javaFiles(Path root) {
         if (!Files.isDirectory(root)) {
             return new ArrayList<>();
         }
@@ -198,7 +202,7 @@ final class PerOperationSerdeScanner {
         }
     }
 
-    private static String read(Path file) {
+    static String read(Path file) {
         try {
             return new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
         } catch (IOException e) {
