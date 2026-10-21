@@ -2709,3 +2709,86 @@ The real scan was also checked by hand: appending `class Injected { Object toDoc
 **Open questions.**
 - Requirements 24.2–24.4 are runtime properties (`Document.of` and `asShape` use only `serializeMembers` and `deserialize`, with no opt-in). Task 11.18 does not test them; design B.2 says they hold by construction.
 - A member named `toDocument` or `fromDocument` in some future service model would generate a getter that `DOCUMENT_METHOD` reports. No prototype service has one. If such a member appears, the rule could skip getters whose name matches a modeled member.
+
+## S3 Event Notifications on schemas (task 11.19)
+
+**Target.**
+- `codegen`: a types-only mode of the Schema_Generator. `SchemaCodegen.Builder.typesOnly(boolean)` generates only the partition classes and `<Prefix>SchemaIndex`. `SchemaCodegen.Builder.rootShapes(Collection<ShapeId>)` adds closure roots beyond the service's operations and errors (`SchemaFieldOrder.create` gets an overload with `rootShapes`). The new `pipeline.TypesOnlySchemaCodegen` assembles and validates the Smithy files as stage 4 does (any `ERROR` or `DANGER` event fails), then writes the classes and the `META-INF/services` entry. Supporting changes: `SchemaGeneratorTasks.serviceFileTask(Path, SchemaCodegen)` is now public and `IntermediateModel.defaultFileHeader()` is new.
+- `codegen-maven-plugin`: the goal `generate-types` (`TypesGenerationMojo`), configured with `service`, `rootShapes`, `packageName`, `classPrefix` and `smithyModelDirectory` (default `src/main/smithy`).
+- `services-custom/s3-event-notifications`:
+  - `src/main/smithy/s3-event-notification.smithy`. The build generates `internal.S3EventNotificationSchemas` (18 schemas) and `internal.S3EventNotificationSchemaIndex` from it.
+  - The 15 model classes implement `SerializableStruct`, with `sdkSchema()`, `serializeMembers` and `getMemberValue`.
+  - The new internal `S3EventNotificationSerde` holds the root schemas, the 15 `ShapeBuilder`s (one per structure) and the write helpers.
+  - `CodecS3EventNotificationReader` and `CodecS3EventNotificationWriter` implement the unchanged internal `S3EventNotificationReader`/`S3EventNotificationWriter` interfaces, whose `create()`/`builder()` now return them.
+  - `DefaultS3EventNotificationReader` and `DefaultS3EventNotificationWriter` moved unchanged (pure renames) to `src/test`.
+  - `json-utils` moved to test scope. `schema` and `json-codec` are new compile dependencies; `third-party-jackson-core` stays, because the reader still constructs its `JsonParseException`.
+- `build-tools`: the SpotBugs `MS_EXPOSE_REP` exclusion that named `DefaultS3EventNotificationWriter` now names `CodecS3EventNotificationWriter`, which has the same `create()` singleton.
+
+**Codegen.**
+
+| Task, design or source | Port | Reason |
+|---|---|---|
+| Design D.7: "Generate Schemas only (types-only codegen mode)" | Partition classes plus `<Prefix>SchemaIndex` and its `ServiceLoader` entry. No service schemas, operations, type registry, shared serde, intermediate model, model classes or protocol classes. `typesOnly` with `intermediateModel`, `internalPackage` or `serviceShapes` set fails with `IllegalArgumentException`. In this mode, `operations()`, `serviceSchemasClass()`, `typeRegistryClass()` and `typeRegistryShapes()` throw `IllegalStateException` | The index costs one small class and makes the shapes resolvable by ShapeId (`SchemaIndex`). The other classes need operations or generated model classes |
+| — | Configured on a separate plugin goal, not through `customization.config` or the `generate` goal | `customization.config` describes an IntermediateModel and a client. None of its keys apply, and the library needs a package (`...s3.internal`) that IntermediateModel naming cannot produce |
+| Closure (Requirement 10.1): operations and service errors | Plus `rootShapes` and every shape they reach. A root that is not in the model fails with `SchemaCodegenException` | A Smithy service has no `shapes` property (task 11.16), and this service has no operations |
+| — | The Smithy model needs a service shape (`S3EventNotifications`, no operations) | `SchemaCodegen` takes the namespace constant, the trait policy and the Javadoc from it |
+| — | Generated into `...eventnotifications.s3.internal`, not the model package. The partition class is package-private, so `S3EventNotificationSerde` republishes the root schemas as `public static final` fields | `EqualsAndHashCodeTest` runs `EqualsVerifier.forPackage("...s3.model", true)`, which would check every class in the model package and its subpackages, including generated classes that do not override `equals`. The builders are in `internal` for the same reason |
+| — | The schema field of shape `S3` is `SOFTWARE_AMAZON_AWSSDK_EVENTNOTIFICATIONS_S3_S3` | Existing `SchemaFieldOrder` naming rule: a field name equal to the shape name is qualified |
+
+**Model and serde.** The Smithy members are in the order `toJson` writes them, so `serializeMembers` writes in ascending member index. `x-amz-request-id` and `x-amz-id-2` are `@jsonName` members (`xAmzRequestId`, `xAmzId2`), and both codecs use `useJsonName(true)`. `S3EventNotificationRecordList`, `S3ObjectAnnotationList` and `AwsGeneratedTags` are `@sparse`.
+
+| Task, design or source | Port | Reason |
+|---|---|---|
+| `eventTime`, `lifecycleRestorationExpiryTime` (Java `Instant`) | Smithy `String` members. They are read with `Instant.parse` and written with `DateTimeFormatter.ISO_INSTANT` | The JSON codec's `date-time` writer drops trailing fraction zeros (`.1Z`, task 7.1), while the previous writer wrote `ISO_INSTANT` (`.100Z`). `Instant.parse` also keeps the previous reader's accepted inputs and its `DateTimeParseException` |
+| `SerializableStruct.serializeMembers`: "unset members are not written" | Members the previous writer always wrote are written as `null` when null (`writeNullable`). Event data, `objectAnnotation`, `hasObjectAnnotation` and empty or null `awsGeneratedTags` are left out. An owner identity without a principal ID is written as `null`, as before | `toJson` output must be unchanged (Requirement 38.6). Other codecs and `Document.of` therefore see explicit nulls too |
+| `getMemberValue` | Returns the `ISO_INSTANT` string for the two instants, matching the member's schema type | Same reason as the string members |
+| Design D.7: "get `ShapeBuilder`s" | 15 internal builders behind `S3EventNotificationSerde.notificationBuilder()`. No public builder accessor, and the schemas have no `builderSupplier`/`shapeClass` | Requirement 38.6 keeps the public API unchanged. A public accessor is an open question |
+| Previous reader messages | Each typed read maps a codec `SerializationException` to `IllegalArgumentException` with the previous message and the JSON field name: `'%s' was not a string`, `expected '%s' to be an object, but was not.`, `... an array ...`, `... numeric, but was not`, `... boolean, but was not`, and `Records[]`/`objectAnnotation[]` for elements. The codec exception is the cause | Same exception type and message for type errors. A top-level `null` gives null records; any other non-object root gives `expected 'Records' to be an object, but was not.` |
+| `awsGeneratedTags` values | Read as documents. A non-string value throws `The value of tag '%s' in 'awsGeneratedTags' was not a string, but was: %s`, with the value spelled as `JsonNode.toString()` spelled it (`[1, "a", null]`, `{"a": "b"}`) | `ShapeDeserializer.readString` accepts a JSON number, and Requirement 38.6 keeps the exception type for these values. Numbers are spelled in the codec's form (`1.5` for `1.50`) |
+| Malformed JSON: `UncheckedIOException` caused by the shaded Jackson `JsonParseException` | After any failure, the input is checked with `readDocument()`. If it is not well-formed up to the end of its first value, the reader throws `UncheckedIOException(new JsonParseException(null, <codec message>, <SerializationException>))`. Otherwise it rethrows the failure, with a bare `SerializationException` as `IllegalArgumentException` | The previous reader built the whole tree before reading members, so malformed input always gave `JsonParseException`, even when a type error or bad instant came earlier in the input. Jackson's message and its subclasses (`JsonEOFException` for a truncated input) are not reproduced |
+| `JsonNodeParser.DEFAULT_JSON_FACTORY`: `ALLOW_JAVA_COMMENTS`, UTF-8 byte order mark, only the first value read | After a failure, a leading BOM is removed and `//` and `/* */` comments outside strings are replaced with spaces, and the input is read again. An unterminated block comment is left to fail. After the value, `close()`'s trailing-content error is ignored | `fromJson` must accept what it accepted before. The extra scan runs only on inputs that already failed |
+
+**Known differences** (each is asserted in `S3EventNotificationParityTest`):
+- A JSON number where a string is expected is read as its text (`"eventVersion": 2.5` gives `"2.5"`). The previous reader threw `IllegalArgumentException`. This is the codec's `readString` behaviour (task 7.1).
+- `"size": 1.5` throws `IllegalArgumentException` (`expected 'object' to be an object, but was not.`), where the previous reader threw `NumberFormatException`, a subclass. The codec reads `1` as the long and then fails on `.5` as object syntax.
+- `\uXXXX` escapes of control characters use lower-case hex (`\u001f`, not `\u001F`), and supplementary characters are written as UTF-8 rather than escaped surrogate pairs (`\uD83D\uDE00`). These are the task 7.1 codec differences. S3 sends object keys URL-encoded, so they do not occur in S3's own notifications.
+- `GlacierEventData` without `restoreEventData` is written as `"glacierEventData":{}`, and reads back equal. The previous writer threw `JsonWriter.JsonGenerationException` ("Current context not Object but Array"), because it closed the object twice.
+- An `S3Bucket` with a null `ownerIdentity`, and a null element in `objectAnnotation`, are written as `null`. The previous writer threw `NullPointerException`.
+
+Not asserted:
+- Pretty output always ends lines with `\n`. The previous writer used Jackson's system line separator, so the output differs on Windows. The existing writer tests expect `\n`.
+- The previous reader detected UTF-16 and UTF-32 input; the codec reads UTF-8 only.
+- Jackson's read limits (string and number length, nesting depth 1000) are replaced by the codec's (depth 1000).
+- With duplicate keys, both readers keep the last value. The previous reader validated only the last occurrence, while the codec reads, and can reject, every occurrence.
+- When one input has two type errors, the codec reports the first in input order. The previous reader reported the first in its own field order.
+
+**`toJsonPretty`.** `JsonPrettyPrinter` (task 7.1) reproduces Jackson's `DefaultPrettyPrinter` byte for byte on all 50 valid samples, and the existing pretty-print tests pass unchanged.
+
+**Parity test.** `S3EventNotificationParityTest` (135 runs) reads every file under `src/test/resources/samples`:
+- `valid/`, 50 files. 23 are the JSON strings of `S3EventNotificationReaderTest` and `S3EventNotificationWriterTest`, extracted once with a script that decodes the Java literals. The other 27 cover the S3 User Guide event shapes (put, restore, replication, lifecycle transition, Intelligent-Tiering), every event-data member null, empty or set, object annotations, root `null`, empty and whitespace-only input, unknown members at every level, absent, null and empty `Records` and null records, nested nulls, escapes and non-ASCII text, instant fractions (`.100Z`, `.123456Z`, `.123456789Z`, none), `awsGeneratedTags` with null, empty and duplicate keys, long extremes, duplicate members, comments, a byte order mark and trailing content.
+- `invalid/`, 28 files: 4 from the reader test (malformed JSON and the three `awsGeneratedTags` errors) and 24 new ones (syntax errors, every wrong-type message, bad instants, and type or instant errors before a syntax error).
+
+Each valid sample is checked three ways:
+- `fromJson` from the bytes, the string and an `InputStream` equals the old reader's result.
+- `toJson` and `toJsonPretty` equal the old writer's output.
+- The compact output reads back equal with both readers.
+
+Each invalid sample must throw the same exception class as the old reader. For `UncheckedIOException`, both causes must be `JsonParseException`s; otherwise the messages must be equal. One more run checks the sample counts, and six runs cover the known differences.
+
+**Size.** The JAR grows from 45,476 bytes (2.49.6) to 80,344, and its classes from 88,755 to 169,096 uncompressed bytes (22 to 42 classes). The largest new classes are `S3EventNotificationSerde` (24.6 KB), whose lambdas and helpers are counted with it, the 15 builders and their base class (2.4 to 6.0 KB each, 48.6 KB in total), and the `serializeMembers`/`getMemberValue` code in the model classes. The removed reader and writer were 43.1 KB. Design D.7 estimated a decrease of about 15 KB; the measured change is an increase of about 80 KB uncompressed. Task 11.23's Size_Report rows replace this estimate in the Library_Integration_Analysis.
+
+**Dependencies and compatibility.**
+- `dependency:analyze`: no problems.
+- `architecture-tests`: 77 runs, 0 failures; the 11 skipped are `NamingConventionTest` and `CodingConventionTest`, as before. `DependencyTreeTest` passes: `schema` and `json-codec` do not reach `smithy-model`, and the codegen plugin is a build plugin, not a dependency. Requirement 1.7 is read as covering runtime modules.
+- japicmp: the module was already in the root `includeModules`. Against the released 2.49.6 JAR (fetched once with `mvn dependency:get`), it reports 15 modified classes. Each change is additive: `SerializableStruct` and `SerializableShape` as new interfaces, plus `sdkSchema()`, `serializeMembers(ShapeSerializer)` and `getMemberValue(Schema)`. No `!` markers, and every change is binary and source compatible. `internal` is excluded.
+
+**Module runs** (`mvn -o`, JDK 21.0.2). The module, `codegen` and `architecture-tests` were built from a `/tmp` worktree of HEAD with the changes copied in, because the IDE was writing its own compiled classes (with "Unresolved compilation problems") into the workspace's `target/classes`.
+- `codegen` `clean install`, with `SchemaCodegenTest` (13 runs, 2 new) and the new `TypesOnlySchemaCodegenTest` (3), and then with every test in `poet.schema`, `pipeline` and `emitters` (102).
+- `codegen-maven-plugin` `clean install`: 94 tests.
+- `s3-event-notifications` `clean install`: 174 tests. These are `S3EventNotificationReaderTest` 19, `S3EventNotificationWriterTest` 13, `S3BucketTest` 6 and `EqualsAndHashCodeTest` 1 (all unmodified), plus `S3EventNotificationParityTest` 135. Checkstyle, SpotBugs, `dependency:analyze`, Javadoc and japicmp also ran.
+
+**Open questions.**
+- Should the library publish a `ShapeBuilder` (for example `S3EventNotification.shapeBuilder()`) and give the schemas a `builderSupplier`, so that `MessagePayloads` (task 11.20) and type registries can read notifications with any codec? Either change is additive, but it adds public API.
+- Should `json-codec` reject a fraction for `readLong`/`readInteger` instead of reading the integer part? The error type is the same either way, but the message names the enclosing object.
+- The instants are Smithy strings. If the codecs' `date-time` writer kept `ISO_INSTANT`'s fraction groups, they could become `timestamp` members with `@timestampFormat("date-time")`.
+- The size increase contradicts D.7's "decrease" estimate. A table-driven builder, or reading through `Document`, would be smaller. Task 11.23's benchmark should decide whether the streaming parse is worth the size.
