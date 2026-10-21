@@ -41,6 +41,8 @@
         <archtests.freeze.storePath>${project.build.directory}/archunit_store</archtests.freeze.storePath>
         <!-- RacecarDecisionTableTest (task 9.1) runs the racecar decision table generator in its check mode -->
         <racecar-decisions.python>python3</racecar-decisions.python>
+        <!-- LibraryIntegrationAnalysisTest (task 11.23) runs the Library_Integration_Analysis generator in its check mode -->
+        <library-integration.python>python3</library-integration.python>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -408,6 +410,8 @@
                         <archunit.freeze.store.default.path>${archtests.freeze.storePath}</archunit.freeze.store.default.path>
                         <racecar-decisions.python>${racecar-decisions.python}</racecar-decisions.python>
                         <racecar-decisions.script>${project.basedir}/../../scripts/schema-serde/racecar_decisions.py</racecar-decisions.script>
+                        <library-integration.python>${library-integration.python}</library-integration.python>
+                        <library-integration.script>${project.basedir}/../../scripts/schema-serde/library_integration_analysis.py</library-integration.script>
                         <!-- DependencyTreeTest (task 9.8) reads the reactor's pom.xml files from here -->
                         <dependency-tree.root>${project.basedir}/../..</dependency-tree.root>
                     </systemPropertyVariables>

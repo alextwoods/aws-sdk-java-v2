@@ -65,8 +65,11 @@ class InvalidDecisions(Exception):
     pass
 
 
-def parse(path):
-    """Reads the YAML subset described in the file's header: a list of flat entries with JSON literal values."""
+def parse(path, keys=REQUIRED + OPTIONAL):
+    """Reads the YAML subset described in the file's header: a list of flat entries with JSON literal values.
+
+    keys are the allowed keys (library_integration_analysis.py reads its YAML file with its own keys).
+    """
     entries = []
     errors = []
     with open(path, encoding="utf-8") as f:
@@ -86,7 +89,7 @@ def parse(path):
             if not sep or not key or key != key.strip():
                 errors.append("line %d: expected 'key: value'" % number)
                 continue
-            if key not in REQUIRED and key not in OPTIONAL:
+            if key not in keys:
                 errors.append("line %d: unknown key %r" % (number, key))
                 continue
             if key in entries[-1]:

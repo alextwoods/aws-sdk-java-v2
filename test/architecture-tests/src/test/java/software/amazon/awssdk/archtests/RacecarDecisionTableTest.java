@@ -16,17 +16,9 @@
 package software.amazon.awssdk.archtests;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -43,23 +35,23 @@ import org.junit.jupiter.api.Test;
  * ({@code -Dracecar-decisions.python=...} selects another interpreter).
  */
 class RacecarDecisionTableTest {
-    private static final long TIMEOUT_SECONDS = 60;
+    private static final PythonScript SCRIPT = new PythonScript("racecar-decisions.python", "racecar-decisions.script");
 
     @Test
     void racecarDecisions_check_markdownIsUpToDateAndYamlIsValid() {
-        ScriptResult result = runScript("--check");
+        PythonScript.Result result = SCRIPT.run("--check");
 
-        assertThat(result.exitCode).as("racecar_decisions.py --check:%n%s", result.output).isZero();
+        assertThat(result.exitCode()).as("racecar_decisions.py --check:%n%s", result.output()).isZero();
     }
 
     @Test
     void racecarDecisions_appliedAndSupersededRows_nameClassesOnTheClasspath() {
-        ScriptResult result = runScript("--list-classes");
-        assertThat(result.exitCode).as("racecar_decisions.py --list-classes:%n%s", result.output).isZero();
+        PythonScript.Result result = SCRIPT.run("--list-classes");
+        assertThat(result.exitCode()).as("racecar_decisions.py --list-classes:%n%s", result.output()).isZero();
 
         List<String> classes = new ArrayList<>();
         List<String> missing = new ArrayList<>();
-        for (String line : result.output.split("\n")) {
+        for (String line : result.output().split("\n")) {
             if (line.isEmpty()) {
                 continue;
             }
@@ -81,55 +73,6 @@ class RacecarDecisionTableTest {
             return true;
         } catch (ClassNotFoundException e) {
             return false;
-        }
-    }
-
-    private static ScriptResult runScript(String mode) {
-        String python = property("racecar-decisions.python");
-        Path script = Paths.get(property("racecar-decisions.script")).toAbsolutePath().normalize();
-        ProcessBuilder builder = new ProcessBuilder(python, script.toString(), mode).redirectErrorStream(true);
-        try {
-            Process process = builder.start();
-            process.getOutputStream().close();
-            String output = readFully(process.getInputStream());
-            if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                fail("%s %s %s did not finish within %d seconds", python, script, mode, TIMEOUT_SECONDS);
-            }
-            return new ScriptResult(process.exitValue(), output);
-        } catch (IOException e) {
-            throw new AssertionError("Could not run " + python + " " + script + " " + mode
-                                     + ". Python 3 is required; select an interpreter with -Dracecar-decisions.python",
-                                     e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError("Interrupted while running " + script, e);
-        }
-    }
-
-    private static String readFully(InputStream in) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = in.read(buffer)) != -1) {
-            out.write(buffer, 0, read);
-        }
-        return new String(out.toByteArray(), StandardCharsets.UTF_8);
-    }
-
-    private static String property(String name) {
-        String value = System.getProperty(name);
-        assertThat(value).as("system property %s (set by the architecture-tests pom)", name).isNotBlank();
-        return value;
-    }
-
-    private static final class ScriptResult {
-        private final int exitCode;
-        private final String output;
-
-        private ScriptResult(int exitCode, String output) {
-            this.exitCode = exitCode;
-            this.output = output;
         }
     }
 }

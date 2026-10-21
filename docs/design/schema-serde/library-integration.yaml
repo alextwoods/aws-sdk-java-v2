@@ -1,0 +1,139 @@
+# Library_Integration_Analysis (design D.7, Requirements 38.1 and 38.2): one entry per higher-level library subject.
+#
+# scripts/schema-serde/library_integration_analysis.py writes library-integration-analysis.md from this file, the
+# Libraries rows of size-report.md (test/size-report) and the S3EventNotificationBenchmark JMH result in
+# library-integration-jmh.json. Its --check mode (run by LibraryIntegrationAnalysisTest in test/architecture-tests)
+# fails when the Markdown is out of date or an entry is invalid.
+#
+# Format: the YAML subset of racecar-decisions.yaml. Each entry starts with "- id: ..."; each further key is indented
+# by two spaces. Every value is on one line and is a JSON literal (a double-quoted string or a list of strings), which
+# is also valid YAML.
+#
+# Keys:
+#   id                     required  one of the seven subject ids, in the order of D.7 (the script checks the set)
+#   subject                required  the subject as D.7 names it
+#   current_serde          required  (a) the parser or writer the library uses today
+#   proposed_use           required  (b) the proposed use of Schemas, Documents or Type_Registries
+#   compatibility          required  (c) "none", "additive" or "breaking", for the library's public API
+#   affected_public_types  required  (c) every affected public type (a list; empty only for "none")
+#   compatibility_note     optional  (c) what changes for those types
+#   size_direction         required  (d) "increase", "decrease" or "neutral": the expected artifact-size effect
+#   size_estimate          required  (d) the estimate
+#   size_report_library    optional  (d) a size-report.md Libraries artifactId that measures it
+#   size_confirmation      optional  (d) the Size_Report measurement that will confirm it, when none exists yet
+#   size_note              optional  (d) required when the measured direction differs from size_direction
+#   perf_direction         required  (e) "increase", "decrease" or "neutral": the expected effect on time per call
+#   perf_estimate          required  (e) the estimate
+#   benchmark              optional  (e) a JMH benchmark class in library-integration-jmh.json that measures it
+#   perf_confirmation      optional  (e) the Benchmark_Harness measurement that will confirm it, when none exists yet
+#   perf_note              optional  (e) required when the measured direction differs from perf_direction
+#   recommendation         required  "Prototype in phase 3", "Defer to a later phase" or "Do not adopt"
+#   rationale              required
+#   task                   optional  the task that prototyped it
+#   d7_compatibility       optional  D.7's compatibility, when the implementation changed it (needs a note)
+#   note                   optional  where the implementation differs from D.7, or another note on the entry
+- id: "s3-event-notifications"
+  subject: "S3 Event Notifications (`services-custom/s3-event-notifications`)"
+  current_serde: "Before task 11.19: `DefaultS3EventNotificationReader` over the `json-utils` `JsonNodeParser`/`JsonNode` tree, and `DefaultS3EventNotificationWriter` over `JsonWriter` (shaded Jackson `JsonGenerator`). Both are now in the module's test scope, for the parity test"
+  proposed_use: "`s3-event-notification.smithy`, generated in the types-only codegen mode (`S3EventNotificationSchemas`, `S3EventNotificationSchemaIndex`). The 15 hand-written model classes implement `SerializableStruct`; internal `ShapeBuilder`s in `S3EventNotificationSerde`. `fromJson`/`toJson`/`toJsonPretty` run `JsonCodec` (`prettyPrint` for pretty)"
+  compatibility: "additive"
+  affected_public_types: ["S3EventNotification", "S3EventNotificationRecord", "S3", "S3Bucket", "S3Object", "UserIdentity", "RequestParameters", "ResponseElements", "GlacierEventData", "RestoreEventData", "ReplicationEventData", "IntelligentTieringEventData", "LifecycleEventData", "TransitionEventData", "S3ObjectAnnotation"]
+  compatibility_note: "`fromJson(String|byte[]|InputStream)`, `toJson` and `toJsonPretty` keep their signatures, and malformed JSON and wrong-typed `awsGeneratedTags` throw the same exception types (Requirement 38.6). Each model class gains `SerializableStruct` and `SerializableShape` and the methods `sdkSchema()`, `serializeMembers(ShapeSerializer)` and `getMemberValue(Schema)`. japicmp against 2.49.6 reports only binary- and source-compatible additions"
+  size_direction: "decrease"
+  size_estimate: "About −15 KB uncompressed for the library JAR (reader and writer removed). Adds dependencies on `schema` and `json-codec`; `json-utils` moves to test scope"
+  size_report_library: "s3-event-notifications"
+  size_note: "The JAR grows. The removed reader and writer were 43.1 KB of classes, but `S3EventNotificationSerde` (24.6 KB), the 15 builders and their base class (48.6 KB) and the `serializeMembers`/`getMemberValue` code in the model classes add more (task 11.19). A table-driven builder, or reading through a `Document`, would be smaller"
+  perf_direction: "decrease"
+  perf_estimate: "Less time per call: a streaming parse instead of a tree"
+  benchmark: "S3EventNotificationBenchmark"
+  recommendation: "Prototype in phase 3"
+  rationale: "Prototyped in task 11.19: every existing test passes unmodified and the parity test reads all 50 valid samples equal to the previous reader. The JAR grows instead of shrinking, so adoption should come with a smaller builder or a Document-based reader, and the full benchmark run must confirm the time saving"
+  task: "11.19"
+  d7_compatibility: "none"
+  note: "D.7 classifies the compatibility as none because the serde entry points are unchanged. The model classes gain public interfaces and methods, so the implementation records it as additive and lists them"
+- id: "sns-message-manager"
+  subject: "SNS Message Manager (`services-custom/sns-message-manager`)"
+  current_serde: "`SnsMessageUnmarshaller` over `json-utils` `JsonNodeParser` for the fixed envelope; `Message` is a user string"
+  proposed_use: "Keep the envelope parsing, which signature validation depends on. Decode `Message` through `MessagePayloads` with any `Codec` and a `ShapeBuilder` or `TypeRegistry`"
+  compatibility: "additive"
+  affected_public_types: ["SnsNotification"]
+  compatibility_note: "Three new overloads of `SnsNotification.message`: `(Codec, ShapeBuilder<T>)`, `(Codec, TypeRegistry)` and `(Codec, TypeRegistry, ShapeId)`. `message-payloads` is an optional dependency, so the published pom adds no transitive dependency"
+  size_direction: "neutral"
+  size_estimate: "Neutral for the library; `message-payloads` is a separate small module (see the SQS entry)"
+  size_report_library: "sns-message-manager"
+  perf_direction: "neutral"
+  perf_estimate: "Neutral: envelope parsing and signature validation are unchanged, and the typed accessors run only when called"
+  recommendation: "Prototype in phase 3"
+  rationale: "Prototyped in task 11.22 (typed payload only). The change is three delegating methods, and customers who do not call them get no new artifacts"
+  task: "11.22"
+- id: "sqs-message-bodies"
+  subject: "SQS message bodies with user-defined schemas"
+  current_serde: "None: `SendMessageRequest.messageBody()` and `Message.body()` are strings that the caller encodes and parses itself"
+  proposed_use: "`MessagePayloads.serialize`/`deserialize` with any `Codec` and a `ShapeBuilder` or `TypeRegistry` (`__type` discriminator or a caller-supplied ShapeId); binary codecs use base64 text"
+  compatibility: "additive"
+  affected_public_types: ["MessagePayloads (new)", "MessagePayloadException (new, with its Cause enum and Builder)"]
+  compatibility_note: "A new module, `message-payloads`. No SQS or SNS API changes"
+  size_direction: "increase"
+  size_estimate: "A new optional module, at most 10 KB"
+  size_report_library: "message-payloads"
+  size_note: "17.1 KB against the 10 KB estimate. Most of the excess is the SDK exception builder pattern (the `Builder` interface and `BuilderImpl` of `MessagePayloadException`, 8.7 KB of classes; task 11.20)"
+  perf_direction: "neutral"
+  perf_estimate: "Neutral: one codec call per message, which callers make today with their own JSON library"
+  perf_confirmation: "A JMH benchmark of `MessagePayloads.deserialize` against hand-written Jackson binding, if phase 3 needs a number"
+  recommendation: "Prototype in phase 3"
+  rationale: "Prototyped in task 11.20. It is additive, small, and gives SQS and SNS bodies typed serde with every codec"
+  task: "11.20"
+- id: "lambda-event-payloads"
+  subject: "AWS Lambda event handler payloads"
+  current_serde: "None in this repository. Customers use `aws-lambda-java-events` with the Lambda runtime's serializer"
+  proposed_use: "Schemas for the event types, and a Type_Registry keyed by event source for polymorphic handlers"
+  compatibility: "additive"
+  affected_public_types: ["(not designed: new event types and a Type_Registry in a new library; no existing public type changes)"]
+  size_direction: "increase"
+  size_estimate: "Increase: a new artifact"
+  size_confirmation: "Size_Report Libraries row for the new library"
+  perf_direction: "decrease"
+  perf_estimate: "Neutral to less time: no reflection"
+  perf_confirmation: "A JMH benchmark against `aws-lambda-java-events` deserialization on Lambda's sample events"
+  recommendation: "Defer to a later phase"
+  rationale: "Needs Lambda event models, which are outside this repository"
+- id: "dynamodb-enhanced-client"
+  subject: "DynamoDB Enhanced Client documents and table schemas (`services-custom/dynamodb-enhanced`)"
+  current_serde: "`AttributeValue` converters. `EnhancedDocument` JSON through `JsonNodeParser` and `JsonNodeToAttributeValueMapConverter`, and `DocumentJsonSerializer` over `SdkJsonGenerator`"
+  proposed_use: "`TableSchema.fromSchema(Schema)` for `SerializableStruct` classes, and `EnhancedDocument` to and from `Document`"
+  compatibility: "additive"
+  affected_public_types: ["TableSchema", "EnhancedDocument"]
+  compatibility_note: "New factories and conversions; `EnhancedDocument`'s existing methods are unchanged"
+  size_direction: "neutral"
+  size_estimate: "Neutral"
+  size_confirmation: "Size_Report Libraries row for `dynamodb-enhanced`"
+  perf_direction: "decrease"
+  perf_estimate: "Less time for the schema-based TableSchema: no bean introspection"
+  perf_confirmation: "A JMH benchmark of `TableSchema.fromSchema` against `TableSchema.fromBean` item mapping"
+  recommendation: "Defer to a later phase"
+  rationale: "Large API surface that needs its own design review"
+- id: "iam-policy-builder"
+  subject: "IAM Policy Builder (`services-custom/iam-policy-builder`)"
+  current_serde: "`DefaultIamPolicyReader` over `JsonNodeParser`, and `DefaultIamPolicyWriter` over `JsonWriter` (shaded Jackson `JsonGenerator`)"
+  proposed_use: "None: the policy grammar has string-or-list polymorphism and order-sensitive writing that Smithy shapes cannot express without custom serde"
+  compatibility: "none"
+  affected_public_types: []
+  size_direction: "neutral"
+  size_estimate: "Neutral: no change"
+  perf_direction: "neutral"
+  perf_estimate: "Neutral: no change"
+  recommendation: "Do not adopt"
+  rationale: "Schemas cannot describe the policy grammar without custom serde, which would keep the hand-written reader and writer"
+- id: "json-media-type-strings"
+  subject: "Modeled string members with `mediaType` `application/json` (for example CloudWatch `DashboardBody`)"
+  current_serde: "Plain `String` getters; the `JsonValueTrait` header path base64-encodes JSON header values"
+  proposed_use: "A generic helper with no per-member generated methods (Requirement 24.1): `Codec.deserializeShape(String, ShapeBuilder)`, which `codec-commons` already has, or a new `Documents.parseJson(String)` for schema-less reads"
+  compatibility: "additive"
+  affected_public_types: ["Documents.parseJson (new; only if Codec.deserializeShape is not enough)"]
+  size_direction: "neutral"
+  size_estimate: "Neutral: no generated code"
+  perf_direction: "neutral"
+  perf_estimate: "Neutral: the helper runs only when called"
+  recommendation: "Defer to a later phase"
+  rationale: "Callers can already read such a member with `Codec.deserializeShape(String, ShapeBuilder)`; a schema-less `Documents.parseJson` needs a public `Documents` entry point, which `schema` does not have (`Documents` is internal)"
+  note: "This repository's CloudWatch C2J model carries no `mediaType` on `DashboardBody`, so the example cannot be checked here"
