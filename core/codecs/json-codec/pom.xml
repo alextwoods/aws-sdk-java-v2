@@ -97,6 +97,17 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- Requirement 20.5: run the SEP serdeTests suite (DocumentSerdeTestSuite), which the parent's test
+                 class patterns do not match. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes combine.children="append">
+                        <include>**/DocumentSerdeTestSuite.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
