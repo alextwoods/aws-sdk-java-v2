@@ -35,6 +35,9 @@ final class DynamicTestModels {
     private static final Model NO_SERVICE_MODEL = assemble("no-service.smithy");
     private static final Model JSON10_MODEL = assemble("json10.smithy");
     private static final Model REST_JSON_MODEL = assemble("rest-json.smithy");
+    private static final Model ERRORS_JSON10_MODEL = assemble("errors-json10.smithy");
+    private static final Model ERRORS_REST_JSON_MODEL = assemble("errors-rest-json.smithy");
+    private static final Model ERRORS_QUERY_MODEL = assemble("errors-query.smithy");
 
     private DynamicTestModels() {
     }
@@ -73,6 +76,30 @@ final class DynamicTestModels {
      */
     static Model restJson() {
         return REST_JSON_MODEL;
+    }
+
+    /**
+     * An awsJson1_0 service ({@code test.errors.json#ErrorJson}) with operation errors, service errors, an error that
+     * an operation and the service both list, and a retryable error.
+     */
+    static Model errorsJson10() {
+        return ERRORS_JSON10_MODEL;
+    }
+
+    /**
+     * A restJson1 service ({@code test.errors.rest#ErrorRest}) whose operation error has a header-bound member and a
+     * {@code jsonName} member, and a service error.
+     */
+    static Model errorsRestJson() {
+        return ERRORS_REST_JSON_MODEL;
+    }
+
+    /**
+     * An awsQuery service ({@code test.errors.query#ErrorQuery}) whose operation error and service error have the same
+     * {@code awsQueryError} code.
+     */
+    static Model errorsQuery() {
+        return ERRORS_QUERY_MODEL;
     }
 
     /**

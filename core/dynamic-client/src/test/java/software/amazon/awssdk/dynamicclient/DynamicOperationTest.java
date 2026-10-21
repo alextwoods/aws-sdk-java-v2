@@ -37,6 +37,7 @@ import software.amazon.awssdk.dynamicclient.schema.StructDocument;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.serde.ErrorRegistry;
 import software.amazon.awssdk.schema.serde.TypeRegistry;
 
 /**
@@ -107,7 +108,16 @@ class DynamicOperationTest {
                                                              ShapeId.from("test.json10#ServiceFault"));
         assertThat(operation.effectiveAuthSchemes()).containsExactly(ShapeId.from("aws.auth#sigv4"));
         assertThat(operation.service()).isSameAs(client.service());
-        assertThat(operation.errorRegistry()).isSameAs(TypeRegistry.empty());
+        TypeRegistry errors = operation.errorRegistry();
+        assertThat(errors).isInstanceOf(ErrorRegistry.class).isSameAs(client.getOperation("PutItem").errorRegistry());
+        assertThat(errors.contains(ShapeId.from("test.json10#ItemFault"))).isTrue();
+        assertThat(errors.contains(ShapeId.from("test.json10#ServiceFault"))).isTrue();
+        assertThat(errors.contains(ShapeId.from("test.json10#PutItemInput"))).isFalse();
+        assertThat(errors.getShapeClass(ShapeId.from("test.json10#ItemFault"))).isEqualTo(DocumentException.class);
+        assertThat(errors.createBuilder(ShapeId.from("test.json10#ItemFault")))
+            .isInstanceOf(DocumentException.Builder.class)
+            .isNotSameAs(errors.createBuilder(ShapeId.from("test.json10#ItemFault")));
+        assertThat(client.getOperation("Ping").errorRegistry().contains(ShapeId.from("test.json10#ItemFault"))).isFalse();
         assertThat(operation.inputSchema())
             .isSameAs(client.schemaConverter().getSchema(software.amazon.smithy.model.shapes.ShapeId
                                                              .from("test.json10#PutItemInput")));

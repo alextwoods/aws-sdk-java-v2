@@ -230,7 +230,7 @@ class DynamicClientCallTest {
         CompletableFuture<Document> future = client.callAsync("PutItem", map("name", "widget"));
 
         assertThatThrownBy(() -> future.get(30, TimeUnit.SECONDS))
-            .hasCauseInstanceOf(AwsServiceException.class)
+            .hasCauseInstanceOf(DocumentException.class)
             .satisfies(e -> assertThat(((AwsServiceException) e.getCause()).statusCode()).isEqualTo(400));
     }
 

@@ -29,16 +29,19 @@ import software.amazon.awssdk.schema.ApiService;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.TraitKey;
+import software.amazon.awssdk.schema.serde.ErrorRegistry;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.TypeRegistry;
+import software.amazon.awssdk.schema.traits.AwsQueryErrorTrait;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 
 /**
- * An operation of the service a {@link DynamicClient} calls, created from the model: its schemas, its effective auth
- * schemes and the service it belongs to. Inputs and outputs are {@link DynamicRequest}s and {@link DynamicResponse}s,
- * whose documents have the operation's input and output schemas.
+ * An operation of the service a {@link DynamicClient} calls, created from the model: its schemas, its error registry,
+ * its effective auth schemes and the service it belongs to. Inputs and outputs are {@link DynamicRequest}s and
+ * {@link DynamicResponse}s, whose documents have the operation's input and output schemas.
  *
  * <p>A client creates each operation once, on the first call or {@link DynamicClient#getOperation(String)} that names
  * it, and returns the same instance afterwards. The request pipeline exposes that instance to interceptors as
@@ -55,6 +58,7 @@ public final class DynamicOperation implements ApiOperation<DynamicRequest, Dyna
     private final Schema inputSchema;
     private final Schema outputSchema;
     private final List<Schema> errorSchemas;
+    private final ErrorRegistry errorRegistry;
     private final List<ShapeId> effectiveAuthSchemes;
     private final ApiService service;
     private final ShapeId serviceId;
@@ -68,6 +72,7 @@ public final class DynamicOperation implements ApiOperation<DynamicRequest, Dyna
         this.effectiveAuthSchemes = effectiveAuthSchemes;
         this.service = service;
         this.serviceId = service.schema().id();
+        this.errorRegistry = errorRegistry(errorSchemas, serviceId);
     }
 
     /**
@@ -128,15 +133,19 @@ public final class DynamicOperation implements ApiOperation<DynamicRequest, Dyna
     }
 
     /**
-     * Returns the registry of the operation's errors.
+     * Returns the registry of the errors the operation can return: the operation's errors, then the service's, as in
+     * {@link #errorSchemas()}. Each entry creates a {@link DocumentException.Builder} that reads the error's members
+     * into a document. The registry is an {@link ErrorRegistry} whose code index holds the custom codes of the errors'
+     * {@code aws.protocols#awsQueryError} traits.
      *
-     * <p>The registry is empty for now, so every error response becomes an {@code AwsServiceException} with the error
-     * code, message, status code and request ID of the response. The document-bearing modeled errors of the operation
-     * and the service are added by the dynamic client's error support (Requirement 29).
+     * <p>When an error is resolved, the operation's errors take precedence over the service's: a discriminator or
+     * custom code that matches both resolves to the operation's error, as {@code TypeRegistry.compose(operationErrors,
+     * serviceErrors)} would. An error response that resolves to no entry, for example the error of another operation,
+     * becomes a plain {@code AwsServiceException}.
      */
     @Override
     public TypeRegistry errorRegistry() {
-        return TypeRegistry.empty();
+        return errorRegistry;
     }
 
     /**
@@ -161,6 +170,26 @@ public final class DynamicOperation implements ApiOperation<DynamicRequest, Dyna
     @Override
     public String toString() {
         return ToString.builder("DynamicOperation").add("schema", schema.id()).build();
+    }
+
+    /**
+     * Registers the errors in order; {@code errorSchemas} has no duplicate ShapeIds, so an error that both the
+     * operation and the service list has one entry. The first error with a custom code wins, so the operation's errors
+     * take precedence over the service's (Requirement 29.4). One registry, rather than
+     * {@code TypeRegistry.compose}, because a composed registry is not an {@link ErrorRegistry} and would lose the
+     * custom code index that the query protocols resolve first.
+     */
+    private static ErrorRegistry errorRegistry(List<Schema> errorSchemas, ShapeId serviceId) {
+        ErrorRegistry.Builder registry = ErrorRegistry.builder();
+        for (Schema error : errorSchemas) {
+            registry.putType(error.id(), DocumentException.class,
+                             () -> DocumentException.schemaGuidedBuilder(error, serviceId));
+            AwsQueryErrorTrait queryError = error.getTrait(TraitKey.AWS_QUERY_ERROR_TRAIT);
+            if (queryError != null && queryError.getCode() != null && !queryError.getCode().trim().isEmpty()) {
+                registry.errorCode(queryError.getCode(), error.id());
+            }
+        }
+        return registry.build();
     }
 
     /**

@@ -110,6 +110,12 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * with a {@link DynamicOperation} as the operation and {@link DynamicRequest} and {@link DynamicResponse} as the
  * request and response that interceptors see.
  *
+ * <p>An error response that resolves to an error shape of the called operation or of the service throws a
+ * {@link DocumentException}, whose {@link DocumentException#getContents() contents} are the error's members; when both
+ * list a matching error, the operation's is used. Any other error response throws a plain
+ * {@link AwsServiceException}. Both carry the status code, request ID, error code and message, and an asynchronous
+ * call completes its future exceptionally with them as the cause.
+ *
  * <p>A dynamic client is both synchronous and
  * asynchronous, so it resolves the configuration of a generated synchronous client and of a generated asynchronous
  * client from the same builder: it uses the configured {@code SdkHttpClient} and {@code SdkAsyncHttpClient}, or creates
