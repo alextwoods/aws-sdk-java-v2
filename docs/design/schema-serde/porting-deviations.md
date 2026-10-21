@@ -2893,3 +2893,58 @@ The test manager is given a mock `SdkHttpClient`. Without one, `DefaultSnsMessag
 - `message(...)` overloads the getter. Would a distinct name (`messageAs`, `typedMessage`) read better in IDE completion?
 - With the optional dependency, a missing `message-payloads` shows up as `NoClassDefFoundError` at the first call. Should the methods check for it and throw an `SdkClientException` that names the artifact? Or should the dependency be compile scope, which adds `message-payloads`, `json-codec` and `cbor-codec` to every SNS Message Manager user?
 - HTTP/S notifications can carry `MessageAttributes`, which `SnsMessageUnmarshaller` ignores. Exposing them would let callers pick the caller-ShapeId overload's ShapeId from an attribute, as with SQS. That would be a separate additive change to the envelope model.
+
+## Library_Integration_Analysis (task 11.23)
+
+**Target.**
+- `scripts/schema-serde/library_integration_analysis.py` writes `library-integration-analysis.md` from `library-integration.yaml` (the seven D.7 subjects), the Libraries rows of `size-report.md` and `library-integration-jmh.json` (the JMH JSON result of `S3EventNotificationBenchmark`). Modes: write (default), `--check` and `--self-test` (17 unit tests on fixture data), as in `racecar_decisions.py` and `paired_ab_summary.py`. The YAML uses the `racecar-decisions.yaml` subset; `racecar_decisions.parse` now takes the allowed keys so that both scripts share the parser.
+- `test/architecture-tests`: `LibraryIntegrationAnalysisTest` runs `--check` and `--self-test`. The process handling it shares with `RacecarDecisionTableTest` moved to the new package-private `PythonScript`.
+- `test/size-report`: a "Libraries (Requirement 38.2)" section for `s3-event-notifications`, `sns-message-manager` and `message-payloads` (`size-report.libraries`, each a test-scoped dependency; new `LibraryComparison`). `build-size-baseline.sh` gains `--libraries` (default: the three libraries) and records `baseline.libraries` and `baseline.absentLibraries` in `build-info.properties`.
+- `test/sdk-standard-benchmarks`: `S3EventNotificationBenchmark` (`read` and `write`; `implementation` `LEGACY`/`SCHEMA`; `sampleSet` `ALL_SAMPLES`/`OBJECT_CREATED_PUT`), `S3EventNotificationSampleSet`, and `S3EventNotificationBenchmarkTest` (4 runs).
+
+| Task, design or source | This task | Reason |
+|---|---|---|
+| "measured rows from `size-report.md`" | The size report measures the libraries; the script parses the generated Libraries rows. The script does not read JARs | The size report already builds a same-JDK Baseline_Build (Requirement 36.7) and checks the JDK. Measuring JARs in the script would need a second baseline, or the released 2.49.6 JARs, which the release pipeline built with JDK 17 |
+| Tasks 11.19 and 11.22 measured against the released 2.49.6 JARs | The Baseline_Build (`fc8b74e9fe21`, JDK 21.0.2): `s3-event-notifications` 45,490 bytes (2.49.6: 45,476), `sns-message-manager` 48,622 (2.49.6: 48,543). The feature JARs are unchanged (80,344 and 49,355) | Same JDK and compiler options as the feature build |
+| — | `message-payloads` has no module at the Baseline_Build commit. `build-size-baseline.sh` skips it and records it in `baseline.absentLibraries`; the report shows it as "new", with 0 bytes in the Baseline_Build | The report must tell a library that is new from one the baseline forgot to build. `SizeReport` fails if a reported library is in neither list |
+| — | The libraries are excluded from the runtime-module tables. Their `software.amazon.awssdk` dependencies stay in them; today every one is also a dependency of a reported service, so the module tables are unchanged | The library rows report each library's own JAR |
+| Benchmark: reach the old reader and writer, which are in the library's test scope | The benchmark build copies `DefaultS3EventNotificationReader.java` and `DefaultS3EventNotificationWriter.java` from `services-custom/s3-event-notifications/src/test/java` (`maven-resources-plugin` `copy-resources`) into `target/generated-sources/s3-event-notifications-legacy`, added with `build-helper` `add-source`. The valid samples are added as resources from the library's `src/test/resources/samples/valid` (`add-resource` with `targetPath`) | Least invasive: the library's build and published artifacts do not change, and no code is duplicated in the repository, so the copy cannot drift. A test JAR would add an artifact to a published module, and no module in this repository builds one. A checked-in copy would be 714 duplicated lines |
+| D.7 row 1: "a JMH benchmark on the test-suite samples" | One operation reads, or writes, every notification of the sample set once: all 50 valid samples (`ALL_SAMPLES`), or the S3 User Guide's `ObjectCreated:Put` event alone (`OBJECT_CREATED_PUT`). Setup fails if the two implementations read a sample to different values. `LEGACY` calls the old classes the way the old `fromJson` and `toJson` did (a new reader per call, one shared writer); `SCHEMA` calls the public `fromJson(String)` and `toJson()`. `toJsonPretty` is not benchmarked | The parity test (task 11.19) proves both implementations agree on every sample, so both sides do the same work. The sample set includes edge cases (comments, a byte order mark, trailing content) that send the new reader down its slow retry path, so the typical event is reported separately |
+| — | The enum is `S3EventNotificationSampleSet` | Checkstyle's `PluralEnumNames` rejects `S3EventNotificationSamples` |
+| D.7 row 1, compatibility "None" | `additive`, listing the 15 model classes, with `d7_compatibility: "none"` and a note | The serde entry points are unchanged, but each model class gains `SerializableStruct`, `SerializableShape`, `sdkSchema()`, `serializeMembers` and `getMemberValue` (japicmp, task 11.19). Requirement 38.2(c) asks for every affected public type |
+| D.7 row 1, size "Decrease … about −15 KB" | Kept as the estimate; the measured row is an increase (+34,854 compressed, +76.6%), explained in `size_note` | The script requires a note when the measured direction differs from the expected one |
+| D.7 row 3, size "estimate ≤ 10 KB" | Kept; measured 17,135 bytes, explained in `size_note` | Same direction (increase), but over the estimate (task 11.20) |
+| D.7 row 2, size "Neutral" | Measured +733 bytes (+1.5%), neutral by the script's rule | — |
+| D.7 row 7 | Kept as Defer, with a note that `Codec.deserializeShape(String, ShapeBuilder)` already exists in `codec-commons` and that this repository's CloudWatch C2J model has no `mediaType` on `DashboardBody` | `Documents` in `schema` is internal, so only the schema-less helper would be new API |
+| Measured directions (not in the design) | Size: increase for a new library, neutral when the compressed JAR change is at most 2% of the Baseline_Build JAR, otherwise the sign. Time: from the SCHEMA/LEGACY ratio of every operation and sample set; neutral within 5%, otherwise decrease, increase or mixed | Requirement 38.2 asks for a direction; the thresholds are this task's choice and are printed in the analysis's Method section |
+| User decision "tooling only, defer measurements" | The committed JMH result is a smoke run (`-wi 1 -i 2 -f 1 -w 1s -r 1s -prof gc`). The script marks any result below the benchmark's class defaults (5 warmup and 5 measurement iterations, 2 forks) PRELIMINARY and prints the full-run command | The flag comes from the JMH settings recorded in the result, not from a hand-set value |
+| `perf-reference.json` is a curated file | `library-integration-jmh.json` is JMH's own `-rf json` output, unedited (it includes the local JVM path) | The script reads JMH's format, so a full run replaces the file with no conversion step |
+| Requirement 38.1 vocabulary "prototype in phase 3" | Kept as written, although the prototypes are tasks 11.19 to 11.22 | The recommendation names the requirement's category, not this plan's phase numbers |
+
+**Recommendations.** Prototype in phase 3: S3 Event Notifications, SNS Message Manager (typed payload only), SQS message bodies. Defer to a later phase: Lambda event payloads, DynamoDB Enhanced Client, `mediaType` JSON strings. Do not adopt: IAM Policy Builder.
+
+**Smoke benchmark (PRELIMINARY).** JDK 21.0.2, 1 warmup and 2 measurement iterations of 1 s, 1 fork, `-prof gc`:
+
+| Operation | Sample set | LEGACY µs/op | SCHEMA µs/op | LEGACY B/op | SCHEMA B/op |
+|---|---|---:|---:|---:|---:|
+| `read` | `ALL_SAMPLES` (50 per op) | 240.5 | 55.9 | 352,286 | 178,160 |
+| `read` | `OBJECT_CREATED_PUT` | 1.866 | 0.945 | 7,992 | 3,896 |
+| `write` | `ALL_SAMPLES` | 59.7 | 28.2 | 189,256 | 169,640 |
+| `write` | `OBJECT_CREATED_PUT` | 5.561 | 1.029 | 3,917 | 3,344 |
+
+The `LEGACY` `write` of one event (5.6 µs) costs more than the per-event average of the 50-sample pass (1.2 µs), which points to too little warmup. Only the direction is usable.
+
+**Size report changes.** Besides the new section and two sentences: `sdk-core` is 1,262,849 bytes, 1 byte more than in the last report, from a later rebuild with no source change (the JAR in `~/.m2` dates from the task 11.20 builds). The entry CRCs, which exclude `META-INF/maven/`, decide its status, which stays "changed". After the baseline rebuild every Baseline_Build service and module JAR has the same size as before.
+
+**Runs** (`mvn -o`, JDK 21.0.2):
+- `scripts/schema-serde/build-size-baseline.sh` (defaults): 1:08 min.
+- `clean install -pl :size-report -Dsize-report.update=true` in the workspace: 66 tests (3 new in `SizeReportTest`), 0 Checkstyle violations, `dependency:analyze` clean; then the regenerated report.
+- `sdk-standard-benchmarks` and `architecture-tests` were built in a `/tmp` worktree of HEAD with the changes copied in, because the IDE holds files in the workspace's `target/classes` (`clean` failed to delete them). `clean install -pl :sdk-standard-benchmarks -P quick`, then `clean install -pl :sdk-standard-benchmarks -Dtest=S3EventNotificationBenchmarkTest`: 4 tests, 0 Checkstyle violations. Then the smoke run above from `target/benchmarks.jar`.
+- `clean install -pl :architecture-tests -Dtest=LibraryIntegrationAnalysisTest,RacecarDecisionTableTest`: 4 tests, 0 Checkstyle violations.
+- `library_integration_analysis.py --check` and `--self-test` (17 tests); `racecar_decisions.py --check`; `optimization_experiment.py --self-test` (7 tests, which imports `racecar_decisions`).
+
+**Open questions.**
+- Are the neutral bands (2% for size, 5% for time) the right ones? A full JMH run should report its error, and the time rule could use it instead.
+- S3 Event Notifications stays "Prototype in phase 3", conditioned in the rationale on a smaller builder or a Document-based reader, because its JAR grows by 77%. Should the recommendation be "Defer" until the size is fixed?
+- Row 7: with `Codec.deserializeShape(String, ShapeBuilder)` already public, is there anything left to add, or is "Do not adopt" (no new API needed) the better recommendation?
+- The committed JMH JSON contains the local JVM path. Should the script accept a trimmed copy instead?
