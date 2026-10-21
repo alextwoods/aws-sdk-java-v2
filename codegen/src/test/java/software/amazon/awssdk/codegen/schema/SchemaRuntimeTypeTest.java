@@ -37,6 +37,7 @@ import software.amazon.awssdk.schema.serde.MapSerializer;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.serde.ToStringSerializer;
+import software.amazon.awssdk.schema.serde.TypeRegistry;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.GenericTrait;
 import software.amazon.awssdk.schema.traits.Trait;
@@ -60,6 +61,7 @@ class SchemaRuntimeTypeTest {
         assertThat(SchemaRuntimeType.SIMPLE_API_OPERATION.reflectionName())
             .isEqualTo(SimpleApiOperation.class.getName());
         assertThat(SchemaRuntimeType.ERROR_REGISTRY.reflectionName()).isEqualTo(ErrorRegistry.class.getName());
+        assertThat(SchemaRuntimeType.TYPE_REGISTRY.reflectionName()).isEqualTo(TypeRegistry.class.getName());
         assertThat(SchemaRuntimeType.SHAPE_BUILDER.reflectionName()).isEqualTo(ShapeBuilder.class.getName());
         assertThat(SchemaRuntimeType.SMITHY_ENUM.reflectionName()).isEqualTo(SmithyEnum.class.getName());
         assertThat(SchemaRuntimeType.SCHEMA_UTILS.reflectionName()).isEqualTo(SchemaUtils.class.getName());

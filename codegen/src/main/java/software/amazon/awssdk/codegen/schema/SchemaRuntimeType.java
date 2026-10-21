@@ -45,6 +45,7 @@ public final class SchemaRuntimeType {
     public static final ClassName API_SERVICE = ClassName.get(SCHEMA_PACKAGE, "ApiService");
     public static final ClassName SIMPLE_API_OPERATION = ClassName.get(SCHEMA_PACKAGE, "SimpleApiOperation");
     public static final ClassName ERROR_REGISTRY = ClassName.get(SCHEMA_PACKAGE + ".serde", "ErrorRegistry");
+    public static final ClassName TYPE_REGISTRY = ClassName.get(SCHEMA_PACKAGE + ".serde", "TypeRegistry");
     public static final ClassName SHAPE_BUILDER = ClassName.get(SCHEMA_PACKAGE, "ShapeBuilder");
     public static final ClassName SMITHY_ENUM = ClassName.get(SCHEMA_PACKAGE, "SmithyEnum");
     public static final ClassName SCHEMA_UTILS = ClassName.get(SCHEMA_PACKAGE, "SchemaUtils");

@@ -75,6 +75,8 @@ class SchemaGeneratorTasksTest {
             .contains("public static final ErrorRegistry ERROR_REGISTRY",
                       "public static final ApiOperation<OpRequest, OpResponse> OP");
         assertThat(modelDir.resolve("DemoSharedSerde.java")).exists();
+        assertThat(new String(Files.readAllBytes(modelDir.resolve("DemoTypeRegistry.java")), StandardCharsets.UTF_8))
+            .contains("public static final TypeRegistry INSTANCE = TypeRegistry.empty();");
         assertThat(dir.resolve("src/software/amazon/awssdk/services/demo/internal/DemoServiceSchemas.java")).exists();
         assertThat(new String(Files.readAllBytes(resources.resolve(SERVICE_FILE)), StandardCharsets.UTF_8))
             .isEqualTo("other.Index\nsoftware.amazon.awssdk.services.demo.model.DemoSchemaIndex\n");

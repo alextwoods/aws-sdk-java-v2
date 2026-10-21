@@ -33,8 +33,9 @@ import software.amazon.awssdk.codegen.poet.schema.SchemaIndexGenerator;
 /**
  * Generates the schema classes of a service built from a Smithy model (design A.17): the {@code <Svc>Schemas}
  * partitions, {@code <Svc>SchemaIndex} with its {@code META-INF/services} entry, {@code <Svc>ServiceSchemas}, and
- * {@code <Svc>Operations} with the service's {@code ApiOperation}s and Error_Registry (design A.18). Has
- * no tasks for an intermediate model built from C2J, so the legacy route's output is unchanged.
+ * {@code <Svc>Operations} with the service's {@code ApiOperation}s and Error_Registry, and the Primary_Type_Registry
+ * {@code <Svc>TypeRegistry} (design A.18). Has no tasks for an intermediate model built from C2J, so the legacy
+ * route's output is unchanged.
  *
  * <p>The trait inclusion policy, the trait initializer registry and every class are prepared in the constructor,
  * which runs when the composite task tree is created and so before any generator task writes a file.

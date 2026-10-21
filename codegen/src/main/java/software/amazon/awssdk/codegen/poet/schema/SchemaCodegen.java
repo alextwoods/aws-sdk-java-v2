@@ -18,6 +18,7 @@ package software.amazon.awssdk.codegen.poet.schema;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeSpec;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -52,6 +53,7 @@ import software.amazon.smithy.model.shapes.ShapeId;
  *     <li>{@code <Svc>ServiceSchemas} in the client's {@code internal} package ({@link ServiceSchemasGenerator})</li>
  *     <li>{@code <Svc>Operations}, with every operation's {@code ApiOperation} and the Error_Registry, in the model
  *     package ({@link OperationsClassSpec}, design A.18)</li>
+ *     <li>{@code <Svc>TypeRegistry}, the Primary_Type_Registry, in the model package ({@link TypeRegistrySpec})</li>
  * </ul>
  *
  * <p>Everything is computed and rendered when the instance is created, so an invalid trait inclusion configuration, a
@@ -71,6 +73,7 @@ public final class SchemaCodegen {
     private final SchemaIndexGenerator index;
     private final ServiceSchemasGenerator serviceSchemas;
     private final OperationsClassSpec operations;
+    private final TypeRegistrySpec typeRegistry;
     private final SchemaSerdeModel serde;
     private final List<ClassSpec> classSpecs;
 
@@ -96,6 +99,8 @@ public final class SchemaCodegen {
         this.serviceSchemas = new ServiceSchemasGenerator(model, service, traits, internalPackage, serviceName);
         this.operations = new OperationsClassSpec(model, service, schemas, serviceSchemas, modelPackage, serviceName,
                                                   builder.errorShapeOwner, serde);
+        this.typeRegistry = new TypeRegistrySpec(model, service, schemas, modelPackage, serviceName,
+                                                 builder.serviceShapes);
 
         List<ClassSpec> specs = new ArrayList<>();
         for (TypeSpec partition : schemas.partitionSpecs()) {
@@ -104,6 +109,7 @@ public final class SchemaCodegen {
         specs.add(new GeneratedClassSpec(index.className(), index.spec()));
         specs.add(new GeneratedClassSpec(serviceSchemas.className(), serviceSchemas.spec()));
         specs.add(new GeneratedClassSpec(operations.className(), operations.spec()));
+        specs.add(new GeneratedClassSpec(typeRegistry.className(), typeRegistry.spec()));
         if (serde.isEnabled()) {
             SharedSerdeSpec sharedSerde = new SharedSerdeSpec(serde, builder.intermediateModel);
             specs.add(new GeneratedClassSpec(sharedSerde.className(), sharedSerde.spec()));
@@ -131,6 +137,14 @@ public final class SchemaCodegen {
      * @throws SchemaCodegenException if the trait inclusion configuration is invalid or generation cannot proceed
      */
     public static SchemaCodegen create(IntermediateModel model, TraitInitializers initializers) {
+        // No serviceShapes: Smithy's service shape has no shapes property yet (OD-18).
+        return builderFor(model, initializers).build();
+    }
+
+    /**
+     * The builder {@link #create(IntermediateModel, TraitInitializers)} uses, for callers that set more inputs.
+     */
+    static Builder builderFor(IntermediateModel model, TraitInitializers initializers) {
         if (!isApplicable(model)) {
             throw new IllegalArgumentException("Schemas are generated only for intermediate models built from Smithy");
         }
@@ -145,8 +159,7 @@ public final class SchemaCodegen {
                         .serviceName(metadata.getServiceName())
                         .reservedNames(model.getShapes().keySet())
                         .errorShapeOwner(errorShapeOwners(model))
-                        .intermediateModel(model)
-                        .build();
+                        .intermediateModel(model);
     }
 
     /**
@@ -181,7 +194,8 @@ public final class SchemaCodegen {
     }
 
     /**
-     * @return the partition classes, the schema index, the service schemas and the operations, in that order
+     * @return the partition classes, the schema index, the service schemas, the operations, the type registry and,
+     *     with schema serde members, the shared serde class, in that order
      */
     public List<ClassSpec> classSpecs() {
         return classSpecs;
@@ -223,6 +237,20 @@ public final class SchemaCodegen {
     }
 
     /**
+     * @return the name of the Primary_Type_Registry class, {@code <Svc>TypeRegistry}
+     */
+    public ClassName typeRegistryClass() {
+        return typeRegistry.className();
+    }
+
+    /**
+     * @return the model ShapeIds of the structures in the Primary_Type_Registry, in ShapeId order
+     */
+    public Set<ShapeId> typeRegistryShapes() {
+        return typeRegistry.registeredShapes();
+    }
+
+    /**
      * @return the model classes with schema serde members; none when the generator was not created from an
      *     IntermediateModel
      */
@@ -258,8 +286,21 @@ public final class SchemaCodegen {
         private int partitionBudget = DEFAULT_PARTITION_BUDGET;
         private Function<ShapeId, ShapeId> errorShapeOwner = Function.identity();
         private IntermediateModel intermediateModel;
+        private Set<ShapeId> serviceShapes = Collections.emptySet();
 
         private Builder() {
+        }
+
+        /**
+         * @param serviceShapes the shapes the service shape's {@code shapes} property lists, whose structures the
+         *     Primary_Type_Registry holds ({@link TypeRegistrySpec}). Smithy models have no such property yet and C2J
+         *     models have no equivalent, so {@link SchemaCodegen#create} passes none and the registry is empty; the
+         *     default is none
+         */
+        public Builder serviceShapes(Collection<ShapeId> serviceShapes) {
+            this.serviceShapes = Collections.unmodifiableSet(new TreeSet<>(
+                Objects.requireNonNull(serviceShapes, "serviceShapes")));
+            return this;
         }
 
         /**
