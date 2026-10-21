@@ -2564,3 +2564,53 @@ Properties 35 and 36 (tasks 11.10, 11.11) are not written.
 **Open questions.**
 - Assertion 6 and `__type`: should the SEP cases name `serializeTypeInDocuments`, or should `canonicalSerialization` include the subject's `__type`? The suite asserts both forms.
 - Requirement 20.2 for Protocol_Documents with a relative `__type` (task 11.9): the SEP text quoted above asks for absolute IDs when serializing, which supports rewriting the entry. That conflicts with SEP assertion 5 for a serialization with a relative `__type`, which no current case has.
+
+## `DocumentConverter` (task 11.13)
+
+**Target.** New `sdk-core` `software.amazon.awssdk.core.document.DocumentConverter` (`@SdkPublicApi`, final, static methods `toSchemaDocument(Document)` and `toLegacy(schema Document)`). Source: smithy-java `aws/sdkv2/aws-sdkv2-shapes` `DocumentConverter`, `AwsJsonProtocols`, `SdkJsonDocumentVisitor` and `SdkJsonDocumentParser` (commit `142eecf4d`). The task 7.17 views move from the package-private `core.schema.LegacyDocumentViews` to the public `@SdkInternalApi` `core.schema.internal.LegacyDocumentAdapter`, renamed because checkstyle's `PluralEnumNames` rejects public class names that end in "s". `SchemaSerdeSupport.wrapLegacy`/`unwrapLegacy` and `DocumentConverter` both call it. The Legacy_Document (`core.document.Document` and `core.document.internal.*`) is unchanged.
+
+**Delegation.** `DocumentConverter` and the `SchemaSerdeSupport` methods share one implementation and differ only in how they handle nulls:
+
+| | `SchemaSerdeSupport` (generated code) | `DocumentConverter` (customers) |
+|---|---|---|
+| `null` argument | `wrapLegacy(null)` is `null`; `unwrapLegacy(null)` is `Document.fromNull()` (a Smithy null read by a codec) | `NullPointerException("document")` both ways (Requirement 21.6, through `Validate.notNull`) |
+| `Document.fromNull()` at the top level | `null`, which codecs write as `null` | `LegacyDocumentAdapter.NULL`, a null-valued document |
+
+`SchemaSerdeSupport` cannot delegate to `DocumentConverter` because generated code needs the codecs' Java `null`. A public `DocumentConverter` that delegated to the `@SdkProtectedApi` `SchemaSerdeSupport` would still need a null-valued document that `unwrapLegacy` recognizes at any depth, and only the views class can provide that, so both call the internal class. Moving it to an `internal` package, where `PackageContainmentTest` requires public `@SdkInternalApi` types to be, makes it reachable from `core.document`.
+
+| Task, design or source | Port | Reason |
+|---|---|---|
+| smithy-java: an interface with one implementation per protocol (`AwsJsonProtocols`: awsJson1_0, awsJson1_1, restJson1) found through `ServiceLoader`; restJson1 keys structure members by `jsonName` and writes timestamps in their `timestampFormat` | One final class with static methods and no protocol. Structure members use Smithy member names, and timestamps are always epoch seconds | Design B.4 and Requirements 21.3/21.5 (as the design's porting map records). The schema Document does not depend on a protocol |
+| smithy-java `sdkToSmithy`: an eager copy into `JsonDocuments`; numbers become `bigDecimalValue()` (the `SdkNumber` is lost) | Lazy views (task 7.17). A number keeps its Legacy_Document, so `toLegacy` returns the same `SdkNumber` (Requirement 21.2). Its `type()` is the first of integer, long, bigInteger, double and bigDecimal that holds the value exactly (Requirement 18.5, design B.4), so the narrowest type is used, not always bigDecimal | Design B.4 ("lazy view", "keeps the original `SdkNumber`") |
+| Design B.4: the top-level null becomes `Documents.NULL`; smithy-java `sdkToSmithy` returns Java `null` | `LegacyDocumentAdapter.NULL`, a singleton: `type()` is `DOCUMENT`, `asObject()` is `null`, `getMember` is `null`, and every other `as<Type>` throws the usual `SerializationException`. `serializeContents` writes `writeNull(PreludeSchemas.DOCUMENT)`, `toString` is `Document(null)`, and it equals only itself and other `DOCUMENT` documents whose `asObject()` is `null`. `toLegacy` returns `Document.fromNull()` for it at any depth. Nested null elements and values stay Java `null` | **User decision.** `core/schema` has no null document and no null `ShapeType`; adding `Documents.NULL` there would change the schema module and the codecs. With Java `null`, `toLegacy(toSchemaDocument(fromNull()))` would throw under Requirement 21.6 and break Requirement 21.2 for a top-level null |
+| Design B.4 (Document → Legacy numbers): `fromNumber(SdkNumber.fromBigDecimal(...))`, or the narrower factory when the value is integral | The factory of the value's Java type, as `unwrapLegacy` already did: byte, short and int through `fromNumber(int)`, then `long`, `float`, `double`, `BigInteger` and `BigDecimal`. A double `1.0` becomes `"1.0"`, `1e20` becomes `"1.0E20"` | No behavior change for generated code. The JSON codec reads `1.0` as a double, and the legacy unmarshaller kept the literal `1.0`, so this matches it more often than `"1"` would. The values are equal either way (Requirement 21.5) |
+| Design B.4 timestamps: `BigDecimal.valueOf(epochMilli, 3).stripTrailingZeros()` | Same digits, computed as `epochSecond + (nano / 1_000_000) / 1000` and then `stripTrailingZeros`, with scale 0 for whole seconds (`1000`, not `1E+3`). Sub-millisecond digits are dropped toward negative infinity, as `Instant.toEpochMilli()` drops them (`-1 ns` → `-0.001`) | `toEpochMilli()` throws `ArithmeticException` for instants beyond about ±292 million years. The new form converts every `Instant` (`Instant.MAX` → `31556889864403199.999`). This also changes `unwrapLegacy`, but only for inputs that used to throw |
+| smithy-java blobs: `ByteBufferUtils.base64Encode` | `BinaryUtils.toBase64` of a copy of `asBlob()`, standard alphabet with padding; the document's buffer does not move | Requirement 21.3 |
+| Requirement 21.5: structures and unions become maps of the set members with no Discriminator | `asMap()` of the structure or union document. `getDiscriminator()` is never written. A Protocol_Document read from JSON with a `__type` field has `type()` `MAP`, so it keeps `__type` as an ordinary key | Only structure documents have a discriminator to drop. A JSON map is data |
+
+**Behavior to know.** `Document.of(struct)` builds a structure document by writing the struct's members. A `document` member that holds a `toSchemaDocument` view is copied through `serializeContents` at that point. Its numbers keep their values but get the schema type's spelling (`"1.50"` becomes the double `1.5`), and `toLegacy` gives a new tree, not the original Legacy_Document. Converting the view directly does not do this. Generated classes with `document` members write them with `writeDocument(wrapLegacy(x))` and are not affected (task 7.17).
+
+**Tests.** New `sdk-core` `DocumentConverterTest` (47 runs):
+- `NullPointerException("document")` from both methods.
+- The top-level null document: type, `asObject`, `getMember`, equality and hash code, `toString`, a coercion failure, conversion back to `fromNull()`, and serialization as `writeDocument` then `writeNull(DOCUMENT)`.
+- Strings and booleans.
+- 9 legacy numbers (int, `Long.MIN_VALUE`, a 30-digit big integer, `0.25`, `"1.50"`, `"2.0"`, `"1E+3"`, a 36-digit big decimal, `-1E-24`), each with its type and exact value, the `SdkNumber` string in `toString`, and the same `Legacy_Document` back.
+- Java narrowing (a double above `Integer.MAX_VALUE` saturates; a long wraps).
+- A nested map and list with nulls: order, keys, size, element types and Java `null` elements.
+- Laziness.
+- A round trip that returns the same instance, and a round trip through copied schema containers that is equal under `Legacy_Document.equals`, `hashCode` and `toString` and keeps a 30-digit number's string.
+- `toLegacy` of strings, booleans and 9 numbers of every Java type (string forms and values).
+- Blobs: empty, `AA==`, `+/8=`, `aGkh`, and the buffer not moved.
+- 11 timestamps: whole, milliseconds, sub-millisecond truncation, negative fractions, `Instant.MAX`, `Instant.MIN`.
+- Lists and maps with nulls, and empty containers.
+- A structure from `Document.of(struct)` with integer, string, a `date-time` timestamp written as epoch seconds, blob, nested structure, list, map and document members, an unset member absent and the discriminator dropped, in written order.
+- A union.
+- The error for a type with no Legacy_Document form (`Unsupported document document`, the existing message).
+
+The existing `LegacyDocumentViewsTest` (27) and `SchemaSerdeSupportTest` (7) are unchanged and pass. Properties 37 and 38 (tasks 11.14, 11.15) are not written.
+
+**Module runs** (from a `/tmp` worktree of HEAD with this change, because the IDE was rewriting the workspace's `target/` and the workspace build failed to compile unrelated test classes): `sdk-core` `mvn -o clean install` with checkstyle, SpotBugs and japicmp: 1983 tests (6 skipped) and the 651-test TestNG suite (272 skipped), 0 failures. japicmp passes: the only `core.document` change is `NEW CLASS: PUBLIC(+) FINAL(+) software.amazon.awssdk.core.document.DocumentConverter`, and `core.document.Document` is not listed. `schema-serde-source-compat` 44 tests (`LegacyDocumentSourceCompatTest` 2) and `codegen` `SchemaSerdeDocumentMemberTest` 4 (generated document members round-trip through `wrapLegacy`/`unwrapLegacy`) pass. CloudWatch has no document members, so it does not run this code, and it was not rerun.
+
+**Open questions.**
+- `LegacyDocumentAdapter.NULL` is a top-level value only. A schema list built by hand that contains it is not `Document.equals` to the same list with a Java `null` element, although codecs write both as `null`.
+- Requirement 21.7 (task 7.18) is unchanged by this task: across the wire, numbers keep their value but not always their `SdkNumber` spelling (task 7.17 notes).
