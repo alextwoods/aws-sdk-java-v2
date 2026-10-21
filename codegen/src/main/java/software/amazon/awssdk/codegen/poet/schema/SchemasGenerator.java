@@ -79,14 +79,16 @@ public final class SchemasGenerator {
     private final SchemaFieldOrder order;
     private final SchemaSerdeModel serde;
 
-    SchemasGenerator(Model model, ServiceShape service, SchemaTraits traits, String modelPackage, String serviceName,
-                     Set<String> reservedNames, int partitionBudget, SchemaSerdeModel serde) {
+    SchemasGenerator(Model model, ServiceShape service, Set<ShapeId> rootShapes, SchemaTraits traits,
+                     String modelPackage, String serviceName, Set<String> reservedNames, int partitionBudget,
+                     SchemaSerdeModel serde) {
         this.serde = serde;
         this.service = service;
         this.traits = traits;
         this.modelPackage = modelPackage;
         this.classPrefix = serviceName;
-        this.order = SchemaFieldOrder.create(model, service, reservedNames, this::estimate, partitionBudget);
+        this.order = SchemaFieldOrder.create(model, service, rootShapes, reservedNames, this::estimate,
+                                             partitionBudget);
     }
 
     /**

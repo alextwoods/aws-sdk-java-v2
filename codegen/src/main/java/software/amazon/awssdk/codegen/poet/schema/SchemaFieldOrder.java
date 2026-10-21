@@ -51,8 +51,8 @@ import software.amazon.smithy.utils.CaseUtils;
  * {@code <Svc>Schemas1}, … partition classes (design A.17). Port of smithy-java {@code SchemaFieldOrder}.
  *
  * <p><b>Closure</b> (Requirement 10.1): the input, output and errors of every operation the service contains, the
- * service's errors, and every shape reachable from those through members. Prelude shapes are left out; members that
- * target them reference {@code PreludeSchemas}.
+ * service's errors, any extra root shapes the caller gives, and every shape reachable from those through members.
+ * Prelude shapes are left out; members that target them reference {@code PreludeSchemas}.
  *
  * <p><b>Order</b>: shapes are grouped into strongly connected components of the member graph and the components are
  * emitted in dependency order (Tarjan's algorithm, roots in ShapeId order, members in declaration order), so every
@@ -107,9 +107,31 @@ public final class SchemaFieldOrder {
      */
     public static SchemaFieldOrder create(Model model, ServiceShape service, Set<String> reservedNames,
                                           ToIntFunction<SchemaField> sizeEstimate, int partitionBudget) {
+        return create(model, service, Collections.<ShapeId>emptySet(), reservedNames, sizeEstimate, partitionBudget);
+    }
+
+    /**
+     * Computes the order for a service, with more shapes in the closure: the shapes {@code rootShapes} lists and every
+     * shape reachable from them through members. The types-only mode of {@link SchemaCodegen} uses them for shapes that
+     * no operation reaches.
+     *
+     * @param model the model that contains the service
+     * @param service the service
+     * @param rootShapes more roots of the closure
+     * @param reservedNames names a schema field must not take, such as the simple names of generated model classes
+     * @param sizeEstimate the estimated static-initializer bytecode of a field, including its builder if it has one
+     * @param partitionBudget the bytecode budget of one partition class
+     * @return the order
+     * @throws SchemaCodegenException if two shapes have the same schema ShapeId, or a root shape is not in the model or
+     *     is a service, operation, resource or member
+     */
+    public static SchemaFieldOrder create(Model model, ServiceShape service, Set<ShapeId> rootShapes,
+                                          Set<String> reservedNames, ToIntFunction<SchemaField> sizeEstimate,
+                                          int partitionBudget) {
         Objects.requireNonNull(model, "model");
         Objects.requireNonNull(service, "service");
-        Set<ShapeId> closure = closure(model, service);
+        Objects.requireNonNull(rootShapes, "rootShapes");
+        Set<ShapeId> closure = closure(model, service, rootShapes);
         List<List<Shape>> components = new Tarjan(model, closure).run();
 
         List<SchemaField> fields = new ArrayList<>();
@@ -152,7 +174,7 @@ public final class SchemaFieldOrder {
         return byShapeId.get(shapeId);
     }
 
-    private static Set<ShapeId> closure(Model model, ServiceShape service) {
+    private static Set<ShapeId> closure(Model model, ServiceShape service, Set<ShapeId> rootShapes) {
         List<ShapeId> roots = new ArrayList<>();
         TreeSet<OperationShape> operations = new TreeSet<>(TopDownIndex.of(model).getContainedOperations(service));
         for (OperationShape operation : operations) {
@@ -161,6 +183,12 @@ public final class SchemaFieldOrder {
             roots.addAll(operation.getErrors());
         }
         roots.addAll(service.getErrors());
+        for (ShapeId root : new TreeSet<>(rootShapes)) {
+            if (!model.getShape(root).isPresent()) {
+                throw new SchemaCodegenException("Root shape " + root + " is not in the model");
+            }
+            roots.add(root);
+        }
 
         Set<ShapeId> closure = new TreeSet<>();
         Deque<ShapeId> pending = new ArrayDeque<>(roots);

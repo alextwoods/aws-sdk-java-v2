@@ -61,6 +61,10 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * {@link SchemaCodegenException} before any code is written. When created from an IntermediateModel, it also decides
  * which model classes get schema serde members ({@link #serde()}, task 3.7) and generates their
  * {@code <Svc>SharedSerde} ({@link SharedSerdeSpec}); the model class generators read {@link #serde()}.
+ *
+ * <p>In types-only mode ({@link Builder#typesOnly}) only the partition classes and the schema index are generated, for
+ * the closure of the service plus {@link Builder#rootShapes};
+ * {@link software.amazon.awssdk.codegen.pipeline.TypesOnlySchemaCodegen} writes them.
  */
 @SdkInternalApi
 public final class SchemaCodegen {
@@ -76,6 +80,7 @@ public final class SchemaCodegen {
     private final TypeRegistrySpec typeRegistry;
     private final SchemaSerdeModel serde;
     private final List<ClassSpec> classSpecs;
+    private final boolean typesOnly;
 
     private SchemaCodegen(Builder builder) {
         Model model = Objects.requireNonNull(builder.model, "model");
@@ -83,30 +88,43 @@ public final class SchemaCodegen {
         TraitInclusionPolicy policy = Objects.requireNonNull(builder.policy, "policy");
         TraitInitializers initializers = Objects.requireNonNull(builder.initializers, "initializers");
         String modelPackage = Objects.requireNonNull(builder.modelPackage, "modelPackage");
-        String internalPackage = Objects.requireNonNull(builder.internalPackage, "internalPackage");
         String serviceName = Objects.requireNonNull(builder.serviceName, "serviceName");
+        this.typesOnly = builder.typesOnly;
+        if (typesOnly) {
+            checkTypesOnlyInputs(builder);
+        }
         SchemaTraits traits = new SchemaTraits(policy, initializers, TraitRenderContext.defaultContext());
         this.serde = builder.intermediateModel == null
                      ? SchemaSerdeModel.none()
                      : SchemaSerdeModel.create(builder.intermediateModel, modelPackage, serviceName);
 
-        this.schemas = new SchemasGenerator(model, service, traits, modelPackage, serviceName, builder.reservedNames,
-                                            builder.partitionBudget, serde);
+        this.schemas = new SchemasGenerator(model, service, builder.rootShapes, traits, modelPackage, serviceName,
+                                            builder.reservedNames, builder.partitionBudget, serde);
         if (serde.isEnabled()) {
             serde.attach(schemas);
         }
         this.index = new SchemaIndexGenerator(schemas, service.getId(), modelPackage, serviceName);
-        this.serviceSchemas = new ServiceSchemasGenerator(model, service, traits, internalPackage, serviceName);
-        this.operations = new OperationsClassSpec(model, service, schemas, serviceSchemas, modelPackage, serviceName,
-                                                  builder.errorShapeOwner, serde);
-        this.typeRegistry = new TypeRegistrySpec(model, service, schemas, modelPackage, serviceName,
-                                                 builder.serviceShapes);
 
         List<ClassSpec> specs = new ArrayList<>();
         for (TypeSpec partition : schemas.partitionSpecs()) {
             specs.add(new GeneratedClassSpec(ClassName.get(modelPackage, partition.name), partition));
         }
         specs.add(new GeneratedClassSpec(index.className(), index.spec()));
+        if (typesOnly) {
+            this.serviceSchemas = null;
+            this.operations = null;
+            this.typeRegistry = null;
+            checkNoConflicts(specs, builder.reservedNames);
+            this.classSpecs = Collections.unmodifiableList(specs);
+            return;
+        }
+
+        String internalPackage = Objects.requireNonNull(builder.internalPackage, "internalPackage");
+        this.serviceSchemas = new ServiceSchemasGenerator(model, service, traits, internalPackage, serviceName);
+        this.operations = new OperationsClassSpec(model, service, schemas, serviceSchemas, modelPackage, serviceName,
+                                                  builder.errorShapeOwner, serde);
+        this.typeRegistry = new TypeRegistrySpec(model, service, schemas, modelPackage, serviceName,
+                                                 builder.serviceShapes);
         specs.add(new GeneratedClassSpec(serviceSchemas.className(), serviceSchemas.spec()));
         specs.add(new GeneratedClassSpec(operations.className(), operations.spec()));
         specs.add(new GeneratedClassSpec(typeRegistry.className(), typeRegistry.spec()));
@@ -195,7 +213,8 @@ public final class SchemaCodegen {
 
     /**
      * @return the partition classes, the schema index, the service schemas, the operations, the type registry and,
-     *     with schema serde members, the shared serde class, in that order
+     *     with schema serde members, the shared serde class, in that order; in types-only mode, the partition classes
+     *     and the schema index
      */
     public List<ClassSpec> classSpecs() {
         return classSpecs;
@@ -223,31 +242,70 @@ public final class SchemaCodegen {
     }
 
     /**
+     * @return whether only the partition classes and the schema index are generated ({@link Builder#typesOnly})
+     */
+    public boolean isTypesOnly() {
+        return typesOnly;
+    }
+
+    /**
      * @return the service schemas class name
+     * @throws IllegalStateException in types-only mode, which generates no service schemas
      */
     public ClassName serviceSchemasClass() {
-        return serviceSchemas.className();
+        return requireClientClasses(serviceSchemas).className();
     }
 
     /**
      * @return the operations class generator
+     * @throws IllegalStateException in types-only mode, which generates no operations class
      */
     public OperationsClassSpec operations() {
-        return operations;
+        return requireClientClasses(operations);
     }
 
     /**
      * @return the name of the Primary_Type_Registry class, {@code <Svc>TypeRegistry}
+     * @throws IllegalStateException in types-only mode, which generates no type registry
      */
     public ClassName typeRegistryClass() {
-        return typeRegistry.className();
+        return requireClientClasses(typeRegistry).className();
     }
 
     /**
      * @return the model ShapeIds of the structures in the Primary_Type_Registry, in ShapeId order
+     * @throws IllegalStateException in types-only mode, which generates no type registry
      */
     public Set<ShapeId> typeRegistryShapes() {
-        return typeRegistry.registeredShapes();
+        return requireClientClasses(typeRegistry).registeredShapes();
+    }
+
+    private <T> T requireClientClasses(T generator) {
+        if (typesOnly) {
+            throw new IllegalStateException("A types-only SchemaCodegen generates only schemas and the schema index");
+        }
+        return generator;
+    }
+
+    /**
+     * Types-only mode generates schemas for shapes outside any client, so the inputs that only the client classes
+     * read must be left unset.
+     */
+    private static void checkTypesOnlyInputs(Builder builder) {
+        List<String> set = new ArrayList<>();
+        if (builder.intermediateModel != null) {
+            set.add("intermediateModel");
+        }
+        if (!builder.serviceShapes.isEmpty()) {
+            set.add("serviceShapes");
+        }
+        if (builder.internalPackage != null) {
+            set.add("internalPackage");
+        }
+        if (!set.isEmpty()) {
+            throw new IllegalArgumentException("A types-only SchemaCodegen generates no model classes, service "
+                                               + "schemas or type registry, so " + set + " must not be set");
+        }
     }
 
     /**
@@ -287,8 +345,33 @@ public final class SchemaCodegen {
         private Function<ShapeId, ShapeId> errorShapeOwner = Function.identity();
         private IntermediateModel intermediateModel;
         private Set<ShapeId> serviceShapes = Collections.emptySet();
+        private Set<ShapeId> rootShapes = Collections.emptySet();
+        private boolean typesOnly;
 
         private Builder() {
+        }
+
+        /**
+         * @param typesOnly whether to generate only the partition classes ({@code <Svc>Schemas}, …) and
+         *     {@code <Svc>SchemaIndex}: no service schemas, operations, type registry or shared serde class, so no client
+         *     is needed. Used by libraries whose model classes are hand-written and implement {@code SerializableStruct}
+         *     themselves (design D.7, S3 Event Notifications). The intermediate model, internal package and service
+         *     shapes must then be left unset. Off by default
+         */
+        public Builder typesOnly(boolean typesOnly) {
+            this.typesOnly = typesOnly;
+            return this;
+        }
+
+        /**
+         * @param rootShapes shapes whose schemas are generated, with every shape they reach through members, in addition
+         *     to the closure of the service's operations and errors. A service with no operations needs them to generate
+         *     any schema. The default is none
+         */
+        public Builder rootShapes(Collection<ShapeId> rootShapes) {
+            this.rootShapes = Collections.unmodifiableSet(new TreeSet<>(
+                Objects.requireNonNull(rootShapes, "rootShapes")));
+            return this;
         }
 
         /**
@@ -341,7 +424,7 @@ public final class SchemaCodegen {
         }
 
         /**
-         * @param internalPackage the package of the service schemas class
+         * @param internalPackage the package of the service schemas class; required unless {@link #typesOnly}
          */
         public Builder internalPackage(String internalPackage) {
             this.internalPackage = internalPackage;

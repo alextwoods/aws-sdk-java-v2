@@ -315,6 +315,13 @@ public final class IntermediateModel {
         return FILE_HEADER;
     }
 
+    /**
+     * @return the license header of every generated file, for generators that have no intermediate model
+     */
+    public static String defaultFileHeader() {
+        return FILE_HEADER;
+    }
+
     private static String loadDefaultFileHeader() {
         try (InputStream inputStream =
                  IntermediateModel.class.getResourceAsStream("/software/amazon/awssdk/codegen/DefaultFileHeader.txt")) {

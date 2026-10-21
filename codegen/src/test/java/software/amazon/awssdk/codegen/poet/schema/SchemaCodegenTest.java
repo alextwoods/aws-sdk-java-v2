@@ -316,6 +316,51 @@ class SchemaCodegenTest {
     }
 
     @Test
+    void typesOnly_withRootShape_generatesOnlySchemasAndIndexForClosureAndRoots() throws Exception {
+        Model model = model(false);
+        ShapeId notInTheClosure = ShapeId.from(NS + "#NotInTheClosure");
+        SchemaCodegen codegen = typesOnly(model).rootShapes(Collections.singleton(notInTheClosure)).build();
+
+        assertThat(codegen.isTypesOnly()).isTrue();
+        assertThat(codegen.classSpecs().stream().map(s -> s.className().toString()))
+            .containsExactly(MODEL_PACKAGE + ".DemoSchemas", MODEL_PACKAGE + ".DemoSchemaIndex");
+        assertThat(codegen.order().fields()).hasSize(19);
+        assertThatThrownBy(codegen::operations).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(codegen::serviceSchemasClass).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(codegen::typeRegistryClass).isInstanceOf(IllegalStateException.class);
+
+        try (URLClassLoader loader = RuntimeCompiler.classLoader(compile(codegen))) {
+            Schema root = index(codegen, loader).getSchema(software.amazon.awssdk.schema.ShapeId.fromParts(
+                NS, "NotInTheClosure"));
+            assertThat(root.type()).isEqualTo(ShapeType.STRUCTURE);
+            assertThat(root.member("Value").memberTarget()).isSameAs(PreludeSchemas.STRING);
+        }
+    }
+
+    @Test
+    void typesOnly_withClientOnlyInputs_fails() {
+        Model model = model(false);
+        assertThatThrownBy(() -> typesOnly(model).internalPackage(INTERNAL_PACKAGE).build())
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("internalPackage");
+        assertThatThrownBy(() -> typesOnly(model).rootShapes(Collections.singleton(ShapeId.from(NS + "#Missing")))
+                                                 .build())
+            .isInstanceOf(SchemaCodegenException.class)
+            .hasMessageContaining(NS + "#Missing");
+    }
+
+    private static SchemaCodegen.Builder typesOnly(Model model) {
+        return SchemaCodegen.builder()
+                            .typesOnly(true)
+                            .model(model)
+                            .service(model.expectShape(SERVICE, ServiceShape.class))
+                            .policy(policy(model))
+                            .initializers(TraitInitializers.of(Collections.emptyList()))
+                            .modelPackage(MODEL_PACKAGE)
+                            .serviceName("Demo");
+    }
+
+    @Test
     void syntheticUnitShape_keepsItsOwnIdAndGetsTheUnitTrait() throws Exception {
         String src = "$version: \"2.0\"\nnamespace unit.test\n"
                      + "service UnitService { version: \"1\", operations: [Op] }\n"

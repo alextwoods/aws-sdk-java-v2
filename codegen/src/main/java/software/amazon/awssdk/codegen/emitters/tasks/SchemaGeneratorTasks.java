@@ -66,9 +66,19 @@ public final class SchemaGeneratorTasks extends BaseGeneratorTasks {
         for (ClassSpec spec : schemaCodegen.classSpecs()) {
             tasks.add(createPoetGeneratorTask(spec));
         }
-        tasks.add(new ServiceFileTask(Paths.get(resourcesDirectory).resolve(SchemaIndexGenerator.serviceFileName()),
-                                      schemaCodegen.schemaIndexClass().reflectionName()));
+        tasks.add(serviceFileTask(Paths.get(resourcesDirectory), schemaCodegen));
         return tasks;
+    }
+
+    /**
+     * @param resourcesDirectory the generated resources directory
+     * @param schemaCodegen the prepared Schema_Generator
+     * @return a task that adds the generator's schema index to the {@code ServiceLoader} registration file under
+     *     {@code resourcesDirectory}, keeping the entries already there
+     */
+    public static GeneratorTask serviceFileTask(Path resourcesDirectory, SchemaCodegen schemaCodegen) {
+        return new ServiceFileTask(resourcesDirectory.resolve(SchemaIndexGenerator.serviceFileName()),
+                                   schemaCodegen.schemaIndexClass().reflectionName());
     }
 
     /**
