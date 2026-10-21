@@ -51,7 +51,42 @@
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sdk-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-core</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>endpoints-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-client-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-auth-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>identity-spi</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>retries-spi</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
         <dependency>
@@ -90,10 +125,31 @@
             <artifactId>smithy-model</artifactId>
             <version>${smithy.version}</version>
         </dependency>
+        <!-- The AWS trait definitions (aws.api#service, aws.auth#sigv4, aws.protocols#restJson1, ...). AWS service
+             models do not assemble without them, and the Schema_Converter's trait policy needs the protocol and auth
+             definitions to include the traits they list. -->
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-aws-traits</artifactId>
+            <version>${smithy.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.smithy</groupId>
             <artifactId>smithy-rules-engine</artifactId>
             <version>${smithy.version}</version>
+        </dependency>
+        <!-- The default HTTP clients, as for generated clients (services/pom.xml). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache5-client</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>netty-nio-client</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>runtime</scope>
         </dependency>
         <!-- Test only: round trips StructDocuments through a codec. -->
         <dependency>
@@ -102,11 +158,16 @@
             <version>${awsjavasdk.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- Test only: the protocol and auth trait definitions (aws.protocols#restJson1, aws.auth#sigv4, ...). -->
+        <!-- Test only: the aws.endpoints trait definitions, which the Account model uses. -->
         <dependency>
             <groupId>software.amazon.smithy</groupId>
-            <artifactId>smithy-aws-traits</artifactId>
+            <artifactId>smithy-aws-endpoints</artifactId>
             <version>${smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>nl.jqno.equalsverifier</groupId>
+            <artifactId>equalsverifier</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -139,7 +200,6 @@
                     <!-- Declared for the dynamic client (tasks 13.4 to 13.10), which builds on the Schema_Converter.
                          Remove each entry once code in this module uses the dependency. -->
                     <ignoredUnusedDeclaredDependencies combine.children="append">
-                        <ignoredUnusedDeclaredDependency>software.amazon.awssdk:aws-core</ignoredUnusedDeclaredDependency>
                         <ignoredUnusedDeclaredDependency>software.amazon.awssdk:http-client-protocol</ignoredUnusedDeclaredDependency>
                         <ignoredUnusedDeclaredDependency>software.amazon.awssdk:rpcv2-cbor-client-protocol</ignoredUnusedDeclaredDependency>
                         <ignoredUnusedDeclaredDependency>software.amazon.awssdk:aws-json-client-protocol</ignoredUnusedDeclaredDependency>
