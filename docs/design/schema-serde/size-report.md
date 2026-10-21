@@ -644,13 +644,13 @@ The Runtime_Schema_Module, the codecs, `http-binding` and the client protocol mo
 | `aws-query-protocol` | no longer a dependency | 70,003 | 0 | -70,003 |
 | `aws-xml-protocol` | no longer a dependency | 103,308 | 0 | -103,308 |
 | `http-client-spi` | changed | 92,779 | 93,237 | +458 |
-| `sdk-core` | changed | 1,066,732 | 1,262,849 | +196,117 |
+| `sdk-core` | changed | 1,066,732 | 1,262,848 | +196,116 |
 | `smithy-rpcv2-protocol` | no longer a dependency | 25,232 | 0 | -25,232 |
 | `third-party-jackson-dataformat-cbor` | no longer a dependency | 73,938 | 0 | -73,938 |
 
 Unchanged (same content in both builds): `annotations`, `auth`, `aws-json-protocol`, `checksums`, `checksums-spi`, `endpoints-spi`, `http-auth`, `http-auth-aws`, `http-auth-aws-eventstream`, `http-auth-spi`, `identity-spi`, `json-utils`, `metrics-spi`, `netty-nio-client`, `profiles`, `protocol-core`, `regions`, `retries`, `retries-spi`, `third-party-jackson-core`, `utils`, `utils-lite`.
 
-All runtime modules together: 4,857,218 → 5,691,396, a change of +834,178 (+17.2%).
+All runtime modules together: 4,857,218 → 5,691,395, a change of +834,177 (+17.2%).
 
 ## Libraries (Requirement 38.2)
 
