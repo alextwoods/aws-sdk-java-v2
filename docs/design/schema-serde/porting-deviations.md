@@ -3098,3 +3098,113 @@ The `pom.xml` drops the skeleton's Javadoc and dependency-analysis skips and add
 - AWS models published with `aws.endpoints` traits (Account has `standardPartitionalEndpoints`) assemble only with `smithy-aws-endpoints` on the class path. It is test scope here; should `dynamic-client` depend on it at runtime too?
 - No service and several services keep smithy-java's `NullPointerException`; an unknown ID throws `IllegalArgumentException`. Is `NullPointerException` the wanted type for "the model contains no services", or should all three be `IllegalArgumentException`?
 - Design C.2's class sketch (`implements SdkAutoCloseable`, `asyncHttpClient`) differs from the port in the two ways above; update the design?
+
+## Dynamic protocol, auth, endpoint and transport resolution (task 13.5)
+
+**Sources.** smithy-java `client/dynamic-client` and `client/client-core` (commit `142eecf4d`): `DetectProtocolPlugin`, the dynamic client's auth scheme resolution, and `client/client-rulesengine` (`RulesEngineBuilder`, `EndpointRulesPlugin`). Not a method-by-method port: the SDK has its own builder pipeline (task 13.4), and the work follows design C.2 and Requirement 27.
+
+**Target.** Package `software.amazon.awssdk.dynamicclient.internal` (`@SdkInternalApi`): `DynamicProtocolSelection`, `DynamicAuthSchemes`, `ModelAuthSchemeResolver` and `RulesEndpointProvider`. `DynamicClient`'s builder uses the 13.4 seams:
+- `mergeServiceDefaults` adds the built-in `AUTH_SCHEMES` (the `putAuthScheme` ones replace them) and the default `ENDPOINT_PROVIDER` with `merge`, so a configured `endpointProvider` wins.
+- `finalizeServiceConfiguration` adds `AUTH_SCHEME_PROVIDER` and `CLIENT_PROTOCOL` with `lazyOptionIfAbsent`, so a configured resolver or protocol wins. Both are lazy: the protocol reads the client type and transport, and the resolver reads `AUTH_SCHEMES`, so a plugin that sets a transport or replaces the auth schemes changes them on the next configuration build.
+- `buildClient()` fails when neither configuration has a protocol, runs `ClientProtocolSupport.validateMessageExchange` on both, closes what it created on failure, and logs the missing auth scheme warnings.
+- One `BuildState` per build holds what both configurations share: the protocol selection and `ProtocolSettings` (the converted service schema, the service version and `AwsServiceException::builder`), the effective auth schemes, and one endpoint provider instance.
+
+**Protocol priority list.** `rpcv2Cbor`, `awsJson1_0`, `awsJson1_1`, `restJson1`, `restXml`, `awsQuery`, `ec2Query`. This is Requirement 12.3 and codegen's `ProtocolUtils.CLIENT_PROTOCOL_PRIORITY`. `dynamic-client` cannot depend on `codegen` (Requirement 1.7), so it keeps its own copy. `codegen`'s `ProtocolUtilsTest.dynamicClientProtocolPriority_matchesTheCodegenList` fails if the two lists differ, as `DefaultTraitInclusionSpecTest` does for the trait lists (task 13.1).
+
+**Which protocols the dynamic client may select.** All seven. Codegen's `ClientProtocolSelection.FACTORIES`/`STAGED_FACTORIES` split, with `stagedClientProtocols` as the opt-in, decides only whether a generated client leaves its legacy marshallers. A dynamic client has no legacy marshallers, and design C.2 only requires that the factory be available. `ClientProtocolSelection` is in `codegen` and maps IDs to JavaPoet `ClassName`s, so it is not reused at runtime. Generated builders reference their factory directly, and so does the dynamic client.
+
+| Source or design | Port | Reason |
+|---|---|---|
+| `DetectProtocolPlugin` takes the first protocol trait found by `ServiceLoader` discovery (its TODO notes the order problem) | The fixed priority list, with direct references to the seven `Factory.INSTANCE`s. The traits come from `ServiceIndex.getProtocols`, so the order of traits in the model does not matter either | Requirement 27.1 (DC-23). Design C.2 says "whose factory is available (`ClientProtocolFactories`)". Direct references avoid a `ServiceLoader` scan at build. They also make `dependency:analyze` see the six protocol modules as used, so they leave `ignoredUnusedDeclaredDependencies` |
+| Design C.2: "If a transport is configured, also require a matching `messageExchange`" | Candidates are created in priority order, and the first whose `messageExchange()` equals the transport's is returned. If none matches, the first candidate is returned, so that `validateMessageExchange` fails and names both components (Requirement 27.8) | Requirement 27.2 is only about traits. A transport mismatch is reported as a mismatch, not as "no protocol" |
+| — | The transport's exchange is read as `validateMessageExchange` reads it: `CLIENT_TRANSPORT` or `ASYNC_CLIENT_TRANSPORT` by client type, else `HttpMessageExchange.INSTANCE` (the SDK HTTP client transport). The pipeline resolves the transport from the same options (`SyncApiCallPipeline.transport`) | Requirement 27.7 and the task: the same transport resolution as generated clients. The four-line lookup is repeated in `DynamicClient`, because `ClientProtocolSupport` exposes it only inside `validateMessageExchange` and a lazy value sees a `LazyValueSource`, not a configuration. No aws-core change |
+| Design C.2: no protocol trait matches → `build()` throws listing the traits, or "none found" | `IllegalStateException("Service <id> declares no protocol that the dynamic client supports. Protocol traits on the service: none found. Supported protocols: [...]. Set a protocol with DynamicClient.Builder.protocol(...).")`, with `[<sorted trait IDs>]` in place of `none found` when the service has unsupported ones. Thrown after the configurations are resolved, so a protocol set by a plugin also counts | Requirement 27.2. `IllegalStateException`, as for the mismatch |
+
+**Auth mapping.** Effective schemes come from `ServiceIndex.getEffectiveAuthSchemes(service, operation, NO_AUTH_AWARE)` for every operation in `TopDownIndex.getContainedOperations(service)`, computed once at build. An operation without schemes gets `[smithy.api#noAuth]`, and `optionalAuth` appends `noAuth` (Requirement 27.3).
+
+| Scheme | SDK `AuthScheme` | `AuthSchemeOption` signer properties |
+|---|---|---|
+| `aws.auth#sigv4` | `AwsV4AuthScheme.create()` | `SERVICE_SIGNING_NAME` from the trait, `REGION_NAME` from the call's `AwsExecutionAttribute.AWS_REGION`, `PAYLOAD_SIGNING_ENABLED=false` for `aws.auth#unsignedPayload` |
+| `aws.auth#sigv4a` | `AwsV4aAuthScheme.create()`, only when `software.amazon.awssdk.http.auth.aws.crt.HttpAuthAwsCrt` loads (checked once per class loader with `Lazy`) | `SERVICE_SIGNING_NAME`, `REGION_SET` from `AWS_SIGV4A_SIGNING_REGION_SET` or the region, `PAYLOAD_SIGNING_ENABLED=false` for `unsignedPayload` |
+| `smithy.api#httpBearerAuth` | `BearerAuthScheme.create()` | none |
+| `smithy.api#noAuth` | `NoAuthAuthScheme.create()` | none |
+| anything else (`httpBasicAuth`, `httpDigestAuth`, `httpApiKeyAuth`, custom) | none, unless registered with `putAuthScheme` (builder or plugin) | none (scheme ID only) |
+
+| Source or design | Port | Reason |
+|---|---|---|
+| — | `ModelAuthSchemeResolver` returns, in model order, the options of the operation's schemes that are in `AUTH_SCHEMES`, then moves the `auth_scheme_preference` schemes first, as the generated `Preferred<Service>AuthSchemeProvider` does | Requirements 27.3 and 27.4; same profile behavior as generated clients |
+| Design C.2: a call to an operation with no usable scheme fails before sending | The resolver throws `SdkClientException("Cannot call operation <id>: none of its auth schemes has an implementation. Missing auth schemes: [...]. Register an implementation with DynamicClient.Builder.putAuthScheme, or configure an authSchemeResolver.")`. Auth scheme resolution runs before signing and sending. Task 13.10 adds the call path; this task tests the resolver | Requirement 27.4 |
+| — | The resolver keeps the key set of the configuration's `AUTH_SCHEMES` map, not a copy | `DynamicServiceClientConfigurationBuilder.putAuthScheme` (like the generated one) adds to that map in place, which no lazy value sees |
+| Design C.2: one WARN per missing scheme at build | `buildClient()` logs one WARN per missing scheme ID, sorted, through the SDK `Logger` of `DynamicClient`. The WARN names the scheme and the service, lists the operations that cannot be called (or says each has another scheme), and says how to fix it (for sigv4a: add `http-auth-aws-crt`). It is logged once per build, not per call, and only when the client uses the model's resolver. The sync configuration's `AUTH_SCHEMES` decides | Requirement 27.4 and the logging guidelines (warn once; the client still works). With a configured resolver the model's schemes are not used (27.6). Plugins run once per configuration, so the two configurations normally hold the same schemes |
+| sigv4a via http-auth-aws-crt | Without the CRT module, sigv4a is a missing scheme: it gets a WARN, and the resolver moves on to the next scheme (sigv4 in `Sigv4aFirst`) instead of selecting a scheme whose signer fails at signing time | The task: the module is optional in `http-auth-aws` |
+
+**Endpoints.** `smithy-rules-engine` 1.71.0 (the pinned `smithy.version`) has `RuleEvaluator.evaluate(EndpointRuleSet, Map)` and `RuleEvaluator.evaluate(EndpointBddTrait, Map)` (checked with `javap`). Its classes, and those of `smithy-jmespath`, `smithy-model-jmespath` and `smithy-aws-endpoints`, are Java 8 class files (major version 52).
+
+**OD-10 resolved:** `endpointBdd` is supported. A service with `endpointRuleSet` uses it, which is what generated clients compile. A service with only `endpointBdd` uses the BDD. The Account model has both. Its 23 endpoint test cases without an `Endpoint` parameter pass with each of them; the BDD path is tested by removing the rule set trait.
+
+| Source or design | Port | Reason |
+|---|---|---|
+| Parameter precedence | Applied least specific first, so later bindings replace earlier ones: the evaluator applies parameter defaults, then built-ins, `operationContextParams`, `contextParam` and `staticContextParams` | The Smithy rules engine specification ([parameters, "Binding parameter values"](https://smithy.io/2.0/additional-specs/rules-engine/parameters.html)) |
+| Design C.2 built-ins: region, FIPS, dualstack, endpoint override | `AWS::Region`, `AWS::UseFIPS`, `AWS::UseDualStack` from the call's `AwsExecutionAttribute`s. `AWS::Auth::AccountId` comes from the selected auth scheme's `AwsCredentialsIdentity.accountId()`, waited for with `thenApply`, not `joinLikeSync`. `AWS::Auth::AccountIdEndpointMode` and `AWS::S3::UseGlobalEndpoint` come from their attributes. `SDK::Endpoint`, the other S3 built-ins, `AWS::STS::UseGlobalEndpoint` and `AWS::Auth::CredentialScope` are not bound (rule defaults apply) | The generated `EndpointResolverUtils` binds the same set. The generated code blocks on the identity, and SpotBugs' `ASYNC_BLOCKING_CALL` rejects that in `dynamic-client`. The S3 built-ins come from `S3Configuration`, which a dynamic client does not have |
+| Requirement 27.6, design C.2: a static endpoint skips evaluation | With an endpoint override (`CLIENT_ENDPOINT_PROVIDER.isEndpointOverridden()`), the provider returns the override URI and evaluates nothing, so `SDK::Endpoint` is never bound. Without rules and without an override, the call fails with `SdkClientException("No endpoint provider or endpointRuleSet available for service <id>: its model has neither a smithy.rules#endpointRuleSet nor a smithy.rules#endpointBdd trait. Configure an endpointOverride or an endpointProvider on the DynamicClient builder.")` | Requirements 27.6 and 27.9. **Differs from generated clients**, which pass the override as `SDK::Endpoint` and let the rules decide. For example, FIPS with a custom endpoint is an error there, and S3 can put the bucket into the custom host. See the open questions |
+| `contextParam` | Read from the input's member of that name. The input is converted to a `Document` (itself if it is one, else `Document.of(input)`) and then to a smithy-model `Node` | Members are keyed by Smithy member names (Requirement 28.3) |
+| `operationContextParams` (JMESPath) | `JmespathExpression.parse(path)` once per operation (cached per operation ShapeId), evaluated over the input `Node` with smithy-model-jmespath's `NodeJmespathRuntime`. The SDK's `JmesPathRuntime` is generated per service and works on POJOs | `smithy-jmespath` 1.71 has an evaluator and comes with `smithy-rules-engine`. Both are declared because the code uses them |
+| — | `Document` to `Node`: a blob becomes its base64 text and a timestamp its epoch seconds. A value whose type does not match the parameter (`string`, `boolean`, `stringArray`) fails with `SdkClientException` naming the parameter and the binding | Endpoint parameters are strings, booleans and string lists, so no rule reads blobs or timestamps |
+| — | A required parameter without a default and without a value fails with `SdkClientException` naming the parameter | Generated parameter builders reject it (`Validate.notNull`) |
+| Result | An error rule throws `SdkClientException` with the rule's message. An evaluator failure becomes `SdkClientException("Unable to resolve the endpoint of <op> from the endpoint rules of <svc>: <cause>")`. An endpoint becomes an SDK `Endpoint`: the URL, every header value, `authSchemes` as `AwsEndpointAttribute.AUTH_SCHEMES` (`SigV4AuthScheme`/`SigV4aAuthScheme` with `signingName`, `signingRegion`/`signingRegionSet`, `disableDoubleEncoding`), and `metricValues` as `METRIC_VALUES`. Other properties and auth scheme names (`sigv4-s3express`) are skipped with a DEBUG log | Design C.2 and Requirement 27.9. Generated providers handle the same properties (`CodeGeneratorVisitor`). Using `AUTH_SCHEMES` to update the signer properties is the pipeline's job (task 13.10) |
+| `clientContextParams` | Not bound | No builder or configuration option sets a client context parameter by name: `CLIENT_CONTEXT_PARAMS` is keyed by typed per-service keys. See the open questions |
+| — | `RulesEndpointProvider` parses the rule set once at build and keeps it in a final field | `EndpointRuleSetTrait.getEndpointRuleSet()` caches it in a non-volatile field |
+
+**`pom.xml`.**
+- New compile dependencies: `http-auth` and `http-auth-aws` (the built-in schemes and signer properties), `smithy-jmespath` and `smithy-model-jmespath`.
+- `smithy-aws-endpoints` moves from test to runtime scope. It provides the AWS rules functions and built-ins (`aws.partition`, ...) through `ServiceLoader`, and AWS models with `aws.endpoints` traits need it to assemble. This answers the 13.4 open question.
+- The six protocol modules and `smithy-rules-engine` leave `ignoredUnusedDeclaredDependencies`. `http-client-protocol` stays until task 13.10.
+- Test scope: `log4j-api`, `log4j-core` and `log4j-slf4j-impl` for `LogCaptor`.
+
+**Tests** (45 new; `dynamic-client` now has 177, JUnit 5 and AssertJ). New fixtures: `internal/auth.smithy`, `internal/endpoint-params.smithy` and `no-protocol.smithy`.
+- `DynamicProtocolSelectionTest` (12): each of the seven protocol traits alone gives its protocol class and ID. The CloudWatch trio in both orders gives rpcv2Cbor, and restXml plus awsJson1_1 in both orders gives awsJson1_1, with candidates in priority order. A transport of another exchange gets the first candidate. With no protocol trait: no candidates, null selection, and the exact `none found` message. With two unsupported protocol definitions, the message lists them sorted. The priority list itself is also checked.
+- `ModelAuthSchemeResolverTest` (12):
+  - effective schemes for default, operation-level, empty and optional auth;
+  - the built-in schemes with and without the sigv4a signer, and the sigv4a signer absent on the test class path;
+  - sigv4 options (signing name, region, no payload property) and sigv4a options (signing name, region set from the region or from `AWS_SIGV4A_SIGNING_REGION_SET`);
+  - bearer and noAuth options without signer properties, and `optionalAuth`;
+  - `unsignedPayload`;
+  - schemes without an implementation skipped; the no-usable-scheme failure (exact message); a registered implementation used;
+  - preferences; an operation of another service;
+  - `missingSchemes`.
+- `RulesEndpointProviderTest` (12):
+  - the Account endpoint tests from its `smithy.rules#endpointTests` trait through the rule set and through the BDD (23 of 26 cases each);
+  - SQS's `endpoint-rule-set.json` and `endpoint-tests.json` on a synthetic service (44 of 48 cases). Cases with an `Endpoint` parameter are skipped (see above);
+  - Account regions with FIPS and dual-stack;
+  - endpoint headers, `authSchemes` and `metricValues` attributes;
+  - an error rule's message;
+  - `contextParam`, `staticContextParams` over `contextParam`, `operationContextParams` (string and `stringArray` through JMESPath projections), and `contextParam` over `operationContextParams`;
+  - an endpoint override skipping the rules;
+  - a service without rules, with and without an override.
+- `DynamicClientResolutionTest` (9):
+  - the selected protocol in both configurations;
+  - the `none found` build failure, closing the HTTP client it created;
+  - a configured protocol on a model without protocol traits;
+  - a plugin-set transport of another message exchange failing the build and naming the protocol and the transport;
+  - the default endpoint provider with and without rules, the same instance in both configurations;
+  - the default resolver and built-in schemes;
+  - exactly two WARNs for the auth fixture (sigv4a without CRT, httpBasicAuth) with exact messages (`LogCaptor`);
+  - no WARN when the schemes come from `putAuthScheme` on the builder or from a plugin;
+  - no WARN with a configured resolver.
+- Changed: `DynamicClientBuilderTest.builder_changedAfterBuild_doesNotChangeTheBuiltClient` now expects the selected `AwsJson1Protocol` (it expected no protocol), and the second client's configured stub protocol.
+- `codegen`: `ProtocolUtilsTest.dynamicClientProtocolPriority_matchesTheCodegenList` (above).
+- Comparing against the generated Account client's endpoint provider was not cheap. A `dynamic-client` test dependency on `services/account` would make the reactor cyclic through codegen's test dependency on `dynamic-client`. The model's own `endpointTests` cases, which the generated client's endpoint tests also come from, are used instead.
+
+**Runs** (`mvn -o`, JDK 21.0.2, from a new `/tmp/aws-sdk-135-wt` worktree of `ac43c50580d` with the changes copied in):
+- `clean install -pl :dynamic-client --am -P quick` once.
+- `clean install -pl :dynamic-client`: 177 tests, 0 failures. Checkstyle, SpotBugs, Javadoc, `dependency:analyze` and japicmp are clean. SpotBugs first flagged `ASYNC_BLOCKING_CALL` on a `joinLikeSync` of the identity, now replaced by `thenApply`.
+- `clean test -pl :codegen -Dtest=ProtocolUtilsTest,DefaultTraitInclusionSpecTest,SchemaConverterEquivalenceTest`: 30 tests, 0 failures. No codegen main code changed.
+- `clean test -pl :architecture-tests`: 79 tests, 0 failures, 11 skipped (the disabled `NamingConventionTest` and `CodingConventionTest` methods).
+- `aws-core` and `sdk-core` did not change.
+
+**Open questions.**
+- **Endpoint override.** Requirement 27.6 says a static endpoint is used "without evaluating `endpointRuleSet` or `endpointBdd`", so the dynamic client sends FIPS or dual-stack calls to a custom endpoint and never puts an S3 bucket into a custom host. Generated clients pass the override as `SDK::Endpoint` and evaluate the rules (the Account rules then reject FIPS with a custom endpoint). Should the dynamic client do the same when the rule set declares an `SDK::Endpoint` parameter? That would change Requirement 27.6.
+- **Client context parameters.** Design C.2 lists `clientContextParams` as a binding source, but there is no way to set one on a dynamic client. Add a builder method such as `clientContextParam(String name, Object value)`, backed by keys created per name?
+- **Endpoint auth schemes.** The endpoint's `AUTH_SCHEMES` attribute is set, but nothing applies it to the selected auth option yet (signing name and region overrides from the endpoint, as generated `ResolveEndpointInterceptor`s do). Task 13.10?
+- **Bearer tokens.** `httpBearerAuth` maps to `BearerAuthScheme`, but the builder has no `tokenProvider` option. `IDENTITY_PROVIDERS` holds only the credentials provider, so a bearer call fails at identity resolution. Add `tokenProvider` to the builder, as generated bearer clients have it?
+- **Warnings per build.** The missing-scheme WARN is logged once per build, as Requirement 27.4 says. A process that builds many clients for one model logs it each time. Log once per model and scheme instead?
