@@ -41,6 +41,7 @@ import software.amazon.awssdk.http.auth.spi.signer.HttpSigner;
 import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.IdentityProviders;
+import software.amazon.awssdk.protocols.client.awsjson.AwsJson1Protocol;
 import software.amazon.awssdk.regions.Region;
 
 /**
@@ -321,13 +322,15 @@ class DynamicClientBuilderTest {
             try (DynamicClient second = builder.build()) {
                 assertThat(first.service().schema().id().toString()).isEqualTo("test.multi#AlphaService");
                 assertThat(first.syncClientConfiguration().option(AwsClientOption.AWS_REGION)).isEqualTo(Region.US_EAST_1);
-                assertThat(first.syncClientConfiguration().option(SdkClientOption.CLIENT_PROTOCOL)).isNull();
+                assertThat(first.syncClientConfiguration().option(SdkClientOption.CLIENT_PROTOCOL))
+                    .isInstanceOf(AwsJson1Protocol.class);
                 assertThat(first.syncClientConfiguration().option(SdkClientOption.API_CALL_TIMEOUT)).isNull();
 
                 assertThat(second.service().schema().id().toString()).isEqualTo("test.multi#BetaService");
                 assertThat(second.syncClientConfiguration().option(AwsClientOption.AWS_REGION))
                     .isEqualTo(Region.EU_WEST_2);
-                assertThat(second.syncClientConfiguration().option(SdkClientOption.CLIENT_PROTOCOL)).isNotNull();
+                assertThat(second.syncClientConfiguration().option(SdkClientOption.CLIENT_PROTOCOL))
+                    .isInstanceOf(StubClientProtocol.class);
                 assertThat(second.schemaConverter()).isNotSameAs(first.schemaConverter());
             }
         }
