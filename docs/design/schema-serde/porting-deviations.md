@@ -2486,3 +2486,53 @@ For CBOR, the values are equal, but structures are written as indefinite-length 
 - Requirement 20.8 (task 11.9) says a `__type` that is not a string is an invalid discriminator. smithy-java and this port return no discriminator.
 - JSON documents with `useStringForArbitraryPrecision`: a number that the reader keeps as a big decimal for precision (not because a model said `bigDecimal`) is written back as a string. Writing raw numeric documents as numbers would need the document to remember that it came from a JSON number; smithy-java does not.
 - CBOR integers stay `long` documents and floats stay `float` or `double` by encoded width (task 3.6, smithy-java). Requirement 18.5 reports the narrowest of `integer`, `long`, `bigInteger`, `double` and `bigDecimal` for documents without a schema, so a CBOR `1` does not equal a JSON `1` without `NUMBER_PROMOTION`.
+
+## Document serialization and discriminators (task 11.9)
+
+**Target.** `json-codec` `internal.SmithyJsonSerializer.writeDocument` and `cbor-codec` `internal.CborSerializer.writeDocument` now write structure documents; `schema` `DocumentDeserializer.parseDiscriminator` rejects member ShapeIds. Sources: smithy-java `SmithyJsonSerializer.writeDocument` and `SerializeDocumentContents`, `JacksonJsonSerializer.SerializeDocumentContents`, `CborSerializer.writeDocument` and `SerializeDocumentContents`, `JsonSettings.serializeTypeInDocuments` (commit `142eecf4d`). This closes the third task 11.1 open question and the writing half of the task 11.5 deferral. `xml-codec` is unchanged: smithy-java's XML serializers write nothing for a document, and so does the SDK port (see the `XmlCodec` Javadoc). restXml, awsQuery and ec2Query have no document members (Requirement 20.1 lists only awsJson1_0, awsJson1_1, restJson1 and rpcv2Cbor).
+
+**Behavior.**
+- `writeDocument` calls `Document.serializeContents` with the serializer itself, as smithy-java does, instead of the by-type switch over the `as<Type>` accessors that tasks 3.6 and 7.1 used. A null document is still written as null. Typed documents now pass their own schemas: a timestamp document taken from a member with `@timestampFormat` (`Document.of(x).getMember("created")`) is written in that format when the writer's `useTimestampFormat` is on, where the switch used the prelude schema and the default format.
+- A document whose `type()` is `STRUCTURE` is written through a serializer that accepts one `writeStruct`. That call writes the structure's members with the writing codec's rules (field names from `jsonName` when the settings use it, `timestampFormat` when `useTimestampFormat` is on, the default timestamp format otherwise). JSON writes `"__type":"<namespace#Name>"` first when `serializeTypeInDocuments` is on and the document has a discriminator. CBOR always writes it when there is a discriminator; `CborSettings` has no such setting, as in smithy-java.
+- Only the document's own structure gets `__type`. A structure nested in its members is written as an ordinary structure. A document nested in its members (a `document` member, or a list or map document element) goes through `writeDocument` again and gets its own `__type`.
+- A document is written with the writing codec's settings, never the settings it was read with. JSON and CBOR Protocol_Documents have no `serializeContents` of their own (task 11.5). The default writes each value with its prelude schema, so a CBOR blob or timestamp document written by JSON is base64 or the JSON codec's default timestamp format. A typed structure written by another codec is re-walked through `serializeMembers` with that codec's settings.
+
+| Task, requirement or source | Port | Reason |
+|---|---|---|
+| smithy-java writes `__type` from the schema passed to `writeStruct` (`structSchema.id()`), so a union document gets its union's ShapeId | Writes `Document.getDiscriminator()`, and nothing when it is null. A union document has no discriminator (task 11.5 user decision) and is written without `__type` | Requirement 20.6. For a structure document (`Documents.LazyStructure`), `getDiscriminator()` is the same ShapeId as smithy-java's, including for a nested structure written with its member schema |
+| smithy-java `SerializeDocumentContents` throws `IllegalStateException("Unexpected schema type: …")` when a structure document writes something other than a structure | `SerializationException("A structure document must write a structure, but wrote a value of type <type> with schema <id>")` | The codec's exception type, with the type and schema |
+| smithy-java reads the discriminator (or schema) whatever the settings | JSON reads `getDiscriminator()` only when `serializeTypeInDocuments` is on | With the setting off, a document whose discriminator cannot be read is still written |
+| Requirement 20.2: a structure Document's Discriminator is written as an absolute ShapeId "even when the Discriminator was read in relative form or was read by a different Client_Protocol" | A Protocol_Document (a JSON or CBOR map document, `type()` `MAP`) is written as the map it was read as: its `__type` entry keeps the text it was read with (relative or absolute, valid or not), and `serializeTypeInDocuments` does not add or remove it. The absolute form is written for documents whose `type()` is `STRUCTURE`, which includes a Protocol_Document converted with `asShape` and `Document.of` | smithy-java (keep Smithy-aligned). Rewriting the entry would change map data, would need the discriminator read (and so could throw) for every map with a `__type` key, and would break the SEP assertion that writing the document read from a serialization gives that serialization when the serialization has a relative `__type`. See the open questions |
+| Requirement 20.8: a `__type` that is not a string is an invalid Discriminator | No discriminator, as in task 11.5 | smithy-java (keep Smithy-aligned). The SEP `serdeTests` suite (task 11.12) is not in the workspace, so no SEP case contradicts this yet; revisit when it is added |
+| smithy-java accepts a member ShapeId (`ns#Name$member`, or relative `Name$member`) as a discriminator: Smithy's `ShapeId.fromOptionalNamespace` parses members | `parseDiscriminator` throws `DiscriminatorException("A document discriminator must name a shape, not a member: <text>")` | The requirements glossary defines the Discriminator as the ShapeId of the document's concrete shape, and Requirement 20.2 writes it as `namespace#Name`. A member ID never names a type a registry can build. Requested by the task instructions, which described this as smithy-java's behavior; smithy-java accepts members |
+
+**Tests.**
+- `TypedDocumentTest` (schema), 8 new runs: six malformed discriminators with the exact message and a `ShapeIdSyntaxException` cause (`""`, `#Foo`, `com.example#Foo#Bar`, `com..example#Foo`, `1Foo`, `com.example#Foo$`); a relative name keeping its name and taking the default namespace; absolute and relative member IDs rejected.
+- `JsonSerializerTest` (json-codec) ports the four smithy-java document tests: `writesDunderTypeAndMoreMembers`, `writesNestedDunderType`, `writesModeledStructureDocumentInsideStructure` and `writesDunderTypeForEmptyStruct`. `serializesJsonValues` now calls `serializeContents`, as in the source.
+- New `JsonDocumentSerializationTest` (json-codec, 13 runs):
+  - a typed structure under `REST_JSON_1`, `AWS_JSON`, and `http-date` without `useTimestampFormat` or `__type`: jsonName, the `timestampFormat` trait and the default format follow the writer
+  - a timestamp document taken from a typed structure: its member's `date-time` format with `useTimestampFormat` on, epoch seconds with it off
+  - no `__type` with `serializeTypeInDocuments` off, and none for union documents
+  - nested documents in a `document` member and a list
+  - reading the written JSON back gives a Protocol_Document with the same discriminator, the same bytes and the same shape
+  - a Protocol_Document read with `AWS_JSON` and written with `REST_JSON_1` keeps its keys, values and relative `__type`, with or without `serializeTypeInDocuments`
+  - a Protocol_Document converted to a shape is written with jsonName and an absolute `__type`
+  - a Protocol_Document with an invalid `__type` is written unchanged
+  - the error for a structure document that writes a string
+  - a failing discriminator throws only when `__type` is written
+- New `CborDocumentSerializationTest` (cbor-codec, 8 runs; `json-codec` is now a test-scope dependency of `cbor-codec`):
+  - exact bytes for a structure document (`__type` first) and a union document (no `__type`)
+  - reading back: member order, discriminator, tag 1 timestamp and byte string regardless of the `timestampFormat` trait, no `__type` on the nested structure, `__type` on a nested document
+  - a JSON-read document written by CBOR gives the bytes of the same values (base64 and timestamp strings stay strings, `__type` stays relative) and reads back with CBOR's default namespace
+  - a CBOR-read document written by JSON writes base64 and the JSON default timestamp format (epoch seconds, then `date-time`)
+  - typed structures from a CBOR document (written as JSON with jsonName) and from a JSON document (written as CBOR), both with an absolute `__type`
+  - the error for a structure document that writes an integer
+
+Properties 35 and 36 (tasks 11.10, 11.11) are not written.
+
+**Module runs** (`mvn -o clean install`, checkstyle and SpotBugs included): `schema` 665 tests (was 657); `json-codec` 1038 (5 skipped; was 1022 with the task 11.5 `1.001` case), then `JsonDocumentSerializationTest` alone after adding the timestamp member case (13); `cbor-codec` 257 (was 249); `http-client-protocol` 103, `rpcv2-cbor-client-protocol` 23, `aws-json-client-protocol` 68, `rest-json-client-protocol` 47; all 0 failures. `smithy-protocol-tests` (923 tests, 16 skipped): awsJson1_0 68/0/6, awsJson1_1 132/0/0, restJson1 264/0/7, restXml 200/0/1, awsQuery 81/0/0, ec2Query 67/0/0, rpcv2Cbor 74/0/2 (passed/failed/skipped), unchanged.
+
+**Open questions.**
+- Requirement 20.2, relative or cross-protocol discriminators: this port writes a Protocol_Document's `__type` as read (smithy-java). If the SEP `serdeTests` expect a relative `__type` to be written as absolute, the map documents would need a `serializeContents` that rewrites the entry with the reader's default namespace.
+- Requirement 20.8, non-string `__type`: no discriminator (smithy-java), not `DiscriminatorException`.
+- Member ShapeIds are rejected as discriminators, which smithy-java accepts.
