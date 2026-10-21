@@ -68,6 +68,30 @@
             <artifactId>sdk-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- The types in the SnsNotification typed-message signatures. sdk-core already brings both. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>schema</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>codec-commons</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Optional: only the SnsNotification typed-message methods use it, and customers who call them add it. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>message-payloads</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>json-codec</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
