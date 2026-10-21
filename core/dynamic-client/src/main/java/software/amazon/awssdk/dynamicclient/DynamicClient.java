@@ -25,6 +25,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import software.amazon.awssdk.annotations.NotThreadSafe;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.annotations.ThreadSafe;
@@ -41,10 +43,18 @@ import software.amazon.awssdk.awscore.client.handler.AwsAsyncClientHandler;
 import software.amazon.awssdk.awscore.client.handler.AwsSyncClientHandler;
 import software.amazon.awssdk.awscore.endpoint.AwsClientEndpointProvider;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import software.amazon.awssdk.awscore.internal.AwsProtocolMetadata;
+import software.amazon.awssdk.awscore.internal.AwsServiceProtocol;
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
+import software.amazon.awssdk.core.ApiName;
 import software.amazon.awssdk.core.ClientType;
 import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.SdkPlugin;
+import software.amazon.awssdk.core.async.SdkPublisher;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculationResolver;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidationResolver;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientOption;
@@ -58,9 +68,17 @@ import software.amazon.awssdk.core.client.protocol.HttpMessageExchange;
 import software.amazon.awssdk.core.client.protocol.MessageExchange;
 import software.amazon.awssdk.core.client.protocol.ProtocolSettings;
 import software.amazon.awssdk.core.metrics.CoreMetric;
+import software.amazon.awssdk.core.pagination.async.AsyncPageFetcher;
+import software.amazon.awssdk.core.pagination.async.ResponsesSubscription;
+import software.amazon.awssdk.core.pagination.sync.PaginatedResponsesIterator;
+import software.amazon.awssdk.core.pagination.sync.SdkIterable;
+import software.amazon.awssdk.core.pagination.sync.SyncPageFetcher;
 import software.amazon.awssdk.core.retry.RetryMode;
+import software.amazon.awssdk.core.useragent.BusinessMetricFeatureId;
+import software.amazon.awssdk.core.util.VersionInfo;
 import software.amazon.awssdk.dynamicclient.internal.DynamicAuthSchemes;
 import software.amazon.awssdk.dynamicclient.internal.DynamicCallResolvers;
+import software.amazon.awssdk.dynamicclient.internal.DynamicPagination;
 import software.amazon.awssdk.dynamicclient.internal.DynamicProtocolSelection;
 import software.amazon.awssdk.dynamicclient.internal.DynamicServiceClientConfigurationBuilder;
 import software.amazon.awssdk.dynamicclient.internal.DynamicServiceMetadata;
@@ -79,8 +97,10 @@ import software.amazon.awssdk.regions.ServiceMetadataAdvancedOption;
 import software.amazon.awssdk.retries.api.RetryStrategy;
 import software.amazon.awssdk.schema.ApiService;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.TraitKey;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.document.Document;
+import software.amazon.awssdk.schema.traits.HttpChecksumTrait;
 import software.amazon.awssdk.utils.AttributeMap;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.IoUtils;
@@ -110,6 +130,12 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * with a {@link DynamicOperation} as the operation and {@link DynamicRequest} and {@link DynamicResponse} as the
  * request and response that interceptors see.
  *
+ * <p>The features that generated clients configure per operation come from the operation's schemas and traits: the
+ * host prefix of {@code smithy.api#endpoint}, {@code smithy.api#idempotencyToken} members filled with a generated
+ * token when the input omits them, {@code smithy.api#requestCompression}, {@code aws.protocols#httpChecksum} and
+ * {@code smithy.api#httpChecksumRequired} checksums, and the auth schemes. {@link #paginate} and
+ * {@link #paginateAsync} page through an operation with its {@code smithy.api#paginated} trait.
+ *
  * <p>An error response that resolves to an error shape of the called operation or of the service throws a
  * {@link DocumentException}, whose {@link DocumentException#getContents() contents} are the error's members; when both
  * list a matching error, the operation's is used. Any other error response throws a plain
@@ -127,6 +153,27 @@ import software.amazon.smithy.model.shapes.ShapeId;
 @ThreadSafe
 public final class DynamicClient implements AwsClient {
     private static final Logger log = Logger.loggerFor(DynamicClient.class);
+    private static final Pattern VERSION = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)(.*)");
+    private static final ApiName PAGINATOR_API_NAME =
+        ApiName.builder().name("sdk-metrics").version(BusinessMetricFeatureId.PAGINATOR.value()).build();
+
+    /**
+     * The protocol metadata of each SDK protocol, by protocol trait ShapeId, as codegen maps a service's protocol to
+     * {@code AwsServiceProtocol}.
+     */
+    private static final Map<String, AwsProtocolMetadata> PROTOCOL_METADATA;
+
+    static {
+        Map<String, AwsProtocolMetadata> metadata = new HashMap<>();
+        metadata.put("smithy.protocols#rpcv2Cbor", protocolMetadata(AwsServiceProtocol.SMITHY_RPC_V2_CBOR));
+        metadata.put("aws.protocols#awsJson1_0", protocolMetadata(AwsServiceProtocol.AWS_JSON));
+        metadata.put("aws.protocols#awsJson1_1", protocolMetadata(AwsServiceProtocol.AWS_JSON));
+        metadata.put("aws.protocols#restJson1", protocolMetadata(AwsServiceProtocol.REST_JSON));
+        metadata.put("aws.protocols#restXml", protocolMetadata(AwsServiceProtocol.REST_XML));
+        metadata.put("aws.protocols#awsQuery", protocolMetadata(AwsServiceProtocol.QUERY));
+        metadata.put("aws.protocols#ec2Query", protocolMetadata(AwsServiceProtocol.EC2));
+        PROTOCOL_METADATA = Collections.unmodifiableMap(metadata);
+    }
 
     private final Model model;
     private final ServiceShape serviceShape;
@@ -137,6 +184,15 @@ public final class DynamicClient implements AwsClient {
     private final DynamicAuthSchemes authSchemes;
     private final SdkClientConfiguration syncClientConfiguration;
     private final SdkClientConfiguration asyncClientConfiguration;
+
+    /**
+     * The configurations calls run with: {@link #syncClientConfiguration} and {@link #asyncClientConfiguration} with
+     * {@code SDK_CLIENT} (this client) and {@code API_METADATA} (the user agent's {@code api/} segment), as the
+     * constructor of a generated client adds them. The handlers own and close the configurations without these two
+     * options, so closing does not reach this client again.
+     */
+    private final SdkClientConfiguration syncCallConfiguration;
+    private final SdkClientConfiguration asyncCallConfiguration;
     private final SyncClientHandler syncClientHandler;
     private final AsyncClientHandler asyncClientHandler;
 
@@ -168,6 +224,9 @@ public final class DynamicClient implements AwsClient {
         this.asyncClientConfiguration = asyncClientConfiguration;
         this.syncClientHandler = new AwsSyncClientHandler(syncClientConfiguration);
         this.asyncClientHandler = new AwsAsyncClientHandler(asyncClientConfiguration);
+        String apiMetadata = apiMetadata(sdkId);
+        this.syncCallConfiguration = callConfiguration(syncClientConfiguration, apiMetadata);
+        this.asyncCallConfiguration = callConfiguration(asyncClientConfiguration, apiMetadata);
         Map<String, OperationShape> shapes = new HashMap<>();
         for (OperationShape operation : TopDownIndex.of(model).getContainedOperations(serviceShape)) {
             shapes.put(operation.getId().getName(serviceShape), operation);
@@ -207,7 +266,7 @@ public final class DynamicClient implements AwsClient {
 
     @Override
     public DynamicServiceClientConfiguration serviceClientConfiguration() {
-        return new DynamicServiceClientConfigurationBuilder(syncClientConfiguration.toBuilder()).build();
+        return new DynamicServiceClientConfigurationBuilder(syncCallConfiguration.toBuilder()).build();
     }
 
     /**
@@ -377,6 +436,136 @@ public final class DynamicClient implements AwsClient {
     }
 
     /**
+     * Pages through a paginated operation: the same as {@link #paginate(String, Document,
+     * AwsRequestOverrideConfiguration)} without override configuration.
+     *
+     * @param operationName the shape name of a paginated operation, case-sensitive
+     * @param input the input of the first request
+     * @return the pages
+     */
+    public SdkIterable<Document> paginate(String operationName, Document input) {
+        return paginate(operationName, input, null);
+    }
+
+    /**
+     * Pages through a paginated operation, as a generated client's paginator method does. The operation needs a
+     * {@code smithy.api#paginated} trait with an {@code inputToken} and an {@code outputToken}, set on the operation or
+     * inherited from the service's trait.
+     *
+     * <p>Each element of the returned iterable is the output document of one call. The first call has {@code input};
+     * each later call has {@code input} with the previous page's output token (the {@code outputToken} member path of
+     * the output) in the {@code inputToken} member. Paging stops after a page whose output token is absent or empty.
+     * Calls are made lazily, as the iteration reaches them, and each new iterator starts again from the first page. The
+     * items of a page are its member named by {@link DynamicOperation#paginated()}'s {@code items} path.
+     *
+     * <p>The calls go through {@link #call(String, Document, AwsRequestOverrideConfiguration)}, with the paginator's
+     * user agent metadata added, so they throw what {@code call} throws when they are made.
+     *
+     * @param operationName the shape name of a paginated operation, case-sensitive
+     * @param input the input of the first request
+     * @param overrideConfiguration the configuration of every call, or null
+     * @return the pages
+     * @throws IllegalArgumentException if the service has no operation of this name, or the operation is not paginated;
+     *     no request is sent
+     * @throws SerializationException if the input cannot be coerced to the operation's input schema; no request is sent
+     */
+    public SdkIterable<Document> paginate(String operationName, Document input,
+                                          AwsRequestOverrideConfiguration overrideConfiguration) {
+        DynamicOperation operation = getOperation(operationName);
+        DynamicPagination pagination = DynamicPagination.of(operation, operation.paginated().orElse(null));
+        DynamicRequest first = request(operation, input, paginatorOverrideConfiguration(overrideConfiguration));
+        SyncPageFetcher<Document> pages = new SyncPageFetcher<Document>() {
+            @Override
+            public boolean hasNextPage(Document previousPage) {
+                return pagination.hasNextPage(previousPage);
+            }
+
+            @Override
+            public Document nextPage(Document previousPage) {
+                return execute(operation, nextRequest(pagination, first, previousPage)).document();
+            }
+        };
+        return () -> PaginatedResponsesIterator.builder().nextPageFetcher(pages).build();
+    }
+
+    /**
+     * Pages through a paginated operation asynchronously: the same as {@link #paginateAsync(String, Document,
+     * AwsRequestOverrideConfiguration)} without override configuration.
+     *
+     * @param operationName the shape name of a paginated operation, case-sensitive
+     * @param input the input of the first request
+     * @return a publisher of the pages
+     */
+    public SdkPublisher<Document> paginateAsync(String operationName, Document input) {
+        return paginateAsync(operationName, input, null);
+    }
+
+    /**
+     * Pages through a paginated operation asynchronously, as a generated asynchronous client's paginator method does.
+     * The pages and the end of paging are those of {@link #paginate(String, Document, AwsRequestOverrideConfiguration)};
+     * each subscription starts from the first page, and makes a call when the subscriber requests a page. A failed call
+     * ends the subscription with {@code onError}.
+     *
+     * @param operationName the shape name of a paginated operation, case-sensitive
+     * @param input the input of the first request
+     * @param overrideConfiguration the configuration of every call, or null
+     * @return a publisher of the pages
+     * @throws IllegalArgumentException if the service has no operation of this name, or the operation is not paginated;
+     *     no request is sent
+     * @throws SerializationException if the input cannot be coerced to the operation's input schema; no request is sent
+     */
+    public SdkPublisher<Document> paginateAsync(String operationName, Document input,
+                                                AwsRequestOverrideConfiguration overrideConfiguration) {
+        DynamicOperation operation = getOperation(operationName);
+        DynamicPagination pagination = DynamicPagination.of(operation, operation.paginated().orElse(null));
+        DynamicRequest first = request(operation, input, paginatorOverrideConfiguration(overrideConfiguration));
+        AsyncPageFetcher<Document> pages = new AsyncPageFetcher<Document>() {
+            @Override
+            public boolean hasNextPage(Document previousPage) {
+                return pagination.hasNextPage(previousPage);
+            }
+
+            @Override
+            public CompletableFuture<Document> nextPage(Document previousPage) {
+                CompletableFuture<DynamicResponse> responseFuture;
+                try {
+                    responseFuture = executeAsync(operation, nextRequest(pagination, first, previousPage));
+                } catch (Throwable t) {
+                    return CompletableFutureUtils.failedFuture(t);
+                }
+                CompletableFuture<Document> page = responseFuture.thenApply(DynamicResponse::document);
+                return CompletableFutureUtils.forwardExceptionTo(page, responseFuture);
+            }
+        };
+        return subscriber -> subscriber.onSubscribe(ResponsesSubscription.builder()
+                                                                         .subscriber(subscriber)
+                                                                         .nextPageFetcher(pages)
+                                                                         .build());
+    }
+
+    /**
+     * The request of the first page, or of the page after {@code previousPage}.
+     */
+    private static DynamicRequest nextRequest(DynamicPagination pagination, DynamicRequest first, Document previousPage) {
+        if (previousPage == null) {
+            return first;
+        }
+        return first.toBuilder().document(pagination.nextInput(first.document(), previousPage)).build();
+    }
+
+    /**
+     * The override configuration with the paginator's {@code sdk-metrics} API name, as a generated paginator adds it
+     * ({@code UserAgentUtils.applyPaginatorUserAgent}).
+     */
+    private static AwsRequestOverrideConfiguration paginatorOverrideConfiguration(
+        AwsRequestOverrideConfiguration overrideConfiguration) {
+        AwsRequestOverrideConfiguration.Builder builder = overrideConfiguration == null
+                                                          ? AwsRequestOverrideConfiguration.builder()
+                                                          : overrideConfiguration.toBuilder();
+        return builder.addApiName(PAGINATOR_API_NAME).build();
+    }
+
+    /**
      * Coerces the input to the operation's input schema, before any interceptor runs (Requirement 28.3).
      */
     private DynamicRequest request(DynamicOperation operation, Document input,
@@ -390,7 +579,7 @@ public final class DynamicClient implements AwsClient {
      * Runs a call through the client handler, as a generated synchronous client does.
      */
     private DynamicResponse execute(DynamicOperation operation, DynamicRequest request) {
-        SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, syncClientConfiguration);
+        SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, syncCallConfiguration);
         List<MetricPublisher> metricPublishers =
             resolveMetricPublishers(clientConfiguration, request.overrideConfiguration().orElse(null));
         MetricCollector apiCallMetricCollector = apiCallMetricCollector(metricPublishers, operation);
@@ -406,7 +595,7 @@ public final class DynamicClient implements AwsClient {
      * Runs a call through the asynchronous client handler, as a generated asynchronous client does.
      */
     private CompletableFuture<DynamicResponse> executeAsync(DynamicOperation operation, DynamicRequest request) {
-        SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, asyncClientConfiguration);
+        SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, asyncCallConfiguration);
         List<MetricPublisher> metricPublishers =
             resolveMetricPublishers(clientConfiguration, request.overrideConfiguration().orElse(null));
         MetricCollector apiCallMetricCollector = apiCallMetricCollector(metricPublishers, operation);
@@ -424,19 +613,61 @@ public final class DynamicClient implements AwsClient {
     }
 
     /**
-     * The parameters of a call on the schema-based pipeline. {@code withOperation} routes the call to the pipeline that
-     * generated clients use, with the operation as {@code SdkExecutionAttribute.API_OPERATION}.
+     * The parameters of a call on the schema-based pipeline, with the settings a generated client's operation method
+     * passes (codegen's {@code SchemaOperationsProtocolSpec}). {@code withOperation} routes the call to the pipeline
+     * that generated clients use, with the operation as {@code SdkExecutionAttribute.API_OPERATION}. The protocol
+     * metadata is that of the configuration's protocol, and the host prefix, credential type, checksum and compression
+     * attributes come from the operation's schemas.
      */
     private static ClientExecutionParams<DynamicRequest, DynamicResponse> executionParams(
         DynamicOperation operation, DynamicRequest request, SdkClientConfiguration clientConfiguration,
         MetricCollector apiCallMetricCollector) {
-        return new ClientExecutionParams<DynamicRequest, DynamicResponse>()
-            .withOperation(operation)
-            .withRequestConfiguration(clientConfiguration)
-            .withInput(request)
-            .withMetricCollector(apiCallMetricCollector)
-            .withAuthSchemeOptionsResolver(DynamicCallResolvers.authSchemeOptionsResolver())
-            .withEndpointResolver(DynamicCallResolvers.endpointResolver());
+        ClientExecutionParams<DynamicRequest, DynamicResponse> params =
+            new ClientExecutionParams<DynamicRequest, DynamicResponse>()
+                .withOperation(operation)
+                .withProtocolMetadata(protocolMetadata(clientConfiguration))
+                .withRequestConfiguration(clientConfiguration)
+                .withInput(request)
+                .withMetricCollector(apiCallMetricCollector)
+                .withAuthSchemeOptionsResolver(DynamicCallResolvers.authSchemeOptionsResolver())
+                .withEndpointResolver(DynamicCallResolvers.endpointResolver());
+        operation.metadata().apply(params, request);
+        return params;
+    }
+
+    /**
+     * The protocol metadata a generated client of the configuration's protocol passes ({@code AwsServiceProtocol} of
+     * the protocol), or null for a protocol the SDK does not define, such as a third-party protocol.
+     */
+    private static AwsProtocolMetadata protocolMetadata(SdkClientConfiguration clientConfiguration) {
+        ClientProtocol<?, ?> protocol = clientConfiguration.option(SdkClientOption.CLIENT_PROTOCOL);
+        return protocol == null ? null : PROTOCOL_METADATA.get(protocol.id().toString());
+    }
+
+    private static AwsProtocolMetadata protocolMetadata(AwsServiceProtocol protocol) {
+        return AwsProtocolMetadata.builder().serviceProtocol(protocol).build();
+    }
+
+    /**
+     * The {@code api/} user agent metadata of a generated client: the SDK ID with spaces replaced by underscores, and
+     * the SDK version as {@code <major>.<minor>.x} (codegen's {@code ServiceVersionInfo.VERSION}).
+     */
+    private static String apiMetadata(String sdkId) {
+        Matcher version = VERSION.matcher(VersionInfo.SDK_VERSION);
+        String majorMinorX = version.matches() ? version.group(1) + "." + version.group(2) + ".x" + version.group(4)
+                                               : VersionInfo.SDK_VERSION;
+        return sdkId.replace(" ", "_") + "#" + majorMinorX;
+    }
+
+    /**
+     * A copy of a resolved configuration with this client as {@code SDK_CLIENT} and the {@code api/} metadata, which
+     * re-derives the client user agent.
+     */
+    private SdkClientConfiguration callConfiguration(SdkClientConfiguration configuration, String apiMetadata) {
+        return configuration.toBuilder()
+                            .option(SdkClientOption.SDK_CLIENT, this)
+                            .option(SdkClientOption.API_METADATA, apiMetadata)
+                            .build();
     }
 
     private MetricCollector apiCallMetricCollector(List<MetricPublisher> metricPublishers, DynamicOperation operation) {
@@ -712,7 +943,7 @@ public final class DynamicClient implements AwsClient {
             DynamicServiceMetadata resolvedService = DynamicServiceMetadata.resolve(resolvedModel, serviceId);
             SchemaConverter converter = new SchemaConverter(resolvedModel, resolvedService.service());
             Schema serviceSchema = converter.getSchema(resolvedService.service());
-            BuildState buildState = new BuildState(resolvedModel, resolvedService, serviceSchema);
+            BuildState buildState = new BuildState(resolvedModel, resolvedService, converter, serviceSchema);
             state = buildState;
             try {
                 SdkClientConfiguration sync = syncClientConfiguration();
@@ -802,6 +1033,28 @@ public final class DynamicClient implements AwsClient {
             ProtocolSettings protocolSettings = resolvedState.protocolSettings;
             builder.lazyOptionIfAbsent(SdkClientOption.CLIENT_PROTOCOL,
                                        c -> protocolSelection.select(protocolSettings, transportExchange(c)));
+            // As the generated builder of a service with flexible checksums: the profile file and system setting, else
+            // WHEN_SUPPORTED, only for services that have them, so other services' calls record no checksum metrics.
+            if (resolvedState.requestChecksums) {
+                builder.lazyOptionIfAbsent(
+                    SdkClientOption.REQUEST_CHECKSUM_CALCULATION,
+                    c -> RequestChecksumCalculationResolver.create()
+                                                           .profileFile(c.get(SdkClientOption.PROFILE_FILE_SUPPLIER))
+                                                           .profileName(c.get(SdkClientOption.PROFILE_NAME))
+                                                           .defaultChecksumCalculation(
+                                                               RequestChecksumCalculation.WHEN_SUPPORTED)
+                                                           .resolve());
+            }
+            if (resolvedState.responseChecksums) {
+                builder.lazyOptionIfAbsent(
+                    SdkClientOption.RESPONSE_CHECKSUM_VALIDATION,
+                    c -> ResponseChecksumValidationResolver.create()
+                                                           .profileFile(c.get(SdkClientOption.PROFILE_FILE_SUPPLIER))
+                                                           .profileName(c.get(SdkClientOption.PROFILE_NAME))
+                                                           .defaultChecksumValidation(
+                                                               ResponseChecksumValidation.WHEN_SUPPORTED)
+                                                           .resolve());
+            }
             return builder.build();
         }
 
@@ -904,8 +1157,27 @@ public final class DynamicClient implements AwsClient {
         private final DynamicAuthSchemes authSchemes;
         private final RulesEndpointProvider endpointProvider;
 
-        private BuildState(Model model, DynamicServiceMetadata service, Schema serviceSchema) {
+        /**
+         * Whether an operation's {@code httpChecksum} trait has a request algorithm member or requires a request
+         * checksum, and whether one lists response algorithms: codegen's {@code hasRequestAlgorithmMember} and
+         * {@code hasResponseAlgorithms}, read from the converted operation schemas.
+         */
+        private final boolean requestChecksums;
+        private final boolean responseChecksums;
+
+        private BuildState(Model model, DynamicServiceMetadata service, SchemaConverter converter, Schema serviceSchema) {
             ServiceShape serviceShape = service.service();
+            boolean request = false;
+            boolean response = false;
+            for (OperationShape operation : TopDownIndex.of(model).getContainedOperations(serviceShape)) {
+                HttpChecksumTrait checksum = converter.getSchema(operation).getTrait(TraitKey.HTTP_CHECKSUM_TRAIT);
+                if (checksum != null) {
+                    request |= checksum.getRequestAlgorithmMember().isPresent() || checksum.isRequestChecksumRequired();
+                    response |= !checksum.getResponseAlgorithms().isEmpty();
+                }
+            }
+            this.requestChecksums = request;
+            this.responseChecksums = response;
             this.service = service;
             this.protocolSelection = DynamicProtocolSelection.forService(model, serviceShape);
             this.protocolSettings = ProtocolSettings.builder()

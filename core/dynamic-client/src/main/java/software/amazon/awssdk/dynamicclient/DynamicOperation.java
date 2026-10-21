@@ -19,9 +19,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.annotations.ThreadSafe;
+import software.amazon.awssdk.dynamicclient.internal.DynamicOperationMetadata;
 import software.amazon.awssdk.dynamicclient.schema.SchemaConverter;
 import software.amazon.awssdk.dynamicclient.schema.StructDocument;
 import software.amazon.awssdk.schema.ApiOperation;
@@ -33,7 +35,9 @@ import software.amazon.awssdk.schema.TraitKey;
 import software.amazon.awssdk.schema.serde.ErrorRegistry;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.TypeRegistry;
+import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.AwsQueryErrorTrait;
+import software.amazon.awssdk.schema.traits.PaginatedTrait;
 import software.amazon.awssdk.utils.ToString;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
@@ -62,6 +66,7 @@ public final class DynamicOperation implements ApiOperation<DynamicRequest, Dyna
     private final List<ShapeId> effectiveAuthSchemes;
     private final ApiService service;
     private final ShapeId serviceId;
+    private final DynamicOperationMetadata metadata;
 
     private DynamicOperation(Schema schema, Schema inputSchema, Schema outputSchema, List<Schema> errorSchemas,
                              List<ShapeId> effectiveAuthSchemes, ApiService service) {
@@ -73,6 +78,7 @@ public final class DynamicOperation implements ApiOperation<DynamicRequest, Dyna
         this.service = service;
         this.serviceId = service.schema().id();
         this.errorRegistry = errorRegistry(errorSchemas, serviceId);
+        this.metadata = DynamicOperationMetadata.of(this);
     }
 
     /**
@@ -165,6 +171,25 @@ public final class DynamicOperation implements ApiOperation<DynamicRequest, Dyna
     @Override
     public ApiService service() {
         return service;
+    }
+
+    /**
+     * Returns the operation's {@code smithy.api#paginated} trait merged with the service's, as Smithy merges them: an
+     * operation without the trait is not paginated, and a property the operation does not set comes from the service's
+     * trait. {@link DynamicClient#paginate(String, Document)} needs both an input token and an output token.
+     *
+     * @return the merged trait, or empty when the operation is not paginated
+     */
+    public Optional<PaginatedTrait> paginated() {
+        return Optional.ofNullable(metadata.paginated());
+    }
+
+    /**
+     * The per-operation settings that a generated client hard-codes in the operation's method, derived from the
+     * schemas.
+     */
+    DynamicOperationMetadata metadata() {
+        return metadata;
     }
 
     @Override

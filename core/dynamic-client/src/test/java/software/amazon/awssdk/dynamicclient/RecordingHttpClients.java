@@ -22,8 +22,11 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -52,15 +55,36 @@ final class RecordingHttpClients {
     }
 
     /**
-     * A recorded request: the HTTP request and its body as text.
+     * A recorded request: the HTTP request and its body as bytes and as text.
      */
     static final class Recorded {
         final SdkHttpRequest request;
+        final byte[] bytes;
         final String body;
 
         private Recorded(SdkHttpRequest request, byte[] body) {
             this.request = request;
+            this.bytes = body;
             this.body = new String(body, StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * The stubs of the next responses, in order; the last one answers every later request.
+     */
+    private static final class Stubs {
+        private final Deque<Stub> queued = new ArrayDeque<>();
+        private Stub last = Stub.of(200, "{}");
+
+        synchronized void set(Stub... stubs) {
+            queued.clear();
+            queued.addAll(Arrays.asList(stubs));
+            last = stubs[stubs.length - 1];
+        }
+
+        synchronized Stub next() {
+            Stub next = queued.poll();
+            return next != null ? next : last;
         }
     }
 
@@ -89,10 +113,13 @@ final class RecordingHttpClients {
 
     static final class Sync implements SdkHttpClient {
         private final List<Recorded> requests = Collections.synchronizedList(new ArrayList<>());
-        private volatile Stub stub = Stub.of(200, "{}");
+        private final Stubs stubs = new Stubs();
 
-        void stub(Stub stub) {
-            this.stub = stub;
+        /**
+         * Answers the next requests with these responses, in order, and every later request with the last one.
+         */
+        void stub(Stub... responses) {
+            stubs.set(responses);
         }
 
         List<Recorded> requests() {
@@ -107,7 +134,7 @@ final class RecordingHttpClients {
         public ExecutableHttpRequest prepareRequest(HttpExecuteRequest request) {
             byte[] body = request.contentStreamProvider().map(p -> read(p.newStream())).orElse(new byte[0]);
             requests.add(new Recorded(request.httpRequest(), body));
-            Stub response = stub;
+            Stub response = stubs.next();
             return new ExecutableHttpRequest() {
                 @Override
                 public HttpExecuteResponse call() {
@@ -147,10 +174,13 @@ final class RecordingHttpClients {
      */
     static final class Async implements SdkAsyncHttpClient {
         private final List<Recorded> requests = Collections.synchronizedList(new ArrayList<>());
-        private volatile Stub stub = Stub.of(200, "{}");
+        private final Stubs stubs = new Stubs();
 
-        void stub(Stub stub) {
-            this.stub = stub;
+        /**
+         * Answers the next requests with these responses, in order, and every later request with the last one.
+         */
+        void stub(Stub... responses) {
+            stubs.set(responses);
         }
 
         List<Recorded> requests() {
@@ -167,7 +197,7 @@ final class RecordingHttpClients {
             request.requestContentPublisher().subscribe(new CollectingSubscriber(body));
             return body.thenAccept(bytes -> {
                 requests.add(new Recorded(request.request(), bytes));
-                Stub response = stub;
+                Stub response = stubs.next();
                 request.responseHandler().onHeaders(response.response);
                 request.responseHandler().onStream(new OneBufferPublisher(response.body));
             });

@@ -38,6 +38,7 @@ final class DynamicTestModels {
     private static final Model ERRORS_JSON10_MODEL = assemble("errors-json10.smithy");
     private static final Model ERRORS_REST_JSON_MODEL = assemble("errors-rest-json.smithy");
     private static final Model ERRORS_QUERY_MODEL = assemble("errors-query.smithy");
+    private static final Model PIPELINE_FEATURES_MODEL = assemble("pipeline-features.smithy");
 
     private DynamicTestModels() {
     }
@@ -100,6 +101,15 @@ final class DynamicTestModels {
      */
     static Model errorsQuery() {
         return ERRORS_QUERY_MODEL;
+    }
+
+    /**
+     * A restJson1 and sigv4 service ({@code test.features#FeatureService}) with a labeled and a static host prefix, an
+     * idempotency token, request compression, flexible and required checksums, and operations that inherit the
+     * service's paginated trait.
+     */
+    static Model pipelineFeatures() {
+        return PIPELINE_FEATURES_MODEL;
     }
 
     /**
