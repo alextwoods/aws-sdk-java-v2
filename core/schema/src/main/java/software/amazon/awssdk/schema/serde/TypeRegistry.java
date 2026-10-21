@@ -23,6 +23,8 @@ import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.serde.document.DiscriminatorException;
+import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.utils.Validate;
 
 /**
@@ -35,7 +37,8 @@ import software.amazon.awssdk.utils.Validate;
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.core.serde.TypeRegistry}. Lazy entries are registered with
  * {@link Builder#putLazyType(ShapeId, Supplier)}, which takes one schema supplier instead of smithy-java's class and
- * builder suppliers. Document deserialization ({@code deserialize(Document)}) is added with the full document port.
+ * builder suppliers. {@link #deserialize(Document)} throws {@link DiscriminatorException} for a document without a
+ * discriminator, where smithy-java throws {@link UnsupportedOperationException}.
  */
 @SdkPublicApi
 public interface TypeRegistry {
@@ -88,6 +91,31 @@ public interface TypeRegistry {
             throw new SerializationException("Polymorphic shape " + id + " is not compatible with " + type);
         }
         return (ShapeBuilder<T>) builder;
+    }
+
+    /**
+     * Converts a document into the registered shape that its {@linkplain Document#getDiscriminator() discriminator}
+     * names: creates a new builder for the discriminator and returns {@link Document#asShape(ShapeBuilder)} with it,
+     * which fills in zero values for missing required members.
+     *
+     * <p>The discriminator is checked first: a document without one creates no builder.
+     *
+     * @param document the document, typically a structure document from {@link Document#of} or a protocol document
+     *     with a {@code __type} member
+     * @return the shape built from the document
+     * @throws DiscriminatorException if the document has no discriminator, or holds one that is not a valid ShapeId
+     * @throws UnsupportedOperationException if no shape is registered for the discriminator; the message contains
+     *     the absolute discriminator ShapeId
+     * @throws NullPointerException if {@code document} is null
+     */
+    default SerializableStruct deserialize(Document document) {
+        Validate.paramNotNull(document, "document");
+        ShapeId id = document.expectDiscriminator();
+        ShapeBuilder<SerializableStruct> builder = createBuilder(id, SerializableStruct.class);
+        if (builder == null) {
+            throw new UnsupportedOperationException("No shape registered for document discriminator: " + id);
+        }
+        return document.asShape(builder);
     }
 
     /**

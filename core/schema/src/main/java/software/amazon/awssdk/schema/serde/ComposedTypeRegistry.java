@@ -19,6 +19,8 @@ import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
+import software.amazon.awssdk.schema.serde.document.Document;
+import software.amazon.awssdk.utils.Validate;
 
 /**
  * The result of {@link TypeRegistry#compose(TypeRegistry, TypeRegistry)}: resolves from the first registry when it
@@ -47,6 +49,17 @@ final class ComposedTypeRegistry implements TypeRegistry {
     @Override
     public boolean contains(ShapeId id) {
         return first.contains(id) || second.contains(id);
+    }
+
+    /**
+     * Delegates to the {@code deserialize} of the first registry when it contains the discriminator, and otherwise to
+     * the second, so a registry that overrides {@code deserialize} keeps its behavior when composed.
+     */
+    @Override
+    public SerializableStruct deserialize(Document document) {
+        Validate.paramNotNull(document, "document");
+        ShapeId id = document.expectDiscriminator();
+        return first.contains(id) ? first.deserialize(document) : second.deserialize(document);
     }
 
     @Override

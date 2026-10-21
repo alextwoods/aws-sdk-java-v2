@@ -25,6 +25,8 @@ import software.amazon.awssdk.schema.TraitKey;
 import software.amazon.awssdk.schema.serde.RegistryTestShapes.InternalError;
 import software.amazon.awssdk.schema.serde.RegistryTestShapes.Person;
 import software.amazon.awssdk.schema.serde.RegistryTestShapes.QueueDoesNotExist;
+import software.amazon.awssdk.schema.serde.document.DiscriminatorException;
+import software.amazon.awssdk.schema.serde.document.Document;
 
 class ErrorRegistryTest {
 
@@ -151,5 +153,20 @@ class ErrorRegistryTest {
             .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> builder.errorCode(QueueDoesNotExist.CODE, null))
             .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void deserialize_errorDocument_buildsTheRegisteredErrorAndRejectsOthers() {
+        ErrorRegistry registry = sqsLikeRegistry();
+
+        Object error = registry.deserialize(Document.of(QueueDoesNotExist.builder().name("q").build()));
+
+        assertThat(error).isInstanceOf(QueueDoesNotExist.class);
+        assertThat(((QueueDoesNotExist) error).name()).isEqualTo("q");
+        assertThatThrownBy(() -> registry.deserialize(Document.of(Person.builder().name("p").build())))
+            .isInstanceOf(UnsupportedOperationException.class)
+            .hasMessageContaining(Person.ID.toString());
+        assertThatThrownBy(() -> registry.deserialize(Document.of("q")))
+            .isInstanceOf(DiscriminatorException.class);
     }
 }

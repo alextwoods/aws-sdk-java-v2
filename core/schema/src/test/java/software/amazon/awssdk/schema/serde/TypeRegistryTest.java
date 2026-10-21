@@ -19,7 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -30,11 +33,14 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
+import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.serde.RegistryTestShapes.Bird;
 import software.amazon.awssdk.schema.serde.RegistryTestShapes.NamedBuilder;
 import software.amazon.awssdk.schema.serde.RegistryTestShapes.Person;
+import software.amazon.awssdk.schema.serde.document.DiscriminatorException;
+import software.amazon.awssdk.schema.serde.document.Document;
 
 /**
  * Port of smithy-java {@code core.serde.TypeRegistryTest} (first four methods) plus SDK tests for lazy entries,
@@ -255,6 +261,155 @@ class TypeRegistryTest {
             .isInstanceOf(NullPointerException.class).hasMessageContaining("second");
         assertThatThrownBy(() -> TypeRegistry.empty().createBuilder(Person.ID, null))
             .isInstanceOf(NullPointerException.class).hasMessageContaining("type");
+    }
+
+    // Ported from smithy-java (task 11.16).
+
+    @Test
+    void deserializesDocumentsFromRegistry() {
+        TypeRegistry registry = TypeRegistry.builder().putType(Person.ID, Person.class, Person::builder).build();
+        Document document = Document.of(Person.builder().name("Phreddie").build());
+
+        SerializableStruct deserialized = registry.deserialize(document);
+
+        assertThat(deserialized).isInstanceOf(Person.class);
+        assertThat(((Person) deserialized).name()).isEqualTo("Phreddie");
+    }
+
+    @Test
+    void registersLazyTypes() {
+        TypeRegistry registry = TypeRegistry.builder().putLazyType(Person.ID, () -> Person.SCHEMA).build();
+        Document document = Document.of(Person.builder().name("Pharkus").build());
+
+        SerializableStruct deserialized = registry.deserialize(document);
+
+        assertThat(deserialized).isInstanceOf(Person.class);
+        assertThat(((Person) deserialized).name()).isEqualTo("Pharkus");
+    }
+
+    // SDK tests for deserialize(Document) (task 11.16).
+
+    @Test
+    void deserialize_usesANewBuilderPerCallAndMatchesAsShape() {
+        AtomicInteger builders = new AtomicInteger();
+        TypeRegistry registry = TypeRegistry.builder().putType(Person.ID, Person.class, countingBuilder(builders))
+                                            .build();
+        Document document = Document.of(Person.builder().name("Phreddie").build());
+
+        Person first = (Person) registry.deserialize(document);
+        Person second = (Person) registry.deserialize(document);
+
+        assertThat(builders).hasValue(2);
+        assertThat(first).isNotSameAs(second);
+        assertThat(first.name()).isEqualTo(document.asShape(Person.builder()).name()).isEqualTo(second.name());
+    }
+
+    @Test
+    void deserialize_documentWithoutDiscriminator_throwsDiscriminatorExceptionAndCreatesNoBuilder() {
+        AtomicInteger builders = new AtomicInteger();
+        TypeRegistry registry = TypeRegistry.builder().putType(Person.ID, Person.class, countingBuilder(builders))
+                                            .build();
+        Map<String, Document> members = new LinkedHashMap<>();
+        members.put("name", Document.of("Phreddie"));
+
+        assertThatThrownBy(() -> registry.deserialize(Document.of(members)))
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessageContaining("no discriminator");
+        assertThatThrownBy(() -> registry.deserialize(Document.of("Phreddie")))
+            .isInstanceOf(DiscriminatorException.class);
+        assertThatThrownBy(() -> TypeRegistry.empty().deserialize(Document.of(1)))
+            .isInstanceOf(DiscriminatorException.class);
+        assertThat(builders).hasValue(0);
+    }
+
+    @Test
+    void deserialize_unregisteredDiscriminator_throwsUnsupportedOperationExceptionWithTheAbsoluteShapeId() {
+        TypeRegistry registry = TypeRegistry.builder().putType(Bird.ID, Bird.class, Bird::builder).build();
+        Document person = Document.of(Person.builder().name("Phreddie").build());
+
+        assertThatThrownBy(() -> registry.deserialize(person))
+            .isInstanceOf(UnsupportedOperationException.class)
+            .hasMessage("No shape registered for document discriminator: smithy.example#Person");
+        assertThatThrownBy(() -> TypeRegistry.empty().deserialize(person))
+            .isInstanceOf(UnsupportedOperationException.class)
+            .hasMessageContaining("smithy.example#Person");
+    }
+
+    @Test
+    void deserialize_composed_resolvesFromTheFirstRegistryThatContainsTheDiscriminator() {
+        TypeRegistry persons = TypeRegistry.builder().putType(Person.ID, Person.class, Person::builder).build();
+        // Maps the Person ID to the Bird class and builder, so the registry that answered is visible in the result.
+        TypeRegistry birds = TypeRegistry.builder()
+                                         .putType(Person.ID, Bird.class, Bird::builder)
+                                         .putType(Bird.ID, Bird.class, Bird::builder)
+                                         .build();
+        Document person = Document.of(Person.builder().name("Phreddie").build());
+        Document bird = Document.of(Bird.builder().name("Tweety").build());
+
+        assertThat(TypeRegistry.compose(persons, birds).deserialize(person)).isInstanceOf(Person.class);
+        assertThat(TypeRegistry.compose(birds, persons).deserialize(person)).isInstanceOf(Bird.class);
+        Bird fromSecond = (Bird) TypeRegistry.compose(persons, birds).deserialize(bird);
+        assertThat(fromSecond.name()).isEqualTo("Tweety");
+        assertThatThrownBy(() -> TypeRegistry.compose(birds, persons).deserialize(Document.of(Collections.emptyMap())))
+            .isInstanceOf(DiscriminatorException.class);
+        TypeRegistry other = TypeRegistry.builder().putType(Bird.ID, Bird.class, Bird::builder).build();
+        assertThatThrownBy(() -> TypeRegistry.compose(other, other).deserialize(person))
+            .isInstanceOf(UnsupportedOperationException.class)
+            .hasMessageContaining(Person.ID.toString());
+        // Neither input is changed.
+        assertThat(persons.contains(Bird.ID)).isFalse();
+    }
+
+    @Test
+    void deserialize_composed_keepsAnOverriddenDeserialize() {
+        Person sentinel = Person.builder().name("sentinel").build();
+        TypeRegistry custom = new TypeRegistry() {
+            @Override
+            public Class<? extends SerializableStruct> getShapeClass(ShapeId id) {
+                return Person.ID.equals(id) ? Person.class : null;
+            }
+
+            @Override
+            public ShapeBuilder<?> createBuilder(ShapeId id) {
+                return Person.ID.equals(id) ? Person.builder() : null;
+            }
+
+            @Override
+            public boolean contains(ShapeId id) {
+                return Person.ID.equals(id);
+            }
+
+            @Override
+            public SerializableStruct deserialize(Document document) {
+                return sentinel;
+            }
+        };
+        TypeRegistry birds = TypeRegistry.builder().putType(Bird.ID, Bird.class, Bird::builder).build();
+
+        TypeRegistry composed = TypeRegistry.compose(birds, custom);
+
+        assertThat(composed.deserialize(Document.of(Person.builder().name("Phreddie").build()))).isSameAs(sentinel);
+        assertThat(composed.deserialize(Document.of(Bird.builder().name("Tweety").build()))).isInstanceOf(Bird.class);
+    }
+
+    @Test
+    void deserialize_nullDocument_throwsNullPointerException() {
+        TypeRegistry registry = TypeRegistry.builder().putType(Person.ID, Person.class, Person::builder).build();
+        TypeRegistry composed = TypeRegistry.compose(registry, TypeRegistry.builder()
+                                                                           .putType(Bird.ID, Bird.class, Bird::builder)
+                                                                           .build());
+
+        assertThatThrownBy(() -> registry.deserialize(null))
+            .isInstanceOf(NullPointerException.class).hasMessageContaining("document");
+        assertThatThrownBy(() -> composed.deserialize(null))
+            .isInstanceOf(NullPointerException.class).hasMessageContaining("document");
+    }
+
+    private static Supplier<ShapeBuilder<Person>> countingBuilder(AtomicInteger calls) {
+        return () -> {
+            calls.incrementAndGet();
+            return Person.builder();
+        };
     }
 
     private static Supplier<Schema> counting(AtomicInteger calls, Schema schema) {
