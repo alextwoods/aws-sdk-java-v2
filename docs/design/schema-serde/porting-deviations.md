@@ -2842,3 +2842,54 @@ Property 51 (task 11.21) is not written.
 - Should the base64 decoder accept MIME-style line breaks (`Base64.getMimeDecoder()`)? It is strict now.
 - XML errors cannot be split into `MALFORMED` and `NON_CONFORMING`, because the XML codec reads no documents. A schema-less well-formedness check would need a codec-level hook.
 - Should an empty body be `MALFORMED` for every variant, instead of following the JSON codec's empty-structure rule on the builder path?
+
+## SNS Message Manager typed messages (task 11.22)
+
+**Target.** `services-custom/sns-message-manager`:
+- `SnsNotification` (public, final) gains three public methods that decode `message()` through `MessagePayloads` (task 11.20):
+  - `<T extends SerializableShape> T message(Codec codec, ShapeBuilder<T> builder)`
+  - `SerializableStruct message(Codec codec, TypeRegistry registry)`, which reads the `__type` discriminator from the body
+  - `SerializableStruct message(Codec codec, TypeRegistry registry, ShapeId shapeId)`, with a ShapeId the caller supplies
+
+  The class Javadoc gains a "Typed messages" section with an example and the dependency note.
+- `pom.xml`: `message-payloads` is a new optional dependency. `schema` and `codec-commons` are declared as compile dependencies; `sdk-core` already brought both, so the dependency closure is unchanged. `json-codec` is a test dependency.
+- `SnsMessageUnmarshaller`, `SignatureValidator`, `DefaultSnsMessageManager`, `SnsMessage` and the other message classes are unchanged. The envelope is parsed and the signature validated over the message string exactly as before.
+
+**Behavior.**
+
+| Task, design or source | Port | Reason |
+|---|---|---|
+| Design D.7 row 2: "Add a typed-payload accessor through `MessagePayloads`". No name or signature is given | Three overloads of `message`, one per `MessagePayloads.deserialize` variant, with the same parameter order after the body | The getter is already `message()`. The overloads read as "the message, as a typed value" and need no new term. `MessagePayloads` defines the semantics, so each overload is a null check plus one call |
+| Task: "the parsed SNS message" | `SnsNotification` only, not the base class `SnsMessage` | Only a notification carries the publisher's message. `SubscriptionConfirmation` and `UnsubscribeConfirmation` carry SNS's own English text, which no codec can read. `SnsMessageManager.parseMessage` returns `SnsMessage`, so callers check the type first, as they already must to confirm subscriptions. Adding the methods to `SnsMessage` would also be additive (it is an abstract class, not an interface) |
+| Null or absent `Message` (design silent) | All three return `null` after their argument checks | `message()` returns `null` when the envelope has no `Message`. `MessagePayloads` would throw `NullPointerException("body must not be null.")`, which names a parameter the caller did not pass. A notification that passes signature validation normally has a `Message`, because the signature covers it. `SignatureValidator` signs the text `null` when it is absent (`StringJoiner.add(null)`), so in practice `null` comes from notifications built with the builder |
+| Null arguments | `NullPointerException("<parameter> must not be null.")` from `Validate.paramNotNull` for `codec`, `builder`, `registry` and `shapeId`, checked before the null-message check | Same messages as `MessagePayloads`. A null argument fails the same way whether or not the notification has a message |
+| D.7 Requirement 38.5 causes | `MessagePayloadException` propagates unchanged, with its `Cause` and the codec or registry exception as its cause | It already extends `SdkClientException`, the exception type the manager throws today |
+| D.7 row 2, size: "Neutral (library); `message-payloads` is a separate small module" | `message-payloads` is `<optional>true</optional>` | Customers who never call the new methods get no new artifacts: the published pom adds no transitive dependency. Customers who call them add `message-payloads`, which brings `json-codec` and `cbor-codec`. Every type in the new signatures (`Codec`, `ShapeBuilder`, `SerializableShape`, `SerializableStruct`, `TypeRegistry`, `ShapeId`) is in `schema` or `codec-commons`, which `sdk-core` already brings. So linking `SnsNotification` and reflecting over it (`getDeclaredMethods`, as EqualsVerifier and bean tools do) never loads `message-payloads` classes. `MessagePayloadException` appears only in Javadoc, not in a `throws` clause, for the same reason |
+| — | No caching: each call decodes the message again. `equals`, `hashCode` and `toString` are unchanged | The class stays an immutable value of the envelope fields |
+
+**Without `message-payloads`.** A one-off check (not committed) ran a small program on the module's runtime classpath with the `message-payloads`, `json-codec` and `cbor-codec` JARs removed. Parsing a notification with `SnsMessageUnmarshaller`, `message()`, `toString`, `equals`, `hashCode` and `SnsNotification.class.getDeclaredMethods()` all worked. `message(codec, builder)` on a notification with no message returned `null`, and on a notification with a message threw `NoClassDefFoundError: software/amazon/awssdk/messaging/payload/MessagePayloads`. The class Javadoc documents this.
+
+**Tests.** `SnsNotificationTypedMessageTest` (17 runs: 8 `@Test` and 1 `@ParameterizedTest` method with 9 cases) and `TypedMessageTestShapes`, a minimal copy of `PayloadTestShapes` with the structures `OrderPlaced` and `OrderCancelled` and a registry that holds both. Each notification is signed with SHA256withRSA (signature version 2) by a key generated in the test, and parsed and validated by `DefaultSnsMessageManager`, whose stubbed `CertificateRetriever` returns the public key.
+- The message string is unchanged by parsing, and `MessagePayloads.serialize` output (with `__type`) and a hand-written body without `__type` both validate.
+- Builder: bodies with and without `__type`. Registry: two shapes told apart by `__type`. Caller ShapeId: a body without `__type`, and a body whose `__type` names another shape.
+- Failures, each checked for `MessagePayloadException`, its `Cause` and its cause type: `MALFORMED` (truncated JSON) through all three methods; `NON_CONFORMING` (a string for the integer member) through all three; `UNKNOWN_DISCRIMINATOR` for an unregistered `__type` (cause `UnsupportedOperationException`), no `__type` (`DiscriminatorException`) and an unregistered caller ShapeId (no cause).
+- A notification with no message returns `null` from all three methods. Null arguments throw `NullPointerException` naming the parameter.
+
+The test manager is given a mock `SdkHttpClient`. Without one, `DefaultSnsMessageManager` builds the default HTTP client, and `DefaultSdkHttpClientBuilder` caches the HTTP service it loads first in a static field. That made two existing `DefaultSnsMessageManagerTest` tests, which select their own service through a system property, fail when the new class ran first in the same JVM.
+
+**Dependencies and compatibility.**
+- `dependency:analyze`: "No dependency problems found".
+- `architecture-tests` (`clean test`): 77 runs, 0 failures; the 11 skipped are `NamingConventionTest` and `CodingConventionTest`, as before. `DependencyTreeTest` (5) and `PortComplianceTest` (15) pass. `sns-message-manager` is not a ported module, so `PORTED_MODULES` is unchanged.
+- japicmp: the module is in the root `includeModules`, but offline builds had never downloaded its 2.49.6 baseline, so `cmp` warned and compared against nothing. With the released 2.49.6 JAR fetched once (`mvn dependency:get`), `japicmp:cmp` reports one modified class, `SnsNotification`, with the three new methods. All are binary and source compatible, and there are no other changes.
+- Size: the JAR grows from 48,543 bytes (2.49.6) to 49,355. `SnsNotification.class` grows from 3,218 to 5,602 uncompressed bytes. The other differences are the embedded pom (+1,088 bytes) and the two enums `SignatureVersion` and `SnsMessageType` (+49 bytes each). Their sources have not changed since the module was introduced, so that difference comes from compilation.
+
+**Module runs** (`mvn -o`, JDK 21.0.2, in the workspace):
+- `clean install -pl :sns-message-manager`: 100 tests (83 existing, unmodified, plus 17 new), 0 Checkstyle violations, SpotBugs 0 bugs, `dependency:analyze` clean, Javadoc built.
+- `japicmp:cmp -pl :sns-message-manager` against 2.49.6, as above.
+- `clean test -pl :architecture-tests`, as above.
+
+**Open questions.**
+- Should the methods also be on `SnsMessage`, so a caller can decode without checking the type? They would then fail on confirmation messages with `NON_CONFORMING` or `MALFORMED`.
+- `message(...)` overloads the getter. Would a distinct name (`messageAs`, `typedMessage`) read better in IDE completion?
+- With the optional dependency, a missing `message-payloads` shows up as `NoClassDefFoundError` at the first call. Should the methods check for it and throw an `SdkClientException` that names the artifact? Or should the dependency be compile scope, which adds `message-payloads`, `json-codec` and `cbor-codec` to every SNS Message Manager user?
+- HTTP/S notifications can carry `MessageAttributes`, which `SnsMessageUnmarshaller` ignores. Exposing them would let callers pick the caller-ShapeId overload's ShapeId from an attribute, as with SQS. That would be a separate additive change to the envelope model.
