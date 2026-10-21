@@ -147,6 +147,16 @@ public class ProtocolUtilsTest {
             .hasMessage("Service demo#DemoService declares no supported protocol; found: []");
     }
 
+    /**
+     * The dynamic client selects its protocol with its own copy of the priority list (task 13.5), because it cannot
+     * depend on codegen; it must hold the same list.
+     */
+    @Test
+    public void dynamicClientProtocolPriority_matchesTheCodegenList() {
+        assertThat(software.amazon.awssdk.dynamicclient.internal.DynamicProtocolSelection.priority())
+            .isEqualTo(ProtocolUtils.CLIENT_PROTOCOL_PRIORITY);
+    }
+
     private static Model smithyModel(String protocolTraits) {
         String src =
             "$version: \"2.0\"\n"
