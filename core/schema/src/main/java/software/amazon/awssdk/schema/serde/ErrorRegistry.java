@@ -32,8 +32,9 @@ import software.amazon.awssdk.utils.Validate;
  * {@code aws.protocols#awsQueryError} trait gives some of them. Each generated service has one, shared by all of its
  * operations; client protocols use it to turn an error response into a modeled exception.
  *
- * <p>Instances are immutable and safe to use from multiple threads. Building one loads no error class: entries are
- * registered with {@link Builder#putLazyType(ShapeId, Supplier)} and the custom codes are given as shape IDs.
+ * <p>Instances are immutable and safe to use from multiple threads. Building one loads no error class: generated
+ * registries register their entries with {@link Builder#putLazyType(ShapeId, Supplier)} and give the custom codes as
+ * shape IDs.
  *
  * <p>SDK addition with no smithy-java counterpart; smithy-java's query protocols compute the code index by scanning
  * the operation's error schemas.
@@ -77,7 +78,8 @@ public final class ErrorRegistry implements TypeRegistry {
      * which loads the error class; later calls return the cached schema.
      *
      * @param id the error shape ID
-     * @return the error's root schema, or null if the shape ID is not registered
+     * @return the error's root schema, or null if the shape ID is not registered or was registered with
+     *     {@link Builder#putType} (without a schema)
      * @throws IllegalStateException if the registered supplier returns an invalid schema
      */
     public Schema getSchema(ShapeId id) {
@@ -135,6 +137,26 @@ public final class ErrorRegistry implements TypeRegistry {
         public Builder putLazyType(ShapeId id, Supplier<Schema> schema) {
             Validate.paramNotNull(id, "id");
             entries.put(id, DefaultTypeRegistry.lazyEntry(id, schema));
+            return this;
+        }
+
+        /**
+         * Registers an error shape with its class and builder supplier, as
+         * {@link TypeRegistry.Builder#putType(ShapeId, Class, Supplier)} does. This is for errors that have no generated
+         * class, such as the dynamic client's, whose builders read the error into a document; {@link #getSchema} returns
+         * null for such an entry. Registering a shape ID again replaces its earlier entry.
+         *
+         * @param id the error shape ID
+         * @param type the class of the errors the builders create
+         * @param builder creates a new builder for the error on each call
+         * @param <T> the error type
+         * @return this builder
+         * @throws NullPointerException if any argument is null
+         */
+        public <T extends SerializableStruct> Builder putType(ShapeId id, Class<T> type,
+                                                              Supplier<ShapeBuilder<T>> builder) {
+            Validate.paramNotNull(id, "id");
+            entries.put(id, DefaultTypeRegistry.eagerEntry(type, builder));
             return this;
         }
 

@@ -125,6 +125,34 @@ class ErrorRegistryTest {
     }
 
     @Test
+    void putType_registersClassAndBuilderWithoutSchema() {
+        AtomicInteger builders = new AtomicInteger();
+        ErrorRegistry registry = ErrorRegistry.builder()
+                                              .putType(QueueDoesNotExist.ID, QueueDoesNotExist.class, () -> {
+                                                  builders.incrementAndGet();
+                                                  return QueueDoesNotExist.builder();
+                                              })
+                                              .errorCode(QueueDoesNotExist.CODE, QueueDoesNotExist.ID)
+                                              .build();
+
+        assertThat(registry.contains(QueueDoesNotExist.ID)).isTrue();
+        assertThat(registry.resolveCode(QueueDoesNotExist.CODE)).isEqualTo(QueueDoesNotExist.ID);
+        assertThat(registry.getShapeClass(QueueDoesNotExist.ID)).isEqualTo(QueueDoesNotExist.class);
+        assertThat(builders).hasValue(0);
+        assertThat(registry.createBuilder(QueueDoesNotExist.ID)).isNotSameAs(registry.createBuilder(QueueDoesNotExist.ID));
+        assertThat(builders).hasValue(2);
+        assertThat(registry.getSchema(QueueDoesNotExist.ID)).isNull();
+
+        ErrorRegistry.Builder builder = ErrorRegistry.builder();
+        assertThatThrownBy(() -> builder.putType(null, QueueDoesNotExist.class, QueueDoesNotExist::builder))
+            .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> builder.putType(QueueDoesNotExist.ID, null, QueueDoesNotExist::builder))
+            .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> builder.putType(QueueDoesNotExist.ID, QueueDoesNotExist.class, null))
+            .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
     void compose_withEmptyRegistries() {
         ErrorRegistry registry = sqsLikeRegistry();
         ErrorRegistry empty = ErrorRegistry.builder().build();
