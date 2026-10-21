@@ -35,7 +35,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import software.amazon.awssdk.schema.PreludeSchemas;
+import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeType;
+import software.amazon.awssdk.schema.serde.RecordingShapeSerializer;
 import software.amazon.awssdk.schema.serde.SerializationException;
 
 class DocumentTest {
@@ -265,6 +268,221 @@ class DocumentTest {
         assertThat(Document.of(members).asObject()).isEqualTo(expected);
         assertThat(Document.of(true).asObject()).isEqualTo(true);
         assertThat(Document.of(Instant.EPOCH).asObject()).isEqualTo(Instant.EPOCH);
+    }
+
+    @Test
+    void numericCoercion_atIntegralBoundaries_wrapsLikeJavaCasts() {
+        assertThat(Document.of(Integer.MAX_VALUE + 1L).asInteger()).isEqualTo(Integer.MIN_VALUE);
+        assertThat(Document.of(128).asByte()).isEqualTo((byte) -128);
+        assertThat(Document.of(Short.MAX_VALUE + 1).asShort()).isEqualTo(Short.MIN_VALUE);
+        assertThat(Document.of(Long.MIN_VALUE).asInteger()).isZero();
+        assertThat(Document.of(Long.MAX_VALUE).asFloat()).isEqualTo((float) Long.MAX_VALUE);
+        assertThat(Document.of(Long.MAX_VALUE).asDouble()).isEqualTo((double) Long.MAX_VALUE);
+        assertThat(Document.of(Byte.MIN_VALUE).asLong()).isEqualTo(Byte.MIN_VALUE);
+        assertThat(Document.of(Short.MIN_VALUE).asBigInteger()).isEqualTo(BigInteger.valueOf(Short.MIN_VALUE));
+    }
+
+    @Test
+    void numericCoercion_fromFloatingPoint_truncatesTowardZeroAndSaturates() {
+        assertThat(Document.of(-1.9d).asInteger()).isEqualTo(-1);
+        assertThat(Document.of(300.7d).asByte()).isEqualTo((byte) 44);
+        assertThat(Document.of(1.9f).asShort()).isEqualTo((short) 1);
+        assertThat(Document.of(1e20d).asLong()).isEqualTo(Long.MAX_VALUE);
+        assertThat(Document.of(1e20d).asInteger()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(Document.of(-1e20d).asLong()).isEqualTo(Long.MIN_VALUE);
+        assertThat(Document.of(1e20d).asBigInteger()).isEqualTo(BigInteger.valueOf(Long.MAX_VALUE));
+        assertThat(Document.of(Double.MAX_VALUE).asFloat()).isEqualTo(Float.POSITIVE_INFINITY);
+        assertThat(Document.of(0.1d).asFloat()).isEqualTo(0.1f);
+        assertThat(Document.of(0.1f).asBigDecimal()).isEqualTo(BigDecimal.valueOf((double) 0.1f));
+    }
+
+    @Test
+    void numericCoercion_fromNanAndInfinity_followsJavaCasts() {
+        assertThat(Document.of(Double.NaN).asInteger()).isZero();
+        assertThat(Document.of(Float.NaN).asLong()).isZero();
+        assertThat(Document.of(Double.NaN).asBigInteger()).isEqualTo(BigInteger.ZERO);
+        assertThat(Document.of(Double.POSITIVE_INFINITY).asInteger()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(Document.of(Double.NEGATIVE_INFINITY).asLong()).isEqualTo(Long.MIN_VALUE);
+        assertThat(Document.of(Float.POSITIVE_INFINITY).asDouble()).isEqualTo(Double.POSITIVE_INFINITY);
+        assertThat(Document.of(Double.NaN).asFloat()).isNaN();
+    }
+
+    @Test
+    void asBigDecimal_onNonFiniteFloatingPoint_throwsNamingTheTypes() {
+        assertThatThrownBy(() -> Document.of(Float.POSITIVE_INFINITY).asBigDecimal())
+            .isInstanceOf(SerializationException.class)
+            .hasMessage("Cannot convert a non-finite float document (Infinity) to a bigDecimal");
+        assertThatThrownBy(() -> Document.of(Double.NEGATIVE_INFINITY).asBigDecimal())
+            .isInstanceOf(SerializationException.class)
+            .hasMessage("Cannot convert a non-finite double document (-Infinity) to a bigDecimal");
+    }
+
+    @Test
+    void numericCoercion_fromBigValues_followsNumberConversions() {
+        BigInteger twoTo64PlusOne = BigInteger.ONE.shiftLeft(64).add(BigInteger.ONE);
+        assertThat(Document.of(twoTo64PlusOne).asLong()).isEqualTo(1L);
+        assertThat(Document.of(twoTo64PlusOne).asInteger()).isEqualTo(1);
+        assertThat(Document.of(twoTo64PlusOne).asDouble()).isEqualTo(twoTo64PlusOne.doubleValue());
+
+        assertThat(Document.of(new BigDecimal("1.9")).asInteger()).isEqualTo(1);
+        assertThat(Document.of(new BigDecimal("-1.9")).asLong()).isEqualTo(-1L);
+        assertThat(Document.of(new BigDecimal("-1.9")).asBigInteger()).isEqualTo(BigInteger.ONE.negate());
+        assertThat(Document.of(new BigDecimal("1e400")).asDouble()).isEqualTo(Double.POSITIVE_INFINITY);
+        assertThat(Document.of(new BigDecimal("1.00000000000000000001")).asDouble()).isEqualTo(1.0d);
+    }
+
+    static Stream<Arguments> coercionFailures() {
+        Document string = Document.of("12");
+        Document integer = Document.of(1);
+        return Stream.of(
+            Arguments.of((Runnable) string::asBoolean, "Expected a boolean document, but found string"),
+            Arguments.of((Runnable) string::asByte, "Expected a byte document, but found string"),
+            Arguments.of((Runnable) string::asShort, "Expected a short document, but found string"),
+            Arguments.of((Runnable) string::asInteger, "Expected an integer document, but found string"),
+            Arguments.of((Runnable) string::asLong, "Expected a long document, but found string"),
+            Arguments.of((Runnable) string::asFloat, "Expected a float document, but found string"),
+            Arguments.of((Runnable) Document.of("NaN")::asDouble, "Expected a double document, but found string"),
+            Arguments.of((Runnable) string::asBigInteger, "Expected a bigInteger document, but found string"),
+            Arguments.of((Runnable) Document.of("1.5")::asBigDecimal,
+                         "Expected a bigDecimal document, but found string"),
+            Arguments.of((Runnable) string::asNumber, "Expected a number document, but found string"),
+            Arguments.of((Runnable) integer::asString, "Expected a string document, but found integer"),
+            Arguments.of((Runnable) string::asBlob, "Expected a blob document, but found string"),
+            Arguments.of((Runnable) string::asTimestamp, "Expected a timestamp document, but found string"),
+            Arguments.of((Runnable) integer::asList, "Expected a list document, but found integer"),
+            Arguments.of((Runnable) Document.of(Collections.<Document>emptyList())::asMap,
+                         "Expected a map document, but found list"),
+            Arguments.of((Runnable) () -> integer.getMember("a"),
+                         "Expected a map, structure, or union document, but found integer"),
+            Arguments.of((Runnable) integer::getMemberNames,
+                         "Expected a map, structure, or union document, but found integer"),
+            Arguments.of((Runnable) Document.of(Instant.EPOCH)::asBoolean,
+                         "Expected a boolean document, but found timestamp"),
+            Arguments.of((Runnable) Document.of(new byte[0])::asString, "Expected a string document, but found blob"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("coercionFailures")
+    void coercion_toTypeTheDocumentDoesNotHold_throwsNamingRequestedAndActualTypes(Runnable call, String message) {
+        assertThatThrownBy(call::run)
+            .isInstanceOf(SerializationException.class)
+            .hasMessage(message);
+    }
+
+    @Test
+    void getDiscriminator_onUntypedDocument_isNullAndExpectDiscriminatorThrows() {
+        assertThat(Document.of("a").getDiscriminator()).isNull();
+        assertThat(Document.EMPTY_MAP.getDiscriminator()).isNull();
+        assertThatThrownBy(() -> Document.EMPTY_MAP.expectDiscriminator())
+            .isInstanceOf(DiscriminatorException.class)
+            .hasMessage("map document has no discriminator");
+    }
+
+    static Stream<Arguments> scalarContents() {
+        ByteBuffer bytes = ByteBuffer.wrap(new byte[] {1});
+        return Stream.of(
+            Arguments.of(Document.of(true), "writeBoolean", PreludeSchemas.BOOLEAN, true),
+            Arguments.of(Document.of((byte) 1), "writeByte", PreludeSchemas.BYTE, (byte) 1),
+            Arguments.of(Document.of((short) 1), "writeShort", PreludeSchemas.SHORT, (short) 1),
+            Arguments.of(Document.of(1), "writeInteger", PreludeSchemas.INTEGER, 1),
+            Arguments.of(Document.of(1L), "writeLong", PreludeSchemas.LONG, 1L),
+            Arguments.of(Document.of(1.5f), "writeFloat", PreludeSchemas.FLOAT, 1.5f),
+            Arguments.of(Document.of(1.5d), "writeDouble", PreludeSchemas.DOUBLE, 1.5d),
+            Arguments.of(Document.of(BigInteger.TEN), "writeBigInteger", PreludeSchemas.BIG_INTEGER, BigInteger.TEN),
+            Arguments.of(Document.of(BigDecimal.TEN), "writeBigDecimal", PreludeSchemas.BIG_DECIMAL, BigDecimal.TEN),
+            Arguments.of(Document.of("s"), "writeString", PreludeSchemas.STRING, "s"),
+            Arguments.of(Document.of(bytes), "writeBlob", PreludeSchemas.BLOB, bytes),
+            Arguments.of(Document.of(Instant.EPOCH), "writeTimestamp", PreludeSchemas.TIMESTAMP, Instant.EPOCH));
+    }
+
+    @ParameterizedTest
+    @MethodSource("scalarContents")
+    void serializeContents_scalarDocument_writesValueWithPreludeSchema(Document document, String method, Schema schema,
+                                                                       Object value) {
+        RecordingShapeSerializer serializer = new RecordingShapeSerializer();
+
+        document.serializeContents(serializer);
+
+        assertThat(serializer.calls()).hasSize(1);
+        assertThat(serializer.calls().get(0).method()).isEqualTo(method);
+        assertThat(serializer.calls().get(0).schema()).isSameAs(schema);
+        assertThat(serializer.calls().get(0).value()).isEqualTo(value);
+    }
+
+    @Test
+    void serializeContents_containerDocuments_writeDocumentListAndMapSchemas() {
+        RecordingShapeSerializer serializer = new RecordingShapeSerializer();
+
+        Document.of(Collections.singletonList(Document.of(1))).serializeContents(serializer);
+        Document.EMPTY_MAP.serializeContents(serializer);
+
+        assertThat(serializer.calls().get(0).method()).isEqualTo("writeList");
+        assertThat(serializer.calls().get(0).schema().listMember().memberTarget()).isSameAs(PreludeSchemas.DOCUMENT);
+        assertThat(serializer.calls().get(1).method()).isEqualTo("writeMap");
+        assertThat(serializer.calls().get(1).schema().mapKeyMember().memberTarget()).isSameAs(PreludeSchemas.STRING);
+        assertThat(serializer.calls().get(1).schema().mapValueMember().memberTarget())
+            .isSameAs(PreludeSchemas.DOCUMENT);
+    }
+
+    @Test
+    void serializeContents_defaultImplementation_writesValueOfType() {
+        Document number = new Document() {
+            @Override
+            public ShapeType type() {
+                return ShapeType.LONG;
+            }
+
+            @Override
+            public long asLong() {
+                return 7L;
+            }
+        };
+        Document list = new Document() {
+            @Override
+            public ShapeType type() {
+                return ShapeType.LIST;
+            }
+
+            @Override
+            public List<Document> asList() {
+                return Arrays.asList(number, null);
+            }
+        };
+        RecordingShapeSerializer serializer = new RecordingShapeSerializer();
+
+        number.serializeContents(serializer);
+
+        assertThat(serializer.calls().get(0).method()).isEqualTo("writeLong");
+        assertThat(serializer.calls().get(0).schema()).isSameAs(PreludeSchemas.LONG);
+        assertThat(serializer.calls().get(0).value()).isEqualTo(7L);
+        assertThat(Document.of(list)).isEqualTo(Document.of(Arrays.asList(Document.of(7L), null)));
+    }
+
+    @Test
+    void serializeContents_defaultImplementationOnStructure_throwsSerializationException() {
+        Document structure = new Document() {
+            @Override
+            public ShapeType type() {
+                return ShapeType.STRUCTURE;
+            }
+        };
+
+        assertThatThrownBy(() -> structure.serializeContents(new RecordingShapeSerializer()))
+            .isInstanceOf(SerializationException.class)
+            .hasMessage("A structure document must implement serializeContents");
+    }
+
+    @Test
+    void serialize_writesOneDocumentCall() {
+        Document document = Document.of(1);
+        RecordingShapeSerializer serializer = new RecordingShapeSerializer();
+
+        document.serialize(serializer);
+
+        assertThat(serializer.calls()).hasSize(1);
+        assertThat(serializer.calls().get(0).method()).isEqualTo("writeDocument");
+        assertThat(serializer.calls().get(0).schema()).isSameAs(PreludeSchemas.DOCUMENT);
+        assertThat(serializer.calls().get(0).value()).isSameAs(document);
     }
 
     @Test

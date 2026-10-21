@@ -29,32 +29,48 @@ import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableShape;
+import software.amazon.awssdk.schema.ShapeBuilder;
+import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.ShapeType;
 import software.amazon.awssdk.schema.serde.SerializationException;
+import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
+import software.amazon.awssdk.utils.Validate;
 
 /**
  * A Smithy document: untyped data from the Smithy data model.
  *
- * <p>This is the SDK port of the core of smithy-java {@code software.amazon.smithy.java.core.serde.document.Document}.
- * It covers the value types of the Smithy data model (booleans, the eight numeric types, strings, blobs, timestamps,
- * lists and string-keyed maps) and the operations on them: {@link #type()}, the {@code as<Type>} coercions,
- * {@link #getMember(String)}, {@link #getMemberNames()}, {@link #size()} and value equality through
- * {@link #equals(Object, Object)}.
+ * <p>This is the SDK port of smithy-java {@code software.amazon.smithy.java.core.serde.document.Document}. It covers
+ * the Smithy data model: booleans, the eight numeric types, strings, blobs, timestamps, lists, string-keyed maps, and
+ * structures and unions. A document reports its data model type with {@link #type()} and returns its value through
+ * the matching {@code as<Type>} method.
  *
+ * <h2>Serializing documents and their contents</h2>
  * <p>A document is a {@link SerializableShape}: {@link #serialize(ShapeSerializer)} always writes it as one
- * {@link ShapeSerializer#writeDocument} call. Schema-backed documents, structure documents, discriminators,
- * {@code Document.of(SerializableShape)}, {@code asShape} and {@code serializeContents} are added on top of this
- * interface by the full document port (design B.1). Those additions are default methods and new factories, so they do
- * not change the behavior of the methods defined here.
+ * {@link ShapeSerializer#writeDocument} call. A serializer that receives a document can read its value through the
+ * {@code as<Type>} methods, or have the document write its value with {@link #serializeContents(ShapeSerializer)}.
+ *
+ * <h2>Typed documents</h2>
+ * <p>{@link #of(SerializableShape)} creates a document from a modeled shape, such as an instance of a generated model
+ * class. A structure becomes a structure document whose members are keyed by Smithy member name, whose
+ * {@link #getDiscriminator() discriminator} is the structure's ShapeId, and which writes the original structure when
+ * its contents are serialized. {@link #asShape(ShapeBuilder)} converts a document back into a modeled shape. There is
+ * no {@code asStructure} or {@code asUnion}: structures and unions are read only through {@code asShape}.
  *
  * <h2>Null values</h2>
  * <p>A Smithy {@code null} is represented by a Java {@code null} where a document is expected, for example as a list
  * element or map value.
  *
- * <h2>Numeric coercion</h2>
+ * <h2>Coercion</h2>
  * <p>The numeric {@code as<Type>} methods accept any numeric document and convert its value with the Java widening
- * (JLS 5.1.2) and narrowing (JLS 5.1.3) primitive conversions, without throwing on overflow or loss of precision.
+ * (JLS 5.1.2) and narrowing (JLS 5.1.3) primitive conversions, without throwing on overflow or loss of precision. For
+ * example, {@code asInteger()} on a long document holding 4294967297 returns 1, and on a double document holding 1.9
+ * returns 1. The one numeric conversion that throws is {@code asBigDecimal()} on a NaN or infinite float or double.
+ *
+ * <p>{@link #asMap()} also accepts structure and union documents. Any other call for a type the document does not
+ * hold throws a {@link SerializationException} whose message names the requested type and the document's type, for
+ * example {@code "Expected a string document, but found integer"}. Codec documents (such as JSON documents, which
+ * hold blobs as base64 strings) may accept more conversions.
  *
  * <h2>Equality</h2>
  * <p>The implementations returned by the factories on this interface implement {@code equals} with
@@ -84,6 +100,62 @@ public interface Document extends SerializableShape {
     @Override
     default void serialize(ShapeSerializer serializer) {
         serializer.writeDocument(PreludeSchemas.DOCUMENT, this);
+    }
+
+    /**
+     * Writes the document's value as the Smithy data model, with the most specific schema the document has.
+     *
+     * <p>{@link #serialize(ShapeSerializer)} always writes a document with {@code writeDocument}; this method writes
+     * what the document holds. A string document calls {@code writeString}, a list document calls {@code writeList}
+     * and writes each element with {@link #serialize(ShapeSerializer)}, and a structure document calls
+     * {@code writeStruct}. Documents created from a modeled shape pass the schemas they were created with; other
+     * documents pass the {@link PreludeSchemas} schema of their type, or a document list or map schema.
+     *
+     * <p>Implementations must not write the value itself with {@code writeDocument}, because a serializer that calls
+     * this method from its {@code writeDocument} would recurse forever.
+     *
+     * <p>The default implementation writes the value returned by the {@code as<Type>} method that matches
+     * {@link #type()}, with the {@link PreludeSchemas} schema of that type; lists and maps are written as an untyped
+     * list or map document holding {@link #asList()} or {@link #asMap()}. Documents that hold a structure or union
+     * must override it.
+     *
+     * @param serializer where to write the document's value
+     * @throws SerializationException in the default implementation, if the document holds a structure, a union, or
+     *     another type that has no data model value
+     */
+    default void serializeContents(ShapeSerializer serializer) {
+        Documents.serializeContentsByType(this, serializer);
+    }
+
+    /**
+     * Returns the ShapeId of the shape the document holds, if the document has one.
+     *
+     * <p>A structure document created from a modeled structure with {@link #of(SerializableShape)} returns that
+     * structure's ShapeId. Codec documents return the discriminator they read from the data, such as JSON's
+     * {@code __type} member. Other documents return null.
+     *
+     * <p>This is smithy-java's {@code discriminator()}, named {@code getDiscriminator()} as in the Document SEP.
+     *
+     * @return the discriminator, or null if the document has none
+     * @throws DiscriminatorException if the document holds a discriminator that is not a valid ShapeId
+     */
+    default ShapeId getDiscriminator() {
+        return null;
+    }
+
+    /**
+     * Returns the document's discriminator, which must be present.
+     *
+     * @return the discriminator
+     * @throws DiscriminatorException if the document has no discriminator, or holds one that is not a valid ShapeId
+     * @see #getDiscriminator()
+     */
+    default ShapeId expectDiscriminator() {
+        ShapeId result = getDiscriminator();
+        if (result == null) {
+            throw new DiscriminatorException(type() + " document has no discriminator");
+        }
+        return result;
     }
 
     /**
@@ -269,13 +341,16 @@ public interface Document extends SerializableShape {
     }
 
     /**
-     * Returns the entries of a map document as an unmodifiable map, in the order the entries were added. Values may be
+     * Returns the entries of a map document, or the members of a structure or union document, as an unmodifiable map.
+     *
+     * <p>Entries are in the order they were added or read. A structure or union document is keyed by Smithy member
+     * name (not {@code jsonName} or {@code xmlName}) and holds only the members that have a value. Map values may be
      * null.
      *
      * <p>This is smithy-java's {@code asStringMap()}, named {@code asMap()} as in the Document SEP.
      *
      * @return the map entries
-     * @throws SerializationException if the document is not a map
+     * @throws SerializationException if the document is not a map, structure, or union
      */
     default Map<String, Document> asMap() {
         throw Documents.typeMismatch("map", this);
@@ -344,24 +419,64 @@ public interface Document extends SerializableShape {
     }
 
     /**
-     * Returns a map member by name.
+     * Returns a map entry, or a structure or union member, by name.
      *
-     * @param memberName the member name, which for a map document is the entry key
+     * @param memberName the entry key, or the Smithy member name
      * @return the member, or null if the document has no such member or the member's value is null
-     * @throws SerializationException if the document is not a map
+     * @throws SerializationException if the document is not a map, structure, or union
      */
     default Document getMember(String memberName) {
         throw Documents.typeMismatch("map, structure, or union", this);
     }
 
     /**
-     * Returns the member names of a map document as an unmodifiable set, in the order the entries were added.
+     * Returns the entry keys of a map document, or the names of the members a structure or union document holds, as
+     * an unmodifiable set in the same order as {@link #asMap()}.
      *
      * @return the member names
-     * @throws SerializationException if the document is not a map
+     * @throws SerializationException if the document is not a map, structure, or union
      */
     default Set<String> getMemberNames() {
         throw Documents.typeMismatch("map, structure, or union", this);
+    }
+
+    /**
+     * Creates a deserializer that reads the document.
+     *
+     * @return the deserializer
+     */
+    default ShapeDeserializer createDeserializer() {
+        return new DocumentDeserializer(this);
+    }
+
+    /**
+     * Populates a shape builder from the document, through the builder's
+     * {@link ShapeBuilder#deserialize(ShapeDeserializer)} method.
+     *
+     * @param builder the builder to populate
+     * @param <T> the shape type
+     * @throws SerializationException if the document does not hold data of the builder's shape type
+     */
+    default <T extends SerializableShape> void deserializeInto(ShapeBuilder<T> builder) {
+        builder.deserialize(createDeserializer());
+    }
+
+    /**
+     * Converts the document into a modeled shape: populates the builder with {@link #deserializeInto(ShapeBuilder)},
+     * applies {@link ShapeBuilder#errorCorrection()}, and builds the shape.
+     *
+     * <p>A structure is read from the document's members by Smithy member name. Members the shape does not have are
+     * ignored.
+     *
+     * @param builder the builder of the shape to create
+     * @param <T> the shape type
+     * @return the built shape
+     * @throws SerializationException if the document does not hold data of the builder's shape type, for example a
+     *     string document with a structure builder
+     */
+    default <T extends SerializableShape> T asShape(ShapeBuilder<T> builder) {
+        deserializeInto(builder);
+        return builder.errorCorrection().build();
     }
 
     /**
@@ -381,7 +496,7 @@ public interface Document extends SerializableShape {
      * @return the document
      */
     static Document of(byte value) {
-        return new Documents.IntegralDocument(ShapeType.BYTE, value);
+        return new Documents.IntegralDocument(ShapeType.BYTE, null, value);
     }
 
     /**
@@ -391,7 +506,7 @@ public interface Document extends SerializableShape {
      * @return the document
      */
     static Document of(short value) {
-        return new Documents.IntegralDocument(ShapeType.SHORT, value);
+        return new Documents.IntegralDocument(ShapeType.SHORT, null, value);
     }
 
     /**
@@ -401,7 +516,7 @@ public interface Document extends SerializableShape {
      * @return the document
      */
     static Document of(int value) {
-        return new Documents.IntegralDocument(ShapeType.INTEGER, value);
+        return new Documents.IntegralDocument(ShapeType.INTEGER, null, value);
     }
 
     /**
@@ -411,7 +526,7 @@ public interface Document extends SerializableShape {
      * @return the document
      */
     static Document of(long value) {
-        return new Documents.IntegralDocument(ShapeType.LONG, value);
+        return new Documents.IntegralDocument(ShapeType.LONG, null, value);
     }
 
     /**
@@ -421,7 +536,7 @@ public interface Document extends SerializableShape {
      * @return the document
      */
     static Document of(float value) {
-        return new Documents.FloatingPointDocument(ShapeType.FLOAT, value);
+        return new Documents.FloatingPointDocument(ShapeType.FLOAT, null, value);
     }
 
     /**
@@ -431,7 +546,7 @@ public interface Document extends SerializableShape {
      * @return the document
      */
     static Document of(double value) {
-        return new Documents.FloatingPointDocument(ShapeType.DOUBLE, value);
+        return new Documents.FloatingPointDocument(ShapeType.DOUBLE, null, value);
     }
 
     /**
@@ -442,7 +557,7 @@ public interface Document extends SerializableShape {
      * @throws NullPointerException if {@code value} is null
      */
     static Document of(BigInteger value) {
-        return new Documents.BigIntegerDocument(value);
+        return new Documents.BigIntegerDocument(null, value);
     }
 
     /**
@@ -453,7 +568,7 @@ public interface Document extends SerializableShape {
      * @throws NullPointerException if {@code value} is null
      */
     static Document of(BigDecimal value) {
-        return new Documents.BigDecimalDocument(value);
+        return new Documents.BigDecimalDocument(null, value);
     }
 
     /**
@@ -464,7 +579,7 @@ public interface Document extends SerializableShape {
      * @throws NullPointerException if {@code value} is null
      */
     static Document of(String value) {
-        return new Documents.StringDocument(value);
+        return new Documents.StringDocument(null, value);
     }
 
     /**
@@ -475,7 +590,7 @@ public interface Document extends SerializableShape {
      * @throws NullPointerException if {@code value} is null
      */
     static Document of(ByteBuffer value) {
-        return new Documents.BlobDocument(value);
+        return new Documents.BlobDocument(null, value);
     }
 
     /**
@@ -497,7 +612,7 @@ public interface Document extends SerializableShape {
      * @throws NullPointerException if {@code value} is null
      */
     static Document of(Instant value) {
-        return new Documents.TimestampDocument(value);
+        return new Documents.TimestampDocument(null, value);
     }
 
     /**
@@ -508,7 +623,7 @@ public interface Document extends SerializableShape {
      * @throws NullPointerException if {@code values} is null
      */
     static Document of(List<Document> values) {
-        return new Documents.ListDocument(values);
+        return new Documents.ListDocument(null, values);
     }
 
     /**
@@ -520,7 +635,35 @@ public interface Document extends SerializableShape {
      * @throws NullPointerException if {@code members} is null
      */
     static Document of(Map<String, Document> members) {
-        return new Documents.StringMapDocument(members);
+        return new Documents.StringMapDocument(null, members);
+    }
+
+    /**
+     * Creates a document from a modeled shape, such as an instance of a generated model class.
+     *
+     * <p>The shape is written to a {@link DocumentParser}, which calls only the shape's
+     * {@link SerializableShape#serialize(ShapeSerializer)} method (and, for a structure, its {@code serializeMembers}
+     * method). The document's {@link #type()} is the data model type of the shape. A structure becomes a structure
+     * document:
+     * <ul>
+     *     <li>{@link #getDiscriminator()} returns the structure's ShapeId;</li>
+     *     <li>{@link #asMap()}, {@link #getMember(String)} and {@link #getMemberNames()} hold the members that have a
+     *     value, keyed by Smithy member name, in the order the structure writes them. The members are read from the
+     *     structure when they are first needed, so the structure must not change after the document is created;</li>
+     *     <li>{@link #serializeContents(ShapeSerializer)} writes the structure itself, so a codec serializes the
+     *     document exactly as it would serialize the structure.</li>
+     * </ul>
+     * A union is read at once into a {@link ShapeType#STRUCTURE} document that has no discriminator. A document
+     * passed to this method is copied from its contents.
+     *
+     * @param shape the shape
+     * @return the document, or null if the shape writes a null value
+     * @throws NullPointerException if {@code shape} is null
+     */
+    static Document of(SerializableShape shape) {
+        DocumentParser parser = new DocumentParser();
+        Validate.paramNotNull(shape, "shape").serialize(parser);
+        return parser.getResult();
     }
 
     /**
@@ -538,8 +681,9 @@ public interface Document extends SerializableShape {
      * Returns whether two documents are equal, using the given {@link DocumentEqualsFlags}.
      *
      * <p>Without flags, documents are equal when both are null, or both are documents of the same type with equal
-     * values. With {@link DocumentEqualsFlags#NUMBER_PROMOTION}, numeric documents of different numeric types are
-     * equal when their values are equal after JLS 5.1.2 widening.
+     * values. Structure documents are compared by their members; schemas and discriminators are not compared. With
+     * {@link DocumentEqualsFlags#NUMBER_PROMOTION}, numeric documents of different numeric types are equal when their
+     * values are equal after JLS 5.1.2 widening, at every nesting depth.
      *
      * @param left the left value
      * @param right the right value
