@@ -20,14 +20,20 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.SdkResponse;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.document.Document;
+import software.amazon.awssdk.core.schema.internal.AsyncRequestBodyDataStream;
 import software.amazon.awssdk.core.schema.internal.LegacyDocumentAdapter;
+import software.amazon.awssdk.core.schema.internal.RequestBodyDataStream;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
+import software.amazon.awssdk.schema.io.DataStream;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.utils.BinaryUtils;
 import software.amazon.awssdk.utils.Validate;
@@ -147,5 +153,59 @@ public final class SchemaSerdeSupport {
         }
         ((SdkResponse.Builder) builder).sdkHttpResponse(httpResponse);
         return builder.build();
+    }
+
+    /**
+     * Adapts a synchronous request body to the {@link DataStream} of a streaming blob, without reading or buffering it.
+     * The stream has the body's content length (negative when the body has none) and content type, and
+     * {@link #requestBody(DataStream)} returns the same body back, so the request pipeline sends the body itself. A
+     * subscriber to the stream reads a new stream of the body's provider, with blocking reads, in chunks.
+     *
+     * @param body the request body
+     * @return the data stream
+     * @throws NullPointerException if {@code body} is null
+     */
+    public static DataStream dataStream(RequestBody body) {
+        return new RequestBodyDataStream(body);
+    }
+
+    /**
+     * Adapts an asynchronous request body to the {@link DataStream} of a streaming blob, without subscribing to it. The
+     * stream has the body's content length (negative when the body has none) and content type, publishes the body's
+     * bytes, and {@link #asyncRequestBody(DataStream)} returns the same body back.
+     *
+     * @param body the request body
+     * @return the data stream
+     * @throws NullPointerException if {@code body} is null
+     */
+    public static DataStream dataStream(AsyncRequestBody body) {
+        return new AsyncRequestBodyDataStream(body);
+    }
+
+    /**
+     * Returns the synchronous request body a data stream was created from with {@link #dataStream(RequestBody)}.
+     *
+     * @param dataStream the data stream
+     * @return the request body, or empty if the stream was not created from a synchronous request body
+     * @throws NullPointerException if {@code dataStream} is null
+     */
+    public static Optional<RequestBody> requestBody(DataStream dataStream) {
+        Validate.paramNotNull(dataStream, "dataStream");
+        return dataStream instanceof RequestBodyDataStream ? Optional.of(((RequestBodyDataStream) dataStream).body())
+                                                           : Optional.empty();
+    }
+
+    /**
+     * Returns the asynchronous request body a data stream was created from with {@link #dataStream(AsyncRequestBody)}.
+     *
+     * @param dataStream the data stream
+     * @return the request body, or empty if the stream was not created from an asynchronous request body
+     * @throws NullPointerException if {@code dataStream} is null
+     */
+    public static Optional<AsyncRequestBody> asyncRequestBody(DataStream dataStream) {
+        Validate.paramNotNull(dataStream, "dataStream");
+        return dataStream instanceof AsyncRequestBodyDataStream
+               ? Optional.of(((AsyncRequestBodyDataStream) dataStream).body())
+               : Optional.empty();
     }
 }
