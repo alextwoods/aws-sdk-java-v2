@@ -631,9 +631,9 @@ The Runtime_Schema_Module, the codecs, `http-binding` and the client protocol mo
 | `rest-json-client-protocol` | Client protocol | added | 0 | 11,853 | +11,853 |
 | `rest-xml-client-protocol` | Client protocol | added | 0 | 16,885 | +16,885 |
 | `rpcv2-cbor-client-protocol` | Client protocol | added | 0 | 16,096 | +16,096 |
-| `schema` | Runtime_Schema_Module | added | 0 | 245,268 | +245,268 |
+| `schema` | Runtime_Schema_Module | added | 0 | 249,379 | +249,379 |
 | `xml-codec` | Codec | added | 0 | 123,039 | +123,039 |
-| **Total** | | | 0 | 906,529 | **+906,529** |
+| **Total** | | | 0 | 910,640 | **+910,640** |
 
 ### Other runtime modules
 
@@ -644,13 +644,13 @@ The Runtime_Schema_Module, the codecs, `http-binding` and the client protocol mo
 | `aws-query-protocol` | no longer a dependency | 70,003 | 0 | -70,003 |
 | `aws-xml-protocol` | no longer a dependency | 103,308 | 0 | -103,308 |
 | `http-client-spi` | changed | 92,779 | 93,237 | +458 |
-| `sdk-core` | changed | 1,066,732 | 1,262,848 | +196,116 |
+| `sdk-core` | changed | 1,066,732 | 1,270,572 | +203,840 |
 | `smithy-rpcv2-protocol` | no longer a dependency | 25,232 | 0 | -25,232 |
 | `third-party-jackson-dataformat-cbor` | no longer a dependency | 73,938 | 0 | -73,938 |
 
 Unchanged (same content in both builds): `annotations`, `auth`, `aws-json-protocol`, `checksums`, `checksums-spi`, `endpoints-spi`, `http-auth`, `http-auth-aws`, `http-auth-aws-eventstream`, `http-auth-spi`, `identity-spi`, `json-utils`, `metrics-spi`, `netty-nio-client`, `profiles`, `protocol-core`, `regions`, `retries`, `retries-spi`, `third-party-jackson-core`, `utils`, `utils-lite`.
 
-All runtime modules together: 4,857,218 → 5,691,395, a change of +834,177 (+17.2%).
+All runtime modules together: 4,857,218 → 5,703,230, a change of +846,012 (+17.4%).
 
 ## Libraries (Requirement 38.2)
 
