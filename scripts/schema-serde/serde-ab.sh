@@ -283,6 +283,8 @@ build_jmh() {  # <label> <ref> <sha> -> builds $JARDIR/<label>.jar and its prove
         echo "build_host=$(hostname), $(uname -sm)"
         echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "build_log=$log"
+        echo "sdk_pin=none"
+        echo "sdk_pin_result=none"
     } > "$props"
 }
 
