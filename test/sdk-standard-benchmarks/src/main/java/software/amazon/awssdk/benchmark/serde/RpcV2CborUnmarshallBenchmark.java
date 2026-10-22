@@ -16,7 +16,6 @@
 package software.amazon.awssdk.benchmark.serde;
 
 import java.io.ByteArrayInputStream;
-import java.lang.reflect.Method;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -33,15 +32,21 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
-import software.amazon.awssdk.core.SdkPojo;
-import software.amazon.awssdk.core.SdkResponse;
+import software.amazon.awssdk.core.client.protocol.ClientProtocol;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.http.AbortableInputStream;
+import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
-import software.amazon.awssdk.protocols.json.internal.unmarshall.JsonProtocolUnmarshaller;
-import software.amazon.awssdk.protocols.rpcv2.SmithyRpcV2CborProtocolFactory;
+import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.SerializableStruct;
 
 /**
  * JMH benchmark for RPC v2 CBOR unmarshalling (deserialization).
+ *
+ * <p>
+ * Measures the schema-based path: {@code RpcV2CborProtocol.deserializeResponse} into the generated output.
+ * The protocol and the operation are resolved once per trial, as the generated client resolves them once.
+ * </p>
  *
  * <p>
  * SampleTime mode is used (instead of AverageTime) to enable percentile
@@ -70,10 +75,11 @@ public class RpcV2CborUnmarshallBenchmark {
     })
     private String testCaseId;
 
-    private JsonProtocolUnmarshaller unmarshaller;
     private byte[] responseBytes;
     private int statusCode;
-    private SdkResponse emptyResponse;
+    private ClientProtocol<SdkHttpFullRequest, SdkHttpFullResponse> protocol;
+    private ApiOperation<?, ?> operation;
+    private ExecutionAttributes attributes;
 
     @Setup(Level.Trial)
     public void setup() throws Exception {
@@ -89,29 +95,23 @@ public class RpcV2CborUnmarshallBenchmark {
         this.responseBytes = Base64.getDecoder().decode(testCase.getResponseBody().trim());
         this.statusCode = testCase.getStatusCode() != null ? testCase.getStatusCode() : 200;
 
-        // 3. Pre-construct unmarshaller
-        this.unmarshaller = JsonProtocolUnmarshaller.builder()
-                .enableFastUnmarshalling(true)
-                .protocolUnmarshallDependencies(
-                        SmithyRpcV2CborProtocolFactory.defaultProtocolUnmarshallDependencies())
-                .build();
-
-        // 4. Resolve response builder via reflection at setup time
-        String fqcn = "software.amazon.awssdk.services.rpccbordataplane.model."
-                + testCase.getOperationName() + "Response";
-        Class<?> responseClass = Class.forName(fqcn);
-        Method builderMethod = responseClass.getMethod("builder");
-        SdkResponse.Builder builder = (SdkResponse.Builder) builderMethod.invoke(null);
-        this.emptyResponse = builder.build();
+        // 3. Resolve the client protocol and the operation (same as the generated client)
+        this.protocol = SerdeBenchmarkProtocols.RPC_V2_CBOR.createProtocol();
+        this.operation = SerdeBenchmarkProtocols.RPC_V2_CBOR.operation(testCase.getOperationName());
+        this.attributes = new ExecutionAttributes();
     }
 
     @Benchmark
     public void unmarshall(Blackhole bh) throws Exception {
+        bh.consume(unmarshallOnce());
+    }
+
+    SerializableStruct unmarshallOnce() {
         SdkHttpFullResponse response = SdkHttpFullResponse.builder()
                 .statusCode(statusCode)
                 .putHeader("Content-Type", CONTENT_TYPE)
                 .content(AbortableInputStream.create(new ByteArrayInputStream(responseBytes)))
                 .build();
-        bh.consume(unmarshaller.unmarshall((SdkPojo) emptyResponse.toBuilder(), response));
+        return SerdeBenchmarkProtocols.deserialize(protocol, operation, attributes, response);
     }
 }

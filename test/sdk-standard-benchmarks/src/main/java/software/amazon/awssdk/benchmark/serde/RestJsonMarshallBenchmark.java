@@ -32,18 +32,21 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
-import software.amazon.awssdk.core.SdkPojo;
-import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
-import software.amazon.awssdk.core.client.config.SdkClientOption;
+import software.amazon.awssdk.core.client.protocol.ClientProtocol;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
+import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.protocol.reflect.ShapeModelReflector;
-import software.amazon.awssdk.protocols.core.OperationInfo;
-import software.amazon.awssdk.protocols.core.ProtocolMarshaller;
-import software.amazon.awssdk.protocols.json.AwsJsonProtocol;
-import software.amazon.awssdk.protocols.json.AwsJsonProtocolFactory;
+import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.SerializableStruct;
 
 /**
  * JMH benchmark for REST JSON marshalling (serialization).
+ *
+ * <p>
+ * Measures the schema-based path: {@code RestJsonClientProtocol.serializeRequest} over the generated input
+ * schema. The protocol and the operation are resolved once per trial, as the generated client resolves them once.
+ * </p>
  *
  * <p>
  * SampleTime mode is used (instead of AverageTime) to enable percentile
@@ -58,6 +61,7 @@ import software.amazon.awssdk.protocols.json.AwsJsonProtocolFactory;
 @Fork(3)
 public class RestJsonMarshallBenchmark {
 
+    private static final URI ENDPOINT = URI.create("http://localhost");
     private static final String INTERMEDIATE_MODEL_PATH = "models/awsrestjsondataplane-1999-12-31-intermediate.json";
     private static final String TEST_DATA_PATH = "serde-tests/rest-json/input/rest_json.json";
 
@@ -70,9 +74,10 @@ public class RestJsonMarshallBenchmark {
     })
     private String testCaseId;
 
-    private SdkPojo request;
-    private OperationInfo operationInfo;
-    private AwsJsonProtocolFactory protocolFactory;
+    private SerializableStruct request;
+    private ClientProtocol<SdkHttpFullRequest, SdkHttpFullResponse> protocol;
+    private ApiOperation<?, ?> operation;
+    private ExecutionAttributes attributes;
 
     @Setup(Level.Trial)
     public void setup() throws Exception {
@@ -90,25 +95,20 @@ public class RestJsonMarshallBenchmark {
         // 3. Build SDK request via ShapeModelReflector
         String inputShapeName = testCase.getOperationName() + "Request";
         ShapeModelReflector reflector = new ShapeModelReflector(model, inputShapeName, testCase.getInputData());
-        this.request = (SdkPojo) reflector.createShapeObject();
+        this.request = (SerializableStruct) reflector.createShapeObject();
 
-        // 4. Pre-build marshaller config using the protocol factory (same as generated
-        // code)
-        this.operationInfo = BenchmarkTestCaseLoader.buildOperationInfo(model, testCase);
-        this.protocolFactory = AwsJsonProtocolFactory.builder()
-                .clientConfiguration(SdkClientConfiguration.builder()
-                        .option(SdkClientOption.ENDPOINT, URI.create("http://localhost"))
-                        .build())
-                .defaultServiceExceptionSupplier(null)
-                .protocol(AwsJsonProtocol.REST_JSON)
-                .protocolVersion("1.1")
-                .build();
+        // 4. Resolve the client protocol and the operation (same as the generated client)
+        this.protocol = SerdeBenchmarkProtocols.REST_JSON.createProtocol();
+        this.operation = SerdeBenchmarkProtocols.REST_JSON.operation(testCase.getOperationName());
+        this.attributes = new ExecutionAttributes();
     }
 
     @Benchmark
     public void marshall(Blackhole bh) {
-        ProtocolMarshaller<SdkHttpFullRequest> marshaller = protocolFactory
-                .createProtocolMarshaller(operationInfo);
-        bh.consume(marshaller.marshall(request));
+        bh.consume(marshallOnce());
+    }
+
+    SdkHttpFullRequest marshallOnce() {
+        return SerdeBenchmarkProtocols.serialize(protocol, operation, request, attributes, ENDPOINT);
     }
 }

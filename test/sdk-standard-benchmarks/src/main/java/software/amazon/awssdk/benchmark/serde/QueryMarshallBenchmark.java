@@ -32,15 +32,21 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
-import software.amazon.awssdk.core.SdkPojo;
+import software.amazon.awssdk.core.client.protocol.ClientProtocol;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
+import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.protocol.reflect.ShapeModelReflector;
-import software.amazon.awssdk.protocols.core.OperationInfo;
-import software.amazon.awssdk.protocols.core.ProtocolMarshaller;
-import software.amazon.awssdk.protocols.query.internal.marshall.QueryProtocolMarshaller;
+import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.SerializableStruct;
 
 /**
  * JMH benchmark for AWS Query marshalling (serialization).
+ *
+ * <p>
+ * Measures the schema-based path: {@code AwsQueryClientProtocol.serializeRequest} over the generated input schema.
+ * The protocol and the operation are resolved once per trial, as the generated client resolves them once.
+ * </p>
  *
  * <p>
  * SampleTime mode is used (instead of AverageTime) to enable percentile
@@ -70,8 +76,10 @@ public class QueryMarshallBenchmark {
     })
     private String testCaseId;
 
-    private SdkPojo request;
-    private OperationInfo operationInfo;
+    private SerializableStruct request;
+    private ClientProtocol<SdkHttpFullRequest, SdkHttpFullResponse> protocol;
+    private ApiOperation<?, ?> operation;
+    private ExecutionAttributes attributes;
 
     @Setup(Level.Trial)
     public void setup() throws Exception {
@@ -89,18 +97,20 @@ public class QueryMarshallBenchmark {
         // 3. Build SDK request via ShapeModelReflector
         String inputShapeName = testCase.getOperationName() + "Request";
         ShapeModelReflector reflector = new ShapeModelReflector(model, inputShapeName, testCase.getInputData());
-        this.request = (SdkPojo) reflector.createShapeObject();
+        this.request = (SerializableStruct) reflector.createShapeObject();
 
-        // 4. Pre-build marshaller config
-        this.operationInfo = BenchmarkTestCaseLoader.buildOperationInfo(model, testCase);
+        // 4. Resolve the client protocol and the operation (same as the generated client)
+        this.protocol = SerdeBenchmarkProtocols.QUERY.createProtocol();
+        this.operation = SerdeBenchmarkProtocols.QUERY.operation(testCase.getOperationName());
+        this.attributes = new ExecutionAttributes();
     }
 
     @Benchmark
     public void marshall(Blackhole bh) {
-        ProtocolMarshaller<SdkHttpFullRequest> marshaller = QueryProtocolMarshaller.builder()
-                .endpoint(ENDPOINT)
-                .operationInfo(operationInfo)
-                .build();
-        bh.consume(marshaller.marshall(request));
+        bh.consume(marshallOnce());
+    }
+
+    SdkHttpFullRequest marshallOnce() {
+        return SerdeBenchmarkProtocols.serialize(protocol, operation, request, attributes, ENDPOINT);
     }
 }

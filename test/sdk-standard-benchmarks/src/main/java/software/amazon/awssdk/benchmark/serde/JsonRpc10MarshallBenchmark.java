@@ -32,18 +32,21 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 import software.amazon.awssdk.codegen.model.intermediate.IntermediateModel;
-import software.amazon.awssdk.core.SdkPojo;
+import software.amazon.awssdk.core.client.protocol.ClientProtocol;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
+import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.protocol.reflect.ShapeModelReflector;
-import software.amazon.awssdk.protocols.core.OperationInfo;
-import software.amazon.awssdk.protocols.core.ProtocolMarshaller;
-import software.amazon.awssdk.protocols.json.AwsJsonProtocol;
-import software.amazon.awssdk.protocols.json.AwsJsonProtocolMetadata;
-import software.amazon.awssdk.protocols.json.internal.AwsStructuredPlainJsonFactory;
-import software.amazon.awssdk.protocols.json.internal.marshall.JsonProtocolMarshallerBuilder;
+import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.SerializableStruct;
 
 /**
  * JMH benchmark for JSON RPC 1.0 marshalling (serialization).
+ *
+ * <p>
+ * Measures the schema-based path: {@code AwsJson1Protocol.serializeRequest} over the generated input schema.
+ * The protocol and the operation are resolved once per trial, as the generated client resolves them once.
+ * </p>
  *
  * <p>
  * SampleTime mode is used (instead of AverageTime) to enable percentile
@@ -59,7 +62,6 @@ import software.amazon.awssdk.protocols.json.internal.marshall.JsonProtocolMarsh
 public class JsonRpc10MarshallBenchmark {
 
     private static final URI ENDPOINT = URI.create("http://localhost/");
-    private static final String CONTENT_TYPE = "application/x-amz-json-1.0";
     private static final String INTERMEDIATE_MODEL_PATH = "models/awsjsonrpc10dataplane-1999-12-31-intermediate.json";
     private static final String TEST_DATA_PATH = "serde-tests/json-rpc-1-0/input/json_1_0.json";
 
@@ -81,9 +83,10 @@ public class JsonRpc10MarshallBenchmark {
     })
     private String testCaseId;
 
-    private SdkPojo request;
-    private OperationInfo operationInfo;
-    private AwsJsonProtocolMetadata protocolMetadata;
+    private SerializableStruct request;
+    private ClientProtocol<SdkHttpFullRequest, SdkHttpFullResponse> protocol;
+    private ApiOperation<?, ?> operation;
+    private ExecutionAttributes attributes;
 
     @Setup(Level.Trial)
     public void setup() throws Exception {
@@ -101,27 +104,20 @@ public class JsonRpc10MarshallBenchmark {
         // 3. Build SDK request via ShapeModelReflector
         String inputShapeName = testCase.getOperationName() + "Request";
         ShapeModelReflector reflector = new ShapeModelReflector(model, inputShapeName, testCase.getInputData());
-        this.request = (SdkPojo) reflector.createShapeObject();
+        this.request = (SerializableStruct) reflector.createShapeObject();
 
-        // 4. Pre-build marshaller config
-        this.operationInfo = BenchmarkTestCaseLoader.buildOperationInfo(model, testCase);
-        this.protocolMetadata = AwsJsonProtocolMetadata.builder()
-                .protocol(AwsJsonProtocol.AWS_JSON)
-                .contentType(CONTENT_TYPE)
-                .build();
+        // 4. Resolve the client protocol and the operation (same as the generated client)
+        this.protocol = SerdeBenchmarkProtocols.JSON_RPC_10.createProtocol();
+        this.operation = SerdeBenchmarkProtocols.JSON_RPC_10.operation(testCase.getOperationName());
+        this.attributes = new ExecutionAttributes();
     }
 
     @Benchmark
     public void marshall(Blackhole bh) {
-        ProtocolMarshaller<SdkHttpFullRequest> marshaller = JsonProtocolMarshallerBuilder.create()
-                .endpoint(ENDPOINT)
-                .jsonGenerator(AwsStructuredPlainJsonFactory.SDK_JSON_FACTORY
-                        .createWriter(CONTENT_TYPE))
-                .contentType(CONTENT_TYPE)
-                .operationInfo(operationInfo)
-                .sendExplicitNullForPayload(false)
-                .protocolMetadata(protocolMetadata)
-                .build();
-        bh.consume(marshaller.marshall(request));
+        bh.consume(marshallOnce());
+    }
+
+    SdkHttpFullRequest marshallOnce() {
+        return SerdeBenchmarkProtocols.serialize(protocol, operation, request, attributes, ENDPOINT);
     }
 }
