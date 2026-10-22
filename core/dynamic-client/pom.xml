@@ -259,6 +259,51 @@
                     </archive>
                 </configuration>
             </plugin>
+            <!--
+              Copies the Smithy protocol test model JARs, and the trait and shape definitions they use, for
+              DynamicClientBehaviorTest, which imports them by path (ProtocolTestModels). They are not test
+              dependencies: on the test class path, Smithy's model discovery would add their services to every model
+              the other tests assemble.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-protocol-test-models</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/protocol-test-models</outputDirectory>
+                            <stripVersion>true</stripVersion>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-aws-protocol-tests</artifactId>
+                                    <version>${smithy.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-protocol-tests</artifactId>
+                                    <version>${smithy.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-protocol-test-traits</artifactId>
+                                    <version>${smithy.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>software.amazon.smithy</groupId>
+                                    <artifactId>smithy-validation-model</artifactId>
+                                    <version>${smithy.version}</version>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

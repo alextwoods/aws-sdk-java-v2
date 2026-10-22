@@ -18,6 +18,7 @@ package software.amazon.awssdk.dynamicclient;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import software.amazon.awssdk.utils.Lazy;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.shapes.ShapeId;
 
@@ -41,6 +42,8 @@ final class DynamicTestModels {
     private static final Model PIPELINE_FEATURES_MODEL = assemble("pipeline-features.smithy");
     private static final Model STREAMING_MODEL = assemble("streaming.smithy");
     private static final Model STREAMING_JSON10_MODEL = assemble("streaming-json10.smithy");
+    private static final Lazy<Model> ACCOUNT_MODEL = new Lazy<>(
+        () -> Model.assembler().discoverModels(Model.class.getClassLoader()).addImport(accountModel()).assemble().unwrap());
 
     private DynamicTestModels() {
     }
@@ -134,6 +137,13 @@ final class DynamicTestModels {
      */
     static Path accountModel() {
         return Paths.get("..", "..", "services", "account", "model", "model.json");
+    }
+
+    /**
+     * The Account prototype model assembled from {@link #accountModel()}, once.
+     */
+    static Model accountPrototype() {
+        return ACCOUNT_MODEL.getValue();
     }
 
     private static Model assemble(String file) {

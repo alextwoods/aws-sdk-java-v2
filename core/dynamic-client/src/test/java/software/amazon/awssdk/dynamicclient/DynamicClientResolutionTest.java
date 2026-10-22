@@ -18,7 +18,6 @@ package software.amazon.awssdk.dynamicclient;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.lang.reflect.Field;
 import java.net.URL;
 import java.util.Collections;
 import java.util.List;
@@ -35,7 +34,6 @@ import software.amazon.awssdk.core.client.protocol.AsyncResponseHandoff;
 import software.amazon.awssdk.core.client.protocol.ClientTransport;
 import software.amazon.awssdk.core.client.protocol.MessageExchange;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
-import software.amazon.awssdk.dynamicclient.internal.DynamicServiceClientConfigurationBuilder;
 import software.amazon.awssdk.dynamicclient.internal.ModelAuthSchemeResolver;
 import software.amazon.awssdk.dynamicclient.internal.RulesEndpointProvider;
 import software.amazon.awssdk.http.auth.spi.scheme.AuthScheme;
@@ -101,7 +99,7 @@ class DynamicClientResolutionTest {
     @Test
     void build_transportOfAnotherMessageExchange_failsNamingTheProtocolAndTheTransport() {
         SdkPlugin otherTransport = config -> {
-            SdkClientConfiguration.Builder options = options(config);
+            SdkClientConfiguration.Builder options = CallTestClients.clientOptions(config);
             options.option(SdkClientOption.CLIENT_TRANSPORT, new OtherSyncTransport());
             options.option(SdkClientOption.ASYNC_CLIENT_TRANSPORT, new OtherAsyncTransport());
         };
@@ -117,7 +115,7 @@ class DynamicClientResolutionTest {
     @Test
     void build_withoutAConfiguredEndpointProvider_evaluatesTheEndpointRulesOfTheModel() {
         try (DynamicClient weather = builder().build();
-             DynamicClient account = builder().model(accountModel()).build()) {
+             DynamicClient account = builder().model(DynamicTestModels.accountPrototype()).build()) {
             RulesEndpointProvider noRules =
                 (RulesEndpointProvider) weather.syncClientConfiguration().option(SdkClientOption.ENDPOINT_PROVIDER);
             RulesEndpointProvider rules =
@@ -202,27 +200,6 @@ class DynamicClientResolutionTest {
                         .map(LogEvent::getMessage)
                         .map(m -> m.getFormattedMessage())
                         .collect(Collectors.toList());
-    }
-
-    /**
-     * The client option builder behind a plugin's configuration builder, as the Mock_Plugin reaches it.
-     */
-    private static SdkClientConfiguration.Builder options(Object config) {
-        try {
-            Field field = DynamicServiceClientConfigurationBuilder.class.getDeclaredField("config");
-            field.setAccessible(true);
-            return (SdkClientConfiguration.Builder) field.get(config);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private static Model accountModel() {
-        return Model.assembler()
-                    .discoverModels(Model.class.getClassLoader())
-                    .addImport(DynamicTestModels.accountModel())
-                    .assemble()
-                    .unwrap();
     }
 
     private static Model assemble(String resource) {

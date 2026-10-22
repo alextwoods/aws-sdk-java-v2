@@ -15,10 +15,14 @@
 
 package software.amazon.awssdk.dynamicclient;
 
+import java.lang.reflect.Field;
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import software.amazon.awssdk.core.SdkServiceClientConfiguration;
+import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
+import software.amazon.awssdk.dynamicclient.internal.DynamicServiceClientConfigurationBuilder;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.smithy.model.Model;
@@ -34,19 +38,39 @@ final class CallTestClients {
 
     static DynamicClient client(Model model, RecordingHttpClients.Sync sync, RecordingHttpClients.Async async,
                                 ExecutionInterceptor... interceptors) {
+        return builder(model, sync, async, interceptors).endpointOverride(ENDPOINT).build();
+    }
+
+    /**
+     * The builder {@link #client} builds, without the endpoint override.
+     */
+    static DynamicClient.Builder builder(Model model, RecordingHttpClients.Sync sync, RecordingHttpClients.Async async,
+                                         ExecutionInterceptor... interceptors) {
         return DynamicClient.builder()
                             .model(model)
                             .region(Region.US_WEST_2)
                             .credentialsProvider(TestCredentials.PROVIDER)
-                            .endpointOverride(ENDPOINT)
                             .httpClient(sync)
                             .httpClient(async)
                             .overrideConfiguration(o -> {
                                 for (ExecutionInterceptor interceptor : interceptors) {
                                     o.addExecutionInterceptor(interceptor);
                                 }
-                            })
-                            .build();
+                            });
+    }
+
+    /**
+     * The client options behind the configuration builder a plugin receives, for plugins that set options the
+     * configuration builder does not expose, such as the transport.
+     */
+    static SdkClientConfiguration.Builder clientOptions(SdkServiceClientConfiguration.Builder config) {
+        try {
+            Field field = DynamicServiceClientConfigurationBuilder.class.getDeclaredField("config");
+            field.setAccessible(true);
+            return (SdkClientConfiguration.Builder) field.get(config);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**
@@ -79,6 +103,9 @@ final class CallTestClients {
         }
         if (value instanceof Boolean) {
             return Document.of((Boolean) value);
+        }
+        if (value instanceof byte[]) {
+            return Document.of((byte[]) value);
         }
         throw new IllegalArgumentException("Unsupported test value " + value);
     }

@@ -38,6 +38,7 @@ import software.amazon.awssdk.http.ExecutableHttpRequest;
 import software.amazon.awssdk.http.HttpExecuteRequest;
 import software.amazon.awssdk.http.HttpExecuteResponse;
 import software.amazon.awssdk.http.SdkHttpClient;
+import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.http.SdkHttpRequest;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.http.async.AsyncExecuteRequest;
@@ -101,13 +102,27 @@ final class RecordingHttpClients {
         }
 
         static Stub of(int status, String body, String... headerNamesAndValues) {
+            return of(status, body.getBytes(StandardCharsets.UTF_8), headerNamesAndValues);
+        }
+
+        static Stub of(int status, byte[] body, String... headerNamesAndValues) {
             SdkHttpResponse.Builder response = SdkHttpResponse.builder().statusCode(status);
             for (int i = 0; i < headerNamesAndValues.length; i += 2) {
                 response.putHeader(headerNamesAndValues[i], headerNamesAndValues[i + 1]);
             }
-            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-            response.putHeader("Content-Length", String.valueOf(bytes.length));
-            return new Stub(response.build(), bytes);
+            response.putHeader("Content-Length", String.valueOf(body.length));
+            return new Stub(response.build(), body.clone());
+        }
+
+        /**
+         * The stub as a full response with its body, for transports that answer without an HTTP client.
+         */
+        SdkHttpFullResponse fullResponse() {
+            return SdkHttpFullResponse.builder()
+                                      .statusCode(response.statusCode())
+                                      .headers(response.headers())
+                                      .content(AbortableInputStream.create(new ByteArrayInputStream(body)))
+                                      .build();
         }
     }
 
