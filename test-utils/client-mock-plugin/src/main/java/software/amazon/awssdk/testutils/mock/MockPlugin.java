@@ -50,7 +50,8 @@ import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.Validate;
 
 /**
- * Mocks a generated client by replacing its transport: calls return queued results instead of sending requests.
+ * Mocks a generated client or a dynamic client by replacing its transport: calls return queued results instead of
+ * sending requests.
  *
  * <p>The plugin installs a mock transport as the client's {@code SdkClientOption.CLIENT_TRANSPORT} (synchronous
  * clients) and {@code ASYNC_CLIENT_TRANSPORT} (asynchronous clients). The rest of the request pipeline runs unchanged:
@@ -82,8 +83,20 @@ import software.amazon.awssdk.utils.Validate;
  * client.describeAlarms(); // returns the queued response
  * }</pre>
  *
- * <p>The plugin works only with clients generated with schema-based serialization: the transport reads the call's
- * {@link SdkExecutionAttribute#API_OPERATION} and {@link SdkExecutionAttribute#CLIENT_PROTOCOL}.
+ * <p>The plugin works only with clients generated with schema-based serialization and with the dynamic client: the
+ * transport reads the call's {@link SdkExecutionAttribute#API_OPERATION} and
+ * {@link SdkExecutionAttribute#CLIENT_PROTOCOL}. A dynamic client runs its plugins once for its synchronous and once
+ * for its asynchronous configuration; both transports serve calls from the same matchers and queues, so synchronous
+ * and asynchronous calls consume one queue in call order. Dynamic outputs are documents: enqueue them with
+ * {@link MockQueue#enqueueDocument}, and a queued modeled error, such as a {@code DocumentException}, with
+ * {@link MockQueue#enqueueError}:
+ * <pre>{@code
+ * MockQueue queue = new MockQueue();
+ * DynamicClient client = DynamicClient.builder().model(model).addPlugin(MockPlugin.builder().addQueue(queue).build())
+ *                                     .build();
+ * queue.enqueueDocument(client.createStruct(ShapeId.from("ns#GetThingOutput"), Document.of(members)));
+ * client.call("GetThing", input); // returns the queued document
+ * }</pre>
  *
  * <p>Port of smithy-java {@code MockPlugin}. It does not wrap the client's protocol; the call's input is read by an
  * execution interceptor that the plugin adds.
@@ -114,8 +127,9 @@ public final class MockPlugin implements SdkPlugin {
     /**
      * Installs the mock transports, and an interceptor that records the call's input, on the client.
      *
-     * @param config the configuration of a generated client
-     * @throws IllegalStateException if {@code config} is not the configuration builder of a generated client
+     * @param config the configuration of a generated or dynamic client
+     * @throws IllegalStateException if {@code config} is not the configuration builder of a generated or dynamic
+     *     client
      */
     @Override
     public void configureClient(SdkServiceClientConfiguration.Builder config) {

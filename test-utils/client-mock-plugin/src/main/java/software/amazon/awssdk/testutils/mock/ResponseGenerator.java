@@ -54,7 +54,8 @@ public interface ResponseGenerator {
      *
      * @param operation the operation whose output is serialized; its service schema supplies service-wide traits such
      *                  as {@code xmlNamespace}
-     * @param output the output value, a generated output class or a schema-backed Document
+     * @param output the output value, a generated output class or a schema-backed Document (for example a dynamic
+     *               client's {@code StructDocument}), which is written as the structure of its schema
      * @return the response, with status code, headers and body following the protocol and the output's HTTP bindings
      * @throws NullPointerException if an argument is null
      */

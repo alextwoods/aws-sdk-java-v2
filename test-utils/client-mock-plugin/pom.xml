@@ -164,6 +164,21 @@
             <version>${awsjavasdk.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- DynamicClientMockPluginTest (Requirement 35.9). Test scope here, not a client-mock-plugin dependency of
+             dynamic-client's tests: that would close the reactor cycle client-mock-plugin -> (test) cloudwatch ->
+             codegen-maven-plugin -> codegen -> (test) dynamic-client -> (test) client-mock-plugin. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamic-client</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.smithy</groupId>
+            <artifactId>smithy-model</artifactId>
+            <version>${smithy.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>test-utils</artifactId>

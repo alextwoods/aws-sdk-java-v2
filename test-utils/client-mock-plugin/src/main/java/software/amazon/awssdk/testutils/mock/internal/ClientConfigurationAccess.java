@@ -25,7 +25,8 @@ import software.amazon.awssdk.utils.Validate;
  * Finds the {@link SdkClientConfiguration.Builder} behind the service configuration builder a plugin receives.
  *
  * <p>{@link SdkServiceClientConfiguration.Builder} has no setter for the client transport. Every generated
- * {@code <Service>ServiceClientConfigurationBuilder} wraps the client's {@link SdkClientConfiguration.Builder} in a
+ * {@code <Service>ServiceClientConfigurationBuilder}, and the dynamic client's
+ * {@code DynamicServiceClientConfigurationBuilder}, wraps the client's {@link SdkClientConfiguration.Builder} in a
  * private field, so the mock plugin reads that field, found by its type, to set {@code SdkClientOption.CLIENT_TRANSPORT}
  * and {@code ASYNC_CLIENT_TRANSPORT}.
  */
@@ -51,8 +52,9 @@ public final class ClientConfigurationAccess {
                 }
             }
         }
-        throw new IllegalStateException("MockPlugin needs the configuration builder of a generated client, but "
-                                        + config.getClass().getName() + " wraps no SdkClientConfiguration.Builder");
+        throw new IllegalStateException("MockPlugin needs the configuration builder of a generated or dynamic client, "
+                                        + "but " + config.getClass().getName()
+                                        + " wraps no SdkClientConfiguration.Builder");
     }
 
     private static SdkClientConfiguration.Builder read(Field field, Object owner) {

@@ -76,14 +76,14 @@ public final class RestXmlResponseGenerator implements ResponseGenerator {
 
     @Override
     public SdkHttpFullResponse generateOutput(ApiOperation<?, ?> operation, SerializableStruct output) {
-        Responses.validateOutput(operation, output);
+        SerializableStruct body = Responses.validateOutput(operation, output);
         return HttpBinding.create()
                           .responseSerializer()
                           .operation(operation)
                           .payloadCodec(codec(Responses.xmlNamespace(operation)))
                           .payloadMediaType(MEDIA_TYPE)
                           .omitEmptyPayload(true)
-                          .shapeValue(output)
+                          .shapeValue(body)
                           .serializeResponse();
     }
 

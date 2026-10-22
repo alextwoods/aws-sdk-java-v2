@@ -57,8 +57,8 @@ public final class RpcV2CborResponseGenerator implements ResponseGenerator {
 
     @Override
     public SdkHttpFullResponse generateOutput(ApiOperation<?, ?> operation, SerializableStruct output) {
-        Responses.validateOutput(operation, output);
-        return Responses.response(200, MEDIA_TYPE, CODEC.serialize(output))
+        SerializableStruct body = Responses.validateOutput(operation, output);
+        return Responses.response(200, MEDIA_TYPE, CODEC.serialize(body))
                         .putHeader(SMITHY_PROTOCOL_HEADER, SMITHY_PROTOCOL_VALUE)
                         .build();
     }

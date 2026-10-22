@@ -75,17 +75,17 @@ abstract class QueryResponseGenerator implements ResponseGenerator {
 
     @Override
     public final SdkHttpFullResponse generateOutput(ApiOperation<?, ?> operation, SerializableStruct output) {
-        Responses.validateOutput(operation, output);
+        SerializableStruct value = Responses.validateOutput(operation, output);
         String responseName = operation.name() + "Response";
         SerializableStruct body;
         if (ec2) {
-            body = ec2Outputs.computeIfAbsent(responseName, n -> new AugmentedStruct.Augmenter(n)).wrap(output);
+            body = ec2Outputs.computeIfAbsent(responseName, n -> new AugmentedStruct.Augmenter(n)).wrap(value);
         } else {
             // Built per call: an output schema may be shared by operations of different names.
             Schema envelope = Schema.structureBuilder(ShapeId.fromParts(NAMESPACE, responseName))
-                                    .putMember(operation.name() + "Result", output.sdkSchema())
+                                    .putMember(operation.name() + "Result", value.sdkSchema())
                                     .build();
-            body = new EnvelopeStruct(envelope, output);
+            body = new EnvelopeStruct(envelope, value);
         }
         return Responses.response(200, MEDIA_TYPE, codec(operation).serialize(body)).build();
     }

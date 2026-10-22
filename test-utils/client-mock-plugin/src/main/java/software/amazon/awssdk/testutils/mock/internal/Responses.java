@@ -27,6 +27,8 @@ import software.amazon.awssdk.schema.ApiService;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.TraitKey;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
+import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.AwsQueryErrorTrait;
 import software.amazon.awssdk.schema.traits.ErrorTrait;
 import software.amazon.awssdk.schema.traits.HttpErrorTrait;
@@ -49,11 +51,19 @@ final class Responses {
     }
 
     /**
-     * Validates the arguments of {@code generateOutput}.
+     * Validates the arguments of {@code generateOutput} and returns the value to serialize: the output itself, or, for a
+     * schema-backed {@link Document} such as the dynamic client's {@code StructDocument}, a view of it that serializes as
+     * the structure.
+     *
+     * <p>A schema-backed Document's {@code serialize} writes one {@code writeDocument} (the {@link Document} rule), which
+     * codecs write as a document, with a type discriminator in JSON and nothing in XML, and which HTTP bindings cannot
+     * split into bound members. Its {@code serializeMembers} writes the members with their member schemas, which is what
+     * {@link SerializableStruct#serialize}'s {@code writeStruct} needs.
      */
-    static void validateOutput(ApiOperation<?, ?> operation, SerializableStruct output) {
+    static SerializableStruct validateOutput(ApiOperation<?, ?> operation, SerializableStruct output) {
         Validate.paramNotNull(operation, "operation");
         Validate.paramNotNull(output, "output");
+        return output instanceof Document ? new StructView(output) : output;
     }
 
     /**
@@ -166,6 +176,33 @@ final class Responses {
                                   .putHeader(CONTENT_TYPE, contentType)
                                   .putHeader(CONTENT_LENGTH, Integer.toString(body.length))
                                   .content(AbortableInputStream.create(new ByteArrayInputStream(body)));
+    }
+
+    /**
+     * A structure whose {@code serialize} is {@link SerializableStruct}'s {@code writeStruct}, over the members of a
+     * schema-backed Document.
+     */
+    private static final class StructView implements SerializableStruct {
+        private final SerializableStruct document;
+
+        private StructView(SerializableStruct document) {
+            this.document = document;
+        }
+
+        @Override
+        public Schema sdkSchema() {
+            return document.sdkSchema();
+        }
+
+        @Override
+        public void serializeMembers(ShapeSerializer serializer) {
+            document.serializeMembers(serializer);
+        }
+
+        @Override
+        public <T> T getMemberValue(Schema member) {
+            return document.getMemberValue(member);
+        }
     }
 
     /**

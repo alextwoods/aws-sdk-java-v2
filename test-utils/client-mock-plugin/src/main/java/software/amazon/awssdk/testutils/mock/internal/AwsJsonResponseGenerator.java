@@ -55,8 +55,8 @@ abstract class AwsJsonResponseGenerator implements ResponseGenerator {
 
     @Override
     public final SdkHttpFullResponse generateOutput(ApiOperation<?, ?> operation, SerializableStruct output) {
-        Responses.validateOutput(operation, output);
-        return Responses.response(200, contentType, CODEC.serialize(output)).build();
+        SerializableStruct body = Responses.validateOutput(operation, output);
+        return Responses.response(200, contentType, CODEC.serialize(body)).build();
     }
 
     @Override

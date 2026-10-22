@@ -22,6 +22,7 @@ import software.amazon.awssdk.annotations.ThreadSafe;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.TraitKey;
+import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.utils.Validate;
 
 /**
@@ -86,6 +87,35 @@ public final class MockQueue {
      */
     public MockQueue enqueue(SerializableStruct output) {
         return enqueue(null, output);
+    }
+
+    /**
+     * Enqueues a schema-backed Document, serialized when a call consumes it as the structure of its schema, with the
+     * {@link ResponseGenerator} of the client's protocol. A document whose schema has the {@code error} trait becomes an
+     * error response.
+     *
+     * <p>This is the form for dynamic clients, whose outputs are documents:
+     * <pre>{@code
+     * queue.enqueueDocument(client.createStruct(ShapeId.from("ns#GetThingOutput"), Document.of(members)));
+     * }</pre>
+     * {@code Document.of(SerializableShape)} of a generated output is schema-backed as well.
+     *
+     * @param document a document that is a {@link SerializableStruct}, such as the result of the dynamic client's
+     *                 {@code createStruct} or of {@code Document.of(SerializableShape)} for a structure
+     * @return this queue
+     * @throws NullPointerException if {@code document} is null
+     * @throws IllegalArgumentException if {@code document} has no schema, for example because it was created with
+     *     {@code Document.of(Map)}
+     */
+    public MockQueue enqueueDocument(Document document) {
+        Validate.paramNotNull(document, "document");
+        if (!(document instanceof SerializableStruct)) {
+            throw new IllegalArgumentException(
+                "Only a schema-backed document can be enqueued, but the " + document.type() + " document has no schema. "
+                + "Create it from the output's schema, for example with DynamicClient.createStruct(outputShapeId, "
+                + "document) or Document.of(output).");
+        }
+        return enqueue((SerializableStruct) document);
     }
 
     /**
