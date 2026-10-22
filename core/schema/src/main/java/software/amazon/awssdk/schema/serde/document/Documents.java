@@ -55,11 +55,15 @@ final class Documents {
      * {@code "Expected a string document, but found integer"}.
      */
     static SerializationException typeMismatch(String expected, Document actual) {
-        String article = "integer".equals(expected) ? "an " : "a ";
+        String article = "aeiou".indexOf(expected.charAt(0)) >= 0 ? "an " : "a ";
         return new SerializationException("Expected " + article + expected + " document, but found " + actual.type());
     }
 
     static boolean documentEquals(Document l, Document r, int options) {
+        if (isStream(l) || isStream(r)) {
+            // A stream has no value to compare: it equals only a document of the same kind over the same stream.
+            return l.getClass() == r.getClass() && l.asObject() == r.asObject();
+        }
         boolean promote = (options & DocumentEqualsFlags.NUMBER_PROMOTION) != 0;
         ShapeType type = l.type();
         if (promote && isNumeric(type)) {
@@ -106,6 +110,9 @@ final class Documents {
 
     static int hash(Document document) {
         ShapeType type = document.type();
+        if (isStream(document)) {
+            return mix(type, System.identityHashCode(document.asObject()));
+        }
         switch (type) {
             case BLOB:
                 return mix(type, document.asBlob().hashCode());
@@ -235,6 +242,13 @@ final class Documents {
         Object shown = schema != null && schema.hasTrait(TraitKey.SENSITIVE_TRAIT) ? "*** Sensitive Data Redacted ***"
                                                                                     : value;
         return "Document(" + type + ": " + shown + ")";
+    }
+
+    /**
+     * Returns whether the document holds a data stream or an event stream, which have no value to compare or hash.
+     */
+    private static boolean isStream(Document document) {
+        return document instanceof DataStreamDocument || document instanceof EventStreamDocument;
     }
 
     private static int mix(ShapeType type, int valueHash) {

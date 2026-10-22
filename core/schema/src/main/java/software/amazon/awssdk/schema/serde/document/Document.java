@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.reactivestreams.Publisher;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
@@ -32,6 +33,7 @@ import software.amazon.awssdk.schema.SerializableShape;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.ShapeType;
+import software.amazon.awssdk.schema.io.DataStream;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.ShapeDeserializer;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
@@ -60,6 +62,12 @@ import software.amazon.awssdk.utils.Validate;
  * <h2>Null values</h2>
  * <p>A Smithy {@code null} is represented by a Java {@code null} where a document is expected, for example as a list
  * element or map value.
+ *
+ * <h2>Streams</h2>
+ * <p>The value of a streaming member is not data in memory. {@link #of(Schema, DataStream)} creates the document of a
+ * streaming blob and {@link #ofEventStream(Schema, Publisher)} the document of an event stream; their contents are read
+ * with {@link #asDataStream()} and {@link #asEventStream()}. They are compared by stream identity and cannot be
+ * serialized by a codec.
  *
  * <h2>Coercion</h2>
  * <p>The numeric {@code as<Type>} methods accept any numeric document and convert its value with the Java widening
@@ -359,7 +367,8 @@ public interface Document extends SerializableShape {
     /**
      * Converts the document to standard library types: {@link Boolean}, the boxed number type that matches
      * {@link #type()}, {@link String}, {@link ByteBuffer}, {@link Instant}, a {@link List} of converted elements or
-     * a {@link Map} of converted values. Null list elements and map values stay null.
+     * a {@link Map} of converted values. Null list elements and map values stay null. A data stream or event stream
+     * document returns its stream.
      *
      * @return the converted value
      * @throws UnsupportedOperationException if the document's type has no standard library form
@@ -407,6 +416,31 @@ public interface Document extends SerializableShape {
             default:
                 throw new UnsupportedOperationException("Unable to convert a " + type() + " document to an object");
         }
+    }
+
+    /**
+     * Returns the stream of a data stream document, created with {@link #of(Schema, DataStream)} for a streaming blob
+     * member.
+     *
+     * @return the data stream
+     * @throws SerializationException if the document is not a data stream document
+     */
+    default DataStream asDataStream() {
+        throw Documents.typeMismatch("data stream", this);
+    }
+
+    /**
+     * Returns the events of an event stream document, created with {@link #ofEventStream(Schema, Publisher)} for an
+     * event stream member: a publisher of one document per event, each a structure document with one member set, the
+     * union member of the event.
+     *
+     * <p>smithy-java returns its {@code EventStream} type here; the SDK publishes events as a {@code Publisher}.
+     *
+     * @return the events
+     * @throws SerializationException if the document is not an event stream document
+     */
+    default Publisher<Document> asEventStream() {
+        throw Documents.typeMismatch("event stream", this);
     }
 
     /**
@@ -664,6 +698,45 @@ public interface Document extends SerializableShape {
         DocumentParser parser = new DocumentParser();
         Validate.paramNotNull(shape, "shape").serialize(parser);
         return parser.getResult();
+    }
+
+    /**
+     * Creates a data stream document: the value of a streaming blob member. The stream is not read.
+     *
+     * <p>The document's {@link #type()} is {@link ShapeType#BLOB}, and {@link #asDataStream()} and {@link #asObject()}
+     * return the stream. It has no bytes in memory, so {@link #asBlob()} and
+     * {@link #serializeContents(ShapeSerializer)} throw. It equals only a data stream document of the same stream
+     * instance.
+     *
+     * @param schema the schema of the streaming blob member, or {@link PreludeSchemas#BLOB}
+     * @param dataStream the stream
+     * @return the document
+     * @throws NullPointerException if an argument is null
+     */
+    static Document of(Schema schema, DataStream dataStream) {
+        return new DataStreamDocument(schema, dataStream);
+    }
+
+    /**
+     * Creates an event stream document: the value of an event stream member, a union with {@code smithy.api#streaming}.
+     * Each published document is one event: a map or structure document with one member set, the union member of the
+     * event. The publisher is not subscribed to.
+     *
+     * <p>The document's {@link #type()} is {@link ShapeType#UNION}, and {@link #asEventStream()} and
+     * {@link #asObject()} return the publisher. It has no members, so {@link #asMap()} and
+     * {@link #serializeContents(ShapeSerializer)} throw. It equals only an event stream document of the same publisher
+     * instance.
+     *
+     * <p>smithy-java's counterpart is {@code of(Schema, EventStream)}; the SDK does not port {@code EventStream}, and
+     * the different name keeps the two stream factories from being overloads that differ only in the publisher's type.
+     *
+     * @param schema the schema of the event stream member, or {@link PreludeSchemas#DOCUMENT}
+     * @param events the events
+     * @return the document
+     * @throws NullPointerException if an argument is null
+     */
+    static Document ofEventStream(Schema schema, Publisher<Document> events) {
+        return new EventStreamDocument(schema, events);
     }
 
     /**
