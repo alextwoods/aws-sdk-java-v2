@@ -63,6 +63,14 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Context:** `design.md` (L179–203, D.12, D.16) plans a per-module Java 8 API guard. No class with that name exists on the branch, and `core/schema/pom.xml` has no animal-sniffer configuration.
 - **Next step:** Add the guard to the ported modules (`schema`, `codec-commons`, the codecs, `http-binding`, the client protocols), or drop it from the spec and rely on the Java 8 compile.
 
+## Bugs
+
+### FU-11 Greedy `httpLabel` members lose `GREEDY_PATH` on the legacy path
+- **Status:** Open
+- **Context:** `SdkFieldsFromSchema.location()` (`core/sdk-core/src/main/java/software/amazon/awssdk/core/schema/SdkFieldsFromSchema.java`, around line 263) maps every `httpLabel` member to `MarshallLocation.PATH` and never to `GREEDY_PATH`. The feature codegen's intermediate model also drops `greedy` for the same members (`http.greedy` true → false, `marshallLocation` `GREEDY_PATH` → `PATH`). A client that has no `stagedClientProtocols`, and so still runs the legacy marshallers over schema-derived `SdkField`s, sends a greedy label such as S3's `{Key+}` unexpanded. The schema path expands it correctly.
+- **Evidence:** Found by the serde A/B wire dump (`.agents/tasks/serde-benchmark-comparison/`, `comparability-matrix.md` items M1 and W1): the 4 `CopyObject` marshall rows of `RestJsonMarshallBenchmark` and `RestXmlMarshallBenchmark` differ only in the `{Key+}` URI when the legacy reference runs on the feature classpath. The measured benchmark paths are not affected.
+- **Next step:** Return `GREEDY_PATH` when the member's URI label ends in `+` (from the operation's `@http` URI pattern), keep `greedy` in the Smithy-built intermediate model, and add a legacy-path test with a greedy label.
+
 ## Still open from the spec (`design.md` §D.15)
 
 Not re-checked against the branch; listed so they aren't lost.
