@@ -117,8 +117,99 @@ The output JSON has this structure:
 The `metadata` fields marked `TODO` should be filled in for the target environment
 before publishing results.
 
+## Serde A/B against the Baseline_Build
+
+`scripts/schema-serde/serde-ab.sh` compares the `benchmark.serde.*` classes (10 classes,
+71 benchmark/param combinations) between builds made from git refs, typically the
+Baseline_Build (`fc8b74e9fe21`) and the feature branch. Both jars have the same class
+names, `@Param` lists and JMH annotations, so every result has the same key on both arms.
+
+What the timed method runs differs by design. On the Baseline_Build it calls the legacy
+marshaller or unmarshaller (`JsonProtocolMarshaller`, `XmlProtocolMarshaller`,
+`QueryProtocolUnmarshaller`, ...) over the `SdkField` POJOs; marshallers are built per
+call. On the feature branch it calls `ClientProtocol.serializeRequest` /
+`deserializeResponse` (`AwsJson1Protocol`, `RestJsonClientProtocol`,
+`RestXmlClientProtocol`, `AwsQueryClientProtocol`, `RpcV2CborProtocol`) over the ported
+codecs, with the protocol and operation resolved once per trial. That is the path the
+feature's clients use; the legacy protocol modules are identical in both builds, so
+benchmarking them would not measure the new codecs. Inputs and responses are built
+exactly as on the Baseline_Build. `SerdeBenchmarkEquivalenceTest` checks, for all 71
+combinations, that the schema path produces the legacy path's output on the same input;
+its allowlist documents every accepted difference. Two work-boundary differences remain:
+the feature's Query marshall includes form encoding and Content-Length (done outside the
+legacy marshaller), and the feature's unmarshall attaches the `SdkHttpResponse` and the
+response metadata.
+
+The script builds each commit in its own worktree (`$TMPDIR/aws-sdk-serde-ab-<sha12>`,
+Maven repository `<worktree>-m2` in front of `~/.m2/repository`) after overlaying
+`src/main/resources/codegen-resources` and `serde-tests` from `--bench-src` (default
+`HEAD`), so every arm reads the same models and payloads (`--no-overlay` builds them as
+committed). `--sdk-pin feature=<sha>` fails the run unless the feature commit differs from
+that SDK commit only under `test/sdk-standard-benchmarks/`, `scripts/` or `docs/`.
+
+Before timing, it verifies (`scripts/schema-serde/serde_ab_checks.py`) that the resources
+and the intermediate models of the jars are identical, that `SerdeWireDump.java` (the
+legacy path over each jar) prints the same requests and responses, and that each arm runs
+the expected code path: legacy on the first arm, schema on the others, from an
+async-profiler profile when async-profiler is installed and always from a
+`-Xlog:class+load` log. `KNOWN` lines in the check outputs are value-checked differences
+documented in the script (a greedy `{Key+}` label and two unused rest-xml namespaces in
+the feature's intermediate models). Any other difference fails the run.
+
+```bash
+# Build both arms and run the checks only
+scripts/schema-serde/serde-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=HEAD \
+  --sdk-pin feature=cabc26b41aa --verify-only
+
+# Smoke run (reuses the jars), then its null experiment
+scripts/schema-serde/serde-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=HEAD --skip-build \
+  --reps 2 --jmh-opts "-wi 1 -i 1 -f 1 -w 1s -r 1s"
+scripts/schema-serde/serde-ab.sh --null feature=HEAD --skip-build \
+  --reps 2 --jmh-opts "-wi 1 -i 1 -f 1 -w 1s -r 1s"
+
+# Full run (class annotations: 5 x 2 s warmup, 10 x 5 s measurement, 3 forks), pinned on Linux
+scripts/schema-serde/serde-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=HEAD --skip-build \
+  --reps 2 --pin 2-7
+
+# Apply a null experiment's floors to a comparison
+python3 scripts/schema-serde/serde_ab_summary.py summarize <run>/serde-ab.json \
+  --null <null-run>/serde-ab.json
+```
+
+Arm order alternates per repetition (A,B then B,A; `--order fixed` keeps A,B). Every JMH
+run uses `-foe true -prof gc -rf json` and the same `--jmh-opts` and `--jvm-args`
+(default `-Xms2g -Xmx2g -XX:+AlwaysPreTouch`). `--pin CPUS` wraps every `java` in
+`taskset -c` and exits with status 2 where `taskset` is not available. The summary
+reports mean ns/op and `gc.alloc.rate.norm` per arm with 99.9% errors, the paired ratio,
+the floor from a null experiment (`--null`: one jar as `LABEL-a` and `LABEL-b`) and a
+verdict, plus geometric-mean ratios per class.
+
+`--profile` (after timing) or `--profile-only` runs a separate async-profiler pass over
+every class, param, arm and event (`--profile-events`, default `cpu,alloc`;
+`--profile-jmh-opts`, default `-f 1 -wi 2 -w 2s -i 3 -r 3s`) with
+`-XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints` on both arms.
+`scripts/schema-serde/serde_ab_profile.py` then writes `profile-comparison.md`: per class
+and combination, the CPU and allocation share, ns/op and B/op of each logical-work
+category (codec write, codec read, member traversal, HTTP request construction, ...) side
+by side, the top frames, and flags for categories or frames present in one arm only or
+more than 2x apart.
+
+```bash
+scripts/schema-serde/serde-ab.sh --jar baseline=<out>/jars/baseline.jar \
+  --jar feature=<out>/jars/feature.jar --profile-only --classes RestJsonMarshallBenchmark
+```
+
+Output, under `--out` (default `~/.cache/aws-sdk-java-v2/serde-ab`): `jars/<label>.jar`
+with `<label>.jar.provenance.properties` (ref, commit, bench-src, overlay, SDK pin, jar
+sha256, JDK, Maven, host) and `<label>.jar.resources.tsv`; and per run `<run-id>/` with
+`arms.tsv`, `params.tsv`, `runs.tsv`, `verify/verify.md`, `jmh/`, `logs/`,
+`serde-ab.json`, `summary.md`, `profile/<arm>/<Class>/<param>/<event>/` (collapsed stacks
+and flame graphs) and `profile-comparison.md`.
+
 ## Schema Serde Benchmarks
 Benchmarks for the schema-based serde path (`software.amazon.awssdk.benchmark.schema`).
+They exist only on the feature branch, so they have no Baseline_Build counterpart; the
+`benchmark.serde.*` A/B above is the comparison with the Baseline_Build.
 `SchemaMarshallBenchmark` runs `ClientProtocol.serializeRequest` from the generated input
 to the `SdkHttpFullRequest`; `SchemaUnmarshallBenchmark` runs
 `ClientProtocol.deserializeResponse` from the response bytes (built by the
