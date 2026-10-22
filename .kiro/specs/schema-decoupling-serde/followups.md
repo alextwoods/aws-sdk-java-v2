@@ -1,0 +1,75 @@
+# Follow-ups and open questions: schema decoupling branch
+
+Tracks follow-up work and unresolved questions found on `feature/pov/schema-decoupling` after the spec was written. Design-time open decisions are in `design.md` §D.15 (OD-1 to OD-20); this file references them instead of repeating them. Per-task porting choices are in `docs/design/schema-serde/porting-deviations.md`.
+
+Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchmark`, `Done`), the evidence, and a proposed next step. Add new items at the end; don't renumber.
+
+## Size and performance
+
+### FU-1 Generic collection serde instead of per-shape `<Svc>SharedSerde` classes
+- **Status:** Needs benchmark
+- **Context:** Codegen emits one nested class per list or map shape (writer, reader and `read()` pre-sizing helper), ported from smithy-java's `SharedSerdeGenerator`. A single runtime helper could get the element writer from `listMember().type()` and the element builder from `memberTarget().shapeBuilder()`. The `writeList`/`readList` callbacks don't pass the list schema to the consumer, so the helper has to be cached per list or map schema (for example as a schema extension) to avoid a capturing lambda per call (design D.3, Requirement 6.7).
+- **Evidence:** `size-report.md` "Size-reduction opportunities" row 1: compressed savings of −5,306 B (Account) to −162,192 B (DynamoDB), the largest single item. The recorded reason for per-shape classes is racecar E2.3 (`racecar-decisions.md`: "elements are not type-tested per call"), which has not been measured against a per-schema cached helper.
+- **Next step:** JMH run on list-heavy cases (DynamoDB `BatchWriteItem`, `ListAttributeValue`, SQS attribute lists), generated helpers vs. a per-schema cached generic helper. Also useful to the dynamic client, which needs a generic version anyway.
+
+### FU-2 Size goal fails on every prototype service
+- **Status:** Open
+- **Context:** Requirement 36.3 (no growth in generated service JARs) fails today. `size-report.md`: +13.0% (Secrets Manager) to +17.5% (SNS) compressed; CloudWatch +263,968 B (+15.5%). The report's 11 size-reduction opportunities together would meet the goal for all seven services; none is applied.
+- **Next step:** Decide which opportunities to apply on the branch (FU-1 is row 1; rows 3 and 6 are next largest) and re-run `test/size-report`. The design doc's size goal wording should match whatever is decided.
+
+### FU-3 Performance goal vs. the gate the branch measures
+- **Status:** Needs decision
+- **Context:** The design doc's goal says SERDE "must be better" than today. `perf-report.md` (marked PRELIMINARY) fails a case only when the µs/op ratio exceeds 1.05.
+- **Next step:** Pick one bar, use it in both the doc and the perf gate, and refresh `perf-report.md` before it's cited in round 2.
+
+### FU-4 No serializer pool for `QueryFormSerializer`
+- **Status:** Open
+- **Context:** smithy-java pools `QueryFormSerializer` and its buffer (`StripedPool`). The port allocates a new serializer and a 1 KiB buffer per request, because `StripedPool` is `@SdkInternalApi` in `codecs.commons.internal` and `InternalApiBoundaryTest` forbids using it from `protocols` (`porting-deviations.md`, task 7.5). In exchange, `finish()` doesn't copy.
+- **Next step:** Measure with the awsQuery serialize benchmark. If pooling matters, move `StripedPool` to a protected API or a shared internal module.
+
+## Protocols
+
+### FU-5 `payloadCodec()` returns `null` for awsQuery and ec2Query
+- **Status:** Needs decision
+- **Context:** smithy-java's `AwsQueryClientProtocol.payloadCodec()` returns the response `XmlCodec`. The port returns `null`, per Requirement 11.4 and the `ClientProtocol` Javadoc (a payload codec is a single format used in both directions) (`porting-deviations.md`, task 7.15). smithy-java reviewers are likely to question this.
+- **Next step:** Decide whether `payloadCodec()` means "the request and response format" (keep `null`) or "the codec responses and errors are read with" (return `XmlCodec`). Update the round 2 doc's Codecs and Protocols sections either way.
+
+### FU-6 Legacy `QueryParametersToBodyStage` double conversion
+- **Status:** Open (legacy path only)
+- **Context:** On the legacy path, `QueryProtocolMarshaller` writes members as raw query parameters, then `QueryParametersToBodyStage` (`sdk-core`, unchanged on the branch) re-encodes them through `encodedQueryParametersAsFormData()` into a `String`, then `byte[]`, and moves them to the body. The new path writes the form body directly with `QueryFormSerializer`, so the stage (and its copy in `RequestMutationStages.queryParametersToBody`) is a no-op there because the body is already set.
+- **Next step:** Remove both once no query-protocol service uses the legacy path (OD-20). Until then, consider skipping the check entirely on the new path.
+
+## Codegen and models
+
+### FU-7 C2J-converted services don't target prelude shapes
+- **Status:** Open
+- **Context:** The C2J converter turns every C2J shape, including a plain `String`, into a service-local Smithy shape. So SQS emits `SqsSchemas.STRING` (`com.amazonaws.sqs#String`) instead of referencing `PreludeSchemas.STRING`; only native Smithy models (Account, Secrets Manager) use `PreludeSchemas`. Five of the seven prototype services are C2J-converted (OD-15). The design doc's Context section assumes there are no C2J paths.
+- **Next step:** Decide whether the converter should map trait-free C2J simple shapes to prelude targets (smaller `<Svc>Schemas`, shared identity) or whether this goes away once the fleet uses native Smithy models (Smithy migration phases 1–2). Either way, the design doc should say which.
+
+### FU-8 Required-trait validation is a codegen setting, off by default
+- **Status:** Needs decision
+- **Context:** `requiredTraitValidationEnabled` is a `CustomizationConfig` field, default `false`; it controls whether generated code validates `@required` members. It is not a runtime switch.
+- **Next step:** Confirm the default matches today's V2 behavior for every protocol, and document it in the round 3 compatibility section.
+
+### FU-9 `GetQueueUrlRequest` worked example is edited
+- **Status:** Open (doc)
+- **Context:** The design doc's SQS example shows `PreludeSchemas.STRING`; real SQS output targets the service-local `STRING` (FU-7). The `SchemasGenerator` Javadoc (lines 56–58) uses the same edited example.
+- **Next step:** Resolve with FU-7, or keep the edit and say so in the doc.
+
+## Testing
+
+### FU-10 `Java8ApiGuardTest` is planned but not implemented
+- **Status:** Open
+- **Context:** `design.md` (L179–203, D.12, D.16) plans a per-module Java 8 API guard. No class with that name exists on the branch, and `core/schema/pom.xml` has no animal-sniffer configuration.
+- **Next step:** Add the guard to the ported modules (`schema`, `codec-commons`, the codecs, `http-binding`, the client protocols), or drop it from the spec and rely on the Java 8 compile.
+
+## Still open from the spec (`design.md` §D.15)
+
+Not re-checked against the branch; listed so they aren't lost.
+
+- **OD-6** Runtime bytecode codegen (`RuntimeCodegenMode`): deferred until phase 5 benchmarks.
+- **OD-8** Eager vs. lazy operation schemas in `<Svc>Operations`: lazy today; switch to eager if `ClientColdStartBenchmark` shows no difference.
+- **OD-17** `AsyncClientTransport` shape: revisit when a non-HTTP async transport is needed.
+- **OD-18** Primary type registry contents (usually empty for AWS models).
+- **OD-19** Gap-report items with no standard trait (`wrapper`, `deprecatedName`, ...): resolve fleet-wide later.
+- **OD-20** Whether the new pipeline replaces the legacy pipeline for all clients (yes, in phase 6).
