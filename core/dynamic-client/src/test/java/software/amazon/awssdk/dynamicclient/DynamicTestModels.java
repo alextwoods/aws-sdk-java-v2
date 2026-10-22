@@ -39,6 +39,8 @@ final class DynamicTestModels {
     private static final Model ERRORS_REST_JSON_MODEL = assemble("errors-rest-json.smithy");
     private static final Model ERRORS_QUERY_MODEL = assemble("errors-query.smithy");
     private static final Model PIPELINE_FEATURES_MODEL = assemble("pipeline-features.smithy");
+    private static final Model STREAMING_MODEL = assemble("streaming.smithy");
+    private static final Model STREAMING_JSON10_MODEL = assemble("streaming-json10.smithy");
 
     private DynamicTestModels() {
     }
@@ -110,6 +112,21 @@ final class DynamicTestModels {
      */
     static Model pipelineFeatures() {
         return PIPELINE_FEATURES_MODEL;
+    }
+
+    /**
+     * A restJson1 and sigv4 service ({@code test.streaming#ArchiveService}) with required, unsigned and optional
+     * streaming blob inputs, a streaming blob output, and event stream input and output operations.
+     */
+    static Model streaming() {
+        return STREAMING_MODEL;
+    }
+
+    /**
+     * An awsJson1_0 service ({@code test.streaming.json#JsonStreaming}) with a streaming blob input member.
+     */
+    static Model streamingJson10() {
+        return STREAMING_JSON10_MODEL;
     }
 
     /**

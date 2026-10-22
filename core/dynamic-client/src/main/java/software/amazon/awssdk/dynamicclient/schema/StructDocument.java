@@ -47,6 +47,12 @@ import software.amazon.awssdk.utils.Validate;
  * and {@link #serializeContents(ShapeSerializer)} writes the structure with {@code writeStruct}. A structure document's
  * {@link #getDiscriminator() discriminator} is the structure's ShapeId; a union document has none.
  *
+ * <p>A streaming member (a member with {@code smithy.api#streaming}) holds a data stream document
+ * ({@link Document#of(Schema, software.amazon.awssdk.schema.io.DataStream)}) for a blob, or an event stream document
+ * ({@link Document#ofEventStream}) for a union, and any other value for it fails. As a generated class neither holds
+ * nor writes its stream, {@link #serializeMembers(ShapeSerializer)} does not write a streaming member and
+ * {@link #getMemberValue(Schema)} returns null for it; {@link #getMember(String)} returns its stream document.
+ *
  * <p>Instances are created by {@link #of(Schema, Document)} and by the shape builders of
  * {@link SchemaConverter#createDocumentBuilder(Schema)}. They are immutable.
  *
@@ -230,11 +236,13 @@ public final class StructDocument implements Document, SerializableStruct {
      * Converts a document to the typed document of a schema.
      */
     static Document convertDocument(Schema schema, Document delegate, ShapeId service) {
+        if (schema.isMember() && schema.hasTrait(TraitKey.STREAMING_TRAIT)) {
+            // A streaming member holds its stream; the event stream union itself is converted as a union, one event.
+            return StrictDocumentCoercion.streamMember(schema, delegate);
+        }
         switch (schema.type()) {
             case STRUCTURE:
-                return convertStructureDocument(schema, delegate, service);
             case UNION:
-                rejectStreaming(schema);
                 return convertStructureDocument(schema, delegate, service);
             case MAP: {
                 Map<String, Document> result = new LinkedHashMap<>();
@@ -280,7 +288,6 @@ public final class StructDocument implements Document, SerializableStruct {
             case DOCUMENT:
                 return new ContentDocument.SchemaDocument(schema, delegate);
             case BLOB:
-                rejectStreaming(schema);
                 return new ContentDocument(schema, delegate.asBlob());
             default:
                 throw new IllegalArgumentException("Unsupported schema type: " + schema);
@@ -288,12 +295,13 @@ public final class StructDocument implements Document, SerializableStruct {
     }
 
     /**
-     * Streaming blobs and event streams have no document form yet; the dynamic client's streaming support adds them.
+     * A codec never delivers a streaming member: the protocol binds a streaming blob to the HTTP body and an event
+     * stream to event messages. Reading one with a deserializer is therefore not supported.
      */
     static void rejectStreaming(Schema schema) {
         if (schema.hasTrait(TraitKey.STREAMING_TRAIT)) {
             throw new UnsupportedOperationException("Streaming member " + schema.id() + " (" + schema.type()
-                                                    + ") is not supported by StructDocument");
+                                                    + ") cannot be read by a deserializer");
         }
     }
 
@@ -342,7 +350,11 @@ public final class StructDocument implements Document, SerializableStruct {
             for (int i = 0; i < values.length; i++) {
                 Document value = values[i];
                 if (value != null) {
-                    ContentDocument.writeValue(serializer, members.get(i), value);
+                    Schema member = members.get(i);
+                    // A stream is not written, as a generated class does not write it: the client sends it.
+                    if (!member.hasTrait(TraitKey.STREAMING_TRAIT)) {
+                        ContentDocument.writeValue(serializer, member, value);
+                    }
                 }
             }
         } else {
@@ -364,6 +376,10 @@ public final class StructDocument implements Document, SerializableStruct {
             throw SchemaUtils.notAMember(schema, member);
         }
         SchemaUtils.validateSameMember(expected, member, null);
+        if (expected.hasTrait(TraitKey.STREAMING_TRAIT)) {
+            // As in a generated class, which does not hold its stream; getMember returns the stream document.
+            return null;
+        }
         Object value;
         if (values != null) {
             value = values[expected.memberIndex()];

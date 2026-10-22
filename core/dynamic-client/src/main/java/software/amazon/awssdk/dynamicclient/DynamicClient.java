@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import software.amazon.awssdk.annotations.NotThreadSafe;
@@ -50,6 +51,9 @@ import software.amazon.awssdk.core.ApiName;
 import software.amazon.awssdk.core.ClientType;
 import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.SdkPlugin;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.async.AsyncResponseTransformerUtils;
 import software.amazon.awssdk.core.async.SdkPublisher;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculationResolver;
@@ -74,6 +78,8 @@ import software.amazon.awssdk.core.pagination.sync.PaginatedResponsesIterator;
 import software.amazon.awssdk.core.pagination.sync.SdkIterable;
 import software.amazon.awssdk.core.pagination.sync.SyncPageFetcher;
 import software.amazon.awssdk.core.retry.RetryMode;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.core.useragent.BusinessMetricFeatureId;
 import software.amazon.awssdk.core.util.VersionInfo;
 import software.amazon.awssdk.dynamicclient.internal.DynamicAuthSchemes;
@@ -82,6 +88,7 @@ import software.amazon.awssdk.dynamicclient.internal.DynamicPagination;
 import software.amazon.awssdk.dynamicclient.internal.DynamicProtocolSelection;
 import software.amazon.awssdk.dynamicclient.internal.DynamicServiceClientConfigurationBuilder;
 import software.amazon.awssdk.dynamicclient.internal.DynamicServiceMetadata;
+import software.amazon.awssdk.dynamicclient.internal.DynamicStreaming;
 import software.amazon.awssdk.dynamicclient.internal.ModelAuthSchemeResolver;
 import software.amazon.awssdk.dynamicclient.internal.RulesEndpointProvider;
 import software.amazon.awssdk.dynamicclient.schema.SchemaConverter;
@@ -105,6 +112,7 @@ import software.amazon.awssdk.utils.AttributeMap;
 import software.amazon.awssdk.utils.CompletableFutureUtils;
 import software.amazon.awssdk.utils.IoUtils;
 import software.amazon.awssdk.utils.Logger;
+import software.amazon.awssdk.utils.Pair;
 import software.amazon.awssdk.utils.Validate;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
@@ -135,6 +143,12 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * token when the input omits them, {@code smithy.api#requestCompression}, {@code aws.protocols#httpChecksum} and
  * {@code smithy.api#httpChecksumRequired} checksums, and the auth schemes. {@link #paginate} and
  * {@link #paginateAsync} page through an operation with its {@code smithy.api#paginated} trait.
+ *
+ * <p>Streaming blobs work as on a generated client. A streaming input member takes a data stream document over a
+ * {@code RequestBody} ({@code call}) or an {@code AsyncRequestBody} ({@code callAsync}), created with
+ * {@link DynamicStreams}, and the body is sent as the HTTP request body. An operation with a streaming output member
+ * is called with a {@code ResponseTransformer} or {@code AsyncResponseTransformer} of output documents, which receives
+ * the response body. Event streams are not supported yet: such calls fail before anything is sent.
  *
  * <p>An error response that resolves to an error shape of the called operation or of the service throws a
  * {@link DocumentException}, whose {@link DocumentException#getContents() contents} are the error's members; when both
@@ -287,7 +301,7 @@ public final class DynamicClient implements AwsClient {
      * @see #call(String, Document, AwsRequestOverrideConfiguration)
      */
     public Document call(String operationName) {
-        return call(operationName, Document.EMPTY_MAP, null);
+        return call(operationName, Document.EMPTY_MAP, (AwsRequestOverrideConfiguration) null);
     }
 
     /**
@@ -299,7 +313,7 @@ public final class DynamicClient implements AwsClient {
      * @see #call(String, Document, AwsRequestOverrideConfiguration)
      */
     public Document call(String operationName, Document input) {
-        return call(operationName, input, null);
+        return call(operationName, input, (AwsRequestOverrideConfiguration) null);
     }
 
     /**
@@ -310,19 +324,77 @@ public final class DynamicClient implements AwsClient {
      * {@code context.request()}. The output is a structure document keyed by Smithy member name, whose
      * discriminator is the operation's output ShapeId; modeled members that the response does not contain are absent.
      *
+     * <p>A streaming blob input member (a member that targets a blob with {@code smithy.api#streaming}) takes
+     * {@link DynamicStreams#dataStream(RequestBody)}; the body is sent as the HTTP request body without being
+     * buffered. An operation with a streaming blob output member is called with
+     * {@link #call(String, Document, AwsRequestOverrideConfiguration, ResponseTransformer)} instead.
+     *
      * @param operationName the shape name of the operation, case-sensitive
      * @param input the input: a map or structure document keyed by Smithy member name
      * @param overrideConfiguration the configuration of this call (the same options as a generated client's request
      *     override configuration), or null
      * @return the output
-     * @throws IllegalArgumentException if the service has no operation of this name; no request is sent
+     * @throws IllegalArgumentException if the service has no operation of this name, or a streaming member is misused:
+     *     a required streaming input member is absent or does not hold a data stream document over a
+     *     {@link RequestBody}, the operation has a streaming blob output, or it has an event stream (event stream
+     *     operations can only be called with {@code callAsync}); no request is sent
      * @throws SerializationException if the input cannot be coerced to the operation's input schema; no request is sent
      * @throws software.amazon.awssdk.core.exception.SdkException if the call fails, as for a generated client
      */
     public Document call(String operationName, Document input, AwsRequestOverrideConfiguration overrideConfiguration) {
         DynamicOperation operation = getOperation(operationName);
-        DynamicRequest request = request(operation, input, overrideConfiguration);
-        return execute(operation, request).document();
+        DynamicRequest request = request(operation, input, overrideConfiguration, false, false);
+        return execute(operation, request, syncClientHandler::execute).document();
+    }
+
+    /**
+     * Calls an operation that has a streaming blob output member, and hands the response body to a transformer: the
+     * same as {@link #call(String, Document, AwsRequestOverrideConfiguration, ResponseTransformer)} without override
+     * configuration.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @param responseTransformer the transformer of the output document and the response body
+     * @param <ReturnT> the transformer's result type
+     * @return the transformer's result
+     */
+    public <ReturnT> ReturnT call(String operationName, Document input,
+                                  ResponseTransformer<Document, ReturnT> responseTransformer) {
+        return call(operationName, input, null, responseTransformer);
+    }
+
+    /**
+     * Calls an operation that has a streaming blob output member, and hands the response body to a transformer, as a
+     * generated client's streaming operation method does (Requirement 31.4).
+     *
+     * <p>The transformer receives the output document, which holds the members that are not the stream (headers and
+     * status code), and the response body, unread. For example, {@code ResponseTransformer.toBytes()} returns the body
+     * as {@code ResponseBytes<Document>} whose {@code response()} is the output document. An error response is thrown
+     * as by {@link #call(String, Document, AwsRequestOverrideConfiguration)}, and its body never reaches the
+     * transformer. The input is the same as for that method.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @param overrideConfiguration the configuration of this call, or null
+     * @param responseTransformer the transformer of the output document and the response body
+     * @param <ReturnT> the transformer's result type
+     * @return the transformer's result
+     * @throws IllegalArgumentException if the service has no operation of this name, the operation has no streaming blob
+     *     output member, or a streaming input member is misused as for
+     *     {@link #call(String, Document, AwsRequestOverrideConfiguration)}; no request is sent
+     * @throws SerializationException if the input cannot be coerced to the operation's input schema; no request is sent
+     * @throws software.amazon.awssdk.core.exception.SdkException if the call fails, as for a generated client
+     */
+    public <ReturnT> ReturnT call(String operationName, Document input,
+                                  AwsRequestOverrideConfiguration overrideConfiguration,
+                                  ResponseTransformer<Document, ReturnT> responseTransformer) {
+        Validate.paramNotNull(responseTransformer, "responseTransformer");
+        DynamicOperation operation = getOperation(operationName);
+        DynamicRequest request = request(operation, input, overrideConfiguration, false, true);
+        ResponseTransformer<DynamicResponse, ReturnT> transformer =
+            DynamicStreaming.responseTransformer(responseTransformer);
+        return execute(operation, request,
+                       params -> syncClientHandler.execute(params.withResponseTransformer(transformer), transformer));
     }
 
     /**
@@ -334,7 +406,7 @@ public final class DynamicClient implements AwsClient {
      * @see #callAsync(String, Document, AwsRequestOverrideConfiguration)
      */
     public CompletableFuture<Document> callAsync(String operationName) {
-        return callAsync(operationName, Document.EMPTY_MAP, null);
+        return callAsync(operationName, Document.EMPTY_MAP, (AwsRequestOverrideConfiguration) null);
     }
 
     /**
@@ -346,7 +418,7 @@ public final class DynamicClient implements AwsClient {
      * @see #callAsync(String, Document, AwsRequestOverrideConfiguration)
      */
     public CompletableFuture<Document> callAsync(String operationName, Document input) {
-        return callAsync(operationName, input, null);
+        return callAsync(operationName, input, (AwsRequestOverrideConfiguration) null);
     }
 
     /**
@@ -354,8 +426,18 @@ public final class DynamicClient implements AwsClient {
      * {@link #call(String, Document, AwsRequestOverrideConfiguration)}, through the client's asynchronous
      * configuration.
      *
-     * <p>This method does not throw: every failure, including an unknown operation and an input that cannot be
-     * coerced, completes the returned future exceptionally (Requirement 28.12).
+     * <p>A streaming blob input member takes {@link DynamicStreams#dataStream(AsyncRequestBody)}; the body is sent as
+     * the HTTP request body. An operation with a streaming blob output member is called with
+     * {@link #callAsync(String, Document, AwsRequestOverrideConfiguration, AsyncResponseTransformer)} instead.
+     *
+     * <p>Event streams are not supported yet. A call of an operation with an event stream input or output member fails
+     * with an {@link UnsupportedOperationException} before anything is sent, after its event stream input member, if
+     * any, is checked: a required member must be set, to a document from {@link DynamicStreams#eventStream}.
+     *
+     * <p>This method does not throw: every failure, including an unknown operation, an input that cannot be coerced
+     * and a misused streaming member (the {@code IllegalArgumentException}s of
+     * {@link #call(String, Document, AwsRequestOverrideConfiguration)}, with an {@link AsyncRequestBody} in place of
+     * the {@link RequestBody}), completes the returned future exceptionally (Requirement 28.12).
      *
      * @param operationName the shape name of the operation, case-sensitive
      * @param input the input: a map or structure document keyed by Smithy member name
@@ -366,13 +448,71 @@ public final class DynamicClient implements AwsClient {
                                                  AwsRequestOverrideConfiguration overrideConfiguration) {
         try {
             DynamicOperation operation = getOperation(operationName);
-            DynamicRequest request = request(operation, input, overrideConfiguration);
+            DynamicRequest request = request(operation, input, overrideConfiguration, true, false);
             CompletableFuture<DynamicResponse> responseFuture = executeAsync(operation, request);
             CompletableFuture<Document> result = responseFuture.thenApply(DynamicResponse::document);
             return CompletableFutureUtils.forwardExceptionTo(result, responseFuture);
         } catch (Throwable t) {
             return CompletableFutureUtils.failedFuture(t);
         }
+    }
+
+    /**
+     * Calls an operation that has a streaming blob output member asynchronously, and streams the response body to a
+     * transformer: the same as
+     * {@link #callAsync(String, Document, AwsRequestOverrideConfiguration, AsyncResponseTransformer)} without override
+     * configuration.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @param asyncResponseTransformer the transformer of the output document and the response body
+     * @param <ReturnT> the transformer's result type
+     * @return a future of the transformer's result
+     */
+    public <ReturnT> CompletableFuture<ReturnT> callAsync(
+        String operationName, Document input, AsyncResponseTransformer<Document, ReturnT> asyncResponseTransformer) {
+        return callAsync(operationName, input, null, asyncResponseTransformer);
+    }
+
+    /**
+     * Calls an operation that has a streaming blob output member asynchronously, and streams the response body to a
+     * transformer, as a generated asynchronous client's streaming operation method does (Requirement 31.4).
+     *
+     * <p>The transformer is prepared, receives the output document (the members that are not the stream) in
+     * {@code onResponse}, and then the response body as it arrives in {@code onStream}. An error response fails the
+     * returned future as {@link #callAsync(String, Document, AwsRequestOverrideConfiguration)} does, and its body
+     * never reaches the transformer. When the call fails, the transformer's {@code exceptionOccurred} is called. The
+     * input is the same as for that method.
+     *
+     * <p>This method does not throw: every failure, including an operation without a streaming blob output member,
+     * completes the returned future exceptionally.
+     *
+     * @param operationName the shape name of the operation, case-sensitive
+     * @param input the input: a map or structure document keyed by Smithy member name
+     * @param overrideConfiguration the configuration of this call, or null
+     * @param asyncResponseTransformer the transformer of the output document and the response body
+     * @param <ReturnT> the transformer's result type
+     * @return a future of the transformer's result
+     */
+    public <ReturnT> CompletableFuture<ReturnT> callAsync(
+        String operationName, Document input, AwsRequestOverrideConfiguration overrideConfiguration,
+        AsyncResponseTransformer<Document, ReturnT> asyncResponseTransformer) {
+        if (asyncResponseTransformer == null) {
+            return CompletableFutureUtils.failedFuture(new NullPointerException("asyncResponseTransformer must not "
+                                                                                + "be null."));
+        }
+        AsyncResponseTransformer<DynamicResponse, ReturnT> transformer =
+            DynamicStreaming.asyncResponseTransformer(asyncResponseTransformer);
+        DynamicRequest request;
+        DynamicOperation operation;
+        try {
+            operation = getOperation(operationName);
+            request = request(operation, input, overrideConfiguration, true, true);
+        } catch (Throwable t) {
+            notifyExceptionOccurred(transformer, t);
+            return CompletableFutureUtils.failedFuture(t);
+        }
+        return executeAsyncStreaming(operation, request, transformer);
     }
 
     /**
@@ -473,7 +613,8 @@ public final class DynamicClient implements AwsClient {
                                           AwsRequestOverrideConfiguration overrideConfiguration) {
         DynamicOperation operation = getOperation(operationName);
         DynamicPagination pagination = DynamicPagination.of(operation, operation.paginated().orElse(null));
-        DynamicRequest first = request(operation, input, paginatorOverrideConfiguration(overrideConfiguration));
+        DynamicRequest first = request(operation, input, paginatorOverrideConfiguration(overrideConfiguration),
+                                        false, false);
         SyncPageFetcher<Document> pages = new SyncPageFetcher<Document>() {
             @Override
             public boolean hasNextPage(Document previousPage) {
@@ -482,7 +623,8 @@ public final class DynamicClient implements AwsClient {
 
             @Override
             public Document nextPage(Document previousPage) {
-                return execute(operation, nextRequest(pagination, first, previousPage)).document();
+                return execute(operation, nextRequest(pagination, first, previousPage), syncClientHandler::execute)
+                    .document();
             }
         };
         return () -> PaginatedResponsesIterator.builder().nextPageFetcher(pages).build();
@@ -518,7 +660,8 @@ public final class DynamicClient implements AwsClient {
                                                 AwsRequestOverrideConfiguration overrideConfiguration) {
         DynamicOperation operation = getOperation(operationName);
         DynamicPagination pagination = DynamicPagination.of(operation, operation.paginated().orElse(null));
-        DynamicRequest first = request(operation, input, paginatorOverrideConfiguration(overrideConfiguration));
+        DynamicRequest first = request(operation, input, paginatorOverrideConfiguration(overrideConfiguration),
+                                        true, false);
         AsyncPageFetcher<Document> pages = new AsyncPageFetcher<Document>() {
             @Override
             public boolean hasNextPage(Document previousPage) {
@@ -566,26 +709,33 @@ public final class DynamicClient implements AwsClient {
     }
 
     /**
-     * Coerces the input to the operation's input schema, before any interceptor runs (Requirement 28.3).
+     * Checks the call's streaming members (Requirement 31.6), then coerces the input to the operation's input schema,
+     * before any interceptor runs (Requirement 28.3).
      */
     private DynamicRequest request(DynamicOperation operation, Document input,
-                                   AwsRequestOverrideConfiguration overrideConfiguration) {
+                                   AwsRequestOverrideConfiguration overrideConfiguration, boolean async,
+                                   boolean responseTransformer) {
         Validate.paramNotNull(input, "input");
+        DynamicStreaming.validate(operation, input, async, responseTransformer);
         StructDocument document = StructDocument.coerce(operation.inputSchema(), input, service.schema().id());
         return DynamicRequest.builder().document(document).overrideConfiguration(overrideConfiguration).build();
     }
 
     /**
-     * Runs a call through the client handler, as a generated synchronous client does.
+     * Runs a call through the client handler, as a generated synchronous client does: {@code handler} executes the
+     * parameters, which carry the request body of a streaming blob input.
      */
-    private DynamicResponse execute(DynamicOperation operation, DynamicRequest request) {
+    private <ResultT> ResultT execute(DynamicOperation operation, DynamicRequest request,
+                                      Function<ClientExecutionParams<DynamicRequest, DynamicResponse>, ResultT> handler) {
         SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, syncCallConfiguration);
         List<MetricPublisher> metricPublishers =
             resolveMetricPublishers(clientConfiguration, request.overrideConfiguration().orElse(null));
         MetricCollector apiCallMetricCollector = apiCallMetricCollector(metricPublishers, operation);
         try {
-            return syncClientHandler.execute(executionParams(operation, request, clientConfiguration,
-                                                             apiCallMetricCollector));
+            ClientExecutionParams<DynamicRequest, DynamicResponse> params =
+                executionParams(operation, request, clientConfiguration, apiCallMetricCollector);
+            DynamicStreaming.requestBody(operation, request.document()).ifPresent(params::withRequestBody);
+            return handler.apply(params);
         } finally {
             publish(metricPublishers, apiCallMetricCollector);
         }
@@ -601,14 +751,72 @@ public final class DynamicClient implements AwsClient {
         MetricCollector apiCallMetricCollector = apiCallMetricCollector(metricPublishers, operation);
         try {
             CompletableFuture<DynamicResponse> executeFuture =
-                asyncClientHandler.execute(executionParams(operation, request, clientConfiguration,
-                                                           apiCallMetricCollector));
+                asyncClientHandler.execute(asyncExecutionParams(operation, request, clientConfiguration,
+                                                                apiCallMetricCollector));
             CompletableFuture<DynamicResponse> whenCompleted =
                 executeFuture.whenComplete((r, e) -> publish(metricPublishers, apiCallMetricCollector));
             return CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
         } catch (Throwable t) {
             publish(metricPublishers, apiCallMetricCollector);
             return CompletableFutureUtils.failedFuture(t);
+        }
+    }
+
+    /**
+     * Runs a call with a streaming blob output through the asynchronous client handler, as a generated asynchronous
+     * client's streaming operation method does: the transformer is told of a failure with {@code exceptionOccurred},
+     * and the metrics are published when the response stream ends.
+     */
+    private <ReturnT> CompletableFuture<ReturnT> executeAsyncStreaming(
+        DynamicOperation operation, DynamicRequest request, AsyncResponseTransformer<DynamicResponse, ReturnT> transformer) {
+        SdkClientConfiguration clientConfiguration = updateSdkClientConfiguration(request, asyncCallConfiguration);
+        List<MetricPublisher> metricPublishers =
+            resolveMetricPublishers(clientConfiguration, request.overrideConfiguration().orElse(null));
+        MetricCollector apiCallMetricCollector = apiCallMetricCollector(metricPublishers, operation);
+        Pair<AsyncResponseTransformer<DynamicResponse, ReturnT>, CompletableFuture<Void>> pair =
+            AsyncResponseTransformerUtils.wrapWithEndOfStreamFuture(transformer);
+        AsyncResponseTransformer<DynamicResponse, ReturnT> wrapped = pair.left();
+        CompletableFuture<Void> endOfStreamFuture = pair.right();
+        try {
+            ClientExecutionParams<DynamicRequest, DynamicResponse> params =
+                asyncExecutionParams(operation, request, clientConfiguration, apiCallMetricCollector)
+                    .withAsyncResponseTransformer(wrapped);
+            CompletableFuture<ReturnT> executeFuture = asyncClientHandler.execute(params, wrapped);
+            CompletableFuture<ReturnT> whenCompleted = executeFuture.whenComplete((r, e) -> {
+                if (e != null) {
+                    notifyExceptionOccurred(wrapped, e);
+                }
+                endOfStreamFuture.whenComplete((r2, e2) -> publish(metricPublishers, apiCallMetricCollector));
+            });
+            return CompletableFutureUtils.forwardExceptionTo(whenCompleted, executeFuture);
+        } catch (Throwable t) {
+            notifyExceptionOccurred(wrapped, t);
+            publish(metricPublishers, apiCallMetricCollector);
+            return CompletableFutureUtils.failedFuture(t);
+        }
+    }
+
+    /**
+     * The parameters of an asynchronous call, with the request body of a streaming blob input.
+     */
+    private static ClientExecutionParams<DynamicRequest, DynamicResponse> asyncExecutionParams(
+        DynamicOperation operation, DynamicRequest request, SdkClientConfiguration clientConfiguration,
+        MetricCollector apiCallMetricCollector) {
+        ClientExecutionParams<DynamicRequest, DynamicResponse> params =
+            executionParams(operation, request, clientConfiguration, apiCallMetricCollector);
+        DynamicStreaming.asyncRequestBody(operation, request.document()).ifPresent(params::withAsyncRequestBody);
+        return params;
+    }
+
+    /**
+     * Tells a transformer that its call failed, as the generated {@code runAndLogError} call does: a failure of the
+     * transformer itself is logged and ignored, so that the call's own failure is reported.
+     */
+    private static void notifyExceptionOccurred(AsyncResponseTransformer<?, ?> transformer, Throwable error) {
+        try {
+            transformer.exceptionOccurred(error);
+        } catch (Exception e) {
+            log.error(() -> "Exception thrown in exceptionOccurred callback, ignoring", e);
         }
     }
 

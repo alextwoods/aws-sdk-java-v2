@@ -28,11 +28,14 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Subscriber;
 import software.amazon.awssdk.codecs.json.JsonCodec;
+import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableShape;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.ShapeType;
+import software.amazon.awssdk.schema.io.DataStream;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.smithy.model.shapes.ServiceShape;
@@ -126,13 +129,58 @@ class StructDocumentTest {
     }
 
     @Test
-    void of_streamingMember_isNotSupported() {
+    void of_streamingMemberWithABlob_fails() {
         Schema download = CONVERTER.getSchema(id("DownloadOutput"));
 
         assertThatThrownBy(() -> StructDocument.of(download, Document.of(Collections.singletonMap(
             "body", Document.of(new byte[] {1})))))
-            .isInstanceOf(UnsupportedOperationException.class)
-            .hasMessage("Streaming member test.dyn#DownloadOutput$body (blob) is not supported by StructDocument");
+            .isInstanceOf(SerializationException.class)
+            .hasMessage("Cannot coerce member test.dyn#DownloadOutput$body: a streaming blob member needs a data stream "
+                        + "document, but found a blob document. Create one with "
+                        + "DynamicStreams.dataStream(RequestBody) or DynamicStreams.dataStream(AsyncRequestBody).");
+    }
+
+    @Test
+    void of_streamingMemberWithADataStream_keepsTheStreamWithTheMemberSchema() {
+        Schema download = CONVERTER.getSchema(id("DownloadOutput"));
+        DataStream stream = new TestDataStream();
+
+        StructDocument document = StructDocument.of(download, Document.of(Collections.singletonMap(
+            "body", Document.of(PreludeSchemas.BLOB, stream))));
+
+        Document body = document.getMember("body");
+        assertThat(body.type()).isEqualTo(ShapeType.BLOB);
+        assertThat(body.asDataStream()).isSameAs(stream);
+        assertThat(body).isEqualTo(Document.of(download.member("body"), stream));
+        assertThat(document.<Object>getMemberValue(download.member("body"))).isNull();
+        RecordingSerializer serializer = new RecordingSerializer();
+        document.serializeMembers(serializer);
+        assertThat(serializer.events).isEmpty();
+    }
+
+    /**
+     * A data stream that publishes nothing; the documents never subscribe to it.
+     */
+    private static final class TestDataStream implements DataStream {
+        @Override
+        public long contentLength() {
+            return 0;
+        }
+
+        @Override
+        public String contentType() {
+            return null;
+        }
+
+        @Override
+        public boolean isReplayable() {
+            return false;
+        }
+
+        @Override
+        public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     @Test

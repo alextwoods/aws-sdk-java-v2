@@ -24,11 +24,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.reactivestreams.Publisher;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.ShapeType;
+import software.amazon.awssdk.schema.TraitKey;
+import software.amazon.awssdk.schema.io.DataStream;
 import software.amazon.awssdk.schema.serde.SerializationException;
 import software.amazon.awssdk.schema.serde.document.Document;
 
@@ -46,6 +49,8 @@ import software.amazon.awssdk.schema.serde.document.Document;
  *     <li>A timestamp member takes a timestamp, a number of epoch seconds (the fraction is kept down to
  *     milliseconds), or a {@code date-time} string.</li>
  *     <li>A blob member takes only a blob document: a string is rejected, whatever produced the document.</li>
+ *     <li>A streaming blob member takes only a data stream document, and an event stream member only an event stream
+ *     document; neither stream is read.</li>
  *     <li>A union with more than one member set fails.</li>
  * </ul>
  *
@@ -78,14 +83,60 @@ final class StrictDocumentCoercion {
         return structure(schema, value, service);
     }
 
+    /**
+     * Returns the document of a streaming member, a streaming blob or an event stream: the value's data stream or
+     * events with the member's schema. The streams are not read.
+     *
+     * @param member a member with the {@code smithy.api#streaming} trait, which targets a blob or a union
+     * @param value the member's value
+     * @return the stream document
+     * @throws SerializationException if the value is not a data stream document (for a blob) or an event stream
+     *     document (for a union)
+     */
+    static Document streamMember(Schema member, Document value) {
+        if (member.type() == ShapeType.BLOB) {
+            if (!isDataStream(value)) {
+                throw new SerializationException(
+                    cannotCoerce(member) + "a streaming blob member needs a data stream document, but found "
+                    + withArticle(value.type()) + " document. Create one with DynamicStreams.dataStream(RequestBody) "
+                    + "or DynamicStreams.dataStream(AsyncRequestBody).");
+            }
+            return Document.of(member, value.asDataStream());
+        }
+        if (!isEventStream(value)) {
+            throw new SerializationException(
+                cannotCoerce(member) + "an event stream member needs an event stream document, but found "
+                + withArticle(value.type()) + " document. Create one with DynamicStreams.eventStream(Publisher).");
+        }
+        return Document.ofEventStream(member, value.asEventStream());
+    }
+
+    /**
+     * Returns whether a document is a data stream document ({@code Document.of(Schema, DataStream)}), whose
+     * {@code asObject()} is its stream.
+     */
+    static boolean isDataStream(Document value) {
+        return value.type() == ShapeType.BLOB && value.asObject() instanceof DataStream;
+    }
+
+    /**
+     * Returns whether a document is an event stream document ({@code Document.ofEventStream}), whose
+     * {@code asObject()} is its publisher.
+     */
+    static boolean isEventStream(Document value) {
+        return value.type() == ShapeType.UNION && value.asObject() instanceof Publisher;
+    }
+
     private static Document coerce(Schema member, Document value, ShapeId service) {
         ShapeType type = value.type();
+        if (member.hasTrait(TraitKey.STREAMING_TRAIT)) {
+            return streamMember(member, value);
+        }
         switch (member.type()) {
             case STRUCTURE:
                 expect(member, isMapLike(type), "a map or structure", value);
                 return structure(member, value, service);
             case UNION:
-                StructDocument.rejectStreaming(member);
                 expect(member, isMapLike(type), "a map or structure", value);
                 return union(member, value, service);
             case LIST:
@@ -123,7 +174,6 @@ final class StrictDocumentCoercion {
             case BIG_DECIMAL:
                 return new ContentDocument(member, bigDecimal(member, value));
             case BLOB:
-                StructDocument.rejectStreaming(member);
                 if (type != ShapeType.BLOB) {
                     throw new SerializationException(
                         cannotCoerce(member) + "a blob member needs a blob document, but found " + withArticle(type)
