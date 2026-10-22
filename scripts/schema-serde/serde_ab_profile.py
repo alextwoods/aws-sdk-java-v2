@@ -24,7 +24,8 @@ hot_frames) and serde_ab_summary.py (timing means).
 
 Usage:
   serde_ab_profile.py compare RUNDIR [--timing RUN_JSON] [--out FILE]
-      Writes RUNDIR/profile-comparison.md (or FILE). --timing is a serde-ab.json of a timing run of the same jars
+      Writes RUNDIR/profile-comparison.md (or FILE), RUNDIR/boundary.tsv and RUNDIR/profile-path.tsv (see below);
+      exits 1 if a runtime code-path check fails. --timing is a serde-ab.json of a timing run of the same jars
       (serde_ab_summary.py collect); its mean ns/op and gc.alloc.rate.norm turn shares into ns/op and B/op per
       category. Without it the profiling runs' own JMH results are used (perturbed by the profiler; marked).
   serde_ab_profile.py --self-test
@@ -74,6 +75,22 @@ least 1% share on one side, are flagged too. Allocation cross-check: the alloc p
 the benchmark method) over the JVM's gc.alloc.rate of the same run should be roughly 1 (flagged outside 0.67-1.5).
 Every flag must be explained in the comparability matrix (expected architectural difference, extra overhead, or
 missing work).
+
+Work-boundary items (comparability-matrix.md): work inside one arm's timed method that the other arm's client does
+outside the serde call. Each sample belongs to at most one item, independently of its category:
+  A1  per-call legacy marshaller construction: category construction (baseline marshall).
+  A2  response metadata and status check: category metadata, or a HttpClientProtocol.isErrorResponse frame (feature
+      unmarshall).
+  A5  Query form percent-encoding: a QueryFormSerializer writeUrlEncoded / writeUrlEncodedAscii /
+      writePercentEncoded / percentEncode frame (feature Query marshall). A lower bound: appending the pairs to the
+      body buffer stays in, as the baseline's equivalent (putting them into the raw query map) does; the
+      Content-Length header put is not separated from the Content-Type put.
+compare writes their CPU and alloc shares per (class, param, arm) to RUNDIR/boundary.tsv, the input of
+serde_ab_summary.py summarize --boundary (the serde-only estimate), and a table to profile-comparison.md.
+
+Runtime code path: when arms.tsv has an expect_path column (serde-ab.sh writes it), compare runs serde_ab_checks.py's
+path check over every cpu profile (every class, param and arm), writes RUNDIR/profile-path.tsv and a per-class table
+to profile-comparison.md, and exits 1 if any profile is not PASS (a missing or failed cpu profile included).
 """
 import csv
 import json
@@ -86,6 +103,7 @@ from collections import Counter, OrderedDict
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 import hot_path_frames as hpf  # noqa: E402
+import serde_ab_checks as sac  # noqa: E402
 import serde_ab_summary as sab  # noqa: E402
 
 ONE_SIDED_HIGH = 1.0     # percent
@@ -180,6 +198,17 @@ WEAK_RULES = [
                            r"|javaTimeNanos|^org\.openjdk\.jmh\.")),
 ]
 
+# Work-boundary items: work one arm's timed method does that the other arm's client does outside the serde call
+# (comparability-matrix.md A1, A2, A5). Each sample belongs to at most one item, checked in this order.
+BOUNDARY = OrderedDict([
+    ("A1", "per-call legacy marshaller construction (category construction)"),
+    ("A2", "response metadata and status check (category metadata, isErrorResponse)"),
+    ("A5", "Query form percent-encoding (QueryFormSerializer.writeUrlEncoded / percent-encode frames)"),
+])
+BOUNDARY_A2_FRAME = re.compile(r"^" + _S + r"protocols\.client\.http\.HttpClientProtocol\.isErrorResponse$")
+BOUNDARY_A5_FRAME = re.compile(r"^" + _S + r"protocols\.client\.awsquery\.internal\.QueryFormSerializer\."
+                               r"(writeUrlEncoded|writeUrlEncodedAscii|writePercentEncoded|percentEncode)$")
+
 LAMBDA = re.compile(r"\$\$Lambda.*$")
 
 
@@ -216,9 +245,29 @@ def categorize(hot):
     return "vm"
 
 
+def boundary_item(hot, category):
+    """The work-boundary item (A1, A2, A5) of one sample, or None."""
+    if category == "construction":
+        return "A1"
+    if category == "metadata" or any(BOUNDARY_A2_FRAME.search(f) for f in hot):
+        return "A2"
+    if any(BOUNDARY_A5_FRAME.search(f) for f in hot):
+        return "A5"
+    return None
+
+
+COUNT_KINDS = ("categories", "self", "inclusive", "boundary")
+
+
+def _empty_counts():
+    out = {"total": 0}
+    out.update({k: Counter() for k in COUNT_KINDS})
+    return out
+
+
 def profile_counts(lines, alloc=False):
-    """{"total", "categories": Counter, "self": Counter, "inclusive": Counter} over collapsed lines."""
-    out = {"total": 0, "categories": Counter(), "self": Counter(), "inclusive": Counter()}
+    """{"total", "categories", "self", "inclusive", "boundary": Counter} over collapsed lines."""
+    out = _empty_counts()
     for line in lines:
         parsed = hpf.parse_line(line)
         if parsed is None:
@@ -228,7 +277,11 @@ def profile_counts(lines, alloc=False):
         if hot is None:
             continue
         out["total"] += n
-        out["categories"][categorize(hot)] += n
+        category = categorize(hot)
+        out["categories"][category] += n
+        item = boundary_item(hot, category)
+        if item:
+            out["boundary"][item] += n
         out["self"][hot[-1] if hot else "(JMH stub)"] += n
         for f in set(hot):
             out["inclusive"][f] += n
@@ -310,16 +363,51 @@ def load_profiles(rundir):
         counts = None
         files = _collapsed(directory) if os.path.isdir(directory) else []
         if row["status"] == "ok" and files:
-            counts = {"total": 0, "categories": Counter(), "self": Counter(), "inclusive": Counter()}
+            counts = _empty_counts()
             for path in files:
                 with open(path) as f:
                     c = profile_counts(f, alloc)
-                for k in ("categories", "self", "inclusive"):
+                for k in COUNT_KINDS:
                     counts[k].update(c[k])
                 counts["total"] += c["total"]
         entry = out.setdefault((row["class"], row["param"]), OrderedDict()).setdefault(row["arm"], {})
-        entry[row["event"]] = {"counts": counts, "jmh": _jmh(directory), "dir": row["dir"], "status": row["status"]}
+        entry[row["event"]] = {"counts": counts, "jmh": _jmh(directory), "dir": row["dir"], "status": row["status"],
+                               "files": files}
     return out
+
+
+def path_checks(profiles, expects):
+    """The runtime code-path check of serde_ab_checks.py over every cpu profile: one row per (class, param, arm)
+    with an expected path ({arm: legacy|schema}). A missing or failed cpu profile is a FAIL."""
+    rows = []
+    for (cls, param), per_arm in profiles.items():
+        for arm, events in per_arm.items():
+            expect = expects.get(arm)
+            if expect not in sac.PATHS:
+                continue
+            cpu = events.get("cpu")
+            if cpu is None:
+                continue
+            c = {"total": 0, "schema": 0, "legacy": 0, "sdk_fields_from_schema": 0}
+            for path in cpu["files"] if cpu["status"] == "ok" else []:
+                with open(path) as f:
+                    for k, v in sac.path_counts(f).items():
+                        c[k] += v
+            ok, message = sac.path_verdict(expect, c["schema"], c["legacy"], c["total"])
+            other = "legacy" if expect == "schema" else "schema"
+            rows.append({"arm": arm, "class": cls, "param": param, "expect": expect,
+                         "result": "PASS" if ok else "FAIL", "expected_samples": c[expect],
+                         "other_samples": c[other], "total": c["total"],
+                         "sdk_fields_from_schema": c["sdk_fields_from_schema"], "message": message})
+    return rows
+
+
+def write_tsv(path, rows, columns):
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=columns, delimiter="\t", lineterminator="\n")
+        w.writeheader()
+        for row in rows:
+            w.writerow({c: row.get(c, "") for c in columns})
 
 
 def timing_means(timing_doc):
@@ -355,10 +443,14 @@ def analyze_combo(per_arm, arms, timing, param):
             check = alloc_counts["total"] / aj["seconds"] / aj["alloc_rate"]
         cpu_shares = {c: share(cpu_counts, c) for c in CATEGORIES} if cpu_counts else {}
         alloc_shares = {c: share(alloc_counts, c) for c in CATEGORIES} if alloc_counts else {}
+        cpu_boundary = {b: share(cpu_counts, b, "boundary") for b in BOUNDARY} if cpu_counts else {}
+        alloc_boundary = {b: share(alloc_counts, b, "boundary") for b in BOUNDARY} if alloc_counts else {}
         out[arm] = {
+            "benchmark": benchmark,
             "cpu": cpu_counts, "alloc": alloc_counts, "cpu_shares": cpu_shares, "alloc_shares": alloc_shares,
             "ns": {c: v * score / 100.0 for c, v in cpu_shares.items()} if score is not None else {},
             "bytes": {c: v * norm / 100.0 for c, v in alloc_shares.items()} if norm is not None else {},
+            "cpu_boundary": cpu_boundary, "alloc_boundary": alloc_boundary,
             "score": score, "score_source": "timing" if t.get("score") else "profile run",
             "norm": norm, "norm_source": "timing" if t.get("alloc") else "profile run",
             "alloc_check": check,
@@ -470,8 +562,93 @@ def one_sided_frames(analysis, arms):
     return lines
 
 
-def render(rundir, profiles, arms, timing_doc):
+BOUNDARY_COLUMNS = (["benchmark", "class", "param", "arm", "cpu_samples", "alloc_bytes"]
+                    + [f"{b}_{k}_pct" for b in BOUNDARY for k in ("cpu", "alloc")])
+PATH_COLUMNS = ["arm", "class", "param", "expect", "result", "expected_samples", "other_samples", "total",
+                "sdk_fields_from_schema", "message"]
+
+
+def boundary_rows(combos, arms):
+    """One boundary.tsv row per (class, param, arm): the CPU and alloc share of every work-boundary item."""
+    rows = []
+    for (cls, param), (analysis, _) in combos.items():
+        for arm in arms:
+            a = analysis[arm]
+            if not a["cpu"] and not a["alloc"]:
+                continue
+            row = {"benchmark": a["benchmark"] or "", "class": cls, "param": param, "arm": arm,
+                   "cpu_samples": a["cpu"]["total"] if a["cpu"] else "",
+                   "alloc_bytes": a["alloc"]["total"] if a["alloc"] else ""}
+            for b in BOUNDARY:
+                for kind in ("cpu", "alloc"):
+                    shares = a[f"{kind}_boundary"]
+                    row[f"{b}_{kind}_pct"] = f"{shares[b]:.3f}" if shares else ""
+            rows.append(row)
+    return rows
+
+
+def boundary_section(combos, arms):
+    lines = ["## Work-boundary items (A1, A2, A5)", "",
+             "Work inside one arm's timed method that the other arm's client does outside the serde call "
+             "(`comparability-matrix.md`): "
+             + "; ".join(f"{b}: {d}" for b, d in BOUNDARY.items())
+             + ". Share of CPU samples and allocated bytes, and the estimate in ns/op and B/op (share x score / "
+             "norm). `serde_ab_summary.py summarize --boundary <run>/boundary.tsv` subtracts these shares for its "
+             "serde-only estimate. Rows where every item is below 1% on every arm are left out.", "",
+             "| class | case |" + "".join(f" {a} CPU % | {a} ns/op | {a} alloc % | {a} B/op | {a} items |" for a in arms),
+             "|---|---|" + "---:|---:|---:|---:|---|" * len(arms)]
+    for (cls, param), (analysis, _) in combos.items():
+        cells, show = [], False
+        for arm in arms:
+            a = analysis[arm]
+            cpu, alloc = sum(a["cpu_boundary"].values()), sum(a["alloc_boundary"].values())
+            show |= cpu >= 1.0 or alloc >= 1.0
+            items = ", ".join(b for b in BOUNDARY if a["cpu_boundary"].get(b, 0) >= 1.0
+                              or a["alloc_boundary"].get(b, 0) >= 1.0)
+            cells += [_f(cpu if a["cpu"] else None), _f(None if a["score"] is None or not a["cpu"]
+                                                        else cpu * a["score"] / 100.0),
+                      _f(alloc if a["alloc"] else None), _f(None if a["norm"] is None or not a["alloc"]
+                                                            else alloc * a["norm"] / 100.0, 0), items or "-"]
+        if show:
+            lines.append(f"| {cls} | {param} | " + " | ".join(cells) + " |")
+    return lines + [""]
+
+
+def path_section(path_rows):
+    lines = ["## Runtime code path (every param)", ""]
+    if path_rows is None:
+        return lines + ["Not run: `arms.tsv` has no `expect_path` column.", ""]
+    if not path_rows:
+        return lines + ["Not run: no cpu profile in this run.", ""]
+    lines += ["`serde_ab_checks.py path` over every cpu profile (stacks above the JMH stub): the expected path's "
+              "frames present, the other path's absent. Rows: `profile-path.tsv`.", "",
+              "| arm | class | expect | params | PASS | min expected-path share | other-path samples "
+              "| SdkFieldsFromSchema samples |", "|---|---|---|---:|---:|---:|---:|---:|"]
+    groups = OrderedDict()
+    for r in path_rows:
+        groups.setdefault((r["arm"], r["class"], r["expect"]), []).append(r)
+    for (arm, cls, expect), rows in groups.items():
+        shares = [r["expected_samples"] / r["total"] for r in rows if r["total"]]
+        lines.append(f"| {arm} | {cls} | {expect} | {len(rows)} | {sum(r['result'] == 'PASS' for r in rows)} "
+                     f"| {_f(min(shares) if shares else None, 2)} | {sum(r['other_samples'] for r in rows)} "
+                     f"| {sum(r['sdk_fields_from_schema'] for r in rows)} |")
+    failed = [r for r in path_rows if r["result"] != "PASS"]
+    lines += ["", f"Result: {'PASS' if not failed else 'FAIL'} ({len(path_rows) - len(failed)}/{len(path_rows)})."]
+    lines += [f"- FAIL {r['arm']} {r['class']} [{r['param']}]: {r['message']}" for r in failed]
+    return lines + [""]
+
+
+def analyze_all(profiles, arms, timing_doc):
+    """{(class, param): (analysis, flags)}."""
     timing = timing_means(timing_doc)
+    combos = OrderedDict()
+    for (cls, param), per_arm in profiles.items():
+        analysis = analyze_combo(per_arm, arms, timing, param)
+        combos[(cls, param)] = (analysis, combo_flags(analysis, arms))
+    return combos
+
+
+def render(rundir, combos, arms, timing_doc, path_rows=None):
     params = {}
     if os.path.isfile(os.path.join(rundir, "params.tsv")):
         params = {r["key"]: r["value"] for r in _read_tsv(os.path.join(rundir, "params.tsv"))}
@@ -484,10 +661,8 @@ def render(rundir, profiles, arms, timing_doc):
                 "the profiling runs (perturbed by the profiler; pass --timing for timing-run numbers)")
              + ". Category rules and flags: `scripts/schema-serde/serde_ab_profile.py` (docstring). Every flag "
              "must be explained in the comparability matrix.", ""]
-    combos = OrderedDict()
-    for (cls, param), per_arm in profiles.items():
-        analysis = analyze_combo(per_arm, arms, timing, param)
-        combos[(cls, param)] = (analysis, combo_flags(analysis, arms))
+    lines += path_section(path_rows)
+    lines += boundary_section(combos, arms)
 
     lines += ["## Flags", ""]
     any_flag = False
@@ -537,13 +712,25 @@ def compare_main(argv):
             i += 2
         else:
             raise SystemExit(f"unknown option {rest[i]}\n{__doc__}")
-    arms = [r["label"] for r in _read_tsv(os.path.join(rundir, "arms.tsv"))]
+    arm_rows = _read_tsv(os.path.join(rundir, "arms.tsv"))
+    arms = [r["label"] for r in arm_rows]
     profiles = load_profiles(rundir)
     timing_doc = sab.load(opts["--timing"]) if opts["--timing"] else None
+    combos = analyze_all(profiles, arms, timing_doc)
+    path_rows = None
+    if arm_rows and "expect_path" in arm_rows[0]:
+        path_rows = path_checks(profiles, {r["label"]: r["expect_path"] for r in arm_rows})
+        write_tsv(os.path.join(rundir, "profile-path.tsv"), path_rows, PATH_COLUMNS)
+    write_tsv(os.path.join(rundir, "boundary.tsv"), boundary_rows(combos, arms), BOUNDARY_COLUMNS)
     out = opts["--out"] or os.path.join(rundir, "profile-comparison.md")
     with open(out, "w") as f:
-        f.write(render(rundir, profiles, arms, timing_doc))
-    print(f"Wrote {out}", file=sys.stderr)
+        f.write(render(rundir, combos, arms, timing_doc, path_rows))
+    print(f"Wrote {out}, {os.path.join(rundir, 'boundary.tsv')}"
+          + (f", {os.path.join(rundir, 'profile-path.tsv')}" if path_rows is not None else ""), file=sys.stderr)
+    failed = [r for r in path_rows or [] if r["result"] != "PASS"]
+    if failed:
+        print(f"FAIL runtime code path: {len(failed)} of {len(path_rows)} cpu profiles; see {out}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -701,6 +888,66 @@ def self_test():
                           ".writeString` 100.0%", text)
             self.assertIn("alloc check 1.00", text)  # 200 MB over 2 s vs 100 MB/s
             self.assertIn("score 1,000.0 ns/op (profile run)", text)
+            self.assertIn("## Work-boundary items (A1, A2, A5)", text)
+            # Baseline: construction 30% of CPU = 300 ns/op of A1.
+            self.assertIn("| RestJsonMarshallBenchmark | restJson1_PutObject_S | 30.0 | 300.0 | 0.0 | 0 | A1 "
+                          "| 0.0 | 0.0 | 0.0 | 0 | - |", text)
+            self.assertIn("Not run: `arms.tsv` has no `expect_path` column.", text)
+
+        def test_boundaryItem_whenConstructionMetadataStatusOrPercentEncoding_assignsItem(self):
+            def item(*frames):
+                hot = hot_stack(parse(stub + ";" + ";".join(frames) + " 1")[0], False)
+                return boundary_item(hot, categorize(hot))
+            self.assertEqual(item(bench, "software/amazon/awssdk/protocols/json/internal/marshall/"
+                                         "JsonProtocolMarshallerBuilder.build"), "A1")
+            unm = "software/amazon/awssdk/benchmark/serde/QueryUnmarshallBenchmark.unmarshall"
+            self.assertEqual(item(unm, "software/amazon/awssdk/protocols/client/http/HttpClientProtocol.responseMetadata",
+                                  "java/util/TreeMap.get"), "A2")
+            self.assertEqual(item(unm, "software/amazon/awssdk/protocols/client/http/HttpClientProtocol.isErrorResponse",
+                                  "software/amazon/awssdk/http/SdkHttpResponse.isSuccessful"), "A2")
+            qfs = "software/amazon/awssdk/protocols/client/awsquery/internal/QueryFormSerializer"
+            self.assertEqual(item(bench, qfs + "$ValueSerializer.writeString", qfs + ".writeUrlEncoded",
+                                  "java/lang/String.charAt"), "A5")
+            self.assertIsNone(item(bench, qfs + "$ValueSerializer.writeString", qfs + ".writeKey"))
+            self.assertIsNone(item(bench, "software/amazon/awssdk/codecs/json/internal/SmithyJsonSerializer.w"))
+
+        def test_compare_whenExpectPathGiven_checksEveryCpuProfileAndWritesBoundaryTsv(self):
+            legacy = stub + ";" + bench + ";software/amazon/awssdk/protocols/json/internal/marshall/" \
+                                          "JsonProtocolMarshaller.marshall 100\n"
+            schema = stub + ";" + bench + ";software/amazon/awssdk/protocols/client/restjson/RestJsonClientProtocol" \
+                                          ".serializeRequest 100\n"
+            with tempfile.TemporaryDirectory() as d:
+                with open(os.path.join(d, "arms.tsv"), "w") as f:
+                    f.write("label\tref\texpect_path\nbaseline\tfc8b\tlegacy\nfeature\tHEAD\tschema\n")
+                rows = ["arm\tclass\tparam\tevent\tstatus\tdir"]
+                # Param S: both arms on their expected path. Param M: the feature profile shows legacy frames.
+                for param, feature_lines in (("S", schema), ("M", legacy)):
+                    for arm, line in (("baseline", legacy), ("feature", feature_lines)):
+                        rel = f"profile/{arm}/RestJsonMarshallBenchmark/{param}/cpu"
+                        os.makedirs(os.path.join(d, rel))
+                        with open(os.path.join(d, rel, "collapsed-cpu.csv"), "w") as f:
+                            f.write(line)
+                        rows.append(f"{arm}\tRestJsonMarshallBenchmark\t{param}\tcpu\tok\t{rel}")
+                rows.append("feature\tRestJsonMarshallBenchmark\tL\tcpu\tfailed\tprofile/feature/x/L/cpu")
+                rows.append("baseline\tRestJsonMarshallBenchmark\tL\tcpu\tok\tprofile/baseline/x/L/cpu")
+                with open(os.path.join(d, "profile-runs.tsv"), "w") as f:
+                    f.write("\n".join(rows) + "\n")
+                self.assertEqual(compare_main([d]), 1)
+                path_rows = _read_tsv(os.path.join(d, "profile-path.tsv"))
+                boundary = _read_tsv(os.path.join(d, "boundary.tsv"))
+                with open(os.path.join(d, "profile-comparison.md")) as f:
+                    text = f.read()
+            results = {(r["arm"], r["param"]): r["result"] for r in path_rows}
+            self.assertEqual(results, {("baseline", "S"): "PASS", ("feature", "S"): "PASS",
+                                       ("baseline", "M"): "PASS", ("feature", "M"): "FAIL",
+                                       ("baseline", "L"): "FAIL", ("feature", "L"): "FAIL"})
+            self.assertIn("Result: FAIL (3/6).", text)
+            self.assertIn("- FAIL feature RestJsonMarshallBenchmark [M]: no schema-path hits", text)
+            self.assertIn("| feature | RestJsonMarshallBenchmark | schema | 3 | 1 | 0.00 | 100 | 0 |", text)
+            self.assertIn("- FAIL feature RestJsonMarshallBenchmark [L]: no benchmark samples or classes", text)
+            self.assertEqual(set(boundary[0]), set(BOUNDARY_COLUMNS))
+            self.assertEqual({(r["arm"], r["param"]) for r in boundary}, {("baseline", "S"), ("feature", "S"),
+                                                                          ("baseline", "M"), ("feature", "M")})
 
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(SerdeAbProfileTest)
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1

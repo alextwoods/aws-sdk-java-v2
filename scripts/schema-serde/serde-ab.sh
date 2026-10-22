@@ -33,10 +33,14 @@
 # java -jar <jar> <class> -foe true -prof gc -rf json ... with identical JMH options and JVM arguments. Null
 # experiment (--null): one jar as LABEL-a and LABEL-b, so every difference is noise; pass its serde-ab.json to
 # serde_ab_summary.py summarize --null. Profiling (--profile, --profile-only): a separate async-profiler pass over
-# every class, param, arm and event, compared side by side by serde_ab_profile.py.
+# every class, param, arm and event, compared side by side by serde_ab_profile.py, which also checks the runtime code
+# path of every cpu profile (profile-path.tsv; a FAIL fails the run) and writes the work-boundary shares
+# (boundary.tsv: A1 per-call legacy marshaller construction, A2 response metadata, A5 Query form encoding). With
+# --profile after timing, summary.md is rewritten with serde_ab_summary.py summarize --boundary (serde-only estimate).
 #
-# Output (<out>/<run-id>/): arms.tsv, params.tsv, runs.tsv, jmh/, verify/ (verify.md), logs/, profile/,
-# serde-ab.json, summary.md, profile-comparison.md.
+# Output (<out>/<run-id>/): arms.tsv, params.tsv, runs.tsv, provenance/<label>.properties (the jar's record plus
+# this run's SDK pin result; jar provenance files are not edited after their build), jmh/, verify/ (verify.md),
+# logs/, profile/, serde-ab.json, summary.md, profile-comparison.md, profile-path.tsv, boundary.tsv.
 #
 # Usage: scripts/schema-serde/serde-ab.sh (--arm LABEL=REF ... | --null LABEL=REF|PATH) [options]
 #   --arm LABEL=REF        arm built from git ref REF (first arm = baseline); repeat
@@ -196,7 +200,7 @@ one_line() { tr '\n' ';' | sed 's/;$//'; }
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 RUNDIR="$OUT_ROOT/$RUN_ID"
 JARDIR="$OUT_ROOT/jars"
-mkdir -p "$RUNDIR/logs" "$RUNDIR/jmh" "$RUNDIR/verify" "$JARDIR"
+mkdir -p "$RUNDIR/logs" "$RUNDIR/jmh" "$RUNDIR/verify" "$RUNDIR/provenance" "$JARDIR"
 echo "Run directory: $RUNDIR"
 
 # ---- Build: one worktree and jar per arm commit ----
@@ -214,8 +218,8 @@ sdk_pin_check() {  # <pin ref> <commit> -> prints "result<TAB>changed paths"; re
     printf 'ok: %s..%s changes only test/sdk-standard-benchmarks/, scripts/, docs/ (%s files)\t%s\n' \
         "${pin_sha:0:12}" "${sha:0:12}" "$(printf '%s' "$changed" | grep -c . || true)" "$(printf '%s' "$changed" | one_line)"
 }
-build_jmh() {  # <label> <ref> <sha> -> builds $JARDIR/<label>.jar and its provenance files
-    local label="$1" ref="$2" sha="$3" id="${3:0:12}"
+build_jmh() {  # <label> <ref> <sha> <sdk pin> <pin result> <pin changed paths> -> $JARDIR/<label>.jar + provenance
+    local label="$1" ref="$2" sha="$3" id="${3:0:12}" sdk_pin="$4" sdk_pin_result="$5" sdk_pin_paths="$6"
     local wt="$WT_ROOT/aws-sdk-serde-ab-$id"
     local m2="$wt-m2"
     local log="$RUNDIR/logs/build-$label-$id.log"
@@ -283,8 +287,9 @@ build_jmh() {  # <label> <ref> <sha> -> builds $JARDIR/<label>.jar and its prove
         echo "build_host=$(hostname), $(uname -sm)"
         echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "build_log=$log"
-        echo "sdk_pin=none"
-        echo "sdk_pin_result=none"
+        echo "sdk_pin=$sdk_pin"
+        echo "sdk_pin_result=$sdk_pin_result"
+        if [[ -n "$sdk_pin_paths" ]]; then echo "sdk_pin_changed_paths=$sdk_pin_paths"; fi
     } > "$props"
 }
 
@@ -319,13 +324,15 @@ for spec in "${ARMS[@]}"; do
         ref="$target"
         sha="$(git -C "$REPO_ROOT" rev-parse --verify "${ref}^{commit}")" || fail_usage "Not a commit: $ref"
     fi
-    # SDK pin, checked before any build: recorded in the provenance and arms.tsv; a violation stops the run.
+    # SDK pin, checked before any build: recorded in the run's provenance copy and arms.tsv; a violation stops the run.
     pin_result="none"
+    pin_paths=""
     pin=""
     if pin="$(lookup "$label" ${SDK_PINS[@]+"${SDK_PINS[@]}"})"; then
         [[ -n "$sha" ]] || { echo "--sdk-pin $label: the jar records no commit" >&2; exit 1; }
         if pin_line="$(sdk_pin_check "$pin" "$sha")"; then
             pin_result="${pin_line%%$'\t'*}"
+            pin_paths="${pin_line#*$'\t'}"
             echo "SDK pin $label=$pin: $pin_result"
         else
             echo "--sdk-pin $label=$pin ${pin_line%%$'\t'*}" >&2
@@ -333,17 +340,17 @@ for spec in "${ARMS[@]}"; do
         fi
     fi
     if [[ "$kind" == "ref" ]]; then
-        build_jmh "$label" "$ref" "$sha" || exit 1
+        build_jmh "$label" "$ref" "$sha" "${pin:-none}" "$pin_result" "$pin_paths" || exit 1
         jar="$JARDIR/$label.jar"
         props="$jar.provenance.properties"
     fi
-    if [[ -n "$pin" ]]; then
-        if [[ -n "$props" && -w "$props" ]]; then
-            sed -i.bak '/^sdk_pin/d' "$props" && rm -f "$props.bak"
-            { echo "sdk_pin=$pin"; echo "sdk_pin_result=$pin_result"
-              echo "sdk_pin_changed_paths=${pin_line#*$'\t'}"; } >> "$props"
-        fi
-    fi
+    # The run's own provenance: a copy of the jar's record with this run's SDK pin result. The jar's file is never
+    # edited after its build, so a later run cannot rewrite a record an earlier run cited.
+    run_props="$RUNDIR/provenance/$label.properties"
+    if [[ -n "$props" ]]; then sed '/^sdk_pin/d' "$props" > "$run_props"; else : > "$run_props"; fi
+    { echo "source_provenance=${props:-none}"; echo "sdk_pin=${pin:-none}"; echo "sdk_pin_result=$pin_result"
+      if [[ -n "$pin_paths" ]]; then echo "sdk_pin_changed_paths=$pin_paths"; fi; } >> "$run_props"
+    props="$run_props"
     if expect="$(lookup "$label" ${EXPECT_PATHS[@]+"${EXPECT_PATHS[@]}"})"; then :;
     elif [[ "$NULL_EXPERIMENT" == true ]]; then expect="schema";
     elif [[ $NARMS_DECLARED -eq 0 ]]; then expect="legacy";
@@ -611,8 +618,16 @@ if [[ $PROFILE -eq 1 ]]; then
     done
     COMPARE_ARGS=(compare "$RUNDIR")
     [[ -f "$RUNDIR/serde-ab.json" ]] && COMPARE_ARGS+=(--timing "$RUNDIR/serde-ab.json")
+    # compare also checks the runtime code path of every cpu profile (profile-path.tsv; exit 1 on any FAIL) and
+    # writes the work-boundary shares (boundary.tsv).
     python3 "$SCRIPT_DIR/serde_ab_profile.py" "${COMPARE_ARGS[@]}" || FAILURES=$((FAILURES + 1))
     echo "Profile comparison: $RUNDIR/profile-comparison.md"
+    if [[ $PROFILE_ONLY -eq 0 && "$NULL_EXPERIMENT" == false && -f "$RUNDIR/boundary.tsv" ]]; then
+        # The summary again, with the boundary flags and the serde-only estimate.
+        python3 "$SCRIPT_DIR/serde_ab_summary.py" summarize "$RUNDIR/serde-ab.json" \
+            --boundary "$RUNDIR/boundary.tsv" > "$RUNDIR/summary.md"
+        echo "Summary with the serde-only estimate: $RUNDIR/summary.md"
+    fi
 fi
 echo "Run directory: $RUNDIR"
 [[ $FAILURES -eq 0 ]]

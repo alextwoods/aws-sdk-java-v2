@@ -22,12 +22,16 @@ Usage:
   serde_ab_summary.py collect RUNDIR
       Reads RUNDIR/arms.tsv, params.tsv, runs.tsv and the JMH -rf json files runs.tsv names (jmh/*.json) and writes
       RUNDIR/serde-ab.json (schema_version 1), the input of summarize.
-  serde_ab_summary.py summarize RUN_JSON [--null NULL_JSON] [--preliminary]
+  serde_ab_summary.py summarize RUN_JSON [--null NULL_JSON] [--boundary BOUNDARY_TSV] [--preliminary]
       Prints a Markdown summary: provenance, then per (benchmark, params) the baseline (first arm) and every other
       arm's mean ns/op ± error, the paired ratio and its spread, gc.alloc.rate.norm B/op and its ratio, the floor
       from the null experiment and a verdict; then per-class and overall geometric-mean ratios and the problems
       (failed runs, rows missing on an arm). A null-experiment run reports its floor per row instead. --preliminary
-      adds a smoke-data banner.
+      adds a smoke-data banner. --boundary takes the boundary.tsv of serde_ab_profile.py compare (a profiling pass of
+      the same jars): the table then names, per row, the work-boundary items (A1 per-call legacy marshaller
+      construction, A2 response metadata and status check, A5 Query form percent-encoding) at >= 10% of either
+      arm's CPU or B/op, and a serde-only estimate follows: per row and as geometric means, each arm's values
+      scaled by 1 - the items' share (CPU share for ns/op, alloc share for B/op), with the same floor.
   serde_ab_summary.py --self-test
       Runs the fixture tests below.
 
@@ -66,6 +70,7 @@ import paired_ab_summary as pab  # noqa: E402
 
 SCHEMA_VERSION = 1
 ALLOC = "gc.alloc.rate.norm"
+BOUNDARY_FLAG_PCT = 10.0  # a work-boundary item at or above this share of either arm is flagged per row
 
 
 # ==================== collect ====================
@@ -272,7 +277,7 @@ def _floor(f):
     return "-" if f is None else f"{f:.1f}%"
 
 
-def render_summary(doc, null_doc=None, preliminary=False):
+def render_summary(doc, null_doc=None, preliminary=False, boundary=None):
     arm_labels = labels(doc)
     p = doc["params"]
     lines = [f"# Serde A/B summary `{p.get('run_id', '?')}`", ""]
@@ -313,10 +318,15 @@ def render_summary(doc, null_doc=None, preliminary=False):
         return "\n".join(lines) + "\n"
     base = arm_labels[0]
     for arm in arm_labels[1:]:
-        lines += [f"## `{arm}` vs `{base}`", "",
-                  f"| class | case | {base} ns/op | {arm} ns/op | ratio | floor | verdict "
-                  f"| {base} B/op | {arm} B/op | B/op ratio | B/op floor | B/op verdict |",
-                  "|---|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---|"]
+        lines += [f"## `{arm}` vs `{base}`", ""]
+        if boundary is not None:
+            lines += [f"What each arm's timed method costs, work-boundary items included. Rows where an item (A1, A2, "
+                      f"A5) is at least {BOUNDARY_FLAG_PCT:g}% of either arm's CPU or B/op are named in the last "
+                      f"column; the serde-only estimate follows the geometric means.", ""]
+        lines += [f"| class | case | {base} ns/op | {arm} ns/op | ratio | floor | verdict "
+                  f"| {base} B/op | {arm} B/op | B/op ratio | B/op floor | B/op verdict |"
+                  + (f" boundary ≥{BOUNDARY_FLAG_PCT:g}% |" if boundary is not None else ""),
+                  "|---|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---|" + ("---|" if boundary is not None else "")]
         per_class = OrderedDict()
         for key, e in analysis.items():
             sc, al = e["vs_base"][arm]["score"], e["vs_base"][arm]["alloc"]
@@ -324,7 +334,8 @@ def render_summary(doc, null_doc=None, preliminary=False):
             lines.append(f"| {_class(key)} | {_case(key)} | {_mean_err(e['arms'][base]['score'])} "
                          f"| {_mean_err(e['arms'][arm]['score'])} | {_ratio(sc)} | {_floor(fs)} | {verdict(sc, fs)} "
                          f"| {_mean_err(e['arms'][base]['alloc'], 0)} | {_mean_err(e['arms'][arm]['alloc'], 0)} "
-                         f"| {_ratio(al)} | {_floor(fa)} | {verdict(al, fa)} |")
+                         f"| {_ratio(al)} | {_floor(fa)} | {verdict(al, fa)} |"
+                         + (f" {boundary_flag(boundary, key, (base, arm)) or '-'} |" if boundary is not None else ""))
             bucket = per_class.setdefault(_class(key), {"score": [], "alloc": []})
             if sc is not None:
                 bucket["score"].append(sc["ratio"])
@@ -338,12 +349,129 @@ def render_summary(doc, null_doc=None, preliminary=False):
             all_alloc += bucket["alloc"]
             lines.append(f"| {cls} | {len(bucket['score'])} | {_geo(bucket['score'])} | {_geo(bucket['alloc'])} |")
         lines += [f"| **all** | {len(all_score)} | {_geo(all_score)} | {_geo(all_alloc)} |", ""]
+        if boundary is not None:
+            lines += render_boundary(analysis, boundary, base, arm)
     return "\n".join(lines)
 
 
 def _geo(ratios):
     g = geomean(ratios)
     return "-" if g is None else f"{g:.3f}"
+
+
+# ==================== work boundary (serde-only estimate) ====================
+
+def load_boundary(path):
+    """{(class, case, arm): {"cpu": total %, "alloc": total %, "items": {item: (cpu %, alloc %)}}} from the
+    boundary.tsv of serde_ab_profile.py compare; a share is None where that profile is missing."""
+    out = {}
+    for row in _read_tsv(path):
+        items = OrderedDict()
+        for col in row:
+            if col.endswith("_cpu_pct"):
+                item = col[:-len("_cpu_pct")]
+                cpu, alloc = row[col], row.get(f"{item}_alloc_pct", "")
+                items[item] = (float(cpu) if cpu else None, float(alloc) if alloc else None)
+        total = {k: (None if any(v[i] is None for v in items.values()) else sum(v[i] for v in items.values()))
+                 for i, k in enumerate(("cpu", "alloc"))}
+        out[(row["class"], row["param"], row["arm"])] = dict(total, items=items)
+    return out
+
+
+def _boundary_of(boundary, key, arm):
+    return boundary.get((_class(key), _case(key), arm))
+
+
+def boundary_flag(boundary, key, arms):
+    """Text naming the work-boundary items at >= BOUNDARY_FLAG_PCT of CPU or B/op on any of the arms, or ""."""
+    parts = []
+    for arm in arms:
+        b = _boundary_of(boundary, key, arm)
+        for item, (cpu, alloc) in (b["items"].items() if b else []):
+            if (cpu or 0) >= BOUNDARY_FLAG_PCT or (alloc or 0) >= BOUNDARY_FLAG_PCT:
+                parts.append(f"{arm} {item} {_pct(cpu)} CPU, {_pct(alloc)} B")
+    return "; ".join(parts)
+
+
+def _pct(value):
+    return "-" if value is None else f"{value:.0f}%"
+
+
+def _keep(b, metric):
+    """The fraction of an arm's measurement that is serde work: 1 - its boundary share, or None."""
+    if b is None or b[metric] is None or b[metric] >= 100.0:
+        return None
+    return 1.0 - b[metric] / 100.0
+
+
+def adjust_stats(s, keep):
+    if s is None or keep is None:
+        return None
+    return {"mean": s["mean"] * keep, "error": None if s["error"] is None else s["error"] * keep, "n": s["n"]}
+
+
+def adjust_comparison(c, keep_base, keep_arm):
+    """A paired comparison with each arm's per-rep values scaled by its serde fraction (the same factor every rep)."""
+    if c is None:
+        return None
+    if c["zero_alloc"]:
+        return c
+    if keep_base is None or keep_arm is None:
+        return None
+    k = keep_arm / keep_base
+    ratio = c["ratio"] * k
+    return {"ratio": ratio, "delta_pct": (ratio - 1.0) * 100, "spread_pct": c["spread_pct"] * k,
+            "pairs": c["pairs"], "zero_alloc": False}
+
+
+def render_boundary(analysis, boundary, base, arm):
+    """The serde-only (boundary-adjusted) estimate of one arm against the baseline."""
+    metric_of = {"score": "cpu", "alloc": "alloc"}
+    lines = [f"### Serde-only estimate (boundary-adjusted), `{arm}` / `{base}`", "",
+             "Estimate, not a measurement: each arm's mean ns/op (B/op) is scaled by 1 - the CPU (alloc) share of the "
+             "work-boundary items A1 (per-call legacy marshaller construction), A2 (response metadata and status "
+             "check) and A5 (Query form percent-encoding) in the profiling pass (`boundary.tsv`; rules in "
+             "`serde_ab_profile.py`). Shares come from a different run than the timing, the same floor is applied, "
+             "and A5 is a lower bound. The table above is what each arm's timed method costs; this one is the serde "
+             "work alone.", "",
+             f"| class | case | {base} ns/op | {arm} ns/op | ratio | floor | verdict | {base} B/op | {arm} B/op "
+             f"| B/op ratio | B/op verdict | removed |",
+             "|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|---|"]
+    per_class, missing = OrderedDict(), 0
+    for key, e in analysis.items():
+        bb, ba = _boundary_of(boundary, key, base), _boundary_of(boundary, key, arm)
+        if bb is None or ba is None:
+            missing += 1
+            lines.append(f"| {_class(key)} | {_case(key)} | - | - | - | - | no profile row | - | - | - | - | - |")
+            continue
+        cells, adjusted = [], {}
+        for m in ("score", "alloc"):
+            kb, ka = _keep(bb, metric_of[m]), _keep(ba, metric_of[m])
+            c = adjust_comparison(e["vs_base"][arm][m], kb, ka)
+            adjusted[m] = c
+            f = e["floor"].get(m)
+            digits = 1 if m == "score" else 0
+            cells += [_mean_err(adjust_stats(e["arms"][base][m], kb), digits),
+                      _mean_err(adjust_stats(e["arms"][arm][m], ka), digits), _ratio(c)]
+            cells += [_floor(f), verdict(c, f)] if m == "score" else [verdict(c, f)]
+        removed = "; ".join(f"{a} {_pct(b['cpu'])} CPU, {_pct(b['alloc'])} B" for a, b in ((base, bb), (arm, ba))
+                            if (b["cpu"] or 0) >= 1.0 or (b["alloc"] or 0) >= 1.0)
+        lines.append(f"| {_class(key)} | {_case(key)} | " + " | ".join(cells) + f" | {removed or '-'} |")
+        bucket = per_class.setdefault(_class(key), {"score": [], "alloc": []})
+        if adjusted["score"] is not None:
+            bucket["score"].append(adjusted["score"]["ratio"])
+        if adjusted["alloc"] is not None and not adjusted["alloc"]["zero_alloc"]:
+            bucket["alloc"].append(adjusted["alloc"]["ratio"])
+    if missing:
+        lines += ["", f"**WARNING: {missing} rows have no boundary row for both arms; left out of the geomeans.**"]
+    lines += ["", f"#### Serde-only geometric-mean ratios (boundary-adjusted), `{arm}` / `{base}`", "",
+              "| class | rows | ns/op ratio | B/op ratio |", "|---|---:|---:|---:|"]
+    all_score, all_alloc = [], []
+    for cls, bucket in per_class.items():
+        all_score += bucket["score"]
+        all_alloc += bucket["alloc"]
+        lines.append(f"| {cls} | {len(bucket['score'])} | {_geo(bucket['score'])} | {_geo(bucket['alloc'])} |")
+    return lines + [f"| **all** | {len(all_score)} | {_geo(all_score)} | {_geo(all_alloc)} |", ""]
 
 
 # ==================== CLI ====================
@@ -363,12 +491,15 @@ def main(argv):
         rest = argv[2:]
         preliminary = "--preliminary" in rest
         rest = [x for x in rest if x != "--preliminary"]
-        null_doc = None
-        if rest:
-            if len(rest) != 2 or rest[0] != "--null":
+        opts = {"--null": None, "--boundary": None}
+        while rest:
+            if len(rest) < 2 or rest[0] not in opts:
                 raise SystemExit(__doc__)
-            null_doc = load(rest[1])
-        sys.stdout.write(render_summary(load(argv[1]), null_doc, preliminary))
+            opts[rest[0]] = rest[1]
+            rest = rest[2:]
+        null_doc = load(opts["--null"]) if opts["--null"] else None
+        boundary = load_boundary(opts["--boundary"]) if opts["--boundary"] else None
+        sys.stdout.write(render_summary(load(argv[1]), null_doc, preliminary, boundary))
         return 0
     raise SystemExit(__doc__)
 
@@ -455,6 +586,31 @@ def self_test():
             self.assertIn("| QueryUnmarshallBenchmark | M | 1,000.0 ± 40.0 (1) | - | - | - | missing |", text)
             # Geomean of 0.8 and 1.01 over the two RestJson rows; B/op leaves out the zero-alloc row.
             self.assertIn(f"| RestJsonMarshallBenchmark | 2 | {math.sqrt(0.8 * 1.01):.3f} | 0.600 |", text)
+
+        def test_render_whenBoundaryGiven_flagsRowsAndAddsSerdeOnlyEstimate(self):
+            # Row S: baseline A1 50% CPU / 40% B, feature A2 20% CPU / 25% B; row Z has no boundary row.
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "boundary.tsv")
+                with open(path, "w") as f:
+                    f.write("benchmark\tclass\tparam\tarm\tcpu_samples\talloc_bytes\tA1_cpu_pct\tA1_alloc_pct"
+                            "\tA2_cpu_pct\tA2_alloc_pct\tA5_cpu_pct\tA5_alloc_pct\n")
+                    f.write(f"{bench}\tRestJsonMarshallBenchmark\tS\tbaseline\t100\t100\t50.0\t40.0\t0\t0\t0\t0\n")
+                    f.write(f"{bench}\tRestJsonMarshallBenchmark\tS\tfeature\t100\t100\t0\t0\t20.0\t25.0\t0\t0\n")
+                boundary = load_boundary(path)
+            self.assertEqual(boundary[("RestJsonMarshallBenchmark", "S", "baseline")]["cpu"], 50.0)
+            text = render_summary(ab_doc, null_doc, boundary=boundary)
+            self.assertIn("| B/op verdict | boundary ≥10% |", text)
+            self.assertIn("| 0.600 ±0.0% | 0.0% | faster | baseline A1 50% CPU, 40% B; feature A2 20% CPU, 25% B |",
+                          text)
+            self.assertIn("### Serde-only estimate (boundary-adjusted), `feature` / `baseline`", text)
+            # ns/op: 100 x 0.5 = 50 vs 80 x 0.8 = 64 -> 1.28, slower; B/op: 500 x 0.6 = 300 vs 300 x 0.75 = 225.
+            self.assertIn("| RestJsonMarshallBenchmark | S | 50.0 ± 0.0 (2) | 64.0 ± 0.0 (2) | 1.280 ±0.0% | 2.8% "
+                          "| slower | 300 ± 0 (2) | 225 ± 0 (2) | 0.750 ±0.0% | faster "
+                          "| baseline 50% CPU, 40% B; feature 20% CPU, 25% B |", text)
+            self.assertIn("| RestJsonMarshallBenchmark | Z | - | - | - | - | no profile row |", text)
+            self.assertIn("WARNING: 2 rows have no boundary row for both arms", text)  # Z and the Query row
+            self.assertIn("| RestJsonMarshallBenchmark | 1 | 1.280 | 0.750 |", text)
+            self.assertNotIn("boundary ≥10%", render_summary(ab_doc, null_doc))
 
         def test_render_whenNullRun_reportsFloors(self):
             text = render_summary(null_doc)

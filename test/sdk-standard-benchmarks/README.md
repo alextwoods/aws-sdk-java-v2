@@ -130,15 +130,19 @@ marshaller or unmarshaller (`JsonProtocolMarshaller`, `XmlProtocolMarshaller`,
 call. On the feature branch it calls `ClientProtocol.serializeRequest` /
 `deserializeResponse` (`AwsJson1Protocol`, `RestJsonClientProtocol`,
 `RestXmlClientProtocol`, `AwsQueryClientProtocol`, `RpcV2CborProtocol`) over the ported
-codecs, with the protocol and operation resolved once per trial. That is the path the
-feature's clients use; the legacy protocol modules are identical in both builds, so
-benchmarking them would not measure the new codecs. Inputs and responses are built
-exactly as on the Baseline_Build. `SerdeBenchmarkEquivalenceTest` checks, for all 71
-combinations, that the schema path produces the legacy path's output on the same input;
-its allowlist documents every accepted difference. Two work-boundary differences remain:
-the feature's Query marshall includes form encoding and Content-Length (done outside the
-legacy marshaller), and the feature's unmarshall attaches the `SdkHttpResponse` and the
-response metadata.
+codecs, with the protocol and operation resolved once per trial. That is the path feature
+clients use when `stagedClientProtocols` is enabled; clients generated without it (four of
+the five serde services here, and services such as S3) still run the legacy marshallers.
+The legacy protocol modules are identical in both builds, so benchmarking them would not
+measure the new codecs. Inputs and responses are built exactly as on the Baseline_Build.
+`SerdeBenchmarkEquivalenceTest` checks, for all 71 combinations, that the schema path
+produces the legacy path's output on the same input; its allowlist documents every
+accepted difference. Three work-boundary differences remain: the Baseline_Build builds
+its legacy marshaller inside the timed method on every call (A1), the feature's unmarshall
+also checks the status and attaches the `SdkHttpResponse` and the response metadata (A2),
+and the feature's Query marshall includes form encoding and Content-Length, which the
+legacy client does after its marshaller (A5). The profiling pass measures their share,
+and the summary can subtract it (see below).
 
 The script builds each commit in its own worktree (`$TMPDIR/aws-sdk-serde-ab-<sha12>`,
 Maven repository `<worktree>-m2` in front of `~/.m2/repository`) after overlaying
@@ -163,17 +167,17 @@ scripts/schema-serde/serde-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=HEAD 
 
 # Smoke run (reuses the jars), then its null experiment
 scripts/schema-serde/serde-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=HEAD --skip-build \
-  --reps 2 --jmh-opts "-wi 1 -i 1 -f 1 -w 1s -r 1s"
+  --sdk-pin feature=cabc26b41aa --reps 2 --jmh-opts "-wi 1 -i 1 -f 1 -w 1s -r 1s"
 scripts/schema-serde/serde-ab.sh --null feature=HEAD --skip-build \
-  --reps 2 --jmh-opts "-wi 1 -i 1 -f 1 -w 1s -r 1s"
+  --sdk-pin feature=cabc26b41aa --reps 2 --jmh-opts "-wi 1 -i 1 -f 1 -w 1s -r 1s"
 
 # Full run (class annotations: 5 x 2 s warmup, 10 x 5 s measurement, 3 forks), pinned on Linux
 scripts/schema-serde/serde-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=HEAD --skip-build \
-  --reps 2 --pin 2-7
+  --sdk-pin feature=cabc26b41aa --reps 2 --pin 2-7
 
-# Apply a null experiment's floors to a comparison
+# Apply a null experiment's floors and a profiling pass's work-boundary shares to a comparison
 python3 scripts/schema-serde/serde_ab_summary.py summarize <run>/serde-ab.json \
-  --null <null-run>/serde-ab.json
+  --null <null-run>/serde-ab.json --boundary <profile-run>/boundary.tsv
 ```
 
 Arm order alternates per repetition (A,B then B,A; `--order fixed` keeps A,B). Every JMH
@@ -192,7 +196,14 @@ every class, param, arm and event (`--profile-events`, default `cpu,alloc`;
 and combination, the CPU and allocation share, ns/op and B/op of each logical-work
 category (codec write, codec read, member traversal, HTTP request construction, ...) side
 by side, the top frames, and flags for categories or frames present in one arm only or
-more than 2x apart.
+more than 2x apart. It also checks the runtime code path of every cpu profile (every class,
+param and arm; `profile-path.tsv`, and a failure fails the run) and writes the share of
+the work-boundary items A1, A2 and A5 per combination to `boundary.tsv`. Given that file,
+`serde_ab_summary.py summarize --boundary` names the rows where an item is at least 10%
+of either arm and adds a serde-only estimate: each arm's ns/op and B/op scaled by one
+minus the items' CPU and allocation share, per row and as geometric means. With
+`--profile` after timing, `summary.md` includes it. The estimate is approximate (the
+shares come from the profiling run, and the A5 rule covers percent-encoding only).
 
 ```bash
 scripts/schema-serde/serde-ab.sh --jar baseline=<out>/jars/baseline.jar \
@@ -200,11 +211,13 @@ scripts/schema-serde/serde-ab.sh --jar baseline=<out>/jars/baseline.jar \
 ```
 
 Output, under `--out` (default `~/.cache/aws-sdk-java-v2/serde-ab`): `jars/<label>.jar`
-with `<label>.jar.provenance.properties` (ref, commit, bench-src, overlay, SDK pin, jar
-sha256, JDK, Maven, host) and `<label>.jar.resources.tsv`; and per run `<run-id>/` with
-`arms.tsv`, `params.tsv`, `runs.tsv`, `verify/verify.md`, `jmh/`, `logs/`,
-`serde-ab.json`, `summary.md`, `profile/<arm>/<Class>/<param>/<event>/` (collapsed stacks
-and flame graphs) and `profile-comparison.md`.
+with `<label>.jar.provenance.properties` (ref, commit, bench-src, overlay, SDK pin of the
+build, jar sha256, JDK, Maven, host; not edited after the build) and
+`<label>.jar.resources.tsv`; and per run `<run-id>/` with `arms.tsv`, `params.tsv`,
+`runs.tsv`, `provenance/<label>.properties` (the jar's record with this run's SDK pin
+result), `verify/verify.md`, `jmh/`, `logs/`, `serde-ab.json`, `summary.md`,
+`profile/<arm>/<Class>/<param>/<event>/` (collapsed stacks and flame graphs),
+`profile-comparison.md`, `profile-path.tsv` and `boundary.tsv`.
 
 ## Schema Serde Benchmarks
 Benchmarks for the schema-based serde path (`software.amazon.awssdk.benchmark.schema`).
