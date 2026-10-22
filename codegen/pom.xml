@@ -302,6 +302,16 @@
             <version>${awsjavasdk.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- rpcv2Cbor client protocol, test scope only: SchemaClientBuilderTest compares generated factory class names
+             with "software.amazon.awssdk.protocols.client.rpcv2.RpcV2CborProtocol$Factory". The dependency analyzer
+             reads that string constant as a class reference, and dynamic-client brings the module onto the test class
+             path transitively, so it must be declared. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>rpcv2-cbor-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Protocol test runtime support, test scope only: the protocol test generator tests compile the generated
              tests against it. Generated code references its types by name (ProtocolTestRuntimeTypes). -->
         <dependency>
