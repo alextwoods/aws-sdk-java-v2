@@ -136,6 +136,48 @@ public class SdkHttpUtilsTest {
     }
 
     @Test
+    public void appendUri_matchesPreviousJoinForEveryPair() {
+        String[] bases = {"", "/", "/a", "/a/", "a"};
+        String[] paths = {null, "", "/", "/x", "x", "//x", "/x/"};
+        for (String base : bases) {
+            for (String path : paths) {
+                assertThat(SdkHttpUtils.appendUri(base, path))
+                    .as("appendUri(%s, %s)", base, path)
+                    .isEqualTo(previousAppendUri(base, path));
+            }
+        }
+    }
+
+    @Test
+    public void appendUri_returnsTheInputWhenTheJoinAddsNothing() {
+        String path = "/x";
+        assertThat(SdkHttpUtils.appendUri("", path)).isSameAs(path);
+        assertThat(SdkHttpUtils.appendUri("/", path)).isSameAs(path);
+
+        String base = "/a";
+        assertThat(SdkHttpUtils.appendUri(base, null)).isSameAs(base);
+        assertThat(SdkHttpUtils.appendUri(base, "")).isSameAs(base);
+        assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> SdkHttpUtils.appendUri(null, path));
+    }
+
+    /**
+     * The implementation of {@link SdkHttpUtils#appendUri} before it returned inputs unchanged.
+     */
+    private static String previousAppendUri(String baseUri, String path) {
+        StringBuilder resultUri = new StringBuilder(baseUri);
+
+        if (!StringUtils.isEmpty(path)) {
+            if (!baseUri.endsWith("/")) {
+                resultUri.append("/");
+            }
+
+            resultUri.append(path.startsWith("/") ? path.substring(1) : path);
+        }
+
+        return resultUri.toString();
+    }
+
+    @Test
     public void standardPortsAreCorrect() {
         assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> SdkHttpUtils.standardPort(null));
         assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> SdkHttpUtils.standardPort("foo"));
