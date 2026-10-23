@@ -278,8 +278,9 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
     }
 
     void setBlobPayload(Schema schema, ByteBuffer value) {
-        byte[] bytes = ByteBufferUtils.getBytes(value);
-        setBody(ContentStreamProvider.fromByteArrayUnsafe(bytes), bytes.length);
+        // Held by reference, as the earlier marshallers hold SdkBytes and smithy-java DataStream.ofByteBuffer does.
+        ByteBufferContentStreamProvider provider = ByteBufferContentStreamProvider.create(value);
+        setBody(provider, provider.length());
         blobPayloadSchema = schema;
     }
 

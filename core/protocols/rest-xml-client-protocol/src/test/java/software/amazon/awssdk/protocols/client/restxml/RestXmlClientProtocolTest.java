@@ -198,6 +198,24 @@ class RestXmlClientProtocolTest {
     }
 
     @Test
+    void serializeRequest_withReadOnlyBlobPayload_sendsTheCallersBytesWithoutCopying() throws IOException {
+        // SdkBytes.asByteBuffer() gives this read-only view, which has no accessible array.
+        byte[] bytes = TestShapes.utf8("raw-bytes");
+        SdkHttpFullRequest set = serialize(BLOB_PAYLOAD_OPERATION,
+                                           SchemaStruct.builder(BLOB_PAYLOAD)
+                                                       .set("data", ByteBuffer.wrap(bytes).asReadOnlyBuffer())
+                                                       .build());
+
+        assertThat(set.firstMatchingHeader("Content-Length")).hasValue(Integer.toString(bytes.length));
+        assertThat(set.firstMatchingHeader("Content-Type")).hasValue("application/octet-stream");
+        assertThat(set.contentStreamProvider().get().contentAsByteBufferOrNull().remaining()).isEqualTo(bytes.length);
+
+        bytes[0] = 'R';
+        assertThat(body(set)).isEqualTo("Raw-bytes");
+        assertThat(body(set)).isEqualTo("Raw-bytes");
+    }
+
+    @Test
     void serializeRequest_withNullLabel_failsAsAClientException() {
         assertThatThrownBy(() -> serialize(GREET, SchemaStruct.builder(GREET_INPUT).set("path", "p").build()))
             .isInstanceOf(SdkClientException.class)

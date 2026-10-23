@@ -37,7 +37,7 @@ import software.amazon.awssdk.schema.traits.TimestampFormatTrait;
  * Writes the single {@code @httpPayload} member.
  *
  * <ul>
- *   <li>Blob payloads are handed to {@link HttpBindingSerializer#setBlobPayload} by reference.</li>
+ *   <li>Blob payloads are handed to {@link HttpBindingSerializer#setBlobPayload} by reference, without copying.</li>
  *   <li>Scalar payloads (string, number, boolean, timestamp) write their text as UTF-8.</li>
  *   <li>Structured payloads (structure, union, document, list, map) are written through the codec, and set the
  *   protocol media type as {@code Content-Type}.</li>

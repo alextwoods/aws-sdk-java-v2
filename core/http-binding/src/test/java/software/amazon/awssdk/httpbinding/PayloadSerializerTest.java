@@ -44,12 +44,36 @@ class PayloadSerializerTest {
     }
 
     @Test
-    void blobPayloadFromAReadOnlyBufferIsCopied() throws IOException {
-        ByteBuffer data = ByteBuffer.wrap(utf8("xhellox"), 1, 5).slice().asReadOnlyBuffer();
+    void blobPayloadFromAReadOnlyBufferIsSentWithoutCopying() throws IOException {
+        byte[] backing = utf8("xhellox");
+        ByteBuffer data = ByteBuffer.wrap(backing, 1, 5).slice().asReadOnlyBuffer();
         SdkHttpFullRequest request = serialize(TestModel.BLOB_OPERATION,
                                                SchemaStruct.builder(TestModel.BLOB_PAYLOAD).set("data", data).build());
         assertThat(body(request)).isEqualTo("hello");
         assertThat(data.remaining()).isEqualTo(5);
+        assertThat(request.firstMatchingHeader("Content-Length")).hasValue("5");
+        assertThat(request.firstMatchingHeader("Content-Type")).hasValue("application/octet-stream");
+        assertThat(request.contentStreamProvider().get().contentAsByteBufferOrNull().remaining()).isEqualTo(5);
+
+        backing[1] = 'j';
+        assertThat(body(request)).isEqualTo("jello");
+        assertThat(body(request)).isEqualTo("jello");
+    }
+
+    @Test
+    void blobPayloadFromAnSdkBytesStyleBuffer_sendsTheSameArrayWithoutCopying() throws IOException {
+        // SdkBytes.asByteBuffer() returns ByteBuffer.wrap(bytes).asReadOnlyBuffer(); http-binding does not depend on
+        // sdk-core, so the view is built the same way here.
+        byte[] bytes = utf8("hello");
+        SdkHttpFullRequest request = serialize(TestModel.BLOB_OPERATION,
+                                               SchemaStruct.builder(TestModel.BLOB_PAYLOAD)
+                                                           .set("data", ByteBuffer.wrap(bytes).asReadOnlyBuffer())
+                                                           .build());
+        assertThat(request.firstMatchingHeader("Content-Length")).hasValue("5");
+
+        bytes[0] = 'j';
+        assertThat(body(request)).isEqualTo("jello");
+        assertThat(body(request)).isEqualTo("jello");
     }
 
     @Test
