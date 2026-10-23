@@ -84,7 +84,7 @@ Notes:
 
 - **F**: candidate on branch opt/F (d1161cfc5ac), measurement pending (user decision).
 - **B1**: candidate on branch opt/B1 (fe81b1f809f), measurement pending (user decision).
-- **E1**: D.6 indexes the `int[]` by operation ordinal. `ApiOperation` has no ordinal, so each protocol instance assigns slots in an identity hash table (task 3.19). awsQuery and ec2Query do not use the hint: `QueryFormSerializer` grows its own buffer from 1 KiB (task 7.15).
+- **E1**: D.6 indexes the `int[]` by operation ordinal. `ApiOperation` has no ordinal, so each protocol instance assigns slots in an identity hash table (task 3.19). awsQuery and ec2Query size their form body from a tracker of their own (`QueryClientProtocol`, the capacity the last body needed, FU-4). A recorded size of 0 is an empty-body marker: HTTP binding operations whose last request wrote no codec body get no buffer (fix/marshall-allocation).
 - **D1**: candidate on branch opt/D1 (90d38512d28), measurement pending (user decision).
 - **B2.b**: Observable difference that D.6 does not list: `RetryPolicyContext.request()` and the DEBUG `Sending Request:` entry now show the `amz-sdk-request` header (task 3.25).
 - **E4**: Interceptor-visible difference accepted in task 3.29: `afterUnmarshalling`, `modifyResponse` and `afterExecution` see the output with `sdkHttpResponse` set (Baseline_Build: null).

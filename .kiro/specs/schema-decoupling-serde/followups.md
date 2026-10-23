@@ -23,7 +23,7 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Next step:** Pick one bar, use it in both the doc and the perf gate, and refresh `perf-report.md` before it's cited in round 2.
 
 ### FU-4 No serializer pool for `QueryFormSerializer`
-- **Status:** Open
+- **Status:** Done (`e708e4b55f3`, branch `fix/marshall-allocation`). Sized instead of pooled: `QueryClientProtocol` keeps a `MarshallBufferSizeTracker` of the capacity each operation's last form body needed (`QueryFormSerializer.requiredCapacity()`, which includes the worst-case reservation of each value, so the next body does not grow) and takes the body with `size()`/`finishArray()`, without the two `ByteBuffer` views of `finish()`. Pooling would still need `StripedPool` across the `codecs`→`protocols` boundary and a copy at `finish()`; it is no longer needed. Laptop JMH (JDK 25, PRELIMINARY, all marshall fixes together): `PutMetricDataRequest_Baseline` 2,344 → 1,112 B/op, `_M` 13,761 → 8,793, `_L` 184,398 → 105,708, `GetMetricDataRequest_L` 37,009 → 14,057 (no 1.5x growth chain); `GetMetricDataRequest_S` (a ~0.9 KB body, which 1 KiB already fit) 2,784 → 2,536. Report: `.agents/tasks/fix-marshall-allocation/report.md`.
 - **Context:** smithy-java pools `QueryFormSerializer` and its buffer (`StripedPool`). The port allocates a new serializer and a 1 KiB buffer per request, because `StripedPool` is `@SdkInternalApi` in `codecs.commons.internal` and `InternalApiBoundaryTest` forbids using it from `protocols` (`porting-deviations.md`, task 7.5). In exchange, `finish()` doesn't copy.
 - **Next step:** Measure with the awsQuery serialize benchmark. If pooling matters, move `StripedPool` to a protected API or a shared internal module.
 
@@ -100,6 +100,27 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Context:** The FU-12 change (`cf3dff2dff5`, `cca1bca22d1`) moves generated blob member writes from `writeBlob(Schema, ByteBuffer)` to `writeBlob(Schema, byte[])`. CBOR copied no extra bytes before, and the fix report expected no CBOR change.
 - **Evidence:** m6g.metal run `20261023-111214` (`docs/design/schema-serde/serde-perf-report.md` §3.1): `rpcv2Cbor_PutItemRequest_BinaryData_S` feature-fu12 / feature is 1.086 ns/op (per repetition 1.075, 1.052, 1.112, 1.103; floor 3.8%*), 1,022–1,074 vs 951–979 ns/op. `_M` and `_L` are 0.987 and 0.974, and B/op is unchanged within floor on all three. The serde report's set 2 keeps the pre-FU-12 CBOR rows.
 - **Next step:** Profile `rpcv2Cbor_PutItemRequest_BinaryData_S` on both jars (CPU, `-XX:+DebugNonSafepoints`) and compare the `CborSerializer` / `CborStructSerializer` `byte[]` blob path with the `ByteBuffer` path it replaced.
+## Marshall allocation (from `fix/marshall-allocation`)
+
+### FU-16 Per-operation request constants in the RPC protocols
+- **Status:** Open
+- **Context:** Every awsJson request builds `targetPrefix + operation.name()` for `X-Amz-Target`, every rpcv2Cbor request builds `targetPathPrefix + operation.name()` for its path, and each static header value is wrapped in a new `singletonList`. The legacy marshallers use static constants. About 70–185 B/op.
+- **Evidence:** `.agents/tasks/fix-marshall-allocation/plan.md` (inventory, F8); metal profile run `serde-benchmark-metal/runs/20261023-095831`.
+- **Next step:** Cache them per operation in each protocol, as `QueryClientProtocol.responseCodecs` caches response codecs (bounded map keyed by operation name).
+
+### FU-17 Codecs write straight into `ByteBufferOutputStream`
+- **Status:** Done (`2bcbde49aa0`, branch `fix/marshall-allocation`). `ByteBufferOutputStream.reserve(int)`/`advance(int)` (new `@SdkPublicApi` methods) let the JSON and CBOR serializers write a `ByteBufferOutputStream` sink in place: no scratch buffer and no drain copy, at any body size. Other sinks keep a 1 KiB buffer lent by `SinkBufferPool` (`fbcbaa44120`). Laptop JMH (PRELIMINARY): about −1.0 KB/op on every awsJson and rpcv2Cbor case (for example `PutItemRequest_Baseline` 2,456 → 1,040 and 2,816 → 1,208 B/op with the other fixes), and −5 to −6 KB/op on `BinaryData_L`, where the scratch buffer used to grow.
+- **Remaining:** the event stream encoder (`AwsEventShapeEncoder`) serializes payloads into a `ByteArrayOutputStream`, so it takes the pooled-buffer path and copies once; switching it to `ByteBufferOutputStream` would remove that copy. `SmithyXmlSerializer` still has its own buffer (restXml request bodies; no benchmark case has one).
+
+### FU-18 `LowCopyListMap` creates its empty maps eagerly
+- **Status:** Open
+- **Context:** `SdkHttpFullRequest.builder()` creates an empty `TreeMap` for headers and a `LinkedHashMap` for query parameters (about 110 B/request) even when no query parameter is ever set, and `build()` adds two `ForBuildable` wrappers and a `Lazy` (about 175 B). The legacy path pays the same. It is an `http-client-spi` framework change shared with the legacy path.
+- **Next step:** Create the maps on first write, with racecar B1 (task 9.23).
+
+### FU-19 Small awsQuery requests stay above the comparable baseline
+- **Status:** Open (boundary item)
+- **Context:** `awsQuery_PutMetricDataRequest_Baseline` is 1,112 B/op on the fix (laptop) against a comparable baseline of 902 (raw 952, serde-only 285; metal profile split). The remainder is the form body (about 115 B) and the `QueryFormSerializer` objects (serializer 63 B, prefix buffer 144, prefix stack 48, four inner serializers 115). The legacy client builds the form body after the timed method, in `QueryParametersToBodyStage` (FU-6, about three times the body). Every other awsQuery case is 0.45–0.70x comparable.
+- **Next step:** If the remaining 200 B matters: create the map and list inner serializers and the prefix stack on first use (−60 to −120 B on requests without maps), and size the prefix buffer from the operation's last request. Measuring end to end (including `QueryParametersToBodyStage`) would show the legacy client's later cost.
 
 ## Still open from the spec (`design.md` §D.15)
 

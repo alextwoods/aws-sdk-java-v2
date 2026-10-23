@@ -56,7 +56,7 @@
   classes: ["software.amazon.awssdk.protocols.client.http.HttpClientProtocol", "software.amazon.awssdk.protocols.client.http.internal.MarshallBufferSizeTracker"]
   applied_in_phase: 2
   task: "3.19"
-  note: "D.6 indexes the `int[]` by operation ordinal. `ApiOperation` has no ordinal, so each protocol instance assigns slots in an identity hash table (task 3.19). awsQuery and ec2Query do not use the hint: `QueryFormSerializer` grows its own buffer from 1 KiB (task 7.15)"
+  note: "D.6 indexes the `int[]` by operation ordinal. `ApiOperation` has no ordinal, so each protocol instance assigns slots in an identity hash table (task 3.19). awsQuery and ec2Query size their form body from a tracker of their own (`QueryClientProtocol`, the capacity the last body needed, FU-4). A recorded size of 0 is an empty-body marker: HTTP binding operations whose last request wrote no codec body get no buffer (fix/marshall-allocation)"
 
 - id: "D1"
   optimization: "User-agent prefix built once; Apache5 header filter loop"
