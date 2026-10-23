@@ -1,7 +1,7 @@
 # Serde performance report: schema-based serde vs legacy serde (EC2 metal)
 
 This report compares the cost of request serialization and response deserialization (serde) between the
-Baseline_Build and the feature build. The Baseline_Build is stock V2 with the legacy marshallers and unmarshallers.
+baseline build and the feature build. The baseline is stock V2 with the legacy marshallers and unmarshallers.
 The feature build uses schema-based serde with the codecs ported from smithy-java. All results come from the 10
 `benchmark.serde` JMH classes of `test/sdk-standard-benchmarks`, run on a dedicated m6g.metal host. This report covers
 serde only. The end-to-end report (`perf-report.md`) is separate and still preliminary.
@@ -61,9 +61,9 @@ What the numbers say:
   marshaller construction also contains the legacy arm's request-builder setup, which the feature arm still pays for.
   Section 4.2 measures this. If that setup is kept in the baseline, the two figures become 1.18× and 1.18×. A fix for
   the marshall allocation is in progress.
-- Spread: the per-repetition ranges are within ±0.5% of each geomean. The null experiment, run through the same
-  aggregation, gives 0.990 for ns/op and 0.999 for B/op. So the aggregate is resolved to about 1%. The per-case floors
-  are in section 2.5.
+- Spread: the per-repetition ranges are within ±0.35% of the aggregates and within 1.2% of each protocol geomean
+  (the widest is restJson1 ns/op, −1.2% / +0.8%). The null experiment, run through the same aggregation, gives 0.990
+  for ns/op and 0.999 for B/op. So the aggregate is resolved to about 1%. The per-case floors are in section 2.5.
 
 ## 2. What was compared and how
 
@@ -96,8 +96,9 @@ benchmark keys. Inputs and responses are built as in the baseline.
 ### 2.3 Comparability evidence
 
 The detailed evidence is in the comparability matrix (`.agents/tasks/serde-benchmark-comparison/comparability-matrix.md`,
-not committed). The resource, model, wire and equivalence checks ran on the laptop. They check behavior, not
-timing. The code-path checks also ran on the metal host. In summary:
+not committed). These checks test behavior, not timing. The equivalence test ran on the laptop only. The resource,
+model and wire checks ran on the laptop and again in the verify step of each metal run, together with the code-path
+checks. In summary:
 
 - **Resources and models.** Both arms build the same `codegen-resources` and `serde-tests` files. The baseline gets
   a 5-file overlay that restores the `ContentLength` members the feature models dropped. The sha256 manifests match.
@@ -161,8 +162,8 @@ A/B ran 80 of 80 invocations ok, and the FU-12 run 48 of 48.
 
 **Null experiment** (`20261023-011610`). The feature jar ran against itself on 20 cases: the smallest and largest
 case of each class, 4 repetitions, the same settings. The null jar is `ce95211425c` (before both copy fixes). The
-two copy fixes change no benchmark code, and the floors measure run-to-run noise under the same options, so they
-carry over to the post-fix jar.
+two copy fixes change no benchmark code, and the floors measure run-to-run noise under the same options, so this
+report applies them to the post-fix and FU-12 jars. That is an assumption for the cases the fixes changed (section 6).
 
 - **Floor.** A case's floor is max(|ratio − 1|, the spread of the paired ratios, every run's relative JMH error).
 - **ns/op floors.** Median 1.4%, max 18.1%. The max is `restJson1_CopyObjectOutput_Baseline`, a 0.6 µs case.
@@ -170,8 +171,12 @@ carry over to the post-fix jar.
 - **Cases not in the null.** 51 of the 71 cases have no row of their own in the null. Each gets the largest floor of
   the null rows of its class ("class max"). These floors are marked * in the appendix.
 - **Verdicts.** faster or slower when |ratio − 1| exceeds the floor, "within floor" otherwise.
-- **Steady state.** The null summary checks every fork's iterations for drift. 0 of 20 rows were flagged, with a
-  threshold of max(the row's floor, 5%).
+- **Steady state.** For each fork, the null summary measures the drift from the first to the last measurement
+  iteration and the trend over them. A row is flagged when the mean over its 16 forks exceeds max(the row's floor,
+  5%), because a warmup that is too short drifts the same way in every fork. 0 of 20 rows were flagged. Single forks
+  drift more: up to −20.5% on `restXml_CopyObjectOutput_Baseline`, −10.2% on `awsJson1_0_HealthcheckResponse_Example`
+  and −9.1% on `rpcv2Cbor_GetItemOutput_Baseline`, all cases of about 0.4 µs in the null run. Their means over
+  forks stay within 1.4%.
 
 **Uncertainty of the geomeans** (`.agents/tasks/serde-benchmark-metal/analysis/report_numbers.py`):
 
@@ -192,6 +197,15 @@ carry over to the post-fix jar.
   `20261023-111214`. That run used the same host, settings and baseline jar, and measured the baseline again. The
   serde-only factors for the replaced rows are the same profiling-pass shares as in set 1. The baseline's A1 share
   is 0.2–24% B/op, and the feature arm has no boundary item in marshall.
+
+Set 2 includes FU-12 for the awsJson1_0 rows only. The rpcv2Cbor `BinaryData_*` rows stay at their set 1 values,
+as decided for set 2. The FU-12 jar does change those rows on metal: `rpcv2Cbor_PutItemRequest_BinaryData_S` is 8.6%
+slower in ns/op than on the feature jar in the same run (feature-fu12 / feature 1.086; per repetition 1.075, 1.052,
+1.112 and 1.103, against a 3.8%* floor). The per-repetition means are 1,022–1,074 ns/op vs 951–979 ns/op. Against
+the baseline, the case is 0.525 on feature-fu12 vs 0.483 on feature. `_M` (0.987) and `_L` (0.974) are not slower.
+B/op is unchanged within floor on all three. The cause is not investigated yet (FU-16 in `followups.md`). If the `_S` row were substituted
+too, the rpcv2Cbor marshall class geomean would rise by 0.5% (0.3695 → 0.3715 ns/op), the rpcv2Cbor protocol by 0.3%
+and the aggregate by 0.05% (0.3841 → 0.3843). Substituting all three rpcv2Cbor rows changes the aggregate by 0.02%.
 
 The FU-12 run also re-measured the feature `2549a5b6828` jar on all 8 of its cases. Every control should reproduce
 set 1:
@@ -261,8 +275,10 @@ async-profiler `cpu` (perf_events) and `alloc` on both arms and all 71 cases, wi
 `scripts/schema-serde/serde_ab_profile.py`. A category's ns/op and B/op are its share times the profile run's score,
 and the profiler perturbs those runs, so use the shares and the order of magnitude.
 
-The profiles' allocation totals agree with `gc.alloc.rate.norm` within 0.98–1.04 for most cases. The low end is
-0.70, on the `GetObject_L` cases, where very large arrays are under-sampled. The tables below are class means over
+The profiles' allocation totals agree with `gc.alloc.rate.norm` within 0.98–1.04 for 131 of the 142 profiles. Seven
+are at 0.92–0.97: awsJson1_0 `ShallowMap_L` (both arms), awsJson1_0 and rpcv2Cbor `BinaryData_L` (both arms each),
+and the feature arm of `awsQuery_GetMetricDataResponse_L`. The four `GetObject_L` profiles are at 0.70–0.74, where
+very large arrays are under-sampled. The tables below are class means over
 the cases. `alloc_top.py` and `a1_request_builder.py` in the analysis directory give the allocation sites cited
 below.
 
@@ -312,13 +328,13 @@ Where it doesn't win:
   inserted twice with case-insensitive compares. The legacy marshaller appends to the builder's map once.
 - **Unmarshall allocation on large awsJson1_0 and rpcv2Cbor outputs.** On 7 of the 8 M and L outputs of these two
   classes, the feature allocates more. Serde-only, that is 1.03–1.23× on awsJson1_0 (`GetItemOutputBinary_M` is
-  0.90) and 1.05–1.28× on rpcv2Cbor. The feature reads the
-  whole response into one `byte[]` (`ResponseBodyReader.read`, 17.5 KB of 87.6 KB on `awsJson1_0_GetItemOutput_L`),
-  because the ported parsers need a contiguous array. The legacy Jackson parsers stream from the `InputStream`. The
+  0.90) and 1.07–1.28× on rpcv2Cbor. The feature reads the whole response into one `byte[]`
+  (`ResponseBodyReader.read`, 17.5 KB of 87.6 KB on `awsJson1_0_GetItemOutput_L`), because the ported parsers need a
+  contiguous array. The legacy Jackson parsers stream from the `InputStream`. The
   model objects themselves cost about the same on both arms, for example 12.8 vs 13.0 KB of `AttributeValue`
   builders on `awsJson1_0_GetItemOutput_L`.
 - **awsQuery request id.** On Query unmarshall, A2 is 37% of feature CPU (39 µs/op on average). The request-id
-  lookup parses the body a second time (FU-15b). The serde-only view removes it. As measured, awsQuery unmarshall is
+  lookup parses the body a second time (FU-15 (b)). The serde-only view removes it. As measured, awsQuery unmarshall is
   still 0.151.
 
 ### 4.2 Marshall allocation
@@ -331,10 +347,15 @@ In the serde-only view, the feature allocates more than the baseline on these ma
   `PutItemRequest_Baseline` 1.21, `HealthcheckRequest_Example` 1.28, `ShallowMap_S` 1.33, `BinaryData_S` 1.36.
 - **Small rpcv2Cbor requests.** 1.07–1.43×: `Nested_M` 1.07, `MixedItem_S` 1.12, `PutItemRequest_Baseline` 1.36,
   `ShallowMap_S` 1.41, `BinaryData_S` 1.43.
+- **Larger awsJson1_0 and rpcv2Cbor requests.** awsJson1_0 `ShallowMap_M` 1.12 and `ShallowMap_L` 1.13; rpcv2Cbor
+  `ShallowMap_L` 1.16 and `BinaryData_M` 1.16.
 - **awsQuery `PutMetricDataRequest_Baseline`.** 7.87×.
 
-Larger requests allocate less on the feature: for example awsJson1_0 `Nested_L` 0.60, rpcv2Cbor `MixedItem_L` 0.62
-and `BinaryData_L` 0.33.
+That is 26 marshall cases. With the 7 unmarshall cases of section 4.1, they make up the 33 "more" verdicts in
+section 3.2. Request size alone does not decide the ratio. The `ShallowMap` requests allocate more at every size on
+both protocols, except rpcv2Cbor `ShallowMap_M` (1.03, within floor). The `Nested_L`, `MixedItem_M`/`_L` and
+`BinaryData_L` requests, and awsJson1_0 `BinaryData_M`, allocate less: for example awsJson1_0 `Nested_L` 0.60,
+rpcv2Cbor `MixedItem_L` 0.62 and `BinaryData_L` 0.33.
 
 **Part of the gap is the estimate.** A1 is the profile category `construction`. That category covers everything
 under the legacy marshaller's constructor (`serde_ab_profile.py`: the outermost matching frame wins). The legacy
@@ -344,9 +365,10 @@ endpoint, method, path, static query literals and fixed headers. The serde-only 
 baseline's request-builder setup. The feature arm builds its own request inside `serializeRequest`, and the estimate
 keeps that cost.
 
-`analysis/a1_request_builder.py` measures this part of A1 from the same profiles. It is 440–730 B/op on every
-marshall case, and 1.66–1.81 KB on the `CopyObject` cases. On those cases, `ProtocolUtils.addStaticQueryParametersToRequest`
-compiles a regex on every call for `?x-id=CopyObject`. In CPU it is 130–860 ns/op.
+`analysis/a1_request_builder.py` measures this part of A1 from the same profiles. It is 440–740 B/op on every
+marshall case except `CopyObject`, and 1.66–1.81 KB on the `CopyObject` cases. On those cases,
+`ProtocolUtils.addStaticQueryParametersToRequest` compiles a regex on every call for `?x-id=CopyObject`. In CPU,
+the request-builder setup is 130–860 ns/op.
 
 If this setup is kept in the baseline, these figures change:
 
@@ -365,16 +387,18 @@ This is a sensitivity check, not the headline. The headline keeps the decided A1
 
 **The remaining feature allocation, per protocol.** These are the profiled sites (`analysis/alloc_top.py`):
 
-- **restJson1 and restXml** (`PutObject_S`: 2,128 and 2,192 B/op). Allocation is spread across request building:
+- **restJson1 and restXml** (`PutObject_S`: 2,128 and 2,192 B/op). Allocation is spread across request building.
+  The shares below are of the bytes allocated under any of the named frames (`analysis/rest_alloc_groups.sh`):
   - building the URI and path: `SdkHttpUtils.appendUri`, `DefaultSdkHttpFullRequest.standardizePath`,
-    `PathSerializer`, `UrlEncoding`; about 25%
-  - the header `TreeMap` and its deep copy: `HttpBindingSerializer.putHeader`, `CollectionUtils.deepCopyMap`,
-    `LowCopyListMap`; about 20%
+    `PathSerializer`, `UrlEncoding`; 27% (restJson1) and 30% (restXml)
+  - the header and query-parameter maps: the `TreeMap` built by `HttpBindingSerializer.putHeader`, its
+    `CollectionUtils.deepCopyMap` copy, and the builder's `LowCopyListMap` maps; 32% and 31%
   - a per-call `HttpBindingSerializer`: 101 B
   - `SdkHttpMethod.fromValue`: 264 B of stream objects per call (the legacy path does not call it)
   - the payload `ByteBuffer` view and `ByteBufferContentStreamProvider`
 
-  With the request-builder setup kept in the baseline, 1.15–1.31× of the baseline remains on `PutObject_*` and `CopyObjectRequest_M`.
+  With the request-builder setup kept in the baseline, 1.15–1.31× of the baseline remains on `PutObject_*` and
+  `CopyObjectRequest_M`.
 - **awsJson1_0 and rpcv2Cbor.** On every call, the codec serializer allocates a fresh scratch buffer of about 1 KiB:
   `SmithyJsonSerializer.<init>` 1,051 B and `CborSerializer.<init>` 1,035 B on `PutItemRequest_Baseline`. That is
   37–43% of the feature's B/op. The legacy 1 KiB `SdkByteArrayOutputStream` is itself the request body. The feature
@@ -422,10 +446,11 @@ used the same host and settings. Between those commits, main code changes only i
 | fix | commits | what changed | metal effect |
 |---|---|---|---|
 | Blob `@httpPayload` copy (A3) | `1f5f257a7f2`, test `7b5117f3d8e` | `HttpBindingSerializer.setBlobPayload` copied the read-only `SdkBytes` view into a new array on every marshall. It now shares the buffer through `ByteBufferContentStreamProvider`, as legacy does. | `restJson1_PutObject_L`: 19,121 → 838 ns/op, 343,425 → 2,128 B/op. `restXml_PutObject_L`: 19,241 → 856 ns/op, 343,489 → 2,192 B/op. The other marshall cases of the null: within 1.7% ns/op and 0.2% B/op. |
-| Response body growth copies | `4acbd0b03ae` | Bodies of unknown length started at 1 KiB and doubled. They now start from a per-operation size hint (the last body + 1/8). `Crc32ResponseValidation` reads into an exact array. | `awsJson1_0_GetItemOutputBinary_L` −33% B/op, −6.3% ns/op. `awsQuery_GetMetricDataResponse_L` −29% B/op, −2.5% ns/op. `rpcv2Cbor_GetItemOutputBinary_L` −8.7% B/op. Small outputs −48% to −59% B/op (for example `rpcv2Cbor_GetItemOutput_Baseline` 1,688 → 689). `GetObject_L` unchanged (streaming payload). |
-| FU-12 blob member copy | `cf3dff2dff5`, `cca1bca22d1`, `976f12c8e66`, docs `b17e79d6e1f` | Generated code passed blob members as `SdkBytes.asByteBuffer()`, a read-only view that the JDK base64 encoder copies. It now passes `asByteArrayUnsafe()` through `writeBlob(Schema, byte[])`. | FU-12 run, same jars and run: awsJson1_0 `BinaryData_S/M/L` feature-fu12 vs feature 0.921 / 0.650 / 0.649 ns/op and 0.909 / 0.447 / 0.414 B/op. Against the baseline: 1.146 → 1.028, 1.214 → 0.541, 1.078 → 0.446 B/op. rpcv2Cbor `BinaryData_*` (0.973–1.086 ns/op, 0.994–1.008 B/op) and `PutObject_L` on both REST protocols (0.997–1.001, 1.000) are unchanged within floor. |
+| Response body growth copies | `4acbd0b03ae` | Bodies of unknown length started at 1 KiB and doubled. They now start from a per-operation size hint (the last body + 1/8). `Crc32ResponseValidation` reads into an exact array. | `awsJson1_0_GetItemOutputBinary_L` −33% B/op, −6.3% ns/op. `awsQuery_GetMetricDataResponse_L` −29% B/op, −2.5% ns/op. `rpcv2Cbor_GetItemOutputBinary_L` −8.7% B/op. The four small `Baseline`/`Example` outputs −48% to −59% B/op: `restJson1_CopyObjectOutput_Baseline` 2,027 → 1,048, `restXml_CopyObjectOutput_Baseline` 1,799 → 788, `awsJson1_0_HealthcheckResponse_Example` 1,688 → 696, `rpcv2Cbor_GetItemOutput_Baseline` 1,688 → 689. `awsQuery_GetMetricDataResponse_S` −22% B/op. `GetObject_L` unchanged (streaming payload). |
+| FU-12 blob member copy | `cf3dff2dff5`, `cca1bca22d1`, `976f12c8e66`, docs `b17e79d6e1f` | Generated code passed blob members as `SdkBytes.asByteBuffer()`, a read-only view that the JDK base64 encoder copies. It now passes `asByteArrayUnsafe()` through `writeBlob(Schema, byte[])`. | FU-12 run, same jars and run: awsJson1_0 `BinaryData_S/M/L` feature-fu12 vs feature 0.921 / 0.650 / 0.649 ns/op and 0.909 / 0.447 / 0.414 B/op. Against the baseline: 1.146 → 1.028, 1.214 → 0.541, 1.078 → 0.446 B/op. `PutObject_L` on both REST protocols (0.997 / 1.001 ns/op, 1.000 B/op) is unchanged within floor. rpcv2Cbor `BinaryData_S` is 8.6% slower in ns/op (1.086, floor 3.8%*, slower in every repetition); `_M` and `_L` are 0.987 and 0.974; B/op is within floor on all three (0.994–1.008). Set 2 keeps the pre-FU-12 rpcv2Cbor rows (section 3.1, FU-16). |
 
-The response-body fix's effect on the JsonRpc10, RpcV2Cbor and Query unmarshall cases is a best case (section 6).
+The response-body fix's effect is a best case on the JsonRpc10, RpcV2Cbor and Query unmarshall cases and on the
+restJson1 and restXml `CopyObjectOutput_*` cases (section 6).
 
 ## 6. Caveats
 
@@ -433,16 +458,20 @@ The response-body fix's effect on the JsonRpc10, RpcV2Cbor and Query unmarshall 
   lower bound. A1 includes the legacy request-builder setup that the feature arm still pays for, so the estimate is
   conservative for the feature on marshall (section 4.2). The as-measured view has no estimate in it.
 - **Response size hint, best case.** The JsonRpc10, RpcV2Cbor and Query unmarshall benchmarks send no
-  `Content-Length` and repeat one response. Since `4acbd0b03ae`, the feature reads such bodies with a per-operation
-  size hint, so it measures the hint's steady state: one copy, no growth. Real responses with `Content-Length` were
-  already read with one exact array. Real chunked responses of varying size may still grow. The DynamoDB CRC32 path
-  (`Crc32ResponseValidation`) is not in these benchmarks.
+  `Content-Length` and repeat one response. So do the restJson1 and restXml `CopyObjectOutput_Baseline` and `_M`
+  cases, 2 of the 5 cases in each REST unmarshall class: in the `serde-tests` output data, only `GetObject` declares
+  `Content-Length`. Since `4acbd0b03ae`, the feature reads such bodies with a per-operation size hint (for the REST
+  protocols, through `HttpBindingClientProtocol`), so it measures the hint's steady state: one copy, no growth. Real
+  responses with `Content-Length` were already read with one exact array. Real chunked responses of varying size may
+  still grow. The DynamoDB CRC32 path (`Crc32ResponseValidation`) is not in these benchmarks.
 - **Laptop numbers are not used.** The laptop smoke runs (`smoke-results.md`) and the laptop before/after tables in
   the fix reports checked tooling and direction only.
 - **One host type.** All results are from Graviton2 (Neoverse-N1) on JDK 25. x86 and other JDKs were not run. The
   jars are Java 8 bytecode built with JDK 21.
 - **The null experiment** measured the pre-fix feature jar on 20 of the 71 cases. The other 51 cases use their
-  class's largest floor. The steady-state check found no drift.
+  class's largest floor. The steady-state check found no drift. Applying these floors to workloads that the fixes
+  changed is an assumption: `PutObject_L` went from about 19 µs to 0.84 µs per call, and the feature-fu12 rows run a
+  different code path.
 - **No smithy-java arm.** The comparability work found a smithy-java arm feasible but did not build it. It needs a
   Gradle build of the reference with the same JDK, `implementation=generic` (runtime codegen needs JDK 25), a diff
   of its Smithy test inputs against `serde-tests/*.json`, a class and method name mapping
@@ -466,7 +495,7 @@ caches.
 | profiling pass | `.agents/tasks/serde-benchmark-metal/runs/20261023-095831/` (`profile-comparison.md`, `boundary.tsv`, `profile-path.tsv`, `profile/<arm>/<class>/<case>/<event>/`) |
 | FU-12 run | `.agents/tasks/serde-benchmark-metal/runs/20261023-111214/` |
 | summaries | `.agents/tasks/serde-benchmark-metal/ab-summary.md`; `analysis/fu12-summary-with-null.md` |
-| report numbers | `analysis/report_numbers.py` → `analysis/report-numbers.md`; `analysis/a1_request_builder.py`; `analysis/alloc_top.py` |
+| report numbers | `analysis/report_numbers.py` → `analysis/report-numbers.md`; `analysis/a1_request_builder.py`; `analysis/alloc_top.py`; `analysis/rest_alloc_groups.sh` |
 | jars | `~/.cache/aws-sdk-java-v2/serde-ab-metal/jars` (null), `serde-ab-metal-postfix/jars` (A/B, profiling, FU-12 baseline and feature), `serde-ab-metal-fu12/jars` (feature-fu12) |
 
 **Build and verify the jars locally** (JDK 21.0.2, from the repository root; each command also runs the local
@@ -527,6 +556,8 @@ JVM="-Xms2g -Xmx2g -XX:+AlwaysPreTouch -XX:ParallelGCThreads=4 -XX:CICompilerCou
 jars):
 
 ```bash
+R="$HOME/serde-ab-fu12"; J="$R/jars"; S="$R/repo/scripts/schema-serde/serde-ab.sh"
+JVM="-Xms2g -Xmx2g -XX:+AlwaysPreTouch -XX:ParallelGCThreads=4 -XX:CICompilerCount=4"
 "$S" --jar "baseline=$J/baseline.jar" --jar "feature=$J/feature.jar" --jar "feature-fu12=$J/feature-fu12.jar" \
     --sdk-pin feature=4acbd0b03ae --sdk-pin feature-fu12=b17e79d6e1f \
     --classes JsonRpc10MarshallBenchmark,RpcV2CborMarshallBenchmark,RestJsonMarshallBenchmark,RestXmlMarshallBenchmark \

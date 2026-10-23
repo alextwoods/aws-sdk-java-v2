@@ -95,6 +95,12 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Evidence:** `.agents/tasks/fix-response-body-copy/report.md` ("Remaining copies and why"); `.agents/tasks/serde-benchmark-comparison/comparability-matrix.md` item A2.
 - **Next step:** (b) is the largest: extract the request id during the main parse. Pass the operation's size hint into the async aggregator for (a). Fix the Javadoc for (c).
 
+### FU-16 RpcV2Cbor `BinaryData_S` marshall is slower with the FU-12 change on metal
+- **Status:** Open
+- **Context:** The FU-12 change (`cf3dff2dff5`, `cca1bca22d1`) moves generated blob member writes from `writeBlob(Schema, ByteBuffer)` to `writeBlob(Schema, byte[])`. CBOR copied no extra bytes before, and the fix report expected no CBOR change.
+- **Evidence:** m6g.metal run `20261023-111214` (`docs/design/schema-serde/serde-perf-report.md` §3.1): `rpcv2Cbor_PutItemRequest_BinaryData_S` feature-fu12 / feature is 1.086 ns/op (per repetition 1.075, 1.052, 1.112, 1.103; floor 3.8%*), 1,022–1,074 vs 951–979 ns/op. `_M` and `_L` are 0.987 and 0.974, and B/op is unchanged within floor on all three. The serde report's set 2 keeps the pre-FU-12 CBOR rows.
+- **Next step:** Profile `rpcv2Cbor_PutItemRequest_BinaryData_S` on both jars (CPU, `-XX:+DebugNonSafepoints`) and compare the `CborSerializer` / `CborStructSerializer` `byte[]` blob path with the `ByteBuffer` path it replaced.
+
 ## Still open from the spec (`design.md` §D.15)
 
 Not re-checked against the branch; listed so they aren't lost.
