@@ -83,6 +83,18 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Evidence:** `.agents/tasks/fix-blob-payload-copy/report.md` ("Other call sites"). No benchmark case covers it.
 - **Next step:** Write the encoded bytes into the body buffer directly. Add a benchmark case if this shape matters for a prototype service.
 
+### FU-14 Response body reads allocate the declared `Content-Length` up front
+- **Status:** Open
+- **Context:** Since `4acbd0b03ae`, `Crc32ResponseValidation` (every DynamoDB response) reads through `ResponseBodyReader` into `new byte[Content-Length]`, capped only near `Integer.MAX_VALUE`. A broken endpoint that declares a huge `Content-Length` and sends a short body now fails with `OutOfMemoryError`, where the old `IoUtils.toByteArray` read failed with `UncheckedIOException`. The `ResponseBodies` known-length path and smithy-java's `readAllBytes` already behave this way. Separately, the per-operation size hint for chunked bodies can leave the next small body of the same operation in an untrimmed array of up to 1 MiB; nothing retains it today.
+- **Evidence:** `.agents/tasks/fix-response-body-copy/review.md` (findings 1 and 2).
+- **Next step:** Cap the up-front exact allocation (a few MiB) and read past the cap through the growth path. Any future zero-copy change for response blobs must wrap only exact arrays, or trim them.
+
+### FU-15 Remaining response-path copies and parses
+- **Status:** Open
+- **Context:** Left by `4acbd0b03ae`: (a) the async `ResponseBodyAggregator` still grows from a fixed size for bodies of unknown length, because the transport has no operation to key the size hint on; (b) awsQuery parses the response body a second time to extract the request id, about 36% of `QueryUnmarshallBenchmark` CPU in the laptop profile (the A2 metadata work); (c) the `MarshallBufferSizeTracker.record` Javadoc still describes only serialized request bodies, though it now also records response sizes.
+- **Evidence:** `.agents/tasks/fix-response-body-copy/report.md` ("Remaining copies and why"); `.agents/tasks/serde-benchmark-comparison/comparability-matrix.md` item A2.
+- **Next step:** (b) is the largest: extract the request id during the main parse. Pass the operation's size hint into the async aggregator for (a). Fix the Javadoc for (c).
+
 ## Still open from the spec (`design.md` §D.15)
 
 Not re-checked against the branch; listed so they aren't lost.
