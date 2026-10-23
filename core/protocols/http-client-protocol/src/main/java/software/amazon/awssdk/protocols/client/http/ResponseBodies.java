@@ -16,14 +16,13 @@
 package software.amazon.awssdk.protocols.client.http;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Optional;
 import software.amazon.awssdk.annotations.SdkProtectedApi;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.core.client.protocol.OwnedResponseBody;
+import software.amazon.awssdk.core.client.protocol.ResponseBodyReader;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
@@ -35,19 +34,23 @@ import software.amazon.awssdk.http.SdkHttpFullResponse;
  */
 @SdkProtectedApi
 public final class ResponseBodies {
-    /**
-     * The longest array the JVM reliably allocates, as in {@code java.util.ArrayList}.
-     */
-    private static final int MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
-
-    /**
-     * Initial capacity when the response has no usable {@code Content-Length}.
-     */
-    private static final int UNKNOWN_LENGTH_INITIAL_CAPACITY = 1024;
-
     private static final byte[] EMPTY = new byte[0];
 
     private ResponseBodies() {
+    }
+
+    /**
+     * Returns the whole body of a response, as {@link #asByteBuffer(ExecutionAttributes, SdkHttpFullResponse, int)}
+     * does with a starting capacity of {@link ResponseBodyReader#DEFAULT_UNKNOWN_LENGTH_CAPACITY} (1 KiB) for a body of
+     * unknown length.
+     *
+     * @param context the attributes of the call, used to find the transport's owned body; may be null
+     * @param response the response
+     * @return the body, positioned at its first byte; an empty buffer if the response has no content
+     * @throws UncheckedIOException if reading the content fails
+     */
+    public static ByteBuffer asByteBuffer(ExecutionAttributes context, SdkHttpFullResponse response) {
+        return asByteBuffer(context, response, ResponseBodyReader.DEFAULT_UNKNOWN_LENGTH_CAPACITY);
     }
 
     /**
@@ -59,8 +62,8 @@ public final class ResponseBodies {
      *     <li>Otherwise, if the response has a valid {@code Content-Length}, the body is read into an array of exactly
      *     that length. A body that ends early is returned as read; one that is longer continues in a growable
      *     array.</li>
-     *     <li>Otherwise the body is read into an array that doubles as needed; the returned buffer covers the bytes read
-     *     and is not trimmed.</li>
+     *     <li>Otherwise the body is read into an array of {@code unknownLengthCapacity} bytes that doubles as needed;
+     *     the returned buffer covers the bytes read and is not trimmed.</li>
      * </ul>
      *
      * <p>The response content stream is read to its end but not closed; the caller owns the response. The caller must
@@ -68,10 +71,13 @@ public final class ResponseBodies {
      *
      * @param context the attributes of the call, used to find the transport's owned body; may be null
      * @param response the response
+     * @param unknownLengthCapacity the starting capacity for a body without a valid {@code Content-Length}
      * @return the body, positioned at its first byte; an empty buffer if the response has no content
      * @throws UncheckedIOException if reading the content fails
+     * @throws IllegalArgumentException if {@code unknownLengthCapacity} is negative and the body is read from the stream
      */
-    public static ByteBuffer asByteBuffer(ExecutionAttributes context, SdkHttpFullResponse response) {
+    public static ByteBuffer asByteBuffer(ExecutionAttributes context, SdkHttpFullResponse response,
+                                          int unknownLengthCapacity) {
         if (context != null) {
             ByteBuffer owned = OwnedResponseBody.ownedBuffer(context, response);
             if (owned != null) {
@@ -82,89 +88,11 @@ public final class ResponseBodies {
         if (!content.isPresent()) {
             return ByteBuffer.wrap(EMPTY);
         }
-        long contentLength = contentLength(response);
         try {
-            InputStream in = content.get();
-            if (contentLength >= 0 && contentLength <= MAX_ARRAY_LENGTH) {
-                return readKnownLength(in, (int) contentLength);
-            }
-            return readRemaining(in, new byte[UNKNOWN_LENGTH_INITIAL_CAPACITY], 0);
+            return ResponseBodyReader.read(content.get(), ResponseBodyReader.declaredLength(response),
+                                           unknownLengthCapacity);
         } catch (IOException e) {
             throw new UncheckedIOException("Unable to read the HTTP response body", e);
         }
-    }
-
-    private static long contentLength(SdkHttpFullResponse response) {
-        Optional<String> header = response.firstMatchingHeader("Content-Length");
-        if (!header.isPresent()) {
-            return -1;
-        }
-        try {
-            return Long.parseLong(header.get().trim());
-        } catch (NumberFormatException e) {
-            return -1;
-        }
-    }
-
-    private static ByteBuffer readKnownLength(InputStream in, int length) throws IOException {
-        byte[] bytes = new byte[length];
-        int read = readFully(in, bytes, 0);
-        if (read < length) {
-            return ByteBuffer.wrap(bytes, 0, read);
-        }
-        int next = in.read();
-        if (next < 0) {
-            return ByteBuffer.wrap(bytes);
-        }
-        // The body is longer than its Content-Length (for example, the client decoded a content encoding).
-        byte[] grown = Arrays.copyOf(bytes, grownLength(length, length + 1));
-        grown[length] = (byte) next;
-        return readRemaining(in, grown, length + 1);
-    }
-
-    /**
-     * Reads the rest of {@code in} into {@code bytes}, after the first {@code count} bytes, growing the array as needed.
-     */
-    private static ByteBuffer readRemaining(InputStream in, byte[] bytes, int count) throws IOException {
-        while (true) {
-            if (count == bytes.length) {
-                int next = in.read();
-                if (next < 0) {
-                    break;
-                }
-                bytes = Arrays.copyOf(bytes, grownLength(bytes.length, count + 1));
-                bytes[count++] = (byte) next;
-            }
-            count = readFully(in, bytes, count);
-            if (count < bytes.length) {
-                break;
-            }
-        }
-        return ByteBuffer.wrap(bytes, 0, count);
-    }
-
-    /**
-     * Fills {@code bytes} from {@code offset} until it is full or {@code in} ends.
-     *
-     * @return the index after the last byte read
-     */
-    private static int readFully(InputStream in, byte[] bytes, int offset) throws IOException {
-        int count = offset;
-        while (count < bytes.length) {
-            int read = in.read(bytes, count, bytes.length - count);
-            if (read < 0) {
-                break;
-            }
-            count += read;
-        }
-        return count;
-    }
-
-    private static int grownLength(int length, int minLength) {
-        if (minLength < 0 || minLength > MAX_ARRAY_LENGTH) {
-            throw new OutOfMemoryError("The HTTP response body is larger than the maximum array length");
-        }
-        long doubled = Math.max((long) length * 2, UNKNOWN_LENGTH_INITIAL_CAPACITY);
-        return (int) Math.min(Math.max(doubled, minLength), MAX_ARRAY_LENGTH);
     }
 }

@@ -151,9 +151,9 @@
 - id: "E3.3 gate"
   optimization: "Byte reader only when Content-Length is known"
   decision: "Applied (re-implemented here)"
-  component: "`ResponseBodies.asByteBuffer`: an exact-size array for a valid `Content-Length`, else a doubling array from 1 KiB"
+  component: "`ResponseBodies.asByteBuffer` (shared reader `ResponseBodyReader`): an exact-size array for a valid `Content-Length`; else an array starting at the operation's last response body size + 1/8 (`HttpClientProtocol.readResponseBody`; 1 KiB for errors), then doubling"
   reason: "The first E3.3 run regressed small responses by +82–91%"
-  classes: ["software.amazon.awssdk.protocols.client.http.ResponseBodies"]
+  classes: ["software.amazon.awssdk.protocols.client.http.ResponseBodies", "software.amazon.awssdk.core.client.protocol.ResponseBodyReader"]
   applied_in_phase: 2
   task: "3.19"
 

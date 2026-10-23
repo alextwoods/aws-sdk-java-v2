@@ -99,6 +99,39 @@ class ResponseBodiesTest {
     }
 
     @ParameterizedTest
+    @ValueSource(ints = {0, 1, 499, 500})
+    void unknownLengthWithinTheCapacityIsReadWithoutGrowing(int size) {
+        byte[] body = bytes(size);
+        SdkHttpFullResponse response = SdkHttpFullResponse.builder()
+                                                          .statusCode(200)
+                                                          .content(AbortableInputStream.create(trickle(body)))
+                                                          .build();
+        ByteBuffer buffer = ResponseBodies.asByteBuffer(null, response, 500);
+
+        assertThat(buffer.array()).hasSize(500);
+        assertThat(toArray(buffer)).isEqualTo(body);
+    }
+
+    @Test
+    void unknownLengthBeyondTheCapacityIsReadCompletely() {
+        byte[] body = bytes(70_000);
+        SdkHttpFullResponse response = SdkHttpFullResponse.builder()
+                                                          .statusCode(200)
+                                                          .content(AbortableInputStream.create(trickle(body)))
+                                                          .build();
+
+        assertThat(toArray(ResponseBodies.asByteBuffer(null, response, 500))).isEqualTo(body);
+    }
+
+    @Test
+    void knownLengthIgnoresTheCapacity() {
+        byte[] body = bytes(100);
+
+        assertThat(ResponseBodies.asByteBuffer(null, withBody(body, "100"), 5000).array()).hasSize(100);
+        assertThat(ResponseBodies.asByteBuffer(null, withBody(body, "100"), 0).array()).hasSize(100);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"not-a-number", "-1", "99999999999"})
     void invalidContentLengthIsTreatedAsUnknown(String contentLength) {
         byte[] body = bytes(2000);
@@ -141,6 +174,7 @@ class ResponseBodiesTest {
         ByteBuffer buffer = ResponseBodies.asByteBuffer(context, response);
         assertThat(buffer.array()).isSameAs(owned.array());
         assertThat(toArray(buffer)).isEqualTo(body);
+        assertThat(ResponseBodies.asByteBuffer(context, response, 16).array()).isSameAs(owned.array());
 
         // Without the call's attributes the body is read from the stream into a new array.
         ByteBuffer copied = ResponseBodies.asByteBuffer(null, response);

@@ -23,6 +23,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.CRC32;
 import java.util.zip.GZIPOutputStream;
@@ -58,6 +59,70 @@ class Crc32ResponseValidationTest {
         assertThat(owned).isNotNull();
         assertThat(bytes(owned)).isEqualTo(JSON);
         assertThat(IoUtils.toByteArray(validated.content().get())).isEqualTo(JSON);
+    }
+
+    @Test
+    void validate_withMatchingChecksumAndContentLength_buffersIntoAnExactSizeArray() {
+        ExecutionAttributes attributes = new ExecutionAttributes();
+        SdkHttpFullResponse validated = Crc32ResponseValidation.validate(
+            attributes, response(new TrackedStream(JSON)).putHeader("x-amz-crc32", crc32(JSON))
+                                                         .putHeader("Content-Length", String.valueOf(JSON.length))
+                                                         .build(), false);
+
+        ByteBuffer owned = OwnedResponseBody.ownedBuffer(attributes, validated);
+        assertThat(owned.array()).hasSize(JSON.length);
+        assertThat(bytes(owned)).isEqualTo(JSON);
+    }
+
+    @Test
+    void validate_withMatchingChecksumAndALargeBodyWithoutContentLength_buffersTheWholeBody() {
+        byte[] large = new byte[200_000];
+        for (int i = 0; i < large.length; i++) {
+            large[i] = (byte) (i * 31);
+        }
+        ExecutionAttributes attributes = new ExecutionAttributes();
+        SdkHttpFullResponse validated = Crc32ResponseValidation.validate(
+            attributes, response(new TrackedStream(large)).putHeader("x-amz-crc32", crc32(large)).build(), false);
+
+        assertThat(bytes(OwnedResponseBody.ownedBuffer(attributes, validated))).isEqualTo(large);
+    }
+
+    @Test
+    void validate_withABodyShorterThanContentLength_returnsTheBytesRead() {
+        ExecutionAttributes attributes = new ExecutionAttributes();
+        SdkHttpFullResponse validated = Crc32ResponseValidation.validate(
+            attributes, response(new TrackedStream(JSON)).putHeader("x-amz-crc32", crc32(JSON))
+                                                         .putHeader("Content-Length", "1000")
+                                                         .build(), false);
+
+        assertThat(bytes(OwnedResponseBody.ownedBuffer(attributes, validated))).isEqualTo(JSON);
+    }
+
+    @Test
+    void validate_withMatchingChecksumAndAnEmptyBody_buffersAnEmptyBody() {
+        ExecutionAttributes attributes = new ExecutionAttributes();
+        SdkHttpFullResponse validated = Crc32ResponseValidation.validate(
+            attributes, response(new TrackedStream(new byte[0])).putHeader("x-amz-crc32", "0")
+                                                                .putHeader("Content-Length", "0")
+                                                                .build(), false);
+
+        assertThat(OwnedResponseBody.ownedBuffer(attributes, validated).remaining()).isZero();
+    }
+
+    @Test
+    void validate_withGzipAndTheCompressedContentLength_returnsTheWholeDecompressedBody() throws IOException {
+        byte[] body = new byte[10_000];
+        Arrays.fill(body, (byte) 'a');
+        byte[] gzipped = gzip(body);
+        assertThat(gzipped.length).isLessThan(body.length);
+        SdkHttpFullResponse response = response(new TrackedStream(gzipped))
+            .putHeader("Content-Encoding", "gzip")
+            .putHeader("Content-Length", String.valueOf(gzipped.length))
+            .putHeader("x-amz-crc32", crc32(gzipped))
+            .build();
+
+        SdkHttpFullResponse validated = Crc32ResponseValidation.validate(new ExecutionAttributes(), response, true);
+        assertThat(IoUtils.toByteArray(validated.content().get())).isEqualTo(body);
     }
 
     @Test

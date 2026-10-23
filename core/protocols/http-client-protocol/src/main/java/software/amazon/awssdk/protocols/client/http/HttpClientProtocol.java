@@ -74,14 +74,16 @@ import software.amazon.awssdk.utils.http.SdkHttpUtils;
  *
  * <p>Subclasses that serialize a body into a {@link ByteBufferOutputStream} create it with
  * {@link #newRequestBodyBuffer} and finish it with {@link #finishRequestBody}, so each operation's next buffer starts at
- * the size of its last body. They build outputs with {@link #buildOutput}, which attaches the HTTP response and the
- * response metadata.
+ * the size of its last body. They read success response bodies with {@link #readResponseBody}, so a body of unknown
+ * length starts at the size of the operation's last response body. They build outputs with {@link #buildOutput}, which
+ * attaches the HTTP response and the response metadata.
  *
- * <p>Instances are created once per client and must be immutable after construction, apart from the internal buffer
- * size hints, and safe to use from multiple threads.
+ * <p>Instances are created once per client and must be immutable after construction, apart from the internal request
+ * and response buffer size hints, and safe to use from multiple threads.
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.client.http.HttpClientProtocol}. The SDK adds the template
- * methods above, the client-side failure wrapping, the buffer size hints and {@link #buildOutput}.
+ * methods above, the client-side failure wrapping, the buffer size hints, {@link #readResponseBody} and
+ * {@link #buildOutput}.
  * {@link #updateServiceEndpoint} keeps the request headers unchanged; it does not add endpoint headers as smithy-java's
  * {@code setServiceEndpoint} does, because the SDK request pipeline applies them.
  */
@@ -95,6 +97,7 @@ public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRe
 
     private final ShapeId id;
     private final MarshallBufferSizeTracker bufferSizeHints = new MarshallBufferSizeTracker();
+    private final MarshallBufferSizeTracker responseBodySizeHints = new MarshallBufferSizeTracker();
 
     /**
      * Creates a protocol.
@@ -366,6 +369,28 @@ public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRe
     protected final ContentStreamProvider finishRequestBody(ApiOperation<?, ?> operation, ByteBufferOutputStream body) {
         bufferSizeHints.record(operation, body.size());
         return body.toContentStreamProvider();
+    }
+
+    /**
+     * Reads the whole body of a successful response with
+     * {@link ResponseBodies#asByteBuffer(ExecutionAttributes, SdkHttpFullResponse, int)}, and records its size for the
+     * operation's next response. A body without a valid {@code Content-Length} (for example a chunked response) is read
+     * into an array that starts at the size of the operation's last response body, so a body of a similar size is
+     * copied once, without growing. The transport's owned body and a body with a valid {@code Content-Length} are read
+     * as {@link ResponseBodies} always reads them.
+     *
+     * @param operation the operation being deserialized
+     * @param context the attributes of the call, used to find the transport's owned body; may be null
+     * @param response the response
+     * @return the body, positioned at its first byte; an empty buffer if the response has no content
+     * @throws UncheckedIOException if reading the content fails
+     */
+    protected final ByteBuffer readResponseBody(ApiOperation<?, ?> operation, ExecutionAttributes context,
+                                                SdkHttpFullResponse response) {
+        ByteBuffer body = ResponseBodies.asByteBuffer(context, response,
+                                                      responseBodySizeHints.initialCapacity(operation));
+        responseBodySizeHints.record(operation, body.remaining());
+        return body;
     }
 
     /**

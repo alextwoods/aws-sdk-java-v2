@@ -29,7 +29,6 @@ import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.protocols.client.http.HttpClientProtocol;
 import software.amazon.awssdk.protocols.client.http.HttpErrorDeserializer;
-import software.amazon.awssdk.protocols.client.http.ResponseBodies;
 import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventDecoderFactory;
 import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventEncoderFactory;
 import software.amazon.awssdk.schema.ApiOperation;
@@ -195,7 +194,7 @@ public abstract class AbstractRpcV2ClientProtocol extends HttpClientProtocol {
             builder.errorCorrection();
             return buildOutput(builder, response);
         }
-        ByteBuffer body = ResponseBodies.asByteBuffer(context, response);
+        ByteBuffer body = readResponseBody(operation, context, response);
         if (body.hasRemaining()) {
             builder.deserialize(codec.createDeserializer(body));
         }

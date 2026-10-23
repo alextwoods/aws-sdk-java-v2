@@ -40,7 +40,6 @@ import software.amazon.awssdk.protocols.client.awsquery.internal.QueryErrorPaylo
 import software.amazon.awssdk.protocols.client.awsquery.internal.QueryFormSerializer;
 import software.amazon.awssdk.protocols.client.http.HttpClientProtocol;
 import software.amazon.awssdk.protocols.client.http.HttpErrorDeserializer;
-import software.amazon.awssdk.protocols.client.http.ResponseBodies;
 import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
@@ -209,7 +208,7 @@ abstract class QueryClientProtocol extends HttpClientProtocol {
             throw new UnsupportedOperationException("Streaming output is not supported by " + id());
         }
         ShapeBuilder<O> builder = operation.outputBuilder();
-        ByteBuffer body = ResponseBodies.asByteBuffer(context, response);
+        ByteBuffer body = readResponseBody(operation, context, response);
         String requestId = null;
         if (body.hasRemaining()) {
             ResponseCodecs codecs = responseCodecs(operation);

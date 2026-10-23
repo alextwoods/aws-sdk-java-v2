@@ -21,7 +21,7 @@ import software.amazon.awssdk.annotations.ThreadSafe;
 import software.amazon.awssdk.schema.ApiOperation;
 
 /**
- * Remembers, per operation, how large the last serialized request body was, so the next body buffer of that operation
+ * Remembers, per operation, how large the last request or response body was, so the next body buffer of that operation
  * starts large enough and does not grow (racecar phase E1, re-implemented).
  *
  * <p>Each operation gets an ordinal, the index of its slot in an identity hash table owned by one protocol instance,

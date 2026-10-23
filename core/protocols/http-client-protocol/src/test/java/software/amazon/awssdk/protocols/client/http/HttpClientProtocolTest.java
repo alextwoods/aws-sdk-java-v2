@@ -23,6 +23,7 @@ import static software.amazon.awssdk.protocols.client.http.TestShapes.GREET;
 import static software.amazon.awssdk.protocols.client.http.TestShapes.cbor;
 import static software.amazon.awssdk.protocols.client.http.TestShapes.response;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -159,6 +160,34 @@ class HttpClientProtocolTest {
     }
 
     @Test
+    void responseBodyOfUnknownLengthStartsAtTheLastResponseBodySizeOfTheOperation() {
+        TestProtocol protocol = new TestProtocol();
+        SimpleApiOperation<Greeting, Greeting> other = TestShapes.operation("Other");
+        byte[] large = cbor("message", repeat('x', 5000));
+        byte[] small = cbor("message", "hi");
+
+        Greeting first = protocol.deserializeResponse(GREET, new ExecutionAttributes(), ERRORS, null, chunked(large));
+        assertThat(protocol.lastResponseBody.remaining()).isEqualTo(large.length);
+
+        // The next unknown-length body of the operation starts at the last size plus one eighth, so it does not grow.
+        Greeting second = protocol.deserializeResponse(GREET, new ExecutionAttributes(), ERRORS, null, chunked(large));
+        assertThat(protocol.lastResponseBody.array()).hasSize(large.length + large.length / 8);
+        assertThat(second.message()).isEqualTo(first.message()).hasSize(5000);
+
+        // A body with a Content-Length is read into an exact array, whatever the hint.
+        assertThat(protocol.deserializeResponse(GREET, new ExecutionAttributes(), ERRORS, null,
+                                                response(200, small).build()).message()).isEqualTo("hi");
+        assertThat(protocol.lastResponseBody.array()).hasSize(small.length);
+
+        // Hints are per operation and per protocol instance.
+        protocol.deserializeResponse(other, new ExecutionAttributes(), ERRORS, null, chunked(small));
+        assertThat(protocol.lastResponseBody.array()).hasSize(MarshallBufferSizeTracker.DEFAULT_CAPACITY);
+        TestProtocol fresh = new TestProtocol();
+        fresh.deserializeResponse(GREET, new ExecutionAttributes(), ERRORS, null, chunked(small));
+        assertThat(fresh.lastResponseBody.array()).hasSize(MarshallBufferSizeTracker.DEFAULT_CAPACITY);
+    }
+
+    @Test
     void eventStreamFactories_byDefault_areUnsupported() {
         TestProtocol protocol = new TestProtocol();
 
@@ -272,6 +301,24 @@ class HttpClientProtocolTest {
     }
 
     /**
+     * A successful response without {@code Content-Length}, as a chunked response arrives.
+     */
+    private static SdkHttpFullResponse chunked(byte[] body) {
+        return SdkHttpFullResponse.builder()
+                                  .statusCode(200)
+                                  .content(AbortableInputStream.create(new ByteArrayInputStream(body)))
+                                  .build();
+    }
+
+    private static String repeat(char c, int count) {
+        StringBuilder value = new StringBuilder(count);
+        for (int i = 0; i < count; i++) {
+            value.append(c);
+        }
+        return value.toString();
+    }
+
+    /**
      * A minimal CBOR protocol over the base class.
      */
     private static final class TestProtocol extends HttpClientProtocol {
@@ -281,6 +328,7 @@ class HttpClientProtocolTest {
                                                                           .baseExceptionBuilder(ExampleServiceException::builder)
                                                                           .build();
         private RuntimeException serializeFailure;
+        private ByteBuffer lastResponseBody;
 
         private TestProtocol() {
             this(PROTOCOL_ID);
@@ -322,7 +370,8 @@ class HttpClientProtocolTest {
             ApiOperation<I, O> operation, ExecutionAttributes context, SdkHttpFullRequest request,
             SdkHttpFullResponse response) {
             ShapeBuilder<O> builder = operation.outputBuilder();
-            builder.deserialize(CODEC.createDeserializer(ResponseBodies.asByteBuffer(context, response)));
+            lastResponseBody = readResponseBody(operation, context, response);
+            builder.deserialize(CODEC.createDeserializer(lastResponseBody));
             return buildOutput(builder, response);
         }
 

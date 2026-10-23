@@ -176,9 +176,10 @@ public abstract class HttpBindingClientProtocol extends HttpClientProtocol {
                                                        .outputShapeBuilder(builder)
                                                        .response(response);
         if (!httpBinding.hasStreamingPayload(operation.outputSchema(), true)) {
-            // The async transport's buffer is read without a copy. The body is parsed only when the output has body or
-            // payload members, so an output without members ignores it.
-            deserializer.body(ResponseBodies.asByteBuffer(context, response));
+            // The async transport's buffer is read without a copy, and a chunked body starts at the operation's last
+            // body size. The body is parsed only when the output has body or payload members, so an output without
+            // members ignores it.
+            deserializer.body(readResponseBody(operation, context, response));
         }
         deserializer.deserialize();
         builder.errorCorrection();

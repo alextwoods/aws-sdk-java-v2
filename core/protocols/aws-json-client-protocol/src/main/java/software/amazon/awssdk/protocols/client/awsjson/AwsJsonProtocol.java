@@ -32,7 +32,6 @@ import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.protocols.client.http.AmznErrorHeaderExtractor;
 import software.amazon.awssdk.protocols.client.http.HttpClientProtocol;
 import software.amazon.awssdk.protocols.client.http.HttpErrorDeserializer;
-import software.amazon.awssdk.protocols.client.http.ResponseBodies;
 import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventDecoderFactory;
 import software.amazon.awssdk.protocols.client.http.eventstream.AwsEventEncoderFactory;
 import software.amazon.awssdk.schema.ApiOperation;
@@ -194,7 +193,7 @@ abstract class AwsJsonProtocol extends HttpClientProtocol {
         // Like earlier SDK clients, the body of an output without members is not read, so it need not be JSON. An empty
         // body is read as "{}": an output with no members set.
         if (!operation.outputSchema().members().isEmpty()) {
-            readBody(builder, ResponseBodies.asByteBuffer(context, response));
+            readBody(builder, readResponseBody(operation, context, response));
         }
         builder.errorCorrection();
         return buildOutput(builder, response);

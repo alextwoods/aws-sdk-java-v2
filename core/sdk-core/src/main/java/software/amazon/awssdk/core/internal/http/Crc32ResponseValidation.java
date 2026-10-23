@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.zip.CRC32;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.core.client.protocol.OwnedResponseBody;
+import software.amazon.awssdk.core.client.protocol.ResponseBodyReader;
 import software.amazon.awssdk.core.exception.Crc32MismatchException;
 import software.amazon.awssdk.core.http.Crc32Validation;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
@@ -45,7 +46,8 @@ import software.amazon.awssdk.utils.Logger;
  *
  * <p>A response with neither header is returned unchanged. A body the asynchronous transport already owns
  * ({@link OwnedResponseBody}) and that is not compressed is checked in place, without a copy. Otherwise the validated
- * body is buffered once and handed to the protocol as an owned body, so the protocol does not copy it again.
+ * body is buffered once, into an array sized from {@code Content-Length} when the body is not compressed
+ * ({@link ResponseBodyReader}), and handed to the protocol as an owned body, so the protocol does not copy it again.
  */
 @SdkInternalApi
 final class Crc32ResponseValidation {
@@ -92,14 +94,17 @@ final class Crc32ResponseValidation {
         if (!validating.content().isPresent()) {
             return validating;
         }
-        byte[] body;
+        // The checksum stream does not change the length, so Content-Length sizes the array unless the body is
+        // decompressed.
+        long declaredLength = gzip ? -1 : ResponseBodyReader.declaredLength(response);
+        ByteBuffer body;
         // Closing the validating stream checks the checksum and throws Crc32MismatchException on a mismatch.
         try (AbortableInputStream in = validating.content().get()) {
-            body = IoUtils.toByteArray(in);
+            body = ResponseBodyReader.read(in, declaredLength, ResponseBodyReader.DEFAULT_UNKNOWN_LENGTH_CAPACITY);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        OwnedResponseBody owned = OwnedResponseBody.of(body, body.length);
+        OwnedResponseBody owned = OwnedResponseBody.of(body.array(), body.remaining());
         owned.attach(attributes);
         return validating.toBuilder().content(owned.content()).build();
     }
