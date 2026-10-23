@@ -56,6 +56,11 @@ public interface Codec extends SdkAutoCloseable {
      * Creates a serializer that writes one shape to {@code sink}. Closing the serializer flushes everything written to the
      * sink; it does not close the sink.
      *
+     * <p>The serializer may hold written bytes until {@link ShapeSerializer#flush()} or {@code close()}, so write to the
+     * sink directly only after one of them. It may pass the same array to the sink's {@code write} methods more than once
+     * and the array may hold other bytes outside the range it passes, so the sink must copy what it keeps, as
+     * {@code OutputStream} implementations do.
+     *
      * @param sink where to write the serialized shape
      * @return a new serializer
      */

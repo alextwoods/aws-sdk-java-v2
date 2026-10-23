@@ -79,7 +79,12 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * not allocate it per call; it must not be used after {@code close}. A {@link ByteBufferOutputStream} sink, which every
  * SDK protocol uses, needs no buffer: the serializer writes into the stream's array
  * ({@link ByteBufferOutputStream#reserve}) and adds the bytes on {@link #flush}, {@link #close} and when it needs more
- * room ({@link ByteBufferOutputStream#advance}), so the body is not copied either.
+ * room ({@link ByteBufferOutputStream#advance}), so the body is not copied either. The serializer starts from the
+ * stream's size at its first write and continues from it at the first write after {@link #flush}, so the caller may
+ * write or reset the stream before and in between, as with any other sink. A caller that writes or resets the stream
+ * while the serializer holds bytes it has not added gets those bytes appended after its own when they are intact, and
+ * an {@link IllegalStateException} at the next commit when its write overwrote them. A write after {@link #close} of a
+ * serializer with a sink throws {@link IllegalStateException}.
  *
  * <p>Port of smithy-java {@code CborSerializer}. {@code VarHandle} writes are replaced by explicit shifts, and the
  * {@code CompactStringAccess} fast path by a {@code charAt} loop that copies ASCII text four characters at a time.
@@ -98,13 +103,22 @@ final class CborSerializer implements ShapeSerializer {
     // The "__type" key written before the members of a structure document with a discriminator.
     private static final byte[] TYPE_FIELD_BYTES = encodeMemberName("__type");
 
+    // The buffer after close() of a serializer with a sink. Every write needs room in it, so the write calls grow,
+    // which fails.
+    private static final byte[] CLOSED = new byte[0];
+    // The buffer of a ByteBufferOutputStream sink before the first write and after flush(). The next write calls grow,
+    // which continues from the stream's size and array at that point.
+    private static final byte[] DETACHED = new byte[0];
+
     byte[] buf;
     int pos;
 
     // A sink other than a ByteBufferOutputStream, or null.
     private final OutputStream sink;
-    // A ByteBufferOutputStream sink, whose array is buf; bytes [direct.size(), pos) are written but not yet added.
+    // A ByteBufferOutputStream sink, whose array is buf; bytes [committed, pos) are written but not yet added.
     private final ByteBufferOutputStream direct;
+    // The size of direct after the serializer last added bytes to it or continued from it.
+    private int committed;
 
     // Bit i of collectionMask records whether level i was opened as indefinite-length.
     private long collectionMask;
@@ -122,11 +136,12 @@ final class CborSerializer implements ShapeSerializer {
 
     CborSerializer(OutputStream sink) {
         if (sink instanceof ByteBufferOutputStream) {
-            // Writes go straight into the stream's array, from its current size; see commitToDirect.
+            // Writes go straight into the stream's array, from its size at the first write; see commitToDirect.
             this.direct = (ByteBufferOutputStream) sink;
             this.sink = null;
             this.pos = direct.size();
-            this.buf = direct.reserve(0);
+            this.committed = pos;
+            this.buf = DETACHED;
         } else {
             // A serializer with another sink drains its buffer to the sink when full (see grow), so its small buffer
             // only adds sink writes for large documents. The buffer is lent by SinkBufferPool until close().
@@ -157,6 +172,9 @@ final class CborSerializer implements ShapeSerializer {
 
     // Separate cold grow method helps the JIT inline ensureCapacity's fast path
     private void grow(int needed) {
+        if (buf == CLOSED) {
+            throw new IllegalStateException("The serializer is closed");
+        }
         // Writing into a ByteBufferOutputStream: add what is written and let the stream grow its own array. The
         // backpatch described below stays inside one reservation, so it is never split by a commit.
         if (direct != null) {
@@ -188,7 +206,11 @@ final class CborSerializer implements ShapeSerializer {
     @Override
     public void flush() {
         if (direct != null) {
-            commitToDirect();
+            if (buf != CLOSED) {
+                commitToDirect();
+                // The caller may write or reset the stream now; the next write continues from where it is then.
+                buf = DETACHED;
+            }
             return;
         }
         try {
@@ -202,19 +224,37 @@ final class CborSerializer implements ShapeSerializer {
         }
     }
 
-    // Adds the bytes written into the ByteBufferOutputStream's array since the last commit to the stream.
+    // Adds the bytes written since the last commit, [committed, pos), to the ByteBufferOutputStream, and continues from
+    // the stream's size. The caller sets buf afterwards.
     private void commitToDirect() {
-        if (buf != null) {
-            direct.advance(pos - direct.size());
+        int pending = pos - committed;
+        if (buf == direct.array() && direct.size() == committed) {
+            direct.advance(pending);
+        } else if (pending > 0) {
+            commitAfterOtherWrites(pending);
         }
+        pos = direct.size();
+        committed = pos;
+    }
+
+    // Someone else wrote or reset the stream while bytes were pending. They are intact unless that write went into the
+    // same array past committed; intact bytes are added where the stream is now, as a buffered serializer would.
+    private void commitAfterOtherWrites(int pending) {
+        if (buf == direct.array() && direct.size() > committed) {
+            throw new IllegalStateException("The ByteBufferOutputStream was written while the serializer had bytes in "
+                                            + "it that were not flushed; call flush() before writing to the stream");
+        }
+        direct.write(buf, committed, pending);
     }
 
     @Override
     public void close() {
         if (direct != null) {
             // A later write fails instead of writing into the stream's array.
-            commitToDirect();
-            buf = null;
+            if (buf != CLOSED) {
+                commitToDirect();
+                buf = CLOSED;
+            }
             return;
         }
         try {
@@ -228,9 +268,9 @@ final class CborSerializer implements ShapeSerializer {
         // The lent buffer goes back to the pool (which drops one the serializer grew), and a later write fails
         // instead of writing into an array another serializer holds. A second close releases nothing; a close whose
         // write failed keeps the buffer, as before. Sink-less serializers keep their buffer for their own pool.
-        if (sink != null && buf != null) {
+        if (sink != null && buf != CLOSED) {
             SinkBufferPool.release(buf);
-            buf = null;
+            buf = CLOSED;
         }
     }
 
@@ -755,7 +795,7 @@ final class CborSerializer implements ShapeSerializer {
 
         @Override
         protected boolean canPool(CborSerializer s) {
-            return s.buf != null && s.sink == null && s.direct == null;
+            return s.buf != CLOSED && s.sink == null && s.direct == null;
         }
 
         @Override

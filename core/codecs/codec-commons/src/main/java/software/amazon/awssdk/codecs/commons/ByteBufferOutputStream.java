@@ -185,7 +185,9 @@ public final class ByteBufferOutputStream extends OutputStream {
      * instead of filling a buffer of its own and copying it in with {@link #write(byte[], int, int)}. The array may be
      * a new one, holding the bytes written so far, and may have more room than requested; the contents past
      * {@code size()} are undefined. A later {@code reserve}, write or {@link #reset()} may replace the array, so call
-     * {@code reserve} again before writing after any of them. SDK addition.
+     * {@code reserve} again before writing after any of them. Bytes put into the array are not part of the stream until
+     * {@code advance} adds them: a write or {@link #reset()} before that may write over them or leave them in the old
+     * array, so a writer must not let the stream be written while it holds bytes it has not added. SDK addition.
      *
      * @param length the number of bytes the caller will write
      * @return the internal array, with at least {@code size() + length} bytes

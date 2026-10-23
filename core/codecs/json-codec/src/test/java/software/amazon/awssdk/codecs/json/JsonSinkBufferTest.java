@@ -20,9 +20,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -157,14 +160,167 @@ class JsonSinkBufferTest {
     }
 
     @Test
-    void writeAfterClose_fails() {
+    void writeAfterClose_failsWithIllegalStateException() {
         for (OutputStream sink : Arrays.asList(new ByteBufferOutputStream(), new ByteArrayOutputStream())) {
             ShapeSerializer serializer = CODEC.createSerializer(sink);
             serializer.writeStruct(DOC, doc("a", Collections.emptyList()));
             serializer.close();
+            // A second close and a flush after close do nothing.
+            serializer.close();
+            serializer.flush();
             assertThatThrownBy(() -> serializer.writeStruct(DOC, doc("b", Collections.emptyList())))
                 .as(sink.getClass().getSimpleName())
-                .isInstanceOf(RuntimeException.class);
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("closed");
+        }
+    }
+
+    // The caller writes or resets the sink while the serializer is open. A ByteBufferOutputStream sink, written in
+    // place, must give the bytes a buffering sink (ByteArrayOutputStream) gives.
+
+    @Test
+    void otherWriteBeforeTheFirstValue_isKeptBeforeTheDocument() {
+        assertSameAsBufferedSink(16, (serializer, out) -> {
+            write(out, "prefix");
+            serializer.writeStruct(DOC, doc("first", Arrays.asList("a", "b")));
+            serializer.close();
+        });
+    }
+
+    @Test
+    void flushThenOtherWriteThenClose_keepsTheOtherBytesAfterTheDocument() {
+        assertSameAsBufferedSink(16, (serializer, out) -> {
+            serializer.writeStruct(DOC, doc("first", Arrays.asList("a", "b")));
+            serializer.flush();
+            write(out, "trailer");
+            serializer.close();
+        });
+    }
+
+    @Test
+    void flushThenOtherWriteThenMoreWrites_appendsAfterTheOtherBytes() {
+        assertSameAsBufferedSink(16, (serializer, out) -> {
+            serializer.writeStruct(DOC, doc("first", Arrays.asList("a", "b")));
+            serializer.flush();
+            write(out, "middle");
+            serializer.writeStruct(DOC, doc("second", Collections.singletonList("c")));
+            serializer.close();
+        });
+    }
+
+    @Test
+    void flushThenOtherWriteThatGrowsTheStream_appendsAfterTheOtherBytes() {
+        assertSameAsBufferedSink(16, (serializer, out) -> {
+            serializer.writeStruct(DOC, doc("first", Collections.emptyList()));
+            serializer.flush();
+            write(out, repeat('m', 3000));
+            serializer.writeStruct(DOC, doc("second", Collections.emptyList()));
+            serializer.close();
+        });
+    }
+
+    @Test
+    void flushThenReset_continuesFromTheEmptyStream() {
+        assertSameAsBufferedSink(16, (serializer, out) -> {
+            serializer.writeStruct(DOC, doc("first", Arrays.asList("a", "b")));
+            serializer.flush();
+            reset(out);
+            serializer.writeStruct(DOC, doc("second", Collections.singletonList("c")));
+            serializer.close();
+        });
+    }
+
+    @Test
+    void flushThenSharedReset_continuesInTheNewArray() {
+        ByteBufferOutputStream out = new ByteBufferOutputStream(16);
+        ShapeSerializer serializer = CODEC.createSerializer(out);
+        serializer.writeStruct(DOC, doc("first", Arrays.asList("a", "b")));
+        serializer.flush();
+        ByteBuffer shared = out.toByteBuffer();
+        byte[] sharedBytes = bytes(shared);
+        out.reset();
+        SerializableStruct second = doc("second", Collections.singletonList("c"));
+        serializer.writeStruct(DOC, second);
+        serializer.close();
+        assertThat(Arrays.copyOf(out.array(), out.size())).isEqualTo(bytes(CODEC.serialize(second)));
+        // The content handed out before the reset is unchanged.
+        assertThat(bytes(shared)).isEqualTo(sharedBytes);
+    }
+
+    @Test
+    void unflushedThenOtherWriteThatGrowsTheStream_appendsTheIntactBytes() {
+        // The other write moves the stream to a new array, so the serializer's bytes in the old one are intact.
+        assertSameAsBufferedSink(256, (serializer, out) -> {
+            serializer.writeStruct(DOC, doc("first", Collections.emptyList()));
+            write(out, repeat('m', 3000));
+            serializer.close();
+        });
+    }
+
+    @Test
+    void unflushedThenSharedReset_appendsTheIntactBytes() {
+        ByteBufferOutputStream out = new ByteBufferOutputStream(64);
+        write(out, "xy");
+        out.toByteBuffer();
+        SerializableStruct first = doc("first", Collections.emptyList());
+        ShapeSerializer serializer = CODEC.createSerializer(out);
+        serializer.writeStruct(DOC, first);
+        out.reset();
+        serializer.close();
+        assertThat(Arrays.copyOf(out.array(), out.size())).isEqualTo(bytes(CODEC.serialize(first)));
+    }
+
+    @Test
+    void unflushedThenReset_appendsTheIntactBytes() {
+        assertSameAsBufferedSink(256, (serializer, out) -> {
+            write(out, "prefix");
+            serializer.writeStruct(DOC, doc("first", Collections.emptyList()));
+            reset(out);
+            write(out, "xy");
+            serializer.close();
+        });
+    }
+
+    @Test
+    void unflushedThenOtherWriteOverTheBytes_failsInsteadOfCorruptingTheBody() {
+        ByteBufferOutputStream out = new ByteBufferOutputStream(256);
+        ShapeSerializer serializer = CODEC.createSerializer(out);
+        serializer.writeStruct(DOC, doc("first", Arrays.asList("a", "b")));
+        // Written into the stream's array where the serializer's bytes are.
+        write(out, "over");
+        assertThatThrownBy(serializer::close).isInstanceOf(IllegalStateException.class)
+                                             .hasMessageContaining("flush()");
+        assertThat(new String(out.array(), 0, out.size(), StandardCharsets.UTF_8)).isEqualTo("over");
+    }
+
+    private interface Interleaving {
+        void run(ShapeSerializer serializer, OutputStream out);
+    }
+
+    // capacity: the in-place stream's initial capacity. The unflushed cases use one the document fits in, so the
+    // serializer adds all of its bytes at close(), as the buffering sink writes all of them there.
+    private static void assertSameAsBufferedSink(int capacity, Interleaving interleaving) {
+        ByteArrayOutputStream buffered = new ByteArrayOutputStream();
+        interleaving.run(CODEC.createSerializer(buffered), buffered);
+        ByteBufferOutputStream inPlace = new ByteBufferOutputStream(capacity);
+        interleaving.run(CODEC.createSerializer(inPlace), inPlace);
+        assertThat(Arrays.copyOf(inPlace.array(), inPlace.size())).isEqualTo(buffered.toByteArray());
+    }
+
+    private static void write(OutputStream out, String text) {
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        try {
+            out.write(bytes, 0, bytes.length);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static void reset(OutputStream out) {
+        if (out instanceof ByteBufferOutputStream) {
+            ((ByteBufferOutputStream) out).reset();
+        } else {
+            ((ByteArrayOutputStream) out).reset();
         }
     }
 
