@@ -41,8 +41,8 @@ import software.amazon.awssdk.utils.Validate;
  * protocols: {@code Action} and {@code Version} first, then one {@code key=value} pair per serialized value.
  *
  * <p>Create one with {@link #forAwsQuery} or {@link #forEc2Query}, pass it to the input's
- * {@link SerializableStruct#serializeMembers}, then call {@link #finish()} once. An instance is single-use and not
- * thread-safe.
+ * {@link SerializableStruct#serializeMembers}, then call {@link #finish()} or {@link #finishArray()} once. An instance
+ * is single-use and not thread-safe.
  *
  * <p>Keys follow the protocol rules:
  * <ul>
@@ -115,18 +115,23 @@ public final class QueryFormSerializer implements ShapeSerializer {
     private final MapEntrySerializer mapEntries = new MapEntrySerializer();
     private final MapValueSerializer mapValue = new MapValueSerializer();
 
-    private byte[] buf = new byte[DEFAULT_BUF_SIZE];
+    private byte[] buf;
     private int pos;
+    // The largest buffer size a write has reserved: each value reserves its worst-case encoded length.
+    private int requiredCapacity;
     private byte[] prefixBuf = new byte[128];
     private int prefixLen;
     private int[] prefixStack = new int[8];
     private int prefixDepth;
 
-    private QueryFormSerializer(boolean ec2, String action, String version) {
+    private QueryFormSerializer(boolean ec2, String action, String version, int initialCapacity) {
         this.ec2 = ec2;
         Validate.paramNotNull(action, "action");
         Validate.paramNotNull(version, "version");
-        ensureCapacity(ACTION_PREFIX.length + VERSION_PREFIX.length + (action.length() + version.length()) * 3);
+        int prelude = ACTION_PREFIX.length + VERSION_PREFIX.length + (action.length() + version.length()) * 3;
+        // At least the prelude's reservation, so writing Action and Version never grows the array.
+        this.buf = new byte[Math.max(initialCapacity, prelude)];
+        ensureCapacity(prelude);
         writeBytes(ACTION_PREFIX);
         writeUrlEncoded(action);
         writeBytes(VERSION_PREFIX);
@@ -142,7 +147,21 @@ public final class QueryFormSerializer implements ShapeSerializer {
      * @return a new serializer
      */
     public static QueryFormSerializer forAwsQuery(String action, String version) {
-        return new QueryFormSerializer(false, action, version);
+        return forAwsQuery(action, version, DEFAULT_BUF_SIZE);
+    }
+
+    /**
+     * Creates a serializer for an {@code awsQuery} request body that starts with
+     * {@code Action=<action>&Version=<version>}, in an array of {@code initialCapacity} bytes (more if the prelude
+     * needs it) that grows as needed. SDK addition.
+     *
+     * @param action the operation name
+     * @param version the service's API version
+     * @param initialCapacity the starting size of the body array, for example the size of the operation's last body
+     * @return a new serializer
+     */
+    public static QueryFormSerializer forAwsQuery(String action, String version, int initialCapacity) {
+        return new QueryFormSerializer(false, action, version, initialCapacity);
     }
 
     /**
@@ -154,7 +173,21 @@ public final class QueryFormSerializer implements ShapeSerializer {
      * @return a new serializer
      */
     public static QueryFormSerializer forEc2Query(String action, String version) {
-        return new QueryFormSerializer(true, action, version);
+        return forEc2Query(action, version, DEFAULT_BUF_SIZE);
+    }
+
+    /**
+     * Creates a serializer for an {@code ec2Query} request body that starts with
+     * {@code Action=<action>&Version=<version>}, in an array of {@code initialCapacity} bytes (more if the prelude
+     * needs it) that grows as needed. SDK addition.
+     *
+     * @param action the operation name
+     * @param version the service's API version
+     * @param initialCapacity the starting size of the body array, for example the size of the operation's last body
+     * @return a new serializer
+     */
+    public static QueryFormSerializer forEc2Query(String action, String version, int initialCapacity) {
+        return new QueryFormSerializer(true, action, version, initialCapacity);
     }
 
     /**
@@ -168,6 +201,39 @@ public final class QueryFormSerializer implements ShapeSerializer {
         byte[] result = checkNotFinished();
         buf = null;
         return ByteBuffer.wrap(result, 0, pos).slice();
+    }
+
+    /**
+     * Returns the number of body bytes written so far.
+     *
+     * @return the body length
+     */
+    public int size() {
+        return pos;
+    }
+
+    /**
+     * Returns the smallest initial capacity with which the writes so far would not have grown the array. Each value
+     * reserves its worst-case encoded length before it is written, so this can be larger than {@link #size()}. SDK
+     * addition, for sizing the next body of the same operation.
+     *
+     * @return the capacity the body needed
+     */
+    public int requiredCapacity() {
+        return Math.max(requiredCapacity, pos);
+    }
+
+    /**
+     * Returns the internal array holding the body, without the buffer views {@link #finish()} creates. The body is
+     * bytes {@code [0, size())}; the array may be longer. The serializer must not be used afterwards. SDK addition.
+     *
+     * @return the array holding the form-encoded body
+     * @throws IllegalStateException if the body was already finished
+     */
+    public byte[] finishArray() {
+        byte[] result = checkNotFinished();
+        buf = null;
+        return result;
     }
 
     @Override
@@ -285,6 +351,9 @@ public final class QueryFormSerializer implements ShapeSerializer {
     private void ensureCapacity(int needed) {
         byte[] current = checkNotFinished();
         int required = pos + needed;
+        if (required > requiredCapacity) {
+            requiredCapacity = required;
+        }
         if (required > current.length) {
             buf = Arrays.copyOf(current, Math.max(required, current.length + (current.length >> 1)));
         }

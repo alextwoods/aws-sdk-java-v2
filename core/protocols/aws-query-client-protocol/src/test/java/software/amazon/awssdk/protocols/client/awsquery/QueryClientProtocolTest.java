@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -51,6 +52,7 @@ import software.amazon.awssdk.protocols.client.awsquery.TestShapes.GreetRequest;
 import software.amazon.awssdk.protocols.client.awsquery.TestShapes.GreetResponse;
 import software.amazon.awssdk.protocols.client.awsquery.TestShapes.NoInputRequest;
 import software.amazon.awssdk.protocols.client.awsquery.TestShapes.QueueMissing;
+import software.amazon.awssdk.protocols.client.awsquery.internal.QueryFormSerializer;
 import software.amazon.awssdk.protocols.client.http.HttpClientProtocol;
 import software.amazon.awssdk.schema.traits.AwsQueryTrait;
 import software.amazon.awssdk.schema.traits.Ec2QueryTrait;
@@ -104,6 +106,49 @@ class QueryClientProtocolTest {
         assertThat(body(request)).isEqualTo("Action=Greet&Version=2024-01-01&Text=hi&Name=Bob");
         assertThat(request.firstMatchingHeader("Content-Type"))
             .hasValue("application/x-www-form-urlencoded");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void serializeRequest_sizesTheBodyFromTheOperationsLastRequest(boolean ec2) throws IOException {
+        HttpClientProtocol protocol = ec2 ? new Ec2QueryClientProtocol(SETTINGS) : new AwsQueryClientProtocol(SETTINGS);
+        GreetRequest input = new GreetRequest("hello world", "Bob");
+        SdkHttpFullRequest first = protocol.serializeRequest(GREET, input, new ExecutionAttributes(), ENDPOINT);
+        String body = body(first);
+        int size = body.length();
+        QueryFormSerializer reference = ec2 ? QueryFormSerializer.forEc2Query("Greet", "2024-01-01")
+                                            : QueryFormSerializer.forAwsQuery("Greet", "2024-01-01");
+        input.serializeMembers(reference);
+        int required = reference.requiredCapacity();
+        for (int call = 2; call <= 3; call++) {
+            SdkHttpFullRequest next = protocol.serializeRequest(GREET, input, new ExecutionAttributes(), ENDPOINT);
+            assertThat(body(next)).as("call %s", call).isEqualTo(body);
+            assertThat(next.headers()).as("call %s", call).isEqualTo(first.headers());
+            assertThat(next.firstMatchingHeader("Content-Length")).hasValue(String.valueOf(size));
+            // The array starts at the capacity the last body needed, plus one eighth, and does not grow.
+            int capacity = next.contentStreamProvider().get().contentAsByteBufferOrNull().array().length;
+            assertThat(capacity).as("call %s", call).isEqualTo(Math.max(32, required + required / 8));
+            assertThat(capacity).as("call %s", call).isLessThan(2 * size);
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("protocols")
+    void serializeRequest_bodyLargerThanTheDefaultCapacity_growsTheArray(HttpClientProtocol protocol)
+        throws IOException {
+        char[] chars = new char[300];
+        Arrays.fill(chars, 'x');
+        String text = new String(chars);
+        HttpClientProtocol fresh = protocol instanceof Ec2QueryClientProtocol ? new Ec2QueryClientProtocol(SETTINGS)
+                                                                              : new AwsQueryClientProtocol(SETTINGS);
+        SdkHttpFullRequest large = fresh.serializeRequest(GREET, new GreetRequest(text, "Bob"),
+                                                          new ExecutionAttributes(), ENDPOINT);
+        String name = protocol instanceof Ec2QueryClientProtocol ? "Name" : "name";
+        assertThat(body(large)).isEqualTo("Action=Greet&Version=2024-01-01&Text=" + text + "&" + name + "=Bob");
+        SdkHttpFullRequest small = fresh.serializeRequest(GREET, new GreetRequest("hi", "Bob"),
+                                                          new ExecutionAttributes(), ENDPOINT);
+        assertThat(body(small)).isEqualTo("Action=Greet&Version=2024-01-01&Text=hi&" + name + "=Bob");
+        assertThat(small.firstMatchingHeader("Content-Length")).hasValue(String.valueOf(body(small).length()));
     }
 
     @ParameterizedTest

@@ -449,6 +449,69 @@ class QueryFormSerializerTest {
     }
 
     @Test
+    void initialCapacity_doesNotChangeTheBody() {
+        SchemaStruct flat = SchemaStruct.builder(SIMPLE).set("Foo", "val1").set("Bar", "a b ü").set("Bam", 10).build();
+        SchemaStruct lists = SchemaStruct.builder(LISTS)
+                                         .set("ListArg", Arrays.asList("foo", "bar", "baz"))
+                                         .set("ComplexListArg", Arrays.asList(greeting("hello"), greeting("hola")))
+                                         .build();
+        SchemaStruct maps = SchemaStruct.builder(MAPS)
+                                        .set("MapArg", map("bar", "Bar", "foo", "Foo"))
+                                        .build();
+        for (SchemaStruct input : Arrays.asList(flat, lists, maps)) {
+            String expectedAwsQuery = awsQuery(input);
+            String expectedEc2Query = ec2Query(input);
+            for (int capacity : new int[] {0, 1, 16, 4096}) {
+                QueryFormSerializer aws = QueryFormSerializer.forAwsQuery("Op", "2020-01-08", capacity);
+                input.serializeMembers(aws);
+                assertThat(finish(aws)).as("awsQuery, capacity %s", capacity).isEqualTo(expectedAwsQuery);
+                QueryFormSerializer ec2 = QueryFormSerializer.forEc2Query("Op", "2020-01-08", capacity);
+                ec2.writeStruct(input.sdkSchema(), input);
+                assertThat(finish(ec2)).as("ec2Query, capacity %s", capacity).isEqualTo(expectedEc2Query);
+            }
+        }
+    }
+
+    @Test
+    void finishArray_returnsTheBodyArrayAndCanBeCalledOnce() {
+        QueryFormSerializer serializer = QueryFormSerializer.forAwsQuery("Op", "2020-01-08", 4096);
+        SchemaStruct.builder(SIMPLE).set("Foo", "val1").build().serializeMembers(serializer);
+        int size = serializer.size();
+        byte[] body = serializer.finishArray();
+        assertThat(body).hasSize(4096);
+        assertThat(new String(body, 0, size, StandardCharsets.UTF_8)).isEqualTo(PREFIX + "&Foo=val1");
+        assertThat(serializer.size()).isEqualTo(size);
+        assertThatThrownBy(serializer::finishArray).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(serializer::finish).isInstanceOf(IllegalStateException.class);
+
+        QueryFormSerializer finished = QueryFormSerializer.forAwsQuery("Op", "2020-01-08");
+        finished.finish();
+        assertThatThrownBy(finished::finishArray).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void requiredCapacity_isACapacityThatDoesNotGrow() {
+        char[] spaces = new char[300];
+        Arrays.fill(spaces, ' ');
+        SchemaStruct small = SchemaStruct.builder(SIMPLE).set("Foo", "hello world").build();
+        SchemaStruct large = SchemaStruct.builder(SIMPLE).set("Foo", new String(spaces)).set("Bar", "ü").build();
+        for (SchemaStruct input : Arrays.asList(small, large)) {
+            QueryFormSerializer first = QueryFormSerializer.forAwsQuery("Op", "2020-01-08", 0);
+            input.serializeMembers(first);
+            int required = first.requiredCapacity();
+            assertThat(required).isGreaterThanOrEqualTo(first.size());
+            String expected = finish(first);
+
+            QueryFormSerializer second = QueryFormSerializer.forAwsQuery("Op", "2020-01-08", required);
+            input.serializeMembers(second);
+            int size = second.size();
+            byte[] body = second.finishArray();
+            assertThat(body).hasSize(required);
+            assertThat(new String(body, 0, size, StandardCharsets.UTF_8)).isEqualTo(expected);
+        }
+    }
+
+    @Test
     void finish_largeBody_growsTheBuffer() {
         char[] chars = new char[5000];
         Arrays.fill(chars, ' ');

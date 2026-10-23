@@ -40,6 +40,7 @@ import software.amazon.awssdk.protocols.client.awsquery.internal.QueryErrorPaylo
 import software.amazon.awssdk.protocols.client.awsquery.internal.QueryFormSerializer;
 import software.amazon.awssdk.protocols.client.http.HttpClientProtocol;
 import software.amazon.awssdk.protocols.client.http.HttpErrorDeserializer;
+import software.amazon.awssdk.protocols.client.http.internal.MarshallBufferSizeTracker;
 import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
@@ -127,6 +128,7 @@ abstract class QueryClientProtocol extends HttpClientProtocol {
     private final boolean ec2;
     private final HttpErrorDeserializer errorDeserializer;
     private final ConcurrentMap<String, ResponseCodecs> responseCodecs = new ConcurrentHashMap<>();
+    private final MarshallBufferSizeTracker formBodySizeHints = new MarshallBufferSizeTracker();
 
     /**
      * Creates a protocol.
@@ -183,20 +185,26 @@ abstract class QueryClientProtocol extends HttpClientProtocol {
             // The query protocols have no HTTP bindings, so no streaming blob or event stream member (task 7.19).
             throw new UnsupportedOperationException("Streaming input is not supported by " + id());
         }
-        QueryFormSerializer serializer = ec2 ? QueryFormSerializer.forEc2Query(operation.name(), version)
-                                             : QueryFormSerializer.forAwsQuery(operation.name(), version);
+        // The body array starts at the capacity the operation's last body needed, so a body of a similar size is
+        // written without growing the array. That capacity includes the worst-case reservation the serializer makes
+        // for each value, which the body size alone does not cover.
+        int capacity = formBodySizeHints.initialCapacity(operation);
+        QueryFormSerializer serializer = ec2 ? QueryFormSerializer.forEc2Query(operation.name(), version, capacity)
+                                             : QueryFormSerializer.forAwsQuery(operation.name(), version, capacity);
         if (!operation.inputSchema().hasTrait(TraitKey.UNIT_TYPE_TRAIT)) {
             input.serializeMembers(serializer);
         }
-        ByteBuffer body = serializer.finish();
+        int size = serializer.size();
+        formBodySizeHints.record(operation, serializer.requiredCapacity());
+        byte[] body = serializer.finishArray();
         String endpointPath = endpoint.getRawPath() == null ? "" : endpoint.getRawPath();
         return SdkHttpFullRequest.builder()
                                  .method(SdkHttpMethod.POST)
                                  .uri(endpoint)
                                  .encodedPath(SdkHttpUtils.appendUri(endpointPath, REQUEST_PATH))
                                  .putHeader(CONTENT_TYPE_HEADER, CONTENT_TYPE)
-                                 .putHeader(CONTENT_LENGTH_HEADER, Integer.toString(body.remaining()))
-                                 .contentStreamProvider(new FormBody(body.array(), body.remaining()))
+                                 .putHeader(CONTENT_LENGTH_HEADER, Integer.toString(size))
+                                 .contentStreamProvider(new FormBody(body, size))
                                  .build();
     }
 
