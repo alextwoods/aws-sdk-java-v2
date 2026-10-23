@@ -169,6 +169,12 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         }
     }
 
+    // Continues from the ByteBufferOutputStream's size and array; nothing is pending while buf is DETACHED.
+    private void attachToDirect() {
+        commitToDirect();
+        buf = direct.reserve(0);
+    }
+
     // Adds the bytes written since the last commit, [committed, pos), to the ByteBufferOutputStream, and continues from
     // the stream's size. The caller sets buf afterwards.
     private void commitToDirect() {
@@ -332,6 +338,11 @@ final class SmithyJsonSerializer implements ShapeSerializer {
      * Writes a structure, with a {@code __type} member first when {@code discriminator} is not null.
      */
     private void writeStruct(Schema schema, SerializableStruct struct, ShapeId discriminator) {
+        // Request bodies start with a structure: take the stream's size and array here, before ensureCapacity, so a
+        // body that fits never calls grow and the JIT can keep grow off the write paths.
+        if (buf == DETACHED) {
+            attachToDirect();
+        }
         ensureCapacity(2);
         buf[pos++] = '{';
         enterContainer();

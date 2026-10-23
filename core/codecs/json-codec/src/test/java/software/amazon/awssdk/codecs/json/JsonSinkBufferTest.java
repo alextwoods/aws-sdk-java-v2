@@ -188,6 +188,19 @@ class JsonSinkBufferTest {
     }
 
     @Test
+    void otherWritesAroundTopLevelValuesThatAreNotStructures_areKeptInOrder() {
+        // Only writeStruct takes the stream's size up front; any other first write takes it in grow.
+        assertSameAsBufferedSink(16, (serializer, out) -> {
+            write(out, "prefix");
+            serializer.writeString(PreludeSchemas.STRING, "first");
+            serializer.flush();
+            write(out, "middle");
+            serializer.writeString(PreludeSchemas.STRING, "second");
+            serializer.close();
+        });
+    }
+
+    @Test
     void flushThenOtherWriteThenClose_keepsTheOtherBytesAfterTheDocument() {
         assertSameAsBufferedSink(16, (serializer, out) -> {
             serializer.writeStruct(DOC, doc("first", Arrays.asList("a", "b")));
