@@ -67,7 +67,7 @@ class ShapeSerializerTest {
     }
 
     @Test
-    void writeBlobByteArray_byDefault_wrapsArrayWithoutCopying() {
+    void writeBlobByteArray_byDefault_passesAReadOnlyViewWithoutCopying() {
         RecordingShapeSerializer serializer = new RecordingShapeSerializer();
         byte[] bytes = {1, 2, 3};
 
@@ -78,10 +78,26 @@ class ShapeSerializerTest {
         assertThat(call.method()).isEqualTo("writeBlob");
         assertThat(call.schema()).isSameAs(PreludeSchemas.BLOB);
         ByteBuffer buffer = (ByteBuffer) call.value();
-        assertThat(buffer.hasArray()).isTrue();
-        assertThat(buffer.array()).isSameAs(bytes);
+        assertThat(buffer.isReadOnly()).isTrue();
         assertThat(buffer.position()).isZero();
         assertThat(buffer.remaining()).isEqualTo(3);
+        assertThat(buffer.get(0)).isEqualTo((byte) 1);
+        assertThat(buffer.get(1)).isEqualTo((byte) 2);
+        assertThat(buffer.get(2)).isEqualTo((byte) 3);
+        // The view shares the array: a later change to the array shows through it.
+        bytes[0] = 9;
+        assertThat(buffer.get(0)).isEqualTo((byte) 9);
+    }
+
+    @Test
+    void writeBlobByteArray_byDefault_passesAnEmptyReadOnlyViewForAnEmptyArray() {
+        RecordingShapeSerializer serializer = new RecordingShapeSerializer();
+
+        serializer.writeBlob(PreludeSchemas.BLOB, new byte[0]);
+
+        ByteBuffer buffer = (ByteBuffer) serializer.calls().get(0).value();
+        assertThat(buffer.isReadOnly()).isTrue();
+        assertThat(buffer.remaining()).isZero();
     }
 
     @Test

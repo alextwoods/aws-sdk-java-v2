@@ -128,6 +128,11 @@ final class LazyXmlSerializer implements ShapeSerializer {
     }
 
     @Override
+    public void writeBlob(Schema schema, byte[] value) {
+        delegate().writeBlob(schema, value);
+    }
+
+    @Override
     public void writeTimestamp(Schema schema, Instant value) {
         delegate().writeTimestamp(schema, value);
     }

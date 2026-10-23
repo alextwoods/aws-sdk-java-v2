@@ -601,6 +601,12 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         }
 
         @Override
+        public void writeBlob(Schema schema, byte[] value) {
+            writeFieldNameBytes(schema);
+            SmithyJsonSerializer.this.writeBlob(schema, value);
+        }
+
+        @Override
         public void writeTimestamp(Schema schema, Instant value) {
             writeFieldNameBytes(schema);
             SmithyJsonSerializer.this.writeTimestamp(schema, value);
@@ -697,6 +703,12 @@ final class SmithyJsonSerializer implements ShapeSerializer {
 
         @Override
         public void writeBlob(Schema schema, ByteBuffer value) {
+            writeCommaIfNeeded();
+            SmithyJsonSerializer.this.writeBlob(schema, value);
+        }
+
+        @Override
+        public void writeBlob(Schema schema, byte[] value) {
             writeCommaIfNeeded();
             SmithyJsonSerializer.this.writeBlob(schema, value);
         }

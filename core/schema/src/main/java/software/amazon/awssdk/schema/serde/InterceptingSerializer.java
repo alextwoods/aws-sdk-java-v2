@@ -135,6 +135,12 @@ public abstract class InterceptingSerializer implements ShapeSerializer {
     }
 
     @Override
+    public final void writeBlob(Schema schema, byte[] value) {
+        before(schema).writeBlob(schema, value);
+        after(schema);
+    }
+
+    @Override
     public final void writeTimestamp(Schema schema, Instant value) {
         before(schema).writeTimestamp(schema, value);
         after(schema);

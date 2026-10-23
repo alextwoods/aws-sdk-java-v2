@@ -185,14 +185,18 @@ public interface ShapeSerializer extends Flushable, SdkAutoCloseable {
     void writeBlob(Schema schema, ByteBuffer value);
 
     /**
-     * Writes a blob from a byte array. The default wraps the array, without copying, and calls
-     * {@link #writeBlob(Schema, ByteBuffer)}.
+     * Writes a blob from a byte array. Callers may pass an array they share (generated models pass the array of their
+     * {@code SdkBytes} value), so implementations must not modify it.
+     *
+     * <p>The default passes a read-only view of the array, without copying, to {@link #writeBlob(Schema, ByteBuffer)}.
+     * Override this method to read the array directly when the bytes are only read during the call; anything kept after
+     * the call must stay read-only.
      *
      * @param schema the schema of the value
      * @param value the value
      */
     default void writeBlob(Schema schema, byte[] value) {
-        writeBlob(schema, ByteBuffer.wrap(value));
+        writeBlob(schema, ByteBuffer.wrap(value).asReadOnlyBuffer());
     }
 
     /**

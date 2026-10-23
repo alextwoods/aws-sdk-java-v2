@@ -648,6 +648,12 @@ final class SmithyXmlSerializer extends InterceptingSerializer {
         }
 
         @Override
+        public void writeBlob(Schema schema, byte[] value) {
+            // The bytes are only read here, so a writable view of the whole array lets base64 read it without copying.
+            writeBlob(schema, ByteBuffer.wrap(value));
+        }
+
+        @Override
         public void writeTimestamp(Schema schema, Instant value) {
             closePendingTag();
             writeTextContent(formatTimestamp(schema, value));

@@ -241,6 +241,11 @@ public final class QueryFormSerializer implements ShapeSerializer {
     }
 
     @Override
+    public void writeBlob(Schema schema, byte[] value) {
+        members.writeBlob(schema, value);
+    }
+
+    @Override
     public void writeTimestamp(Schema schema, Instant value) {
         members.writeTimestamp(schema, value);
     }
@@ -613,6 +618,12 @@ public final class QueryFormSerializer implements ShapeSerializer {
             writeKey(schema, encoded.length * 3);
             writeUrlEncodedAscii(encoded);
             afterValue();
+        }
+
+        @Override
+        public final void writeBlob(Schema schema, byte[] value) {
+            // The bytes are only read here, so a writable view of the whole array lets base64 read it without copying.
+            writeBlob(schema, ByteBuffer.wrap(value));
         }
 
         @Override

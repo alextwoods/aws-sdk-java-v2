@@ -538,6 +538,19 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
         }
 
         @Override
+        public void writeBlob(Schema schema, byte[] value) {
+            Binding b = binding(schema);
+            if (b == Binding.PAYLOAD) {
+                // The payload is sent after this call, so PayloadSerializer keeps the default read-only view.
+                payload().writeBlob(schema, value);
+            } else if (isText(b)) {
+                // Header, query and label values are encoded now; a writable view of the whole array lets base64 read
+                // it without copying.
+                writeText(schema, b, ByteBufferUtils.base64Encode(ByteBuffer.wrap(value)));
+            }
+        }
+
+        @Override
         public void writeTimestamp(Schema schema, Instant value) {
             int idx = schema.memberIndex();
             switch (activeBindings[idx]) {
@@ -711,6 +724,11 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
         }
 
         @Override
+        public void writeBlob(Schema schema, byte[] value) {
+            writeBlob(schema, ByteBuffer.wrap(value));
+        }
+
+        @Override
         public void writeTimestamp(Schema schema, Instant value) {
             append(binding.timestampFormatter().writeString(value));
         }
@@ -788,6 +806,11 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
         @Override
         public void writeBlob(Schema schema, ByteBuffer value) {
             add(ByteBufferUtils.base64Encode(value));
+        }
+
+        @Override
+        public void writeBlob(Schema schema, byte[] value) {
+            writeBlob(schema, ByteBuffer.wrap(value));
         }
 
         @Override

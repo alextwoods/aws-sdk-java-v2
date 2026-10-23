@@ -72,6 +72,28 @@ class ListSerializerTest {
     }
 
     @Test
+    void blobByteArray_runsTheCallbackAndForwardsTheSameArray() {
+        List<String> events = new ArrayList<>();
+        List<byte[]> arrays = new ArrayList<>();
+        SpecificShapeSerializer delegate = new SpecificShapeSerializer() {
+            @Override
+            public void writeBlob(Schema schema, byte[] value) {
+                events.add("write");
+                arrays.add(value);
+            }
+        };
+        byte[] bytes = {1, 2, 3};
+
+        ListSerializer listSerializer = new ListSerializer(delegate, p -> events.add("before " + p));
+        listSerializer.writeBlob(PreludeSchemas.BLOB, bytes);
+
+        // The delegate only overrides the byte[] write; a ByteBuffer write would throw.
+        assertThat(events).containsExactly("before 0", "write");
+        assertThat(arrays).hasSize(1);
+        assertThat(arrays.get(0)).isSameAs(bytes);
+    }
+
+    @Test
     void rejectsNullArguments() {
         assertThatThrownBy(() -> new ListSerializer(null, p -> { }))
             .isInstanceOf(NullPointerException.class)

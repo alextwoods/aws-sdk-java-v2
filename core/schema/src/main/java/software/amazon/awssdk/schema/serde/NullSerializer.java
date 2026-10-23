@@ -96,6 +96,10 @@ final class NullSerializer implements ShapeSerializer {
     }
 
     @Override
+    public void writeBlob(Schema schema, byte[] value) {
+    }
+
+    @Override
     public void writeTimestamp(Schema schema, Instant value) {
     }
 

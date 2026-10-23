@@ -170,6 +170,39 @@ class SpecificShapeSerdeTest {
     }
 
     @Test
+    void interceptingSerializerRoutesTheSameBlobArrayThroughBeforeAndAfter() {
+        List<String> events = new ArrayList<>();
+        List<byte[]> arrays = new ArrayList<>();
+        ShapeSerializer target = new SpecificShapeSerializer() {
+            @Override
+            public void writeBlob(Schema schema, byte[] value) {
+                events.add("write");
+                arrays.add(value);
+            }
+        };
+        InterceptingSerializer serializer = new InterceptingSerializer() {
+            @Override
+            protected ShapeSerializer before(Schema schema) {
+                events.add("before " + schema.id().getName());
+                return target;
+            }
+
+            @Override
+            protected void after(Schema schema) {
+                events.add("after " + schema.id().getName());
+            }
+        };
+        byte[] bytes = {1, 2, 3};
+
+        serializer.writeBlob(PreludeSchemas.BLOB, bytes);
+
+        // The target only overrides the byte[] write; a ByteBuffer write would throw.
+        assertThat(events).containsExactly("before Blob", "write", "after Blob");
+        assertThat(arrays).hasSize(1);
+        assertThat(arrays.get(0)).isSameAs(bytes);
+    }
+
+    @Test
     void interceptingSerializerSkipsAfterWhenTheWriteFails() {
         List<String> events = new ArrayList<>();
         InterceptingSerializer serializer = new InterceptingSerializer() {

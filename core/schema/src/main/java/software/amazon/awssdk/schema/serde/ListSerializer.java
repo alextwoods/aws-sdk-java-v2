@@ -145,6 +145,12 @@ public final class ListSerializer implements ShapeSerializer {
     }
 
     @Override
+    public void writeBlob(Schema schema, byte[] value) {
+        beforeWrite();
+        delegate.writeBlob(schema, value);
+    }
+
+    @Override
     public void writeTimestamp(Schema schema, Instant value) {
         beforeWrite();
         delegate.writeTimestamp(schema, value);
