@@ -547,7 +547,7 @@ All tasks are required for general availability. No task is marked optional beca
   - [x] 19.3 Implement metrics, statistics, references, and machine-readable reports
     - Collect all required CPU/allocation/latency/throughput/startup/class/artifact/heap metrics; compute equal-weight geometric means and confidence intervals against V2, Racecar, and pinned Smithy Java references.
     - _Requirements: 20.10, 20.11, 20.12, 20.13, 20.14, 20.15, 20.16, 20.17, 20.18, 20.19, 20.23_
-  - [-] 19.4 Implement automated performance and hot-path release gates
+  - [x] 19.4 Implement automated performance and hot-path release gates
     - Enforce every CPU/allocation/async/dynamic/startup/streaming boundary and invalid-collection rule; add profiled assertions for zero inactive-extension allocations and no reflection/model lookup/per-call plan construction.
     - _Requirements: 20.12, 20.13, 20.14, 20.15, 20.16, 20.17, 20.18, 20.19, 20.20, 20.21, 20.22, 20.29_
   - [ ] 19.5 Write the property test for benchmark partitioning and scheduling
