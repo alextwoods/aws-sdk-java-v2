@@ -26,6 +26,7 @@ import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
+import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SchemaExtensionKey;
 import software.amazon.awssdk.schema.SchemaExtensionProvider;
@@ -622,6 +623,8 @@ public final class HttpBindingSchemaExtensions
         private final UriPattern uriPattern;
         private final String[] queryLiteralKeys;
         private final String[] queryLiteralValues;
+        // Null when the method is empty or not an SdkHttpMethod; sdkHttpMethod() then resolves it again.
+        private final SdkHttpMethod sdkHttpMethod;
 
         OperationBinding(HttpTrait httpTrait, UriPattern uriPattern, String[] queryLiteralKeys,
                          String[] queryLiteralValues) {
@@ -629,10 +632,28 @@ public final class HttpBindingSchemaExtensions
             this.uriPattern = uriPattern;
             this.queryLiteralKeys = queryLiteralKeys;
             this.queryLiteralValues = queryLiteralValues;
+            this.sdkHttpMethod = resolveMethod(httpTrait.getMethod());
+        }
+
+        private static SdkHttpMethod resolveMethod(String method) {
+            try {
+                return SdkHttpMethod.fromValue(method);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
         }
 
         HttpTrait httpTrait() {
             return httpTrait;
+        }
+
+        /**
+         * The {@code @http} method as an {@link SdkHttpMethod}, resolved once. A method that
+         * {@link SdkHttpMethod#fromValue} rejects is resolved again on each call, so it throws (or, when empty, returns
+         * null) where it did before.
+         */
+        SdkHttpMethod sdkHttpMethod() {
+            return sdkHttpMethod != null ? sdkHttpMethod : SdkHttpMethod.fromValue(httpTrait.getMethod());
         }
 
         UriPattern uriPattern() {

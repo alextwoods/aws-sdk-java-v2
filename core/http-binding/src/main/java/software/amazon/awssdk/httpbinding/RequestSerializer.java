@@ -23,7 +23,6 @@ import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
-import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.httpbinding.internal.HttpBindingSerializer;
 import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.SerializableShape;
@@ -191,7 +190,7 @@ public final class RequestSerializer {
 
         String endpointPath = endpoint.getRawPath() == null ? "" : endpoint.getRawPath();
         SdkHttpFullRequest.Builder builder = SdkHttpFullRequest.builder()
-                                                               .method(SdkHttpMethod.fromValue(serializer.httpMethod()))
+                                                               .method(serializer.sdkHttpMethod())
                                                                .uri(endpoint)
                                                                .encodedPath(SdkHttpUtils.appendUri(endpointPath,
                                                                                                    serializer.path()))

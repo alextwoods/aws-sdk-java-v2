@@ -39,8 +39,10 @@ import software.amazon.awssdk.codecs.json.JsonSettings;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.schema.ApiOperation;
+import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.serde.SerializationException;
+import software.amazon.awssdk.schema.traits.HttpTrait;
 import software.amazon.awssdk.utils.DateUtils;
 import software.amazon.awssdk.utils.IoUtils;
 import software.amazon.awssdk.utils.http.SdkHttpUtils;
@@ -327,6 +329,16 @@ class RequestSerializerTest {
         assertThat(body(request)).isEqualTo("{\"name\":\"n\"}");
         assertThat(request.contentStreamProvider().get().contentAsByteBufferOrNull().array())
             .isSameAs(buffer.array());
+    }
+
+    @Test
+    void unsupportedHttpMethod_failsWhenTheRequestIsSerialized() {
+        Schema input = Schema.structureBuilder(TestModel.id("FooInput")).build();
+        ApiOperation<SerializableStruct, SerializableStruct> foo =
+            TestModel.operation("Foo", new HttpTrait("FOO", "/foo"), input, input);
+        assertThatThrownBy(() -> serialize(foo, SchemaStruct.builder(input).build()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Unsupported HTTP method name FOO");
     }
 
     @Test

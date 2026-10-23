@@ -17,8 +17,11 @@ package software.amazon.awssdk.httpbinding.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.lang.management.ManagementFactory;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.httpbinding.internal.HttpBindingSchemaExtensions.Binding;
 import software.amazon.awssdk.httpbinding.internal.HttpBindingSchemaExtensions.MemberBinding;
 import software.amazon.awssdk.httpbinding.internal.HttpBindingSchemaExtensions.RequestBinding;
@@ -133,6 +136,46 @@ class HttpBindingSchemaExtensionsTest {
         assertThat(binding.queryLiteralKeys()).containsExactly("a", "b");
         assertThat(binding.queryLiteralValues()).containsExactly("1", null);
         assertThat(binding.defaultResponseStatus()).isEqualTo(202);
+    }
+
+    @Test
+    void operationBindingResolvesTheSdkHttpMethodOnce() {
+        HttpBindingSchemaExtensions.OperationBinding put = HttpBindingSchemaExtensions.operationBindingOf(
+            Schema.createOperation(ShapeId.from("smithy.example#Put"), new HttpTrait("PUT", "/p")));
+        HttpBindingSchemaExtensions.OperationBinding get = HttpBindingSchemaExtensions.operationBindingOf(
+            Schema.createOperation(ShapeId.from("smithy.example#Get"), new HttpTrait("get", "/g")));
+        assertThat(put.sdkHttpMethod()).isEqualTo(SdkHttpMethod.PUT);
+        assertThat(put.sdkHttpMethod()).isSameAs(put.sdkHttpMethod());
+        assertThat(get.sdkHttpMethod()).isEqualTo(SdkHttpMethod.GET);
+
+        HttpBindingSchemaExtensions.OperationBinding foo = HttpBindingSchemaExtensions.operationBindingOf(
+            Schema.createOperation(ShapeId.from("smithy.example#Foo"), new HttpTrait("FOO", "/f")));
+        assertThatThrownBy(foo::sdkHttpMethod)
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Unsupported HTTP method name FOO");
+    }
+
+    @Test
+    void sdkHttpMethod_doesNotAllocateAfterTheBindingIsBuilt() {
+        java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+        assumeTrue(bean instanceof com.sun.management.ThreadMXBean);
+        com.sun.management.ThreadMXBean threads = (com.sun.management.ThreadMXBean) bean;
+        assumeTrue(threads.isThreadAllocatedMemorySupported() && threads.isThreadAllocatedMemoryEnabled());
+        HttpBindingSchemaExtensions.OperationBinding binding = HttpBindingSchemaExtensions.operationBindingOf(
+            Schema.createOperation(ShapeId.from("smithy.example#Post"), new HttpTrait("POST", "/p")));
+        binding.sdkHttpMethod();
+
+        long threadId = Thread.currentThread().getId();
+        long before = threads.getThreadAllocatedBytes(threadId);
+        SdkHttpMethod last = null;
+        for (int i = 0; i < 1_000; i++) {
+            last = binding.sdkHttpMethod();
+        }
+        long allocated = threads.getThreadAllocatedBytes(threadId) - before;
+
+        assertThat(last).isEqualTo(SdkHttpMethod.POST);
+        // SdkHttpMethod.fromValue allocates a stream pipeline per call (~250 B); 1,000 cached reads allocate nothing.
+        assertThat(allocated).isLessThan(1_000);
     }
 
     @Test

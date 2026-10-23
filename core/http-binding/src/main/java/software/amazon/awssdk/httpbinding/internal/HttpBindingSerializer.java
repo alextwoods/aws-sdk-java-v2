@@ -36,6 +36,7 @@ import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.commons.ByteBufferUtils;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.http.ContentStreamProvider;
+import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.httpbinding.HeaderErrorSerializer;
 import software.amazon.awssdk.httpbinding.internal.HttpBindingSchemaExtensions.Binding;
 import software.amazon.awssdk.httpbinding.internal.HttpBindingSchemaExtensions.DirectionBinding;
@@ -323,6 +324,16 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
      */
     public String httpMethod() {
         return operationBinding.httpTrait().getMethod();
+    }
+
+    /**
+     * Returns {@link #httpMethod()} as {@link SdkHttpMethod#fromValue} gives it, resolved once per operation. SDK
+     * addition.
+     *
+     * @throws IllegalArgumentException if the method is not an {@link SdkHttpMethod}
+     */
+    public SdkHttpMethod sdkHttpMethod() {
+        return operationBinding.sdkHttpMethod();
     }
 
     /**
