@@ -25,6 +25,10 @@
 # host) and <label>.jar.resources.tsv (sha256 manifest of the overlaid resources). Every build and run uses the JDK
 # that runs this script.
 #
+# Prebuilt jars (--jar, --null LABEL=PATH) need no git checkout and no Maven: everything that needs git (the resource
+# overlay, --sdk-pin) is evaluated when the jar is built and read back from <jar>.provenance.properties, so the script
+# runs on a benchmark host from deployed jars and scripts only (scripts/schema-serde/serde-ab-remote.sh).
+#
 # Verify (before timing; serde_ab_checks.py): resources and intermediate models identical, SerdeWireDump.java output
 # identical (the legacy path over each jar), and the expected runtime code path per arm (async-profiler collapsed
 # stacks when async-profiler is found, and always a -Xlog:class+load log). Any failure stops the run (exit 1).
@@ -38,7 +42,8 @@
 # (boundary.tsv: A1 per-call legacy marshaller construction, A2 response metadata, A5 Query form encoding). With
 # --profile after timing, summary.md is rewritten with serde_ab_summary.py summarize --boundary (serde-only estimate).
 #
-# Output (<out>/<run-id>/): arms.tsv, params.tsv, runs.tsv, provenance/<label>.properties (the jar's record plus
+# Output (<out>/<run-id>/): arms.tsv, params.tsv (with the selected params), benchmarks.tsv, payload-sizes.tsv,
+# runs.tsv, provenance/<label>.properties (the jar's record plus
 # this run's SDK pin result; jar provenance files are not edited after their build), jmh/, verify/ (verify.md),
 # logs/, profile/, serde-ab.json, summary.md, profile-comparison.md, profile-path.tsv, boundary.tsv.
 #
@@ -49,15 +54,22 @@
 #   --bench-src REF        source of the resource overlay (default HEAD)
 #   --no-overlay           build every arm's resources as committed (recorded; the resources check then fails)
 #   --sdk-pin LABEL=REF    fail unless LABEL's commit differs from REF only under test/sdk-standard-benchmarks/,
-#                          scripts/ or docs/ (the changed paths are recorded); repeat per label
+#                          scripts/, docs/ or .kiro/ (the changed paths are recorded); repeat per label. For a
+#                          prebuilt jar whose commit is not in a local git repository (a benchmark host), the jar's
+#                          build-time result is used: its provenance must record an ok pin of the same REF
 #   --expect-path LABEL=legacy|schema   expected runtime code path (default: first arm legacy, others schema;
 #                          a null experiment defaults to schema)
 #   --include REGEX        JMH include (default 'benchmark\.serde\.[A-Za-z0-9]+Benchmark\.(marshall|unmarshall)$')
 #   --classes LIST         comma-separated subset of the 10 serde classes (default: all the include matches)
+#   --param-subset all|ends  per class, every @Param case (default) or only the smallest and the largest test case
+#                          by payload size (rule: serde_ab_checks.py payload-sizes; sizes in <run>/payload-sizes.tsv)
+#   --params 'Class=v1,v2;Class2=v3'  explicit @Param cases per class (overrides --param-subset for that class);
+#                          passed to that class's JMH runs only, as -p <param name>=v1,v2
 #   --jmh-opts "..."       extra JMH options for timing runs (default none: the class annotations apply)
 #   --jvm-args "..."       -jvmArgsAppend for every fork (default "-Xms2g -Xmx2g -XX:+AlwaysPreTouch")
 #   --reps N               repetitions (default 2)    --order alternate|fixed (default alternate)
-#   --pin CPUS             taskset -c CPUS around every java (Linux only; exit 2 elsewhere)
+#   --pin CPUS             taskset -c CPUS around every java (Linux only; exit 2 elsewhere). JMH forks inherit the
+#                          affinity; verify checks the runner and a fork run on exactly CPUS
 #   --verify-only | --skip-verify       checks only / no checks (skip is recorded in params.tsv)
 #   --path-profiler auto|async|classload   (auto: async when async-profiler is found, always classload)
 #   --profile              after timing, run the profiling pass and write profile-comparison.md
@@ -82,6 +94,8 @@ SDK_PINS=()
 EXPECT_PATHS=()
 INCLUDE='benchmark\.serde\.[A-Za-z0-9]+Benchmark\.(marshall|unmarshall)$'
 CLASSES=""
+PARAM_SUBSET="all"
+PARAMS_SPEC=""
 JMH_OPTS=""
 JVM_ARGS="-Xms2g -Xmx2g -XX:+AlwaysPreTouch"
 REPS=2
@@ -110,6 +124,8 @@ while [[ $# -gt 0 ]]; do
         --expect-path) need "$@"; EXPECT_PATHS+=("$2"); shift 2 ;;
         --include) need "$@"; INCLUDE="$2"; shift 2 ;;
         --classes) need "$@"; CLASSES="$2"; shift 2 ;;
+        --param-subset) need "$@"; PARAM_SUBSET="$2"; shift 2 ;;
+        --params) need "$@"; PARAMS_SPEC="$2"; shift 2 ;;
         --jmh-opts) need "$@"; JMH_OPTS="$2"; shift 2 ;;
         --jvm-args) need "$@"; JVM_ARGS="$2"; shift 2 ;;
         --reps) need "$@"; REPS="$2"; shift 2 ;;
@@ -140,6 +156,14 @@ fi
 [[ "$ORDER" == "alternate" || "$ORDER" == "fixed" ]] || fail_usage "--order must be alternate or fixed"
 [[ "$PATH_PROFILER" =~ ^(auto|async|classload)$ ]] || fail_usage "--path-profiler must be auto, async or classload"
 [[ "$REPS" =~ ^[1-9][0-9]*$ ]] || fail_usage "--reps must be a positive integer"
+[[ "$PARAM_SUBSET" == "all" || "$PARAM_SUBSET" == "ends" ]] || fail_usage "--param-subset must be all or ends"
+PARAM_OVERRIDES=()  # Class=v1,v2 from --params
+if [[ -n "$PARAMS_SPEC" ]]; then
+    IFS=';' read -r -a PARAM_OVERRIDES <<< "$PARAMS_SPEC"
+    for kv in "${PARAM_OVERRIDES[@]}"; do
+        [[ "$kv" =~ ^[A-Za-z0-9]+=[^=,]+(,[^=,]+)*$ ]] || fail_usage "--params needs 'Class=v1,v2;Class2=v3', got '$kv'"
+    done
+fi
 [[ $VERIFY_ONLY -eq 1 && $SKIP_VERIFY -eq 1 ]] && fail_usage "--verify-only and --skip-verify exclude each other"
 [[ $VERIFY_ONLY -eq 1 && $PROFILE -eq 1 ]] && fail_usage "--verify-only cannot be combined with --profile"
 for kv in ${EXPECT_PATHS[@]+"${EXPECT_PATHS[@]}"}; do
@@ -154,8 +178,14 @@ if [[ -n "$NULL_SPEC" ]]; then
 elif [[ ${#ARMS[@]} -lt 2 ]]; then
     fail_usage "Need at least two arms (--arm/--jar), or --null LABEL=REF|PATH"
 fi
-REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Empty on a benchmark host (deployed scripts, no checkout): only prebuilt jars can run there.
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$REPO_ROOT" ]]; then
+    for spec in "${ARMS[@]}"; do
+        [[ "${spec%%:*}" == "ref" ]] && fail_usage "Arm '${spec#*:}' is a git ref (or a missing jar), but $SCRIPT_DIR is not in a git checkout; pass a prebuilt jar (--jar/--null LABEL=PATH)"
+    done
+fi
 SHARED_REPO="${MAVEN_LOCAL_REPO:-$HOME/.m2/repository}"
 WT_ROOT="${SERDE_AB_WORKTREE_ROOT:-${TMPDIR:-/tmp}}"
 WT_ROOT="${WT_ROOT%/}"
@@ -165,8 +195,11 @@ fi
 command -v java > /dev/null || fail_usage "java not found (set JAVA_HOME)"
 # Unset so every arm sees the same environment.
 unset AWS_SDK_UA_APP_ID || true
-BENCH_SRC_SHA="$(git -C "$REPO_ROOT" rev-parse --verify "${BENCH_SRC}^{commit}")" \
-    || fail_usage "--bench-src $BENCH_SRC is not a commit"
+BENCH_SRC_SHA=""  # used by builds only; prebuilt jars record their own
+if [[ -n "$REPO_ROOT" ]]; then
+    BENCH_SRC_SHA="$(git -C "$REPO_ROOT" rev-parse --verify "${BENCH_SRC}^{commit}")" \
+        || fail_usage "--bench-src $BENCH_SRC is not a commit"
+fi
 OVERLAY_PATHS=(test/sdk-standard-benchmarks/src/main/resources/codegen-resources
                test/sdk-standard-benchmarks/src/main/resources/serde-tests)
 find_async_profiler() {
@@ -208,15 +241,32 @@ sdk_pin_check() {  # <pin ref> <commit> -> prints "result<TAB>changed paths"; re
     local pin="$1" sha="$2" pin_sha changed bad
     pin_sha="$(git -C "$REPO_ROOT" rev-parse --verify "${pin}^{commit}")" || { printf 'failed: %s is not a commit\t\n' "$pin"; return 1; }
     changed="$(git -C "$REPO_ROOT" diff --name-only "$pin_sha" "$sha")"
-    bad="$(printf '%s\n' "$changed" | grep -v -E '^(test/sdk-standard-benchmarks/|scripts/|docs/|$)' || true)"
+    bad="$(printf '%s\n' "$changed" | grep -v -E '^(test/sdk-standard-benchmarks/|scripts/|docs/|\.kiro/|$)' || true)"
     if [[ -n "$bad" ]]; then
-        printf 'failed: %s..%s changes %s files outside test/sdk-standard-benchmarks/, scripts/, docs/ (first: %s)\t%s\n' \
+        printf 'failed: %s..%s changes %s files outside test/sdk-standard-benchmarks/, scripts/, docs/, .kiro/ (first: %s)\t%s\n' \
             "${pin_sha:0:12}" "${sha:0:12}" "$(printf '%s\n' "$bad" | grep -c .)" \
             "$(printf '%s\n' "$bad" | head -5 | one_line)" "$(printf '%s' "$changed" | one_line)"
         return 1
     fi
-    printf 'ok: %s..%s changes only test/sdk-standard-benchmarks/, scripts/, docs/ (%s files)\t%s\n' \
+    printf 'ok: %s..%s changes only test/sdk-standard-benchmarks/, scripts/, docs/, .kiro/ (%s files)\t%s\n' \
         "${pin_sha:0:12}" "${sha:0:12}" "$(printf '%s' "$changed" | grep -c . || true)" "$(printf '%s' "$changed" | one_line)"
+}
+provenance_pin_check() {  # <pin ref> <jar provenance> -> the build-time result like sdk_pin_check; 1 unless ok for <pin>
+    local pin="$1" props="$2" result pin_sha recorded
+    result="$(prop "$props" sdk_pin_result)"
+    pin_sha="$(prop "$props" sdk_pin_sha)"
+    recorded="$(prop "$props" sdk_pin)"
+    if [[ -z "$props" || "$result" != ok:* ]]; then
+        printf 'failed: no git commit to check against and the jar provenance records no ok SDK pin (%s)\t\n' \
+            "${result:-none}"
+        return 1
+    fi
+    # The pin must name the recorded one: the same ref, or a prefix (>= 7 hex digits) of the resolved commit.
+    if [[ "$pin" != "$recorded" ]] && ! [[ "$pin" =~ ^[0-9a-f]{7,40}$ && "$pin_sha" == "$pin"* ]]; then
+        printf 'failed: the jar was pinned to %s (%s) at build time, not %s\t\n' "${recorded:-?}" "${pin_sha:-?}" "$pin"
+        return 1
+    fi
+    printf '%s (checked at build time; from %s)\t%s\n' "$result" "$props" "$(prop "$props" sdk_pin_changed_paths)"
 }
 build_jmh() {  # <label> <ref> <sha> <sdk pin> <pin result> <pin changed paths> -> $JARDIR/<label>.jar + provenance
     local label="$1" ref="$2" sha="$3" id="${3:0:12}" sdk_pin="$4" sdk_pin_result="$5" sdk_pin_paths="$6"
@@ -288,6 +338,9 @@ build_jmh() {  # <label> <ref> <sha> <sdk pin> <pin result> <pin changed paths> 
         echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "build_log=$log"
         echo "sdk_pin=$sdk_pin"
+        if [[ "$sdk_pin" != "none" ]]; then
+            echo "sdk_pin_sha=$(git -C "$REPO_ROOT" rev-parse --verify "${sdk_pin}^{commit}")"
+        fi
         echo "sdk_pin_result=$sdk_pin_result"
         if [[ -n "$sdk_pin_paths" ]]; then echo "sdk_pin_changed_paths=$sdk_pin_paths"; fi
     } > "$props"
@@ -330,7 +383,12 @@ for spec in "${ARMS[@]}"; do
     pin=""
     if pin="$(lookup "$label" ${SDK_PINS[@]+"${SDK_PINS[@]}"})"; then
         [[ -n "$sha" ]] || { echo "--sdk-pin $label: the jar records no commit" >&2; exit 1; }
-        if pin_line="$(sdk_pin_check "$pin" "$sha")"; then
+        if [[ "$kind" == "jar" ]] && { [[ -z "$REPO_ROOT" ]] || ! git -C "$REPO_ROOT" cat-file -e "${sha}^{commit}" 2>/dev/null; }; then
+            pin_cmd=(provenance_pin_check "$pin" "$props")  # no repository with the jar's commit: the build-time result
+        else
+            pin_cmd=(sdk_pin_check "$pin" "$sha")
+        fi
+        if pin_line="$("${pin_cmd[@]}")"; then
             pin_result="${pin_line%%$'\t'*}"
             pin_paths="${pin_line#*$'\t'}"
             echo "SDK pin $label=$pin: $pin_result"
@@ -373,11 +431,12 @@ done
 NARMS=${#LABELS[@]}
 
 # ---- Benchmarks and params, from the first jar (the include and the class subset) ----
-BENCH_LIST="$RUNDIR/benchmarks.tsv"  # benchmark<TAB>comma-separated testCaseId values
+BENCH_LIST="$RUNDIR/benchmarks.tsv"  # benchmark<TAB>comma-separated values in @Param order<TAB>param name
 java -jar "${JARS[0]}" -lp "$INCLUDE" 2>/dev/null | awk '
-    /^software\./ { if (b != "") print b "\t" p; b = $1; p = "" }
-    /param "testCaseId"/ { sub(/.*= *\{/, ""); sub(/\}.*/, ""); gsub(/, */, ","); p = $0 }
-    END { if (b != "") print b "\t" p }' > "$BENCH_LIST"
+    /^software\./ { if (b != "") print b "\t" p "\t" n; b = $1; p = ""; n = "" }
+    /^ *param "/ && n == "" { n = $0; sub(/^ *param "/, "", n); sub(/".*/, "", n)
+                              sub(/.*= *\{/, ""); sub(/\}.*/, ""); gsub(/, */, ","); p = $0 }
+    END { if (b != "") print b "\t" p "\t" n }' > "$BENCH_LIST"
 [[ -s "$BENCH_LIST" ]] || fail_usage "No benchmark in ${JARS[0]} matches --include '$INCLUDE'"
 ALL_CLASSES=($(cut -f1 "$BENCH_LIST" | awk -F. '{print $(NF-1)}' | awk '!seen[$0]++'))
 if [[ -n "$CLASSES" ]]; then
@@ -393,7 +452,52 @@ class_regex() {  # <class> -> anchored JMH include for the selected benchmarks o
     names="$(cut -f1 "$BENCH_LIST" | grep "\.$1\.[^.]*$" | sed 's/\./\\./g' | paste -sd'|' -)"
     echo "^($names)\$"
 }
-class_params() { grep "\.$1\.[^.]*"$'\t' "$BENCH_LIST" | head -1 | cut -f2; }
+class_params_all() { grep "\.$1\.[^.]*"$'\t' "$BENCH_LIST" | head -1 | cut -f2; }
+class_param_name() { grep "\.$1\.[^.]*"$'\t' "$BENCH_LIST" | head -1 | cut -f3; }
+
+# ---- Param selection: --param-subset and --params, per class ----
+for kv in ${PARAM_OVERRIDES[@]+"${PARAM_OVERRIDES[@]}"}; do
+    printf '%s\n' "${CLASS_ARR[@]}" | grep -qx "${kv%%=*}" || fail_usage "--params: ${kv%%=*} is not a selected serde class"
+done
+SIZES="$RUNDIR/payload-sizes.tsv"
+if ! python3 "$SCRIPT_DIR/serde_ab_checks.py" payload-sizes "${JARS[0]}" "$BENCH_LIST" > "$SIZES" 2> "$RUNDIR/logs/payload-sizes.err"; then
+    [[ "$PARAM_SUBSET" == "ends" ]] && fail_usage "--param-subset ends: payload sizes failed: $(cat "$RUNDIR/logs/payload-sizes.err")"
+    echo "WARNING: payload sizes failed (not needed without --param-subset ends): $(cat "$RUNDIR/logs/payload-sizes.err")" >&2
+fi
+payload_of() { awk -F'\t' -v c="$1" -v v="$2" '$1 == c && $2 == v { print $5; exit }' "$SIZES"; }
+SELECTED=()  # Class=v1,v2 for every class in CLASS_ARR
+COMBOS=0
+SUBSET_DESC="$PARAM_SUBSET"
+[[ ${#PARAM_OVERRIDES[@]} -gt 0 ]] && SUBSET_DESC="$PARAM_SUBSET, --params $PARAMS_SPEC"
+echo "Params ($SUBSET_DESC; payload bytes per serde_ab_checks.py payload-sizes):"
+for cls in "${CLASS_ARR[@]}"; do
+    all="$(class_params_all "$cls")"
+    sel="$all"
+    if sel_override="$(lookup "$cls" ${PARAM_OVERRIDES[@]+"${PARAM_OVERRIDES[@]}"})"; then
+        IFS=',' read -r -a want <<< "$sel_override"
+        for v in "${want[@]}"; do
+            [[ ",$all," == *",$v,"* ]] || fail_usage "--params: $v is not a @Param value of $cls ($all)"
+        done
+        sel="$sel_override"
+    elif [[ "$PARAM_SUBSET" == "ends" ]]; then
+        sel="$(awk -F'\t' -v c="$cls" '$1 == c && $6 != "" { print $2 }' "$SIZES" | paste -sd, -)"
+        [[ -n "$sel" ]] || fail_usage "--param-subset ends: no payload sizes for $cls"
+    fi
+    SELECTED+=("$cls=$sel")
+    IFS=',' read -r -a sel_arr <<< "$sel"
+    COMBOS=$((COMBOS + ${#sel_arr[@]}))
+    printf '  %s:' "$cls"
+    for v in "${sel_arr[@]}"; do printf ' %s (%s B)' "$v" "$(payload_of "$cls" "$v" || true)"; done
+    printf '\n'
+done
+echo "  $COMBOS combos over ${#CLASS_ARR[@]} classes"
+class_params() { lookup "$1" "${SELECTED[@]}"; }  # the selected @Param values of a class
+set_param_args() {  # <class> -> PARAM_ARGS=(-p <name>=<values>) when the selection is narrower than its @Param list
+    local sel
+    sel="$(class_params "$1")"
+    PARAM_ARGS=()
+    [[ "$sel" == "$(class_params_all "$1")" ]] || PARAM_ARGS=(-p "$(class_param_name "$1")=$sel")
+}
 
 # ---- Parameters and environment ----
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -418,6 +522,9 @@ else VERIFY_STATE="run"; fi
     printf 'null_experiment\t%s\n' "$NULL_EXPERIMENT"
     printf 'include\t%s\n' "$INCLUDE"
     printf 'classes\t%s\n' "$(IFS=,; echo "${CLASS_ARR[*]}")"
+    printf 'param_subset\t%s\n' "$SUBSET_DESC"
+    printf 'params_selected\t%s\n' "$(IFS=';'; echo "${SELECTED[*]}")"
+    printf 'combos\t%s\n' "$COMBOS"
     printf 'jmh_opts\t%s\n' "$JMH_OPTS"
     printf 'jvm_args\t%s\n' "$JVM_ARGS"
     printf 'reps\t%s\n' "$REPS"
@@ -425,8 +532,13 @@ else VERIFY_STATE="run"; fi
     printf 'pin\t%s\n' "$PIN"
     printf 'verify\t%s\n' "$VERIFY_STATE"
     printf 'path_profiler\t%s\n' "$PATH_PROFILER${PATH_ASYNC_LIB:+ ($PATH_ASYNC_LIB)}"
-    printf 'bench_src\t%s %s\n' "$BENCH_SRC" "$BENCH_SRC_SHA"
-    printf 'overlay\t%s\n' "$([[ $OVERLAY -eq 1 ]] && echo true || echo false)"
+    if [[ -n "$REPO_ROOT" ]]; then
+        printf 'bench_src\t%s %s\n' "$BENCH_SRC" "$BENCH_SRC_SHA"
+        printf 'overlay\t%s\n' "$([[ $OVERLAY -eq 1 ]] && echo true || echo false)"
+    else
+        printf 'bench_src\t%s\n' "(no git checkout; each jar's bench_src_sha is in arms.tsv)"
+        printf 'overlay\t%s\n' "(no git checkout; each jar's overlay is in arms.tsv)"
+    fi
     printf 'profile\t%s\n' "$([[ $PROFILE -eq 1 ]] && echo "events $PROFILE_EVENTS, cpu event $CPU_EVENT, JMH $PROFILE_JMH_OPTS" || echo false)"
     printf 'async_profiler\t%s\n' "${ASYNC_LIB:-not found}"
     printf 'java\t%s\n' "$(java -version 2>&1 | one_line)"
@@ -468,10 +580,36 @@ code_path_run() {  # <label> <jar> <class> <param> -> verify/path/<label>/<class
     local prof=()
     mkdir -p "$dir"
     [[ -n "$PATH_ASYNC_LIB" ]] && prof=(-prof "async:libPath=$PATH_ASYNC_LIB;event=$CPU_EVENT;interval=1000000;output=collapsed;dir=$dir")
-    ${PIN_CMD[@]+"${PIN_CMD[@]}"} java -jar "$jar" "$(class_regex "$cls")" -p "testCaseId=$param" \
+    ${PIN_CMD[@]+"${PIN_CMD[@]}"} java -jar "$jar" "$(class_regex "$cls")" -p "$(class_param_name "$cls")=$param" \
         -f 1 -wi 1 -i 1 -w 1s -r 1s -foe true \
         -jvmArgsAppend "$JVM_ARGS -Xlog:class+load=info:file=$cl_log" ${prof[@]+"${prof[@]}"} \
         > "$RUNDIR/logs/path-$label-$cls.log" 2>&1
+}
+pin_affinity_check() {  # <jar> <class> <param>: the JMH runner and its forked JVM run on exactly the --pin CPUs
+    local jar="$1" cls="$2" param="$3" log="$RUNDIR/logs/pin-affinity.log" want runner fork="" got_runner="" got_fork=""
+    want="$(taskset -c "$PIN" awk '/^Cpus_allowed_list:/ { print $2 }' /proc/self/status)"
+    taskset -c "$PIN" java -jar "$jar" "$(class_regex "$cls")" -p "$(class_param_name "$cls")=$param" \
+        -f 1 -wi 1 -i 1 -w 2s -r 2s -foe true -jvmArgsAppend "$JVM_ARGS" > "$log" 2>&1 &
+    runner=$!
+    for _ in $(seq 1 120); do
+        [[ -n "$got_runner" ]] || got_runner="$(awk '/^Cpus_allowed_list:/ { print $2 }' "/proc/$runner/status" 2>/dev/null || true)"
+        fork="$(pgrep -P "$runner" 2>/dev/null | head -1 || true)"
+        if [[ -n "$fork" ]]; then
+            got_fork="$(awk '/^Cpus_allowed_list:/ { print $2 }' "/proc/$fork/status" 2>/dev/null || true)"
+            [[ -n "$got_fork" ]] && break
+        fi
+        sleep 0.5
+    done
+    local status=0
+    wait "$runner" || status=$?
+    echo "requested $PIN -> Cpus_allowed_list $want; JMH runner (pid $runner) ${got_runner:-?}; fork (pid ${fork:-?}) ${got_fork:-?}"
+    if [[ $status -ne 0 ]]; then echo "FAIL pin: the JMH run exited $status; see $log"; return 1; fi
+    if [[ -z "$got_fork" ]]; then echo "FAIL pin: no forked JVM seen under the JMH runner"; return 1; fi
+    if [[ "$got_runner" != "$want" || "$got_fork" != "$want" ]]; then
+        echo "FAIL pin: runner ${got_runner:-?} / fork $got_fork, expected $want"
+        return 1
+    fi
+    echo "PASS pin: the JMH runner and its fork run on CPUs $want"
 }
 if [[ "$VERIFY_STATE" == "run" ]]; then
     echo "== Verify"
@@ -511,6 +649,11 @@ if [[ "$VERIFY_STATE" == "run" ]]; then
                 --expect "${EXPECTS[$i]}" "$RUNDIR/verify/classload-$label-$cls.log"
         done
     done
+    if [[ -n "$PIN" ]]; then
+        echo "CPU affinity of the JMH runner and its fork (--pin $PIN)"
+        verify_row pin-affinity "${LABELS[0]}" pin_affinity_check "${JARS[0]}" "${CLASS_ARR[0]}" \
+            "$(class_params "${CLASS_ARR[0]}" | cut -d, -f1)"
+    fi
     {
         echo "# Serde A/B verify \`$RUN_ID\`"
         echo
@@ -557,7 +700,9 @@ if [[ $PROFILE_ONLY -eq 0 ]]; then
                 log="$RUNDIR/logs/rep$rep-$cls-$label.log"
                 started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
                 echo "[$RUN_NO/$TOTAL] rep$rep $cls $label"
-                if ${PIN_CMD[@]+"${PIN_CMD[@]}"} java -jar "${JARS[$i]}" "$(class_regex "$cls")" -foe true -prof gc \
+                set_param_args "$cls"
+                if ${PIN_CMD[@]+"${PIN_CMD[@]}"} java -jar "${JARS[$i]}" "$(class_regex "$cls")" \
+                        ${PARAM_ARGS[@]+"${PARAM_ARGS[@]}"} -foe true -prof gc \
                         -rf json -rff "$RUNDIR/$json" -jvmArgsAppend "$JVM_ARGS" \
                         ${TIMING_OPTS[@]+"${TIMING_OPTS[@]}"} > "$log" 2>&1; then
                     status=ok
@@ -600,7 +745,7 @@ if [[ $PROFILE -eq 1 ]]; then
                     mkdir -p "$dir"
                     echo "profile $label $cls [$param] $event"
                     if ${PIN_CMD[@]+"${PIN_CMD[@]}"} java -jar "${JARS[$i]}" "$(class_regex "$cls")" \
-                            -p "testCaseId=$param" -foe true -prof gc -rf json -rff "$dir/jmh.json" \
+                            -p "$(class_param_name "$cls")=$param" -foe true -prof gc -rf json -rff "$dir/jmh.json" \
                             -jvmArgsAppend "$JVM_ARGS -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints" \
                             -prof "async:libPath=$ASYNC_LIB;event=$ev;output=collapsed,flamegraph;dir=$dir$raw" \
                             ${PROF_OPTS[@]+"${PROF_OPTS[@]}"} > "$dir/jmh.log" 2>&1; then

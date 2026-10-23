@@ -53,6 +53,17 @@ Usage:
   serde_ab_checks.py classload --expect legacy|schema LOG...
       The same expectation over -Xlog:class+load logs (works without async-profiler): the expected path's classes
       must be loaded and the other path's classes must not be.
+  serde_ab_checks.py payload-sizes JAR BENCHMARKS_TSV
+      Prints the payload size of every @Param test case of every class in BENCHMARKS_TSV (serde-ab.sh's
+      benchmarks.tsv: benchmark<TAB>comma-separated values in @Param order<TAB>param name) as a TSV: class, case,
+      order (1-based @Param position), kind, bytes, end, resource. The test-case file of a class is the one
+      serde-tests/<protocol>/{input,output}/<file>.json literal in its .class file (its TEST_DATA_PATH constant);
+      exactly one must be present. Size rule (see payload_bytes): a marshall case (input/) is the UTF-8 length of its
+      "params" object as compact JSON with sorted keys (the input the benchmark reflects into the request); an
+      unmarshall case (output/) is the UTF-8 length of response.body plus the UTF-8 lengths of every response
+      header name and value. end marks the ends of each class: "smallest" is the case with the fewest bytes (ties:
+      the earliest in @Param order), "largest" the one with the most bytes (ties: the latest in @Param order), and
+      "smallest,largest" a class with one case. serde-ab.sh --param-subset ends runs the marked cases.
   serde_ab_checks.py --self-test
       Runs the fixture tests below.
 
@@ -567,13 +578,97 @@ def classload_main(argv):
     return 1 if failed else 0
 
 
+# ==================== payload sizes (--param-subset ends) ====================
+
+TEST_DATA_LITERAL = re.compile(rb"serde-tests/[A-Za-z0-9_-]+/(?:input|output)/[A-Za-z0-9_.-]+\.json")
+PAYLOAD_SIZES_HEADER = ("class", "case", "order", "kind", "bytes", "end", "resource")
+
+
+def payload_bytes(case, resource):
+    """(kind, bytes) of one test case under the size rule in the module docstring."""
+    if "/input/" in resource:
+        if "params" not in case:
+            raise CheckError(f"{resource}: case {case.get('id')!r} has no params")
+        body = json.dumps(case["params"], separators=(",", ":"), sort_keys=True, ensure_ascii=False)
+        return "marshall params JSON", len(body.encode("utf-8"))
+    response = case.get("response")
+    if not isinstance(response, dict):
+        raise CheckError(f"{resource}: case {case.get('id')!r} has no response")
+    body = response.get("body")
+    size = len(body.encode("utf-8")) if isinstance(body, str) else 0
+    for name, value in (response.get("headers") or {}).items():
+        size += len(str(name).encode("utf-8")) + len(str(value).encode("utf-8"))
+    return "unmarshall body+headers", size
+
+
+def mark_ends(sizes):
+    """{case: end} for a list of (case, bytes) in @Param order; ties as in the module docstring."""
+    if not sizes:
+        return {}
+    smallest = min(range(len(sizes)), key=lambda i: (sizes[i][1], i))
+    largest = max(range(len(sizes)), key=lambda i: (sizes[i][1], i))
+    ends = {sizes[smallest][0]: "smallest"}
+    ends[sizes[largest][0]] = "smallest,largest" if smallest == largest else "largest"
+    return ends
+
+
+def payload_sizes(jar, benchmarks):
+    """Rows (PAYLOAD_SIZES_HEADER order) for [(benchmark, [values in @Param order])]."""
+    rows = []
+    with zipfile.ZipFile(jar) as z:
+        names = set(z.namelist())
+        for benchmark, values in benchmarks:
+            parts = benchmark.split(".")
+            cls, class_file = parts[-2], "/".join(parts[:-1]) + ".class"
+            if class_file not in names:
+                raise CheckError(f"{jar}: no {class_file}")
+            literals = sorted(set(TEST_DATA_LITERAL.findall(z.read(class_file))))
+            if len(literals) != 1:
+                raise CheckError(f"{class_file}: expected one serde-tests/*.json literal, found "
+                                 f"{[x.decode() for x in literals]}")
+            resource = literals[0].decode()
+            if resource not in names:
+                raise CheckError(f"{jar}: {cls} reads {resource}, which the jar does not contain")
+            cases = {}
+            for group in json.loads(z.read(resource)):
+                for case in group.get("cases") or []:
+                    cases.setdefault(case.get("id"), case)
+            sized = []
+            for value in values:
+                if value not in cases:
+                    raise CheckError(f"{resource}: no case {value!r} (a @Param value of {cls})")
+                sized.append((value, payload_bytes(cases[value], resource)))
+            ends = mark_ends([(v, size) for v, (_, size) in sized])
+            for order, (value, (kind, size)) in enumerate(sized, 1):
+                rows.append((cls, value, order, kind, size, ends.get(value, ""), resource))
+    return rows
+
+
+def payload_sizes_main(argv):
+    if len(argv) != 2:
+        raise CheckError("payload-sizes needs JAR BENCHMARKS_TSV")
+    jar, bench_tsv = argv
+    if not _is_jar(jar):
+        raise CheckError(f"{jar}: not a jar")
+    benchmarks = []
+    with open(bench_tsv) as f:
+        for line in f:
+            cols = line.rstrip("\n").split("\t")
+            if cols and cols[0]:
+                benchmarks.append((cols[0], [v for v in (cols[1] if len(cols) > 1 else "").split(",") if v]))
+    print("\t".join(PAYLOAD_SIZES_HEADER))
+    for row in payload_sizes(jar, benchmarks):
+        print("\t".join(str(x) for x in row))
+    return 0
+
+
 # ==================== CLI ====================
 
 def main(argv):
     if argv[:1] == ["--self-test"]:
         return self_test()
     commands = {"resources": resources_main, "models": models_main, "wire": wire_main, "path": path_main,
-                "classload": classload_main}
+                "classload": classload_main, "payload-sizes": payload_sizes_main}
     try:
         if len(argv) == 2 and argv[0] == "manifest":
             sys.stdout.write(render_manifest(manifest(argv[1])))
@@ -812,6 +907,44 @@ def self_test():
         def test_main_whenUsageWrong_exits2(self):
             self.assertEqual(run(["path", "--expect", "other", "x"])[0], 2)
             self.assertEqual(run(["classload", "--expect", "schema", "/nonexistent.log"])[0], 2)
+
+        def test_payloadSizes_whenJarGiven_sizesCasesAndMarksEnds(self):
+            pkg = "software/amazon/awssdk/benchmark/serde/"
+            marshall = [{"cases": [{"id": "M_S", "params": {"b": "xy", "a": 1}},  # {"a":1,"b":"xy"} = 16 bytes
+                                   {"id": "M_Empty", "params": {}},  # {} = 2 bytes
+                                   {"id": "M_L", "params": {"a": "é" * 10}}]}]  # 8 + 20 = 28 bytes
+            unmarshall = [{"cases": [{"id": "U_A", "response": {"body": "abcd", "headers": {"h": "vv"}}},  # 7
+                                     {"id": "U_B", "response": {"status_code": 200}},  # 0
+                                     {"id": "U_C", "response": {"body": "1234567"}},  # 7, a tie with U_A
+                                     {"id": "U_D", "response": {}}]}]  # 0, a tie with U_B
+            with tempfile.TemporaryDirectory() as d:
+                jar = os.path.join(d, "b.jar")
+                with zipfile.ZipFile(jar, "w") as z:
+                    z.writestr("serde-tests/p/input/p.json", json.dumps(marshall))
+                    z.writestr("serde-tests/p/output/p.json", json.dumps(unmarshall))
+                    z.writestr(pkg + "PMarshallBenchmark.class", b"\xca\xfe\x00serde-tests/p/input/p.json\x01")
+                    z.writestr(pkg + "PUnmarshallBenchmark.class", b"\x00serde-tests/p/output/p.json\x00")
+                    z.writestr(pkg + "BadBenchmark.class", b"serde-tests/p/input/p.json serde-tests/p/output/p.json")
+                tsv = os.path.join(d, "benchmarks.tsv")
+                write(tsv, "software.amazon.awssdk.benchmark.serde.PMarshallBenchmark.marshall\tM_S,M_Empty,M_L"
+                           "\ttestCaseId\nsoftware.amazon.awssdk.benchmark.serde.PUnmarshallBenchmark.unmarshall"
+                           "\tU_A,U_B,U_C,U_D\ttestCaseId\n")
+                status, out = run(["payload-sizes", jar, tsv])
+                write(tsv, "software.amazon.awssdk.benchmark.serde.BadBenchmark.marshall\tM_S\ttestCaseId\n")
+                bad, _ = run(["payload-sizes", jar, tsv])
+            self.assertEqual(status, 0, out)
+            rows = [line.split("\t") for line in out.splitlines()]
+            self.assertEqual(rows[0], list(PAYLOAD_SIZES_HEADER))
+            by_case = {r[1]: (r[2], r[4], r[5]) for r in rows[1:]}
+            self.assertEqual(by_case["M_S"], ("1", "16", ""))
+            self.assertEqual(by_case["M_Empty"], ("2", "2", "smallest"))
+            self.assertEqual(by_case["M_L"], ("3", "28", "largest"))
+            # Ties: the smallest is the earliest in @Param order, the largest the latest.
+            self.assertEqual([by_case[c][2] for c in ("U_A", "U_B", "U_C", "U_D")], ["", "smallest", "largest", ""])
+            self.assertEqual(rows[1][3], "marshall params JSON")
+            self.assertEqual(rows[4][6], "serde-tests/p/output/p.json")
+            self.assertEqual(bad, 2)  # two literals in one class file
+            self.assertEqual(mark_ends([("only", 5)]), {"only": "smallest,largest"})
 
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(SerdeAbChecksTest)
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
