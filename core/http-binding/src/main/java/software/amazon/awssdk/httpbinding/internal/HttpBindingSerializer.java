@@ -36,6 +36,7 @@ import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.commons.ByteBufferUtils;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.http.ContentStreamProvider;
+import software.amazon.awssdk.http.SdkHttpFullRequest;
 import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.httpbinding.HeaderErrorSerializer;
 import software.amazon.awssdk.httpbinding.internal.HttpBindingSchemaExtensions.Binding;
@@ -55,6 +56,7 @@ import software.amazon.awssdk.schema.serde.SpecificShapeSerializer;
 import software.amazon.awssdk.schema.serde.document.Document;
 import software.amazon.awssdk.schema.traits.MediaTypeTrait;
 import software.amazon.awssdk.utils.StringUtils;
+import software.amazon.awssdk.utils.Validate;
 
 /**
  * Generic HTTP binding serializer. It writes the bound members to the path, query string, headers, status code and
@@ -65,7 +67,8 @@ import software.amazon.awssdk.utils.StringUtils;
  * message.
  *
  * <p>Port of smithy-java {@code HttpBindingSerializer}, writing into SDK header and raw query maps instead of
- * {@code ModifiableHttpHeaders}/{@code QueryStringBuilder}.
+ * {@code ModifiableHttpHeaders}/{@code QueryStringBuilder}. A request serializer created with a
+ * {@link SdkHttpFullRequest.Builder} writes the headers and query parameters straight into it instead.
  */
 @SdkInternalApi
 public final class HttpBindingSerializer extends SpecificShapeSerializer {
@@ -78,7 +81,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
     private final Codec payloadCodec;
     private final String payloadMediaType;
     private final boolean isResponse;
-    private final Map<String, List<String>> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    private final MessageTarget target;
 
     private boolean omitEmptyPayload;
     private boolean allowEmptyStructPayload;
@@ -86,9 +89,6 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
     private HeaderErrorSerializer errorSerializer;
     private ByteBufferOutputStream bodyBuffer;
 
-    private Map<String, List<String>> rawQueryParameters;
-    // Names written by @httpQuery members and query literals; @httpQueryParams entries with these names are dropped.
-    private Set<String> httpQueryKeys;
     // @httpQueryParams entries as (name, value) pairs, applied after every member is written.
     private List<String> deferredQueryParams;
 
@@ -113,10 +113,32 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
      */
     public HttpBindingSerializer(Schema operationSchema, Codec payloadCodec, String payloadMediaType,
                                  boolean isResponse) {
+        this(operationSchema, payloadCodec, payloadMediaType, isResponse, new MapTarget());
+    }
+
+    /**
+     * Creates a request serializer that writes the headers and query parameters straight into {@code request} instead
+     * of collecting them for {@link #headers()} and {@link #rawQueryParameters()}, which then throw. Nothing else is
+     * set on {@code request}. SDK addition: the earlier SDK marshallers write into the request builder the same way.
+     *
+     * @param operationSchema the operation schema, which carries {@code smithy.api#http}
+     * @param payloadCodec the codec for the body and structured payloads
+     * @param payloadMediaType the media type of codec output, sent as {@code Content-Type}
+     * @param request the request being built, with no headers or query parameters yet
+     */
+    public HttpBindingSerializer(Schema operationSchema, Codec payloadCodec, String payloadMediaType,
+                                 SdkHttpFullRequest.Builder request) {
+        this(operationSchema, payloadCodec, payloadMediaType, false,
+             new RequestBuilderTarget(Validate.paramNotNull(request, "request")));
+    }
+
+    private HttpBindingSerializer(Schema operationSchema, Codec payloadCodec, String payloadMediaType,
+                                  boolean isResponse, MessageTarget target) {
         this.operationBinding = HttpBindingSchemaExtensions.operationBindingOf(operationSchema);
         this.payloadCodec = payloadCodec;
         this.payloadMediaType = payloadMediaType;
         this.isResponse = isResponse;
+        this.target = target;
         this.responseStatus = operationBinding.defaultResponseStatus();
     }
 
@@ -149,8 +171,11 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
     /**
      * Marks the message as an error response: the status comes from {@code @httpError} or {@code @error}, and
      * {@code errorSerializer} writes the error type header.
+     *
+     * @throws IllegalStateException if this serializer writes into a request builder
      */
     public HttpBindingSerializer error(HeaderErrorSerializer errorSerializer) {
+        mapTarget("error");
         this.errorSerializer = errorSerializer;
         return this;
     }
@@ -221,7 +246,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
     private void prepareError(DirectionBinding direction) {
         int status = ((ResponseBinding) direction).defaultStatus;
         responseStatus = status == -1 ? DEFAULT_ERROR_STATUS : status;
-        errorSerializer.writeErrorType(outerStruct.sdkSchema(), headers);
+        errorSerializer.writeErrorType(outerStruct.sdkSchema(), mapTarget("error").headers);
     }
 
     private void addQueryLiterals() {
@@ -233,12 +258,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
     }
 
     private void addQuery(String name, String value) {
-        if (rawQueryParameters == null) {
-            rawQueryParameters = new LinkedHashMap<>();
-            httpQueryKeys = new HashSet<>();
-        }
-        rawQueryParameters.computeIfAbsent(name, k -> new ArrayList<>(1)).add(value);
-        httpQueryKeys.add(name);
+        target.appendQuery(name, value);
     }
 
     private void addQueryParam(String name, String value) {
@@ -249,24 +269,36 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
         deferredQueryParams.add(value);
     }
 
-    // @httpQuery wins over @httpQueryParams regardless of member order (Requirement 15.6).
+    // @httpQuery wins over @httpQueryParams regardless of member order (Requirement 15.6). Every name is checked
+    // against what @httpQuery members and query literals wrote before any entry is added, so repeated
+    // @httpQueryParams names are all kept.
     private void flushQueryParams() {
         if (deferredQueryParams == null) {
             return;
         }
-        if (rawQueryParameters == null) {
-            rawQueryParameters = new LinkedHashMap<>();
+        Set<String> written = target.queryNames();
+        int pairs = deferredQueryParams.size() / 2;
+        boolean[] keep = new boolean[pairs];
+        for (int i = 0; i < pairs; i++) {
+            keep[i] = !written.contains(deferredQueryParams.get(2 * i));
         }
-        for (int i = 0; i < deferredQueryParams.size(); i += 2) {
-            String name = deferredQueryParams.get(i);
-            if (httpQueryKeys == null || !httpQueryKeys.contains(name)) {
-                rawQueryParameters.computeIfAbsent(name, k -> new ArrayList<>(1)).add(deferredQueryParams.get(i + 1));
+        for (int i = 0; i < pairs; i++) {
+            if (keep[i]) {
+                target.appendQuery(deferredQueryParams.get(2 * i), deferredQueryParams.get(2 * i + 1));
             }
         }
     }
 
     private void putHeader(String name, String value) {
-        headers.put(name, Collections.singletonList(value));
+        target.putHeader(name, value);
+    }
+
+    private MapTarget mapTarget(String operation) {
+        if (!(target instanceof MapTarget)) {
+            throw new IllegalStateException(operation + " is not available: this serializer writes into a request "
+                                            + "builder");
+        }
+        return (MapTarget) target;
     }
 
     private void setBody(ContentStreamProvider provider, long length) {
@@ -306,7 +338,7 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
         }
         // A raw (blob, string or scalar) payload: Content-Type from @mediaType, else the type's default, unless a
         // header member or a codec payload already set it.
-        if (blobPayloadSchema != null && !headers.containsKey(CONTENT_TYPE)) {
+        if (blobPayloadSchema != null && !target.hasContentType()) {
             MediaTypeTrait mediaType = blobPayloadSchema.getTrait(TraitKey.MEDIA_TYPE_TRAIT);
             String contentType;
             if (mediaType != null) {
@@ -338,17 +370,21 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
 
     /**
      * Returns the headers written, keyed case-insensitively in the case the model declares.
+     *
+     * @throws IllegalStateException if this serializer writes into a request builder
      */
     public Map<String, List<String>> headers() {
-        return headers;
+        return mapTarget("headers()").headers;
     }
 
     /**
      * Returns the raw (not percent-encoded) query parameters, in the order written. A query literal without a value
      * maps to a null element. The SDK request percent-encodes them with the RFC 3986 unreserved set.
+     *
+     * @throws IllegalStateException if this serializer writes into a request builder
      */
     public Map<String, List<String>> rawQueryParameters() {
-        return rawQueryParameters == null ? Collections.emptyMap() : rawQueryParameters;
+        return mapTarget("rawQueryParameters()").query();
     }
 
     /**
@@ -832,6 +868,107 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
         @Override
         public void writeNull(Schema schema) {
             // Sparse null elements are dropped.
+        }
+    }
+
+    /**
+     * Where the header and query parameter writes of one message go.
+     */
+    private interface MessageTarget {
+        /**
+         * Sets a header, replacing a value written under the same name in any case; the first casing is kept.
+         */
+        void putHeader(String name, String value);
+
+        /**
+         * Returns true when a {@code Content-Type} header was written, in any case.
+         */
+        boolean hasContentType();
+
+        /**
+         * Appends a raw query parameter value; a null value is a parameter without {@code =}.
+         */
+        void appendQuery(String name, String value);
+
+        /**
+         * Returns the names of the raw query parameters written so far.
+         */
+        Set<String> queryNames();
+    }
+
+    /**
+     * Collects the headers and query parameters for {@link #headers()} and {@link #rawQueryParameters()}: responses,
+     * and requests whose caller copies them into a request.
+     */
+    private static final class MapTarget implements MessageTarget {
+        private final Map<String, List<String>> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        private Map<String, List<String>> query;
+
+        @Override
+        public void putHeader(String name, String value) {
+            headers.put(name, Collections.singletonList(value));
+        }
+
+        @Override
+        public boolean hasContentType() {
+            return headers.containsKey(CONTENT_TYPE);
+        }
+
+        @Override
+        public void appendQuery(String name, String value) {
+            if (query == null) {
+                query = new LinkedHashMap<>();
+            }
+            query.computeIfAbsent(name, k -> new ArrayList<>(1)).add(value);
+        }
+
+        @Override
+        public Set<String> queryNames() {
+            return query().keySet();
+        }
+
+        Map<String, List<String>> query() {
+            return query == null ? Collections.emptyMap() : query;
+        }
+    }
+
+    /**
+     * Writes the headers and query parameters straight into the request being built. Its header map is
+     * case-insensitive and its query map keeps insertion order, as the maps of {@link MapTarget} are, so the request
+     * is the same as copying those maps into it.
+     */
+    private static final class RequestBuilderTarget implements MessageTarget {
+        private final SdkHttpFullRequest.Builder request;
+        private boolean contentTypeWritten;
+
+        RequestBuilderTarget(SdkHttpFullRequest.Builder request) {
+            this.request = request;
+        }
+
+        @Override
+        public void putHeader(String name, String value) {
+            request.putHeader(name, value);
+            if (CONTENT_TYPE.equalsIgnoreCase(name)) {
+                contentTypeWritten = true;
+            }
+        }
+
+        @Override
+        public boolean hasContentType() {
+            return contentTypeWritten;
+        }
+
+        @Override
+        public void appendQuery(String name, String value) {
+            request.appendRawQueryParameter(name, value);
+        }
+
+        @Override
+        public Set<String> queryNames() {
+            // Read only for @httpQueryParams members, after the other query writes.
+            Set<String> names = new HashSet<>();
+            request.forEachRawQueryParameter((name, values) -> names.add(name));
+            return names;
         }
     }
 }

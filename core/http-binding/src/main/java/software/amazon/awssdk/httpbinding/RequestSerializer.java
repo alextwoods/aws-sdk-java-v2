@@ -16,8 +16,6 @@
 package software.amazon.awssdk.httpbinding;
 
 import java.net.URI;
-import java.util.List;
-import java.util.Map;
 import software.amazon.awssdk.annotations.SdkPublicApi;
 import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.commons.Codec;
@@ -180,24 +178,26 @@ public final class RequestSerializer {
         Validate.paramNotNull(endpoint, "endpoint");
         Validate.paramNotNull(payloadMediaType, "payloadMediaType");
 
+        // The serializer writes the headers and query parameters straight into the builder.
+        SdkHttpFullRequest.Builder builder = SdkHttpFullRequest.builder();
         HttpBindingSerializer serializer =
-            new HttpBindingSerializer(operation.schema(), payloadCodec, payloadMediaType, false)
+            new HttpBindingSerializer(operation.schema(), payloadCodec, payloadMediaType, builder)
                 .omitEmptyPayload(omitEmptyPayload)
                 .allowEmptyStructPayload(allowEmptyStructPayload)
                 .trimGreedyLabelLeadingSlash(trimGreedyLabelLeadingSlash)
                 .bodyBuffer(bodyBuffer);
         shapeValue.serialize(serializer);
 
-        String endpointPath = endpoint.getRawPath() == null ? "" : endpoint.getRawPath();
-        SdkHttpFullRequest.Builder builder = SdkHttpFullRequest.builder()
-                                                               .method(serializer.sdkHttpMethod())
-                                                               .uri(endpoint)
-                                                               .encodedPath(SdkHttpUtils.appendUri(endpointPath,
-                                                                                                   serializer.path()))
-                                                               .headers(serializer.headers());
-        Map<String, List<String>> query = serializer.rawQueryParameters();
-        if (!query.isEmpty()) {
-            builder.rawQueryParameters(query);
+        // What Builder.uri(endpoint) sets, in the same order and with the same null check, except the endpoint's
+        // query: it is the request's query only when the input wrote no query parameter.
+        builder.method(serializer.sdkHttpMethod())
+               .protocol(endpoint.getScheme())
+               .host(endpoint.getHost())
+               .port(endpoint.getPort());
+        String endpointPath = Validate.paramNotNull(endpoint.getRawPath(), "baseUri");
+        builder.encodedPath(SdkHttpUtils.appendUri(endpointPath, serializer.path()));
+        if (endpoint.getRawQuery() != null && builder.numRawQueryParameters() == 0) {
+            SdkHttpUtils.uriParams(endpoint).forEach(builder::putRawQueryParameter);
         }
         ContentStreamProvider body = serializer.body();
         if (body != null) {
