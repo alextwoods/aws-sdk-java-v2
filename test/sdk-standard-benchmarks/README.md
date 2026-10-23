@@ -141,14 +141,16 @@ accepted difference. Three work-boundary differences remain, and the profiling p
 measures each one (see below):
 
 - A1-objects: the Baseline_Build builds its legacy marshaller objects (marshaller,
-  builder, context, endpoint lookup) inside the timed method on every call; the feature
+  builder and its setters, context, endpoint lookup) inside the timed method on every call; the feature
   resolves its `ClientProtocol` once per trial.
 - A2: the feature's unmarshall also checks the status and attaches the `SdkHttpResponse`
   and the response metadata, which the legacy client does in its response handler. The
   awsQuery request-id read is in both timed methods (the legacy unmarshaller's
   `parseMetadata`, the feature's `readRequestId`), so it is not A2.
-- A5: the feature's Query marshall includes form encoding and Content-Length, which the
-  legacy client does after its marshaller.
+- A5: the feature's Query marshall writes each string value (and `Action` and `Version`)
+  percent-encoded into the form body and sets Content-Length. The legacy marshaller only
+  puts the raw values into the request's query map; `QueryParametersToBodyStage` encodes
+  and joins them into the body after the marshaller.
 
 The legacy marshaller constructor also does request work, recorded as A1-request: the
 `SdkHttpFullRequest` builder, URI, static headers and query parameters, and the JSON
@@ -226,8 +228,9 @@ geometric mean of its marshall and unmarshall class geomeans). A reference table
 every item removed (serde-only, A1 fully removed) follows; it overstates the baseline's
 removal. A format-1 `boundary.tsv` from earlier versions (columns `A1_*`, `A2_*`, `A5_*`)
 still gives the old serde-only estimate. With `--profile` after timing, `summary.md`
-includes it. The estimate is approximate (the shares come from the profiling run, and the
-A5 rule covers percent-encoding only).
+includes it. The estimate is approximate: the shares come from the profiling run, and A5
+takes out the feature's encoded value writes but not its key writes or separators, so it
+removes less than the legacy `QueryParametersToBodyStage` does.
 
 ```bash
 scripts/schema-serde/serde-ab.sh --jar baseline=<out>/jars/baseline.jar \

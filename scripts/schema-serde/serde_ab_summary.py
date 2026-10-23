@@ -35,7 +35,8 @@ Usage:
       removed items (CPU share for ns/op, alloc share for B/op), with the same floor. Which estimate depends on the
       file's format (serde_ab_profile.py docstring):
         format 2 (A1-objects, A1-request, A2, A5 columns): the comparable estimate removes A1-objects (per-call
-          legacy marshaller objects), A2 (feature-only response handling) and A5 (Query form percent-encoding);
+          legacy marshaller objects), A2 (feature-only response handling) and A5 (the feature's percent-encoded
+          Query form writes of string values, which the legacy client does in QueryParametersToBodyStage);
           A1-request (request builder, URI, static headers, JSON generator / XML writer) stays in the baseline,
           because the feature does that work inside its serde call. A reference table follows with every item
           removed (serde-only, A1 fully removed), which overstates the baseline's removal.
@@ -704,13 +705,14 @@ def render_boundary(analysis, boundary, base, arm):
     lines = [f"### Comparable estimate (boundary-adjusted), `{arm}` / `{base}`", "",
              "Estimate, not a measurement: each arm's mean ns/op (B/op) is scaled by 1 - its CPU (alloc) share of the "
              "work-boundary items A1-objects (per-call legacy marshaller objects), A2 (feature-only response "
-             "handling: status check, response metadata and SdkHttpResponse attachment) and A5 (Query form "
-             "percent-encoding) in the profiling pass (`boundary.tsv`; rules in `serde_ab_profile.py`). A1-request "
+             "handling: status check, response metadata and SdkHttpResponse attachment) and A5 (the feature's "
+             "percent-encoded Query form writes of string values, Action and Version) in the profiling pass "
+             "(`boundary.tsv`; rules in `serde_ab_profile.py`). A1-request "
              "(the request builder, URI, static headers and JSON generator / XML writer that the legacy marshaller "
              "creates in its constructor) stays in the baseline, because the feature does that work inside its "
-             "serde call. Shares come from a different run than the timing, the same floor is applied, and A5 is a "
-             "lower bound. The table above is what each arm's timed method costs; this one compares the same work "
-             "on both arms.", ""]
+             "serde call. Shares come from a different run than the timing, the same floor is applied, and A5 "
+             "removes less than the legacy client's later form encoding (QueryParametersToBodyStage) does. The "
+             "table above is what each arm's timed method costs; this one compares the same work on both arms.", ""]
     lines += _estimate_table(rows, base, arm, COMPARABLE_ITEMS)
     lines += ["", f"#### Comparable geometric-mean ratios (boundary-adjusted), `{arm}` / `{base}`", ""]
     lines += _class_geomeans(per_class)

@@ -44,7 +44,9 @@ Categories: each sample gets exactly ONE category, in two passes over its frames
        input         test input / response construction in the timed method: an SdkHttpFullResponse builder,
                      AbortableInputStream or ByteArrayInputStream called directly by the benchmark class
        construction  per-call marshaller or protocol construction (the legacy arm builds its marshaller inside the
-                     timed method; the feature arm resolves its protocol once per trial)
+                     timed method; the feature arm resolves its protocol once per trial), and any method of a legacy
+                     marshaller builder (JsonProtocolMarshallerBuilder, Xml/QueryProtocolMarshaller$Builder: the
+                     setters) called directly by the benchmark class
        metadata      response metadata: request id and AwsResponseMetadata/SdkHttpResponse attachment
   2. Work rules, leaf to root: the innermost frame that matches a rule decides (rule order breaks ties within
      one frame).
@@ -86,9 +88,11 @@ the allocation site decides):
   A1-objects  per-call legacy marshaller objects (baseline marshall): a sample of category construction that no
               A1-request rule matches. The marshaller, its builder and context (JsonProtocolMarshallerBuilder,
               JsonProtocolMarshaller, JsonMarshallerContext, NullAsEmptyBodyProtocolRequestMarshaller,
-              Query/XmlProtocolMarshaller and their builders, XmlMarshallerContext), OperationInfo checks, the
-              endpoint lookup (BaseAwsJsonProtocolFactory.endpoint > SdkClientConfiguration.option) and VM frames
-              under them. The feature arm builds the equivalent once per client.
+              Query/XmlProtocolMarshaller and their builders, XmlMarshallerContext), the builder setters the
+              benchmark calls (contentType, protocolMetadata, operationInfo, jsonGenerator / xmlGenerator,
+              endpoint, ...), OperationInfo checks, the endpoint lookup (BaseAwsJsonProtocolFactory.endpoint >
+              SdkClientConfiguration.option) and VM frames under them. The feature arm builds the equivalent once
+              per client.
   A1-request  request work the legacy marshaller constructor does that the feature arm also does inside its serde
               call (baseline marshall): a sample of category construction with a frame that matches one of the
               ordered A1_REQUEST_RULES. Rules are tried in order; the first rule whose regex matches ANY frame of the
@@ -113,11 +117,23 @@ the allocation site decides):
               baseline), which both timed methods do, and the model getters that toBuilder() and the response
               constructors call on both arms (POJO copying, under AwsResponse / SdkResponse(.BuilderImpl).<init>).
               Those stay in both arms.
-  A5          Query form percent-encoding: a QueryFormSerializer writeUrlEncoded / writeUrlEncodedAscii /
-              writePercentEncoded / percentEncode frame (feature Query marshall). A lower bound: appending the pairs
-              to the body buffer stays in, as the baseline's equivalent (putting them into the raw query map) does;
-              the Content-Length header put is not separated from the Content-Type put. Key building
-              (QueryFormSerializer.writeKey) is not A5: the baseline builds the same keys.
+  A5          the feature's percent-encoded writes into the Query form body (feature Query marshall): a
+              QueryFormSerializer writeUrlEncoded / writeUrlEncodedAscii / writePercentEncoded / percentEncode
+              frame. writeUrlEncoded copies each unreserved character into the body buffer and escapes the others
+              in the same loop, so A5 is mostly the per-character copy of string values into the body; the escaping
+              itself (writePercentEncoded / percentEncode) is a small part. A5 also holds the serializer
+              constructor's write of the Action and Version values (QueryFormSerializer.<init>) and string map keys.
+              The legacy client does the counterpart after its marshaller, outside the timed method:
+              QueryParametersToBodyStage encodes every key and value of the raw query map
+              (SdkHttpUtils.encodeAndFlattenFormData), joins them into a String and converts it to bytes. The
+              baseline's timed method only puts the raw strings into that map (putRawQueryParameter, a map insert
+              with no per-character work; Action and Version in the marshaller constructor, so A1-request), and
+              that stays in the baseline. By operation count A5 is less than that counterpart: the feature's key
+              writes (QueryFormSerializer.writeKey, names encoded once per schema), number and boolean values,
+              separators and buffer growth stay in the feature, and the Content-Length header put is not separated
+              from the Content-Type put. One could instead pair the constructor's Action / Version write with the
+              baseline's put and keep it in the feature; docs/design/schema-serde/serde-perf-report.md (section
+              2.4) gives the effect of that choice.
 compare writes their CPU and alloc shares per (class, param, arm) to DIR/boundary.tsv and a table to
 profile-comparison.md. boundary.tsv format 2 (this version) has the columns benchmark class param arm cpu_samples
 alloc_bytes, then <item>_cpu_pct and <item>_alloc_pct for A1-objects, A1-request, A2 and A5; there are no A1_*
@@ -182,6 +198,9 @@ SCOPE_RULES = [
         r"(\$Builder|\$BuilderImpl)?\.(<init>|<clinit>|build|builder|create|createProtocolMarshaller)$"
         r"|" + _S + r"core\.client\.config\.SdkClientConfiguration"
         r"|" + _S + r"protocols\.xml\.internal\.marshall\.XmlGenerator\.create$"), None),
+    # Legacy marshaller builder setters called directly by the benchmark method (part of the per-call construction).
+    ("construction", re.compile(r"(JsonProtocolMarshallerBuilder|(Xml|Query)ProtocolMarshaller\$Builder)\.[^.]+$"),
+     BENCH_FRAME),
     ("metadata", re.compile(r"\.readRequestId$|ResponseMetadata|\.parseMetadata$|\.responseMetadata$"
                             r"|SdkResponse\$Builder\.sdkHttpResponse$|\.sdkHttpResponse$"), None),
 ]
@@ -243,7 +262,8 @@ BOUNDARY = OrderedDict([
     ("A1-request", "request work the legacy marshaller constructor does that the feature does inside its serde call "
                    "(request builder, URI, static headers and query, JSON generator / XML writer)"),
     ("A2", "feature-only response handling (status check, response metadata and SdkHttpResponse attachment)"),
-    ("A5", "Query form percent-encoding (QueryFormSerializer.writeUrlEncoded / percent-encode frames)"),
+    ("A5", "feature Query form writes with percent-encoding (QueryFormSerializer.writeUrlEncoded / percent-encode "
+           "frames: string values, Action and Version)"),
 ])
 # A1-request rules, in order: within category construction, the first rule whose regex matches any frame names the
 # part; no match = A1-objects.
@@ -993,6 +1013,8 @@ def self_test():
             qfs = "software/amazon/awssdk/protocols/client/awsquery/internal/QueryFormSerializer"
             self.assertEqual(item(bench, qfs + "$ValueSerializer.writeString", qfs + ".writeUrlEncoded",
                                   "java/lang/String.charAt"), "A5")
+            # The constructor's Action / Version write is A5 too (see the A5 entry of the module docstring).
+            self.assertEqual(item(bench, qfs + ".forAwsQuery", qfs + ".<init>", qfs + ".writeUrlEncoded"), "A5")
             self.assertIsNone(item(bench, qfs + "$ValueSerializer.writeString", qfs + ".writeKey"))
             self.assertIsNone(item(bench, "software/amazon/awssdk/codecs/json/internal/SmithyJsonSerializer.w"))
 
@@ -1043,6 +1065,25 @@ def self_test():
             # Allocation sample: the allocated type is dropped, so a request type alone does not make A1-request.
             self.assertEqual(item(bench, build, "software/amazon/awssdk/http/DefaultSdkHttpFullRequest$Builder_[i]",
                                   alloc=True), "A1-objects")
+
+        def test_boundaryItem_whenBenchmarkCallsLegacyBuilderSetter_isA1Objects(self):
+            def item(*frames):
+                h = hot_stack(parse(stub + ";" + ";".join(frames) + " 1")[0], False)
+                return boundary_item(h, categorize(h))
+            jb = "software/amazon/awssdk/protocols/json/internal/marshall/JsonProtocolMarshallerBuilder"
+            xb = "software/amazon/awssdk/protocols/xml/internal/marshall/XmlProtocolMarshaller$Builder"
+            qb = "software/amazon/awssdk/protocols/query/internal/marshall/QueryProtocolMarshaller$Builder"
+            for setter in (jb + ".contentType_[j]", jb + ".protocolMetadata", jb + ".jsonGenerator",
+                           jb + ".sendExplicitNullForPayload", xb + ".operationInfo", xb + ".xmlGenerator",
+                           qb + ".endpoint"):
+                self.assertEqual(cat(bench, setter), "construction", setter)
+                self.assertEqual(item(bench, setter), "A1-objects", setter)
+            # Only a direct call from the benchmark class is construction by this rule: under another frame the work
+            # rules decide (traversal for protocols.json.internal).
+            self.assertEqual(cat(bench, "software/amazon/awssdk/protocols/client/http/HttpClientProtocol.serialize",
+                                 jb + ".contentType"), "traversal")
+            self.assertIsNone(item(bench, "software/amazon/awssdk/protocols/client/http/HttpClientProtocol.serialize",
+                                   jb + ".contentType"))
 
         def test_boundaryItem_whenMetadata_onlyFeatureOnlyWorkIsA2(self):
             def item(*frames):
