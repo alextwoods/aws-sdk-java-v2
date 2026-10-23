@@ -149,7 +149,10 @@ Maven repository `<worktree>-m2` in front of `~/.m2/repository`) after overlayin
 `src/main/resources/codegen-resources` and `serde-tests` from `--bench-src` (default
 `HEAD`), so every arm reads the same models and payloads (`--no-overlay` builds them as
 committed). `--sdk-pin feature=<sha>` fails the run unless the feature commit differs from
-that SDK commit only under `test/sdk-standard-benchmarks/`, `scripts/` or `docs/`.
+that SDK commit only under `test/sdk-standard-benchmarks/`, `scripts/`, `docs/` or `.kiro/`.
+For a prebuilt jar whose commit is not in a local repository (a benchmark host), the check
+made when the jar was built is used: its provenance must record an `ok` pin of the same SDK
+commit.
 
 Before timing, it verifies (`scripts/schema-serde/serde_ab_checks.py`) that the resources
 and the intermediate models of the jars are identical, that `SerdeWireDump.java` (the
@@ -183,7 +186,9 @@ python3 scripts/schema-serde/serde_ab_summary.py summarize <run>/serde-ab.json \
 Arm order alternates per repetition (A,B then B,A; `--order fixed` keeps A,B). Every JMH
 run uses `-foe true -prof gc -rf json` and the same `--jmh-opts` and `--jvm-args`
 (default `-Xms2g -Xmx2g -XX:+AlwaysPreTouch`). `--pin CPUS` wraps every `java` in
-`taskset -c` and exits with status 2 where `taskset` is not available. The summary
+`taskset -c` and exits with status 2 where `taskset` is not available (Linux only); JMH
+forks inherit the affinity, and verify checks that the JMH runner and a fork run on exactly
+those CPUs (`verify/pin-affinity-<arm>.txt`). The summary
 reports mean ns/op and `gc.alloc.rate.norm` per arm with 99.9% errors, the paired ratio,
 the floor from a null experiment (`--null`: one jar as `LABEL-a` and `LABEL-b`) and a
 verdict, plus geometric-mean ratios per class.
@@ -218,6 +223,95 @@ build, jar sha256, JDK, Maven, host; not edited after the build) and
 result), `verify/verify.md`, `jmh/`, `logs/`, `serde-ab.json`, `summary.md`,
 `profile/<arm>/<Class>/<param>/<event>/` (collapsed stacks and flame graphs),
 `profile-comparison.md`, `profile-path.tsv` and `boundary.tsv`.
+
+### Param subsets, abbreviated null experiments and steady state
+
+`--param-subset ends` runs, per class, only the smallest and the largest test case by
+payload size; `--params 'Class=v1,v2;Class2=v3'` names the cases of a class explicitly
+(and overrides `ends` for it). Each class's JMH runs get `-p <param name>=<cases>`, so the
+subset of one class never affects another. Payload size
+(`serde_ab_checks.py payload-sizes`, from the jar alone): the test-case file a class reads
+is the `serde-tests/...json` literal in its `.class` file; a marshall case's size is the
+UTF-8 length of its `params` object as compact JSON with sorted keys, an unmarshall case's
+size is the UTF-8 length of `response.body` plus every response header name and value. On a
+tie, the smallest is the earliest case in `@Param` order and the largest the latest. The
+script prints the chosen cases with their sizes and records them in `params.tsv`
+(`param_subset`, `params_selected`, `combos`) and every case's size in `payload-sizes.tsv`.
+Over the 10 serde classes `ends` selects 20 of the 71 combinations. The verify code-path
+runs and the profiling pass use the selected cases too.
+
+A comparison summarized with `--null` from such an abbreviated null experiment gives each
+row without a null row of its own an inferred floor: the largest floor of the null rows of
+its class, or of all null rows when its class has none, marked `inferred (class max)` or
+`inferred (all max)`. A null summary also checks warmup: from the JMH JSON per-iteration
+data, per fork, the change from the first to the last measurement iteration and the
+least-squares trend over the iterations; a row is flagged `DRIFT` when the mean over its
+forks of either exceeds max(its ns/op floor, 5%).
+
+### Running on a remote metal host
+
+`scripts/schema-serde/serde-ab-remote.sh` runs the A/B on a Linux benchmark host (an EC2
+metal instance with Amazon Linux 2023) from jars built locally; the host needs no checkout
+and no Maven. Build the jars on the laptop (the overlay and `--sdk-pin` are evaluated here
+and recorded in each jar's provenance), then drive the host from bash:
+
+```bash
+# Local: build both jars and run the checks
+scripts/schema-serde/serde-ab.sh --arm baseline=fc8b74e9fe21 --arm feature=<feature sha> \
+  --sdk-pin feature=<SDK sha> --verify-only --out ~/.cache/aws-sdk-java-v2/serde-ab-metal
+JARS=~/.cache/aws-sdk-java-v2/serde-ab-metal/jars
+
+export SERDE_AB_REMOTE_TARGET=ec2-user@<host> SERDE_AB_REMOTE_KEY=<key.pem>
+R=scripts/schema-serde/serde-ab-remote.sh
+$R setup      # JDK 25, python3, async-profiler 4.4, perf_event_paranoid=1; host-info.txt
+$R deploy --jar "$JARS/baseline.jar" --jar "$JARS/feature.jar"
+$R start /tmp/serde-null.sh   # a local bash script, run detached on the host
+$R status; $R log 20
+$R wait 1500                  # exit 1 while still running: repeat under your timeout
+$R fetch latest               # <main checkout>/.agents/tasks/serde-benchmark-metal/runs/<run-id>/
+$R stop
+```
+
+`deploy` copies the scripts to `~/serde-ab/repo/scripts/schema-serde/` and the jars with
+their `.provenance.properties` and `.resources.tsv` to `~/serde-ab/jars/`, then runs the
+Python self-tests on the host. `start` refuses while a session, `serde-ab.sh` or a
+benchmark JVM is running. `fetch` copies the whole run directory, `host-info.txt` and the
+session logs. Use absolute jar paths in session scripts (`status` and `stop` find the
+benchmark JVMs by them). Nothing the run starts listens on a non-loopback address: the
+only listener is JMH's runner-to-fork link on `127.0.0.1`.
+
+Recommended parameters on a 64-core Graviton metal host (the null experiment's floors apply
+to an A/B only with the same options):
+
+```bash
+# serde-null.sh: abbreviated null experiment, 20 combos (ends of each class), about 2 h
+J=$HOME/serde-ab/jars
+OPTS=(--reps 4 --pin 32-47 --jmh-opts "-f 2 -wi 5 -w 2s -i 5 -r 2s"
+      --jvm-args "-Xms2g -Xmx2g -XX:+AlwaysPreTouch -XX:ParallelGCThreads=4 -XX:CICompilerCount=4"
+      --out "$HOME/serde-ab/out")
+"$HOME/serde-ab/repo/scripts/schema-serde/serde-ab.sh" --null "feature=$J/feature.jar" \
+  --sdk-pin feature=<SDK sha> --param-subset ends "${OPTS[@]}"
+
+# Full A/B: all 71 combos, both arms, the same options, about 7 h
+"$HOME/serde-ab/repo/scripts/schema-serde/serde-ab.sh" --jar "baseline=$J/baseline.jar" \
+  --jar "feature=$J/feature.jar" --sdk-pin feature=<SDK sha> "${OPTS[@]}"
+
+# Profiling pass: cpu + alloc, both arms, all params, default -f 1 -wi 2 -w 2s -i 3 -r 3s,
+# about 1.3 h. Verify alone (--verify-only) takes about 10 min.
+"$HOME/serde-ab/repo/scripts/schema-serde/serde-ab.sh" --jar "baseline=$J/baseline.jar" \
+  --jar "feature=$J/feature.jar" --sdk-pin feature=<SDK sha> --profile-only --pin 32-47 \
+  --jvm-args "-Xms2g -Xmx2g -XX:+AlwaysPreTouch -XX:ParallelGCThreads=4 -XX:CICompilerCount=4" \
+  --out "$HOME/serde-ab/out"
+
+# Locally, after fetch: the A/B with the null's floors (inferred for the rows it skipped)
+python3 scripts/schema-serde/serde_ab_summary.py summarize <runs>/<ab>/serde-ab.json \
+  --null <runs>/<null>/serde-ab.json --boundary <runs>/<profile>/boundary.tsv
+```
+
+Each JMH invocation is one class: `-f 2 -wi 5 -w 2s -i 5 -r 2s -prof gc -rf json -foe true`
+in the classes' SampleTime mode, arms alternating per repetition (4 repetitions). The JVM
+flags cap the GC and JIT threads (the JVM defaults on 64 cores are about 43 GC and 18
+compiler threads), and the pinning keeps every JVM on the same 16 cores.
 
 ## Schema Serde Benchmarks
 Benchmarks for the schema-based serde path (`software.amazon.awssdk.benchmark.schema`).
