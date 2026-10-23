@@ -103,7 +103,7 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 ## Marshall allocation (from `fix/marshall-allocation`)
 
 ### FU-17 Codecs write straight into `ByteBufferOutputStream`
-- **Status:** Done (`2bcbde49aa0`, branch `fix/marshall-allocation`). `ByteBufferOutputStream.reserve(int)`/`advance(int)` (new `@SdkPublicApi` methods) let the JSON and CBOR serializers write a `ByteBufferOutputStream` sink in place: no scratch buffer and no drain copy, at any body size. Other sinks keep a 1 KiB buffer lent by `SinkBufferPool` (`fbcbaa44120`). Laptop JMH (PRELIMINARY): about −1.0 KB/op on every awsJson and rpcv2Cbor case (for example `PutItemRequest_Baseline` 2,456 → 1,040 and 2,816 → 1,208 B/op with the other fixes), and −5 to −6 KB/op on `BinaryData_L`, where the scratch buffer used to grow. A caller that writes or resets the stream between serializer flushes gets the bytes a buffering sink gives (`14eb252b531`); one whose write lands on bytes the serializer has not added gets `IllegalStateException` (`porting-deviations.md`, `SmithyJsonSerializer` and `CborSerializer` rows).
+- **Status:** Done (`2bcbde49aa0`, branch `fix/marshall-allocation`). `ByteBufferOutputStream.reserve(int)`/`advance(int)` (new `@SdkPublicApi` methods) let the JSON and CBOR serializers write a `ByteBufferOutputStream` sink in place: no scratch buffer and no drain copy, at any body size. Other sinks keep a 1 KiB buffer lent by `SinkBufferPool` (`fbcbaa44120`). Laptop JMH (PRELIMINARY): about −1.0 KB/op on every awsJson and rpcv2Cbor case (for example `PutItemRequest_Baseline` 2,456 → 1,040 and 2,816 → 1,208 B/op with the other fixes), and −5 to −6 KB/op on `BinaryData_L`, where the scratch buffer used to grow. A caller that writes or resets the stream between serializer flushes gets the bytes a buffering sink gives (`14eb252b531`, `186e00cea66`); one whose write lands on bytes the serializer has not added gets `IllegalStateException` (`porting-deviations.md`, `SmithyJsonSerializer` and `CborSerializer` rows). The `committed` field this needs costs nothing on JSON (`229e4b7d7e1` keeps `SmithyJsonSerializer` at 64 bytes) and 8 B/op on CBOR (`CborSerializer` 56 → 64 bytes).
 - **Remaining:** the event stream encoder (`AwsEventShapeEncoder`) serializes payloads into a `ByteArrayOutputStream`, so it takes the pooled-buffer path and copies once; switching it to `ByteBufferOutputStream` would remove that copy. `SmithyXmlSerializer` still has its own buffer (restXml request bodies; no benchmark case has one).
 
 ### FU-18 `LowCopyListMap` creates its empty maps eagerly
@@ -122,11 +122,12 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Evidence:** `.agents/tasks/fix-marshall-allocation/plan.md` (inventory, F8); metal profile run `serde-benchmark-metal/runs/20261023-095831`.
 - **Next step:** Cache them per operation in each protocol, as `QueryClientProtocol.responseCodecs` caches response codecs (bounded map keyed by operation name).
 
-### FU-21 Check `awsQuery_GetMetricDataRequest_S` and `rpcv2Cbor_PutItemRequest_BinaryData_S` marshall time on metal
+### FU-21 Check `awsQuery_GetMetricDataRequest_S`, `rpcv2Cbor_PutItemRequest_BinaryData_S` and awsJson `MixedItem` marshall time on metal
 - **Status:** Needs benchmark
 - **Context:** On the laptop, both single-fork rounds had `awsQuery_GetMetricDataRequest_S` 1.45–1.53x slower on `fix/marshall-allocation` (p50 542 → 875 and 834 ns), while the 5-fork run had equal p50s on both jars (541–625 ns) and one 2,200 ns fork on the fix. No change in F2 explains a slowdown (the form array is about 1,080 B instead of 1,024). FU-16 (rpcv2Cbor `BinaryData_S` slower after FU-12) is on the CBOR write path that F1(b) rewrote.
 - **Evidence:** `.agents/tasks/fix-marshall-allocation/verification.md` (laptop timing flags); `/tmp/fma-jmh/{base,fix}-gmd-f5.log`.
-- **Next step:** Report both cases, before and after this branch, in the metal run. If the awsQuery slowdown reproduces there, profile it (CPU, `-XX:+DebugNonSafepoints`) on both jars.
+- **Also:** `awsJson1_0_PutItemRequest_MixedItem_S`/`_M` are bimodal per fork on the laptop (for example 458–708 ns for one jar), and single-fork rounds put the interleaving fix up to 1.3x slower or faster than the previous branch tip; an interleaved 4-fork run had equal medians (583 vs 584, 2,332 vs 2,372 ns) and the CPU profiles show no samples in the new code.
+- **Next step:** Report these cases, before and after this branch, in the metal run. If the awsQuery slowdown reproduces there, profile it (CPU, `-XX:+DebugNonSafepoints`) on both jars.
 
 ## Still open from the spec (`design.md` §D.15)
 
