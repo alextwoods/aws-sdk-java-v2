@@ -103,8 +103,8 @@ checks. In summary:
 - **Resources and models.** Both arms build the same `codegen-resources` and `serde-tests` files. The baseline gets
   a 5-file overlay that restores the `ContentLength` members the feature models dropped. The sha256 manifests match.
   The normalized model projections match for 5 models and 140 shapes. Two known differences are not on a measured
-  path: the greedy label on the feature's legacy path (FU-11), and a `xmlNamespace` on operations that no restXml
-  case uses.
+  path: the greedy label on the feature's legacy path (FU-11), and a `xmlNamespace` on two input shapes
+  (`GetMetricDataRequest`, `PutMetricDataRequest`) whose operations no restXml case uses.
 - **Wire dump.** Running the legacy path on both jars gives the same bytes for 67 of 71 rows, including every
   unmarshall `toString()` hash. The other 4 rows are the `CopyObject` marshall rows, which differ only in the
   `{Key+}` URI on the feature classpath (FU-11).
@@ -221,8 +221,11 @@ set 1:
 | restJson1 `PutObject_L` | ns/op | 1.1% | 0.210 | 0.212 | +0.7% |
 | restXml `PutObject_L` | ns/op | 2.7% | 0.300 | 0.298 | −0.5% |
 | awsJson1_0 `BinaryData_S` | B/op | 1.3%* | 1.146 | 1.131 | −1.3% |
-| awsJson1_0 `BinaryData_M` / `_L` | B/op | 1.3% | 1.214 / 1.078 | 1.210 / 1.076 | −0.4% / −0.2% |
-| rpcv2Cbor `BinaryData_S` / `_M` / `_L` | B/op | 2.8% | 1.013 / 1.065 / 0.328 | 1.008 / 1.066 / 0.328 | −0.4% / +0.1% / 0.0% |
+| awsJson1_0 `BinaryData_M` | B/op | 1.3%* | 1.214 | 1.210 | −0.4% |
+| awsJson1_0 `BinaryData_L` | B/op | 1.3% | 1.078 | 1.076 | −0.2% |
+| rpcv2Cbor `BinaryData_S` | B/op | 2.8%* | 1.013 | 1.008 | −0.4% |
+| rpcv2Cbor `BinaryData_M` | B/op | 2.8%* | 1.065 | 1.066 | +0.1% |
+| rpcv2Cbor `BinaryData_L` | B/op | 2.8% | 0.328 | 0.328 | 0.0% |
 | restJson1 / restXml `PutObject_L` | B/op | 0.0% | 0.111 / 1.064 | 0.111 / 1.070 | +0.1% / +0.6% |
 
 All ns/op controls match within the floor. Three B/op cells differ by 0.1–1.3% where the floor is 0.0% or 1.3%. In
@@ -328,7 +331,7 @@ Where it doesn't win:
   inserted twice with case-insensitive compares. The legacy marshaller appends to the builder's map once.
 - **Unmarshall allocation on large awsJson1_0 and rpcv2Cbor outputs.** On 7 of the 8 M and L outputs of these two
   classes, the feature allocates more. Serde-only, that is 1.03–1.23× on awsJson1_0 (`GetItemOutputBinary_M` is
-  0.90) and 1.07–1.28× on rpcv2Cbor. The feature reads the whole response into one `byte[]`
+  0.90) and 1.05–1.28× on rpcv2Cbor. The feature reads the whole response into one `byte[]`
   (`ResponseBodyReader.read`, 17.5 KB of 87.6 KB on `awsJson1_0_GetItemOutput_L`), because the ported parsers need a
   contiguous array. The legacy Jackson parsers stream from the `InputStream`. The
   model objects themselves cost about the same on both arms, for example 12.8 vs 13.0 KB of `AttributeValue`
@@ -379,7 +382,7 @@ If this setup is kept in the baseline, these figures change:
 | awsJson1_0 marshall B/op geomean | 0.924 | 0.812 |
 | rpcv2Cbor marshall B/op geomean | 0.910 | 0.778 |
 | awsQuery marshall B/op geomean | 0.969 | 0.782 |
-| small awsJson1_0 / rpcv2Cbor requests (the cases listed above), B/op | 1.05–1.43 | 0.85–1.09 |
+| small awsJson1_0 / rpcv2Cbor requests (the small cases listed above), B/op | 1.05–1.43 | 0.85–1.09 |
 | `restJson1_CopyObjectRequest_Baseline` / `restXml_CopyObjectRequest_Baseline`, B/op | 2.80 / 2.69 | 0.91 / 0.90 |
 | aggregate, ns/op / B/op | 0.384 / 0.689 | 0.368 / 0.598 |
 
