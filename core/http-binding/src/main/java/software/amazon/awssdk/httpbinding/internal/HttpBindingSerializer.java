@@ -544,8 +544,8 @@ public final class HttpBindingSerializer extends SpecificShapeSerializer {
                 // The payload is sent after this call, so PayloadSerializer keeps the default read-only view.
                 payload().writeBlob(schema, value);
             } else if (isText(b)) {
-                // Header, query and label values are encoded now; a writable view of the whole array lets base64 read
-                // it without copying.
+                // Header and query values are encoded now; a writable view of the whole array lets base64 read it
+                // without copying.
                 writeText(schema, b, ByteBufferUtils.base64Encode(ByteBuffer.wrap(value)));
             }
         }
