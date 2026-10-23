@@ -221,6 +221,18 @@ public class SdkHttpRequestResponseTest {
         assertThat(normalizedPath("%2F")).isEqualTo("/%2F");
     }
 
+    @Test
+    public void requestPathStartingWithSlash_isKeptWithoutCopying() {
+        String path = new String("/a/b");
+        SdkHttpFullRequest request = validRequestBuilder().encodedPath(path).build();
+        assertThat(request.encodedPath()).isSameAs(path);
+        assertThat(request.toBuilder().build().encodedPath()).isSameAs(path);
+
+        assertThat(normalizedPath("a/b")).isEqualTo("/a/b");
+        assertThat(normalizedPath("")).isEqualTo("");
+        assertThat(normalizedPath(null)).isEqualTo("");
+    }
+
     private String normalizedPath(String path) {
         return validRequestBuilder().encodedPath(path).build().encodedPath();
     }

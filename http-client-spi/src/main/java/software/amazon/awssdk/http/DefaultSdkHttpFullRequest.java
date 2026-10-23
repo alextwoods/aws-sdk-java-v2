@@ -78,16 +78,12 @@ final class DefaultSdkHttpFullRequest implements SdkHttpFullRequest {
             return "";
         }
 
-        StringBuilder standardizedPath = new StringBuilder();
-
         // Path must always start with '/'
-        if (!path.startsWith("/")) {
-            standardizedPath.append('/');
+        if (path.startsWith("/")) {
+            return path;
         }
 
-        standardizedPath.append(path);
-
-        return standardizedPath.toString();
+        return "/" + path;
     }
 
     private Integer standardizePort(Integer port) {
