@@ -71,6 +71,18 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Evidence:** Found by the serde A/B wire dump (`.agents/tasks/serde-benchmark-comparison/`, `comparability-matrix.md` items M1 and W1): the 4 `CopyObject` marshall rows of `RestJsonMarshallBenchmark` and `RestXmlMarshallBenchmark` differ only in the `{Key+}` URI when the legacy reference runs on the feature classpath. The measured benchmark paths are not affected.
 - **Next step:** Return `GREEDY_PATH` when the member's URI label ends in `+` (from the operation's `@http` URI pattern), keep `greedy` in the Smithy-built intermediate model, and add a legacy-path test with a greedy label.
 
+### FU-12 Base64 encoding copies read-only blob members
+- **Status:** Open
+- **Context:** Generated models hand blob members over as `SdkBytes.asByteBuffer()`, a read-only view. In the JSON and XML codecs, `ByteBufferUtils.base64EncodeInto` takes its non-exact branch for those buffers, and Java 8's `Base64.Encoder.encode(ByteBuffer)` copies a source that has no accessible array. So every blob member is copied once before it is encoded. This is the same root cause as the `@httpPayload` copy fixed in `1f5f257a7f2`, but that fix (sharing the buffer) doesn't apply to encoded members.
+- **Evidence:** `.agents/tasks/fix-blob-payload-copy/report.md` ("Other call sites"). It is the likely source of the JsonRpc10 marshall `format` allocation (about 13 KB/op) and of the feature's higher B/op on the `BinaryData` cases (1.07–1.23x the baseline in the laptop smoke).
+- **Next step:** Encode in chunks from the read-only buffer into the output, or have codegen pass the `SdkBytes` array without a copy. Measure with `JsonRpc10MarshallBenchmark` and `RpcV2CborMarshallBenchmark` `BinaryData_*`.
+
+### FU-13 `PayloadSerializer.writeString` copies the encoded string twice
+- **Status:** Open
+- **Context:** A string `@httpPayload` is encoded to bytes and then copied once more into the body. The encoding is required; the second copy is not.
+- **Evidence:** `.agents/tasks/fix-blob-payload-copy/report.md` ("Other call sites"). No benchmark case covers it.
+- **Next step:** Write the encoded bytes into the body buffer directly. Add a benchmark case if this shape matters for a prototype service.
+
 ## Still open from the spec (`design.md` §D.15)
 
 Not re-checked against the branch; listed so they aren't lost.
