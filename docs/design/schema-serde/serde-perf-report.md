@@ -14,10 +14,10 @@ the five per-protocol geometric means of feature / baseline. Lower ratios favor 
 
 The comparable view takes out of each arm's timed method only the work that the other arm's client does outside its
 serde call (section 2.4). On the baseline, that is the legacy marshaller objects it builds on every call
-(A1-objects). On the feature, it is the response status check and metadata attachment (A2) and the Query form
-percent-encoding (A5). The request work inside the legacy marshaller's constructor (request builder, URI, static
-headers, JSON generator or XML writer; A1-request) stays in the baseline, because the feature does the same work
-inside its own serde call.
+(A1-objects). On the feature, it is the response status check and metadata attachment (A2) and the encoded writes of
+the Query form values (A5), which the legacy client does after its marshaller. The request work inside the legacy
+marshaller's constructor (request builder, URI, static headers, JSON generator or XML writer; A1-request) stays in
+the baseline, because the feature does the same work inside its own serde call.
 
 Measured as each arm's whole timed method (the as-measured view), the same aggregate is 2.5× faster (0.403) with 47%
 less allocation (0.532). The previous version of this report led with a serde-only estimate that also took
@@ -34,13 +34,13 @@ computed from each of the 4 repetitions alone.
 
 | protocol | comparable marshall | comparable unmarshall | **comparable protocol** (per-rep range) | as measured marshall | as measured unmarshall | as measured protocol |
 |---|---:|---:|---:|---:|---:|---:|
-| awsJson1_0 | 0.348 | 0.703 | **0.494** (0.493–0.497) | 0.346 | 0.792 | 0.523 |
+| awsJson1_0 | 0.348 | 0.703 | **0.495** (0.493–0.497) | 0.346 | 0.792 | 0.523 |
 | awsQuery | 0.439 | 0.151 | **0.257** (0.256–0.258) | 0.569 | 0.151 | 0.293 |
 | restJson1 | 0.308 | 0.458 | **0.376** (0.371–0.379) | 0.305 | 0.509 | 0.394 |
-| restXml | 0.383 | 0.304 | **0.342** (0.341–0.344) | 0.382 | 0.347 | 0.364 |
-| rpcv2Cbor | 0.352 | 0.601 | **0.460** (0.458–0.461) | 0.350 | 0.660 | 0.481 |
+| restXml | 0.384 | 0.304 | **0.342** (0.341–0.344) | 0.382 | 0.347 | 0.364 |
+| rpcv2Cbor | 0.352 | 0.601 | **0.460** (0.458–0.462) | 0.350 | 0.660 | 0.481 |
 | **aggregate** (geomean of the 5) | | | **0.376** (0.375–0.377), 2.7× faster | | | 0.403 (0.401–0.404), 2.5× faster |
-| pooled, all 71 cases (reference) | | | 0.396 | | | 0.422 |
+| pooled, all 71 cases (reference) | | | 0.397 | | | 0.422 |
 
 **B/op (`gc.alloc.rate.norm`), feature / baseline**
 
@@ -54,16 +54,16 @@ computed from each of the 4 repetitions alone.
 | **aggregate** (geomean of the 5) | | | **0.513** (0.512–0.513), 49% less | | | 0.532 (0.531–0.532), 47% less |
 | pooled, all 71 cases (reference) | | | 0.632 | | | 0.648 |
 
-Set 1 is the full A/B as run, without FU-12. Its aggregate is 0.378 ns/op (2.6× faster) and 0.519 B/op (48% less)
+Set 1 is the full A/B as run, without FU-12. Its aggregate is 0.379 ns/op (2.6× faster) and 0.519 B/op (48% less)
 comparable, and 0.405 (2.5× faster) and 0.539 (46% less) as measured. Only awsJson1_0 changes between the two sets:
-in set 1 it is 0.511 ns/op and 0.858 B/op comparable.
+in set 1 it is 0.512 ns/op and 0.858 B/op comparable.
 
 What the numbers say:
 
 - Every protocol is faster in both views. awsQuery gains the most (0.257). Its legacy unmarshaller builds a DOM, and
   the feature build streams (section 4).
 - 69 of 71 cases are faster than their noise floor in the comparable view. `restXml_CopyObjectRequest_M` is within
-  its floor (1.000), and `awsQuery_PutMetricDataRequest_Baseline` is slower (1.132; section 4.3).
+  its floor (1.001), and `awsQuery_PutMetricDataRequest_Baseline` is slower (1.132; section 4.3).
 - Allocation goes down for unmarshall in every protocol. For marshall, the comparable class geomean is below 1 on
   four protocols and 1.063 on restXml (section 4.2). restJson1 marshall is 0.271, mostly because the legacy restJson1
   marshaller creates a JSON generator on every call and, on `PutObject_*`, never closes it, so Jackson's buffers are
@@ -151,8 +151,11 @@ frame rules are in the script's docstring):
   (`HttpClientProtocol.isErrorResponse` and `responseMetadata`, and the setters that `buildOutput` and
   `buildResponse` call). The legacy client does this in its response handler, outside the baseline timed method. The
   comparable view removes A2 from the feature.
-- **A5.** The feature Query marshall form-encodes the body and sets `Content-Length`. The legacy client does this
-  later, in `QueryParametersToBodyStage`. The comparable view removes A5 from the feature.
+- **A5.** The feature Query marshall writes each string value, and the `Action` and `Version` values,
+  percent-encoded into the form body, and sets `Content-Length`. The legacy marshaller only puts the raw strings
+  into the request's query map. `QueryParametersToBodyStage` later encodes the keys and values, joins them into the
+  body and sets `Content-Length`, outside the baseline timed method. The comparable view removes A5 from the
+  feature.
 - **A3 and A4.** These are real per-call costs of the feature build with no legacy counterpart: the blob payload copy
   and the response body read. They stay in both views. A3 was fixed during this measurement (section 5).
 
@@ -163,24 +166,26 @@ baseline's mean by 1 − its A1-objects share and the feature's mean by 1 − it
 ns/op and the allocation share for B/op. The shares come from the profiling pass of the pre-FU-12 feature jar
 `2549a5b6828`. Set 2 applies the same shares to its three substituted rows. Section 6 lists the estimate's caveats.
 
-**How A1 is split.** Every sample under a legacy construction frame is A1. A sample that also has a generator or
-writer frame (`BaseAwsJsonProtocolFactory.createGenerator`, Jackson `JsonFactory` / `BufferRecycler`,
-`XmlGenerator.create`, `XmlWriter.<init>`, ...) or a request frame (`fillBasicRequestParams`,
-`ProtocolUtils.createSdkHttpRequest`, `SdkHttpFullRequest`, `LowCopyListMap`, `SdkHttpUtils`) is A1-request. Every
-other A1 sample is A1-objects. The split equals the one made by `fix-marshall-allocation/alloc_mechanisms.py` on all
-86 baseline marshall profiles: 0 samples differ. Its B/op agree with that script's `mechanisms.tsv` within 0.5 B on
-all 43 marshall cases (`check-boundary-v2.txt`). Per marshall class, with ns/op and B/op as the share times the
-baseline's set 1 mean:
+**How A1 is split.** Every sample under a legacy construction frame is A1, and so is every sample in a legacy
+marshaller builder setter that the benchmark calls directly (`contentType`, `protocolMetadata`, `operationInfo`,
+`jsonGenerator` / `xmlGenerator`, `endpoint`, ...). The setters are up to 0.49% of baseline CPU and allocate nothing.
+The rule of the previous version left them out of A1. A sample that also has a generator or writer frame
+(`BaseAwsJsonProtocolFactory.createGenerator`, Jackson `JsonFactory` / `BufferRecycler`, `XmlGenerator.create`,
+`XmlWriter.<init>`, ...) or a request frame (`fillBasicRequestParams`, `ProtocolUtils.createSdkHttpRequest`,
+`SdkHttpFullRequest`, `LowCopyListMap`, `SdkHttpUtils`) is A1-request. Every other A1 sample is A1-objects. The split
+equals the one made by `fix-marshall-allocation/alloc_mechanisms.py` on all 86 baseline marshall profiles: 0 samples
+differ. Its B/op agree with that script's `mechanisms.tsv` within 0.5 B on all 43 marshall cases
+(`check-boundary-v2.txt`). Per marshall class, with ns/op and B/op as the share times the baseline's set 1 mean:
 
 | class | A1-objects B/op | A1-request B/op | of which generator / writer B/op | A1-objects ns/op | A1-request ns/op |
 |---|---:|---:|---:|---:|---:|
-| awsJson1_0 | 70–192 | 446–562 | 0 | 0–36 | 133–279 |
-| awsQuery | 40–55 | 537–670 | 0 | 0–18 | 170–223 |
+| awsJson1_0 | 70–192 | 446–562 | 0 | 0–40 | 133–279 |
+| awsQuery | 40–55 | 537–670 | 0 | 0–37 | 170–223 |
 | restJson1 | 84–128 | 1,763–17,888 | 0–17,411 | 28–44 | 538–1,757 |
-| restXml | 108–127 | 665–2,031 | 225–253 | 6–13 | 192–609 |
-| rpcv2Cbor | 114–215 | 620–739 | 0 | 9–33 | 214–479 |
+| restXml | 108–127 | 665–2,031 | 225–253 | 8–16 | 192–609 |
+| rpcv2Cbor | 114–215 | 620–739 | 0 | 9–40 | 214–479 |
 
-A1-objects is 0.0–2.7% of baseline CPU on every marshall case, so the comparable marshall ns/op is close to the
+A1-objects is 0.0–3.2% of baseline CPU on every marshall case, so the comparable marshall ns/op is close to the
 as-measured one, except on awsQuery, where A5 is removed from the feature. A1-request is 0.1–44.3% of baseline CPU.
 
 **The restJson1 generator.** `BaseAwsJsonProtocolFactory.createProtocolMarshaller` creates a JSON generator for every
@@ -205,12 +210,33 @@ frames, so on awsQuery unmarshall it falls from 36.7–37.6% to 0.03–0.44% of 
 checks that nothing else moved. The comparable awsQuery unmarshall class geomean is 0.151 ns/op. With the request-id
 pass also removed from the feature, it would be 0.095, the previous value.
 
-**A5 is unchanged.** The baseline's Query marshall timed method only puts raw query parameters. The 7 baseline Query
-marshall CPU profiles have 0 samples with a percent-encoding frame (`UrlEncoding`, `urlEncode`, `percentEncode`,
-`encodeAndFlattenFormData`, `URLEncoder`), so removing A5 from the feature removes nothing the baseline also does. A5
-is 6.5–31.7% of feature CPU and 0.0% of its allocation. It is a lower bound: appending the pairs to the body and
-building the keys stay in, as their baseline counterparts do. The legacy client's later form-body allocation (FU-6)
-is not added to the baseline.
+**What A5 holds.** The A5 rule is the same as before, but the previous version of this report described it wrongly as
+percent-encoding. `QueryFormSerializer.writeUrlEncoded` copies each unreserved character of a string value into the
+body buffer and escapes the others in the same loop. In the 7 feature Query marshall CPU profiles, the escaping
+itself (`writePercentEncoded`, `percentEncode`) is 0.03–0.83% of feature CPU, and the per-character copy is
+96.8–99.8% of A5. A5 as a whole is 6.5–31.7% of feature CPU and 0.0% of its allocation. So A5 is mostly the feature
+writing its string values into the body.
+
+The legacy client does that work outside the baseline timed method. `QueryParametersToBodyStage` encodes every key
+and value of the raw query map (`SdkHttpUtils.encodeAndFlattenFormData`), joins them into a `String` and converts
+that to bytes. The 7 baseline Query marshall CPU profiles have 0 samples with a percent-encoding frame
+(`UrlEncoding`, `urlEncode`, `percentEncode`, `encodeAndFlattenFormData`, `URLEncoder`). The baseline's timed
+method only puts the raw strings into the map (`putRawQueryParameter`). That is a map insert with no per-character
+work, and it stays in the baseline. A5 takes out less than the legacy stage does: the feature's key writes, number
+values, separators and buffer growth stay in the feature. This follows from the operations each side performs. It
+is not a measurement, because the benchmarks do not run the legacy stage. The legacy stage's form-body allocation
+(FU-6) is not added to the baseline.
+
+**The `Action` and `Version` write.** A5 also contains the serializer constructor's write of `Action` and
+`Version` (`QueryFormSerializer.<init>`). The baseline puts the same two values into its query map in the
+marshaller constructor, which is A1-request and stays. This is the same treatment as every other value: the
+legacy map put stays, and the feature's encoded write is removed. One could instead pair the constructor's write
+with the baseline's put and keep it in the feature. The constructor's write is 0.02–4.90% of feature CPU, so that
+choice matters only on the smallest requests. `awsQuery_PutMetricDataRequest_Baseline` would be 1.191 instead of
+1.132, and `PutMetricDataRequest_S` 0.394 instead of 0.383. The awsQuery marshall class geomean would be 0.446
+instead of 0.439, the awsQuery protocol 0.259 instead of 0.257, and the aggregate 0.3766 instead of 0.3760 ns/op
+(0.377 instead of 0.376 at three decimals). B/op does not change, because the write allocates nothing, and the
+verdict counts stay the same. This report keeps the rule as it is.
 
 **Why the serde-only view was dropped.** It removed all of A1 from the baseline. A1-request is 446–739 B/op on every
 awsJson1_0, awsQuery and rpcv2Cbor marshall case, and up to 93.5% of a restJson1 `PutObject_*` case's B/op. The
@@ -287,7 +313,7 @@ report applies them to the post-fix and FU-12 jars. That is an assumption for th
   `awsJson1_0_PutItemRequest_BinaryData_S`, `_M` and `_L`. In set 2 these rows use feature-fu12 / baseline from run
   `20261023-111214`. That run used the same host, settings and baseline jar, and measured the baseline again. The
   comparable factors for the replaced rows use the same profiling-pass shares as in set 1. The feature arm has no
-  boundary item in marshall, so only the baseline's A1-objects share matters: the factors are 1.0001–1.0095 for ns/op
+  boundary item in marshall, so only the baseline's A1-objects share matters: the factors are 1.0002–1.0116 for ns/op
   and 1.0003–1.0642 for B/op.
 
 Set 2 includes FU-12 for the awsJson1_0 rows only. The rpcv2Cbor `BinaryData_*` rows stay at their set 1 values,
@@ -296,8 +322,8 @@ slower in ns/op than on the feature jar in the same run (feature-fu12 / feature 
 1.112 and 1.103, against a 3.8%* floor). The per-repetition means are 1,022–1,074 ns/op vs 951–979 ns/op. Against
 the baseline, the case is 0.525 on feature-fu12 vs 0.483 on feature. `_M` (0.987) and `_L` (0.974) are not slower.
 B/op is unchanged within floor on all three. The cause is not investigated yet (FU-16 in `followups.md`). If the `_S`
-row were substituted too, the rpcv2Cbor marshall class geomean would rise by 0.5% (0.3516 → 0.3535 ns/op,
-comparable), the rpcv2Cbor protocol by 0.3% and the aggregate by 0.05% (0.3759 → 0.3761). Substituting all three
+row were substituted too, the rpcv2Cbor marshall class geomean would rise by 0.5% (0.3518 → 0.3537 ns/op,
+comparable), the rpcv2Cbor protocol by 0.3% and the aggregate by 0.05% (0.3760 → 0.3762). Substituting all three
 rpcv2Cbor rows changes the aggregate by 0.02%.
 
 The FU-12 run also re-measured the feature `2549a5b6828` jar on all 8 of its cases. Every control should reproduce
@@ -331,9 +357,9 @@ The substituted rows:
 
 | case | baseline ns/op | feature-fu12 ns/op | ratio | comparable | baseline B/op | feature-fu12 B/op | B/op ratio | comparable |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `awsJson1_0_PutItemRequest_BinaryData_S` | 2,000.6 ± 178.8 | 1,091.3 ± 44.2 | 0.546 | 0.551 | 2,704 ± 0 | 2,781 ± 116 | 1.028 | 1.094 |
+| `awsJson1_0_PutItemRequest_BinaryData_S` | 2,000.6 ± 178.8 | 1,091.3 ± 44.2 | 0.546 | 0.552 | 2,704 ± 0 | 2,781 ± 116 | 1.028 | 1.094 |
 | `awsJson1_0_PutItemRequest_BinaryData_M` | 22,315.2 ± 2,565.2 | 4,664.6 ± 223.2 | 0.209 | 0.209 | 26,730 ± 0 | 14,448 ± 0 | 0.541 | 0.544 |
-| `awsJson1_0_PutItemRequest_BinaryData_L` | 174,288.7 ± 1,333.5 | 32,849.6 ± 1,122.4 | 0.188 | 0.188 | 251,333 ± 123 | 112,034 ± 0 | 0.446 | 0.446 |
+| `awsJson1_0_PutItemRequest_BinaryData_L` | 174,288.7 ± 1,333.5 | 32,849.6 ± 1,122.4 | 0.188 | 0.189 | 251,333 ± 123 | 112,034 ± 0 | 0.446 | 0.446 |
 
 In set 1 (feature without FU-12), the same rows are 0.591, 0.321 and 0.291 ns/op and 1.146, 1.214 and 1.078 B/op.
 
@@ -347,7 +373,7 @@ In set 1 (feature without FU-12), the same rows are 0.591, 0.321 and 0.291 ns/op
 | QueryUnmarshallBenchmark | 3 | 0.151 | 0.054 | 0.151 | 0.055 | 0.151 | 0.054 | 0.151 | 0.055 |
 | RestJsonMarshallBenchmark | 5 | 0.308 | 0.271 | 0.305 | 0.267 | 0.308 | 0.271 | 0.305 | 0.267 |
 | RestJsonUnmarshallBenchmark | 5 | 0.458 | 0.624 | 0.509 | 0.717 | 0.458 | 0.624 | 0.509 | 0.717 |
-| RestXmlMarshallBenchmark | 5 | 0.383 | 1.063 | 0.382 | 1.013 | 0.383 | 1.063 | 0.382 | 1.013 |
+| RestXmlMarshallBenchmark | 5 | 0.384 | 1.063 | 0.382 | 1.013 | 0.384 | 1.063 | 0.382 | 1.013 |
 | RestXmlUnmarshallBenchmark | 5 | 0.304 | 0.364 | 0.347 | 0.419 | 0.304 | 0.364 | 0.347 | 0.419 |
 | RpcV2CborMarshallBenchmark | 12 | 0.352 | 0.778 | 0.350 | 0.753 | 0.352 | 0.778 | 0.350 | 0.753 |
 | RpcV2CborUnmarshallBenchmark | 7 | 0.601 | 0.894 | 0.660 | 0.978 | 0.601 | 0.894 | 0.660 | 0.978 |
@@ -505,12 +531,15 @@ The `fix/marshall-allocation` workflow works on these sites. Its metal results w
   - **Feature: URI.** 40% of feature CPU is self time in `SdkHttpFullRequest.Builder.uri`. This sets protocol, host,
     port and path from the endpoint `URI`; 45% inclusive vs 12% on the baseline.
   - **Feature: form serializer.** 19% is building the per-call `QueryFormSerializer` (`forAwsQuery`, FU-4).
-  - **Feature: A5.** 6.5% is form percent-encoding (A5), which the comparable view removes.
+  - **Feature: A5.** 6.5% is A5, which the comparable view removes. 4.9 points of it are the serializer
+    constructor writing `Action` and `Version`, and the rest is the copy of the string values. The baseline's put of
+    `Action` and `Version` stays in A1-request (section 2.4). Keeping the constructor's write in the feature as
+    well would make this case 1.191 instead of 1.132.
 
   As measured, the case is 1.19× slower. It is the only case slower than its floor in either view.
 
 The two header-heavy `CopyObjectRequest_M` cases were slower in the previous serde-only view. In the comparable view,
-`restJson1_CopyObjectRequest_M` is faster (0.976) and `restXml_CopyObjectRequest_M` is within its floor (1.000).
+`restJson1_CopyObjectRequest_M` is faster (0.976) and `restXml_CopyObjectRequest_M` is within its floor (1.001).
 Their feature cost is the double header insertion of section 4.1: `TreeMap.put` is 72–77% of feature CPU
 (inclusive), and 38.6–41% is self time in `StringLatin1.compareToCI`. The baseline spends 19–20% formatting RFC 822
 dates instead.
@@ -535,9 +564,12 @@ restJson1 and restXml `CopyObjectOutput_*` cases (section 6).
 
 - **Comparable is an estimate.** It scales each arm by work-boundary shares from a separate profiling run of the
   pre-FU-12 feature jar. The A1 split is made by frame rules (`serde_ab_profile.py`), and A1-request includes the
-  restJson1 generator buffers that the feature does not allocate (section 2.4). A5 is a lower bound, and its
-  allocation side is not credited to the baseline. A2 no longer removes the awsQuery request-id pass. The
-  as-measured view has no estimate in it.
+  restJson1 generator buffers that the feature does not allocate (section 2.4). A5 is mostly the feature's
+  per-character copy of string values into the form body, not escaping. By the operations each side performs it
+  removes less than the legacy `QueryParametersToBodyStage` does, but that stage is not measured, and its
+  allocation is not credited to the baseline. A5 includes the feature's `Action` / `Version` write, while the
+  baseline's put of those values stays; keeping that write in the feature would move the aggregate from 0.3760 to
+  0.3766 ns/op. A2 no longer removes the awsQuery request-id pass. The as-measured view has no estimate in it.
 - **Response size hint, best case.** The JsonRpc10, RpcV2Cbor and Query unmarshall benchmarks send no
   `Content-Length` and repeat one response. So do the restJson1 and restXml `CopyObjectOutput_Baseline` and `_M`
   cases, 2 of the 5 cases in each REST unmarshall class: in the `serde-tests` output data, only `GetObject` declares
@@ -682,9 +714,9 @@ A floor marked * is inferred from the class max. The rows marked † are the FU-
 
 | case | baseline ns/op | feature ns/op | ratio | comparable | floor | verdict (comparable) | baseline B/op | feature B/op | B/op ratio | comparable | B/op floor | B/op verdict (comparable) |
 |---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---|
-| awsJson1_0_GetItemInput_Baseline | 1,453.5 ± 88.4 | 702.3 ± 26.1 | 0.483 | 0.490 | 2.7%* | faster | 2,695 ± 116 | 2,456 ± 0 | 0.911 | 0.976 | 1.3%* | less |
-| awsJson1_0_HealthcheckRequest_Example | 691.6 ± 51.1 | 508.9 ± 26.2 | 0.736 | 0.757 | 2.7% | faster | 2,554 ± 134 | 2,432 ± 0 | 0.952 | 1.015 | 0.0% | more |
-| awsJson1_0_PutItemRequest_Baseline | 1,502.9 ± 82.4 | 703.2 ± 31.7 | 0.468 | 0.475 | 2.7%* | faster | 2,686 ± 134 | 2,456 ± 0 | 0.914 | 0.974 | 1.3%* | less |
+| awsJson1_0_GetItemInput_Baseline | 1,453.5 ± 88.4 | 702.3 ± 26.1 | 0.483 | 0.491 | 2.7%* | faster | 2,695 ± 116 | 2,456 ± 0 | 0.911 | 0.976 | 1.3%* | less |
+| awsJson1_0_HealthcheckRequest_Example | 691.6 ± 51.1 | 508.9 ± 26.2 | 0.736 | 0.760 | 2.7% | faster | 2,554 ± 134 | 2,432 ± 0 | 0.952 | 1.015 | 0.0% | more |
+| awsJson1_0_PutItemRequest_Baseline | 1,502.9 ± 82.4 | 703.2 ± 31.7 | 0.468 | 0.476 | 2.7%* | faster | 2,686 ± 134 | 2,456 ± 0 | 0.914 | 0.974 | 1.3%* | less |
 | awsJson1_0_PutItemRequest_ShallowMap_S | 4,776.2 ± 466.2 | 1,518.4 ± 103.3 | 0.318 | 0.320 | 2.7%* | faster | 2,695 ± 116 | 2,720 ± 0 | 1.009 | 1.072 | 1.3%* | more |
 | awsJson1_0_PutItemRequest_ShallowMap_M | 26,897.8 ± 813.6 | 7,905.7 ± 41.6 | 0.294 | 0.294 | 2.7%* | faster | 4,801 ± 0 | 4,705 ± 0 | 0.980 | 1.013 | 1.3%* | within floor |
 | awsJson1_0_PutItemRequest_ShallowMap_L | 88,573.8 ± 3,041.1 | 24,840.2 ± 104.1 | 0.280 | 0.280 | 2.7%* | faster | 9,430 ± 68 | 9,961 ± 0 | 1.056 | 1.075 | 1.3%* | more |
@@ -693,9 +725,9 @@ A floor marked * is inferred from the class max. The rows marked † are the FU-
 | awsJson1_0_PutItemRequest_MixedItem_S | 5,620.1 ± 516.0 | 1,831.3 ± 42.4 | 0.326 | 0.327 | 2.7%* | faster | 3,130 ± 134 | 2,648 ± 0 | 0.846 | 0.895 | 1.3%* | less |
 | awsJson1_0_PutItemRequest_MixedItem_M | 28,588.4 ± 1,429.4 | 8,556.4 ± 226.0 | 0.299 | 0.300 | 2.7%* | faster | 6,610 ± 0 | 4,425 ± 0 | 0.669 | 0.686 | 1.3%* | less |
 | awsJson1_0_PutItemRequest_MixedItem_L | 83,401.9 ± 10,872.0 | 25,558.5 ± 467.5 | 0.307 | 0.307 | 2.7%* | faster | 13,390 ± 157 | 8,441 ± 0 | 0.630 | 0.636 | 1.3%* | less |
-| awsJson1_0_PutItemRequest_BinaryData_S † | 2,000.6 ± 178.8 | 1,091.3 ± 44.2 | 0.546 | 0.551 | 2.7%* | faster | 2,704 ± 0 | 2,781 ± 116 | 1.028 | 1.094 | 1.3%* | more |
+| awsJson1_0_PutItemRequest_BinaryData_S † | 2,000.6 ± 178.8 | 1,091.3 ± 44.2 | 0.546 | 0.552 | 2.7%* | faster | 2,704 ± 0 | 2,781 ± 116 | 1.028 | 1.094 | 1.3%* | more |
 | awsJson1_0_PutItemRequest_BinaryData_M † | 22,315.2 ± 2,565.2 | 4,664.6 ± 223.2 | 0.209 | 0.209 | 2.7%* | faster | 26,730 ± 0 | 14,448 ± 0 | 0.541 | 0.544 | 1.3%* | less |
-| awsJson1_0_PutItemRequest_BinaryData_L † | 174,288.7 ± 1,333.5 | 32,849.6 ± 1,122.4 | 0.188 | 0.188 | 1.0% | faster | 251,333 ± 123 | 112,034 ± 0 | 0.446 | 0.446 | 1.3% | less |
+| awsJson1_0_PutItemRequest_BinaryData_L † | 174,288.7 ± 1,333.5 | 32,849.6 ± 1,122.4 | 0.188 | 0.189 | 1.0% | faster | 251,333 ± 123 | 112,034 ± 0 | 0.446 | 0.446 | 1.3% | less |
 
 ### awsJson1_0 unmarshall (`JsonRpc10UnmarshallBenchmark`)
 
@@ -755,7 +787,7 @@ A floor marked * is inferred from the class max. The rows marked † are the FU-
 | case | baseline ns/op | feature ns/op | ratio | comparable | floor | verdict (comparable) | baseline B/op | feature B/op | B/op ratio | comparable | B/op floor | B/op verdict (comparable) |
 |---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---|
 | restXml_CopyObjectRequest_Baseline | 2,776.6 ± 534.0 | 864.5 ± 75.2 | 0.312 | 0.313 | 1.1% | faster | 3,056 ± 0 | 2,440 ± 0 | 0.798 | 0.830 | 0.8% | less |
-| restXml_CopyObjectRequest_M | 9,911.4 ± 1,051.3 | 9,901.9 ± 441.9 | 0.999 | 1.000 | 2.7%* | within floor | 9,003 ± 134 | 9,921 ± 0 | 1.102 | 1.115 | 0.8%* | more |
+| restXml_CopyObjectRequest_M | 9,911.4 ± 1,051.3 | 9,901.9 ± 441.9 | 0.999 | 1.001 | 2.7%* | within floor | 9,003 ± 134 | 9,921 ± 0 | 1.102 | 1.115 | 0.8%* | more |
 | restXml_PutObject_S | 2,885.4 ± 224.8 | 844.8 ± 54.5 | 0.293 | 0.294 | 2.7%* | faster | 2,054 ± 78 | 2,192 ± 0 | 1.067 | 1.135 | 0.8%* | more |
 | restXml_PutObject_M | 2,841.6 ± 266.3 | 846.6 ± 23.0 | 0.298 | 0.299 | 2.7%* | faster | 2,048 ± 0 | 2,192 ± 0 | 1.070 | 1.139 | 0.8%* | more |
 | restXml_PutObject_L | 2,859.2 ± 254.2 | 856.4 ± 10.7 | 0.300 | 0.300 | 2.7% | faster | 2,060 ± 155 | 2,192 ± 0 | 1.064 | 1.134 | 0.0% | more |
@@ -778,12 +810,12 @@ A floor marked * is inferred from the class max. The rows marked † are the FU-
 | rpcv2Cbor_PutItemRequest_ShallowMap_S | 4,695.6 ± 216.7 | 1,691.2 ± 70.8 | 0.360 | 0.362 | 3.8%* | faster | 2,887 ± 142 | 2,888 ± 0 | 1.000 | 1.058 | 2.8%* | more |
 | rpcv2Cbor_PutItemRequest_ShallowMap_M | 27,291.5 ± 5,424.8 | 8,045.4 ± 3,493.9 | 0.295 | 0.295 | 3.8%* | faster | 5,266 ± 3,159 | 4,445 ± 297 | 0.849 | 0.879 | 2.8%* | less |
 | rpcv2Cbor_PutItemRequest_ShallowMap_L | 83,691.3 ± 3,481.1 | 21,362.9 ± 330.0 | 0.255 | 0.255 | 3.8%* | faster | 8,152 ± 87 | 8,601 ± 0 | 1.055 | 1.070 | 2.8%* | more |
-| rpcv2Cbor_PutItemRequest_Nested_M | 3,878.3 ± 381.3 | 1,555.7 ± 179.9 | 0.401 | 0.403 | 3.8%* | faster | 3,468 ± 478 | 2,800 ± 0 | 0.808 | 0.849 | 2.8%* | less |
+| rpcv2Cbor_PutItemRequest_Nested_M | 3,878.3 ± 381.3 | 1,555.7 ± 179.9 | 0.401 | 0.404 | 3.8%* | faster | 3,468 ± 478 | 2,800 ± 0 | 0.808 | 0.849 | 2.8%* | less |
 | rpcv2Cbor_PutItemRequest_Nested_L | 12,879.3 ± 264.2 | 3,861.5 ± 102.7 | 0.300 | 0.301 | 3.8%* | faster | 8,297 ± 238 | 3,816 ± 0 | 0.460 | 0.469 | 2.8%* | less |
-| rpcv2Cbor_PutItemRequest_MixedItem_S | 5,526.9 ± 621.3 | 1,715.0 ± 88.3 | 0.310 | 0.311 | 3.8%* | faster | 3,417 ± 116 | 2,904 ± 0 | 0.850 | 0.893 | 2.8%* | less |
+| rpcv2Cbor_PutItemRequest_MixedItem_S | 5,526.9 ± 621.3 | 1,715.0 ± 88.3 | 0.310 | 0.312 | 3.8%* | faster | 3,417 ± 116 | 2,904 ± 0 | 0.850 | 0.893 | 2.8%* | less |
 | rpcv2Cbor_PutItemRequest_MixedItem_M | 27,625.7 ± 997.7 | 7,006.7 ± 108.2 | 0.254 | 0.254 | 3.8%* | faster | 6,921 ± 158 | 4,137 ± 210 | 0.598 | 0.615 | 2.8%* | less |
 | rpcv2Cbor_PutItemRequest_MixedItem_L | 80,244.0 ± 2,838.9 | 19,764.3 ± 36.8 | 0.246 | 0.246 | 3.8%* | faster | 12,370 ± 68 | 7,137 ± 0 | 0.577 | 0.583 | 2.8%* | less |
-| rpcv2Cbor_PutItemRequest_BinaryData_S | 1,978.4 ± 291.4 | 973.5 ± 177.7 | 0.492 | 0.500 | 3.8%* | faster | 2,868 ± 121 | 2,904 ± 179 | 1.013 | 1.073 | 2.8%* | more |
+| rpcv2Cbor_PutItemRequest_BinaryData_S | 1,978.4 ± 291.4 | 973.5 ± 177.7 | 0.492 | 0.501 | 3.8%* | faster | 2,868 ± 121 | 2,904 ± 179 | 1.013 | 1.073 | 2.8%* | more |
 | rpcv2Cbor_PutItemRequest_BinaryData_M | 6,099.2 ± 762.8 | 2,955.8 ± 94.9 | 0.485 | 0.487 | 3.8%* | faster | 10,281 ± 243 | 10,952 ± 0 | 1.065 | 1.083 | 2.8%* | more |
 | rpcv2Cbor_PutItemRequest_BinaryData_L | 26,967.9 ± 1,361.5 | 12,438.8 ± 518.2 | 0.461 | 0.462 | 1.8% | faster | 243,773 ± 127 | 79,987 ± 45 | 0.328 | 0.328 | 2.8% | less |
 
