@@ -118,6 +118,8 @@ class RequestSerializerCharacterizationTest {
             ms.writeEntry(TestModel.STRING_MAP.mapKeyMember(), entry[0], entry, WRITE_VALUE);
         }
     };
+    // Written by the putHeaders calibration so its lowercase names escape.
+    private static volatile String lowercaseName;
 
     @Test
     void headerMembersOfEveryKind() throws IOException {
@@ -309,9 +311,9 @@ class RequestSerializerCharacterizationTest {
         SdkHttpFullRequest.Builder builder = SdkHttpFullRequest.builder();
         for (String[] entry : entries) {
             String name = "X-Meta-" + entry[0];
-            if (name.toLowerCase(Locale.ROOT).isEmpty()) {
-                throw new AssertionError();
-            }
+            // Stored so the JIT cannot drop the allocation; it sometimes removed part of it when only isEmpty() was
+            // checked, which lowered the calibration by 24 B per entry and failed the comparison.
+            lowercaseName = name.toLowerCase(Locale.ROOT);
             builder.putHeader(name, entry[1]);
         }
     }
