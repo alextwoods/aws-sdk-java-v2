@@ -49,6 +49,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.function.BiConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.codecs.commons.internal.SinkBufferPool;
 import software.amazon.awssdk.codecs.commons.internal.StripedPool;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
@@ -73,6 +74,8 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * its initial size (1 KB, instead of smithy-java's 4 KB) unless a single value needs more. smithy-java grows the buffer
  * to the whole document and writes it to the sink on {@link #close}, which allocates every intermediate buffer and then
  * copies the document again into a sink that callers such as {@code HttpClientProtocol} have already sized for it.
+ * The 1 KB buffer is lent by {@link SinkBufferPool} and returned on {@link #close}, so a serializer with a sink does
+ * not allocate it per call; it must not be used after {@code close}.
  *
  * <p>Port of smithy-java {@code CborSerializer}. {@code VarHandle} writes are replaced by explicit shifts, and the
  * {@code CompactStringAccess} fast path by a {@code charAt} loop that copies ASCII text four characters at a time.
@@ -86,10 +89,6 @@ final class CborSerializer implements ShapeSerializer {
     // The sink-less serializer holds the whole document, and Codec.serialize pools it, so it starts larger.
     private static final int DEFAULT_BUF_SIZE = 4096;
     private static final int MAX_CACHEABLE_BUF = DEFAULT_BUF_SIZE * 4;
-    // A serializer with a sink is allocated per call and drains its buffer to the sink when full (see grow), so a
-    // small buffer only adds sink writes for large documents.
-    private static final int SINK_BUF_SIZE = 1024;
-
     private static final StripedPool<CborSerializer, Void> POOL = new CborStripedPool();
 
     // The "__type" key written before the members of a structure document with a discriminator.
@@ -116,7 +115,9 @@ final class CborSerializer implements ShapeSerializer {
 
     CborSerializer(OutputStream sink) {
         this.sink = sink;
-        this.buf = new byte[sink == null ? DEFAULT_BUF_SIZE : SINK_BUF_SIZE];
+        // A serializer with a sink drains its buffer to the sink when full (see grow), so its small buffer only adds
+        // sink writes for large documents. The buffer is lent by SinkBufferPool until close().
+        this.buf = sink == null ? new byte[DEFAULT_BUF_SIZE] : SinkBufferPool.acquire();
         this.pos = 0;
     }
 
@@ -183,6 +184,13 @@ final class CborSerializer implements ShapeSerializer {
             }
         } catch (IOException e) {
             throw new SerializationException(e);
+        }
+        // The lent buffer goes back to the pool (which drops one the serializer grew), and a later write fails
+        // instead of writing into an array another serializer holds. A second close releases nothing; a close whose
+        // write failed keeps the buffer, as before. Sink-less serializers keep their buffer for their own pool.
+        if (sink != null && buf != null) {
+            SinkBufferPool.release(buf);
+            buf = null;
         }
     }
 

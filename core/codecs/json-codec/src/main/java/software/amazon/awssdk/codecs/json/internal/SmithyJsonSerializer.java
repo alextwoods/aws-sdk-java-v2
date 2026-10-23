@@ -27,6 +27,7 @@ import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.ByteBufferUtils;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
 import software.amazon.awssdk.codecs.commons.internal.NumberCodec;
+import software.amazon.awssdk.codecs.commons.internal.SinkBufferPool;
 import software.amazon.awssdk.codecs.commons.internal.StripedPool;
 import software.amazon.awssdk.codecs.json.JsonSettings;
 import software.amazon.awssdk.schema.Schema;
@@ -50,7 +51,9 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * its initial size unless a single value needs more. smithy-java grows the buffer to the whole document and writes it
  * to the sink on {@link #close}, which allocates every intermediate buffer and then copies the document again into a
  * sink that callers such as {@code HttpClientProtocol} have already sized for it. Because of that, a serializer with a
- * sink starts with a 1 KB buffer instead of smithy-java's 8 KB; the sink-less serializer keeps 8 KB.
+ * sink starts with a 1 KB buffer instead of smithy-java's 8 KB; the sink-less serializer keeps 8 KB. The 1 KB buffer is
+ * lent by {@link SinkBufferPool} and returned on {@link #close}, so a serializer with a sink does not allocate it per
+ * call; it must not be used after {@code close}.
  */
 @SdkInternalApi
 final class SmithyJsonSerializer implements ShapeSerializer {
@@ -59,10 +62,6 @@ final class SmithyJsonSerializer implements ShapeSerializer {
     // The sink-less serializer holds the whole document, and Codec.serialize pools it, so it starts larger.
     private static final int DEFAULT_BUF_SIZE = 8192;
     private static final int MAX_CACHEABLE_BUF = DEFAULT_BUF_SIZE * 16;
-    // A serializer with a sink is allocated per call and drains its buffer to the sink when full (see grow), so a
-    // small buffer only adds sink writes for large documents.
-    private static final int SINK_BUF_SIZE = 1024;
-
     private static final StripedPool<SmithyJsonSerializer, JsonSettings> POOL = new JsonStripedPool();
 
     // The "__type": field name token written before the members of a structure document with a discriminator.
@@ -91,7 +90,9 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         this.sink = sink;
         this.settings = settings;
         this.useJsonName = settings.useJsonName();
-        this.buf = new byte[sink == null ? DEFAULT_BUF_SIZE : SINK_BUF_SIZE];
+        // A serializer with a sink drains its buffer to the sink when full (see grow), so its small buffer only adds
+        // sink writes for large documents. The buffer is lent by SinkBufferPool until close().
+        this.buf = sink == null ? new byte[DEFAULT_BUF_SIZE] : SinkBufferPool.acquire();
     }
 
     /**
@@ -136,10 +137,15 @@ final class SmithyJsonSerializer implements ShapeSerializer {
                 sink.write(buf, 0, pos);
                 pos = 0;
             }
-            buf = null;
         } catch (IOException e) {
             throw new SerializationException(e);
         }
+        // The pool drops a buffer the serializer grew past its pooled size. A second close releases nothing; a close
+        // whose write failed keeps the buffer, as before, and does not return it to the pool.
+        if (sink != null && buf != null) {
+            SinkBufferPool.release(buf);
+        }
+        buf = null;
     }
 
     @Override
