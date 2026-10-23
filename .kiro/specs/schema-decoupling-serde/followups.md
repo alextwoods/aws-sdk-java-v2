@@ -102,14 +102,8 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Next step:** Profile `rpcv2Cbor_PutItemRequest_BinaryData_S` on both jars (CPU, `-XX:+DebugNonSafepoints`) and compare the `CborSerializer` / `CborStructSerializer` `byte[]` blob path with the `ByteBuffer` path it replaced.
 ## Marshall allocation (from `fix/marshall-allocation`)
 
-### FU-16 Per-operation request constants in the RPC protocols
-- **Status:** Open
-- **Context:** Every awsJson request builds `targetPrefix + operation.name()` for `X-Amz-Target`, every rpcv2Cbor request builds `targetPathPrefix + operation.name()` for its path, and each static header value is wrapped in a new `singletonList`. The legacy marshallers use static constants. About 70–185 B/op.
-- **Evidence:** `.agents/tasks/fix-marshall-allocation/plan.md` (inventory, F8); metal profile run `serde-benchmark-metal/runs/20261023-095831`.
-- **Next step:** Cache them per operation in each protocol, as `QueryClientProtocol.responseCodecs` caches response codecs (bounded map keyed by operation name).
-
 ### FU-17 Codecs write straight into `ByteBufferOutputStream`
-- **Status:** Done (`2bcbde49aa0`, branch `fix/marshall-allocation`). `ByteBufferOutputStream.reserve(int)`/`advance(int)` (new `@SdkPublicApi` methods) let the JSON and CBOR serializers write a `ByteBufferOutputStream` sink in place: no scratch buffer and no drain copy, at any body size. Other sinks keep a 1 KiB buffer lent by `SinkBufferPool` (`fbcbaa44120`). Laptop JMH (PRELIMINARY): about −1.0 KB/op on every awsJson and rpcv2Cbor case (for example `PutItemRequest_Baseline` 2,456 → 1,040 and 2,816 → 1,208 B/op with the other fixes), and −5 to −6 KB/op on `BinaryData_L`, where the scratch buffer used to grow.
+- **Status:** Done (`2bcbde49aa0`, branch `fix/marshall-allocation`). `ByteBufferOutputStream.reserve(int)`/`advance(int)` (new `@SdkPublicApi` methods) let the JSON and CBOR serializers write a `ByteBufferOutputStream` sink in place: no scratch buffer and no drain copy, at any body size. Other sinks keep a 1 KiB buffer lent by `SinkBufferPool` (`fbcbaa44120`). Laptop JMH (PRELIMINARY): about −1.0 KB/op on every awsJson and rpcv2Cbor case (for example `PutItemRequest_Baseline` 2,456 → 1,040 and 2,816 → 1,208 B/op with the other fixes), and −5 to −6 KB/op on `BinaryData_L`, where the scratch buffer used to grow. A caller that writes or resets the stream between serializer flushes gets the bytes a buffering sink gives (`14eb252b531`); one whose write lands on bytes the serializer has not added gets `IllegalStateException` (`porting-deviations.md`, `SmithyJsonSerializer` and `CborSerializer` rows).
 - **Remaining:** the event stream encoder (`AwsEventShapeEncoder`) serializes payloads into a `ByteArrayOutputStream`, so it takes the pooled-buffer path and copies once; switching it to `ByteBufferOutputStream` would remove that copy. `SmithyXmlSerializer` still has its own buffer (restXml request bodies; no benchmark case has one).
 
 ### FU-18 `LowCopyListMap` creates its empty maps eagerly
@@ -121,6 +115,18 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Status:** Open (boundary item)
 - **Context:** `awsQuery_PutMetricDataRequest_Baseline` is 1,112 B/op on the fix (laptop) against a comparable baseline of 902 (raw 952, serde-only 285; metal profile split). The remainder is the form body (about 115 B) and the `QueryFormSerializer` objects (serializer 63 B, prefix buffer 144, prefix stack 48, four inner serializers 115). The legacy client builds the form body after the timed method, in `QueryParametersToBodyStage` (FU-6, about three times the body). Every other awsQuery case is 0.45–0.70x comparable.
 - **Next step:** If the remaining 200 B matters: create the map and list inner serializers and the prefix stack on first use (−60 to −120 B on requests without maps), and size the prefix buffer from the operation's last request. Measuring end to end (including `QueryParametersToBodyStage`) would show the legacy client's later cost.
+
+### FU-20 Per-operation request constants in the RPC protocols
+- **Status:** Open
+- **Context:** Every awsJson request builds `targetPrefix + operation.name()` for `X-Amz-Target`, every rpcv2Cbor request builds `targetPathPrefix + operation.name()` for its path, and each static header value is wrapped in a new `singletonList`. The legacy marshallers use static constants. About 70–185 B/op.
+- **Evidence:** `.agents/tasks/fix-marshall-allocation/plan.md` (inventory, F8); metal profile run `serde-benchmark-metal/runs/20261023-095831`.
+- **Next step:** Cache them per operation in each protocol, as `QueryClientProtocol.responseCodecs` caches response codecs (bounded map keyed by operation name).
+
+### FU-21 Check `awsQuery_GetMetricDataRequest_S` and `rpcv2Cbor_PutItemRequest_BinaryData_S` marshall time on metal
+- **Status:** Needs benchmark
+- **Context:** On the laptop, both single-fork rounds had `awsQuery_GetMetricDataRequest_S` 1.45–1.53x slower on `fix/marshall-allocation` (p50 542 → 875 and 834 ns), while the 5-fork run had equal p50s on both jars (541–625 ns) and one 2,200 ns fork on the fix. No change in F2 explains a slowdown (the form array is about 1,080 B instead of 1,024). FU-16 (rpcv2Cbor `BinaryData_S` slower after FU-12) is on the CBOR write path that F1(b) rewrote.
+- **Evidence:** `.agents/tasks/fix-marshall-allocation/verification.md` (laptop timing flags); `/tmp/fma-jmh/{base,fix}-gmd-f5.log`.
+- **Next step:** Report both cases, before and after this branch, in the metal run. If the awsQuery slowdown reproduces there, profile it (CPU, `-XX:+DebugNonSafepoints`) on both jars.
 
 ## Still open from the spec (`design.md` §D.15)
 
