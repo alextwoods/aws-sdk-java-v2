@@ -283,9 +283,11 @@ REMOTE
         dir="$R/sessions/$name"
         rssh "mkdir -p '$dir'"
         rscp "$script" "$TARGET:$dir/session.sh"
-        # All three streams of the job and of ssh redirected, or ssh waits for the job.
+        # All three streams of the job and of ssh redirected, or ssh waits for the job. The background job must be
+        # the redirected command alone: "cd D && job > log ... &" backgrounds the whole list in a subshell that keeps
+        # the ssh channel open until the job ends.
         ssh "${SSH_OPTS[@]}" -n "$TARGET" \
-            "cd \"\$HOME/$dir\" && setsid nohup bash \"\$HOME/$dir/session.sh\" > session.log 2>&1 < /dev/null &" \
+            "cd \"\$HOME/$dir\" || exit 1; setsid nohup bash \"\$HOME/$dir/session.sh\" > session.log 2>&1 < /dev/null &" \
             > /dev/null 2>&1 < /dev/null
         sleep 3
         echo "Started session $name on $TARGET; log: ~/$dir/session.log"

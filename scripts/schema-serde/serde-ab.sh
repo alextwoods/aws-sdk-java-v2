@@ -592,11 +592,13 @@ pin_affinity_check() {  # <jar> <class> <param>: the JMH runner and its forked J
         -f 1 -wi 1 -i 1 -w 2s -r 2s -foe true -jvmArgsAppend "$JVM_ARGS" > "$log" 2>&1 &
     runner=$!
     for _ in $(seq 1 120); do
-        [[ -n "$got_runner" ]] || got_runner="$(awk '/^Cpus_allowed_list:/ { print $2 }' "/proc/$runner/status" 2>/dev/null || true)"
         fork="$(pgrep -P "$runner" 2>/dev/null | head -1 || true)"
         if [[ -n "$fork" ]]; then
+            # Read the runner only once it has a fork: before that, $runner may still be taskset itself, before
+            # its sched_setaffinity and exec, and shows the full CPU list.
+            got_runner="$(awk '/^Cpus_allowed_list:/ { print $2 }' "/proc/$runner/status" 2>/dev/null || true)"
             got_fork="$(awk '/^Cpus_allowed_list:/ { print $2 }' "/proc/$fork/status" 2>/dev/null || true)"
-            [[ -n "$got_fork" ]] && break
+            [[ -n "$got_fork" && -n "$got_runner" ]] && break
         fi
         sleep 0.5
     done
