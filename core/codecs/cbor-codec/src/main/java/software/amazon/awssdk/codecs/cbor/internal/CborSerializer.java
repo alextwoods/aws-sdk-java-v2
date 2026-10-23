@@ -49,6 +49,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.function.BiConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.commons.internal.SinkBufferPool;
 import software.amazon.awssdk.codecs.commons.internal.StripedPool;
 import software.amazon.awssdk.schema.Schema;
@@ -75,7 +76,10 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * to the whole document and writes it to the sink on {@link #close}, which allocates every intermediate buffer and then
  * copies the document again into a sink that callers such as {@code HttpClientProtocol} have already sized for it.
  * The 1 KB buffer is lent by {@link SinkBufferPool} and returned on {@link #close}, so a serializer with a sink does
- * not allocate it per call; it must not be used after {@code close}.
+ * not allocate it per call; it must not be used after {@code close}. A {@link ByteBufferOutputStream} sink, which every
+ * SDK protocol uses, needs no buffer: the serializer writes into the stream's array
+ * ({@link ByteBufferOutputStream#reserve}) and adds the bytes on {@link #flush}, {@link #close} and when it needs more
+ * room ({@link ByteBufferOutputStream#advance}), so the body is not copied either.
  *
  * <p>Port of smithy-java {@code CborSerializer}. {@code VarHandle} writes are replaced by explicit shifts, and the
  * {@code CompactStringAccess} fast path by a {@code charAt} loop that copies ASCII text four characters at a time.
@@ -97,7 +101,10 @@ final class CborSerializer implements ShapeSerializer {
     byte[] buf;
     int pos;
 
+    // A sink other than a ByteBufferOutputStream, or null.
     private final OutputStream sink;
+    // A ByteBufferOutputStream sink, whose array is buf; bytes [direct.size(), pos) are written but not yet added.
+    private final ByteBufferOutputStream direct;
 
     // Bit i of collectionMask records whether level i was opened as indefinite-length.
     private long collectionMask;
@@ -114,11 +121,20 @@ final class CborSerializer implements ShapeSerializer {
     }
 
     CborSerializer(OutputStream sink) {
-        this.sink = sink;
-        // A serializer with a sink drains its buffer to the sink when full (see grow), so its small buffer only adds
-        // sink writes for large documents. The buffer is lent by SinkBufferPool until close().
-        this.buf = sink == null ? new byte[DEFAULT_BUF_SIZE] : SinkBufferPool.acquire();
-        this.pos = 0;
+        if (sink instanceof ByteBufferOutputStream) {
+            // Writes go straight into the stream's array, from its current size; see commitToDirect.
+            this.direct = (ByteBufferOutputStream) sink;
+            this.sink = null;
+            this.pos = direct.size();
+            this.buf = direct.reserve(0);
+        } else {
+            // A serializer with another sink drains its buffer to the sink when full (see grow), so its small buffer
+            // only adds sink writes for large documents. The buffer is lent by SinkBufferPool until close().
+            this.direct = null;
+            this.sink = sink;
+            this.buf = sink == null ? new byte[DEFAULT_BUF_SIZE] : SinkBufferPool.acquire();
+            this.pos = 0;
+        }
     }
 
     static CborSerializer acquire() {
@@ -141,6 +157,13 @@ final class CborSerializer implements ShapeSerializer {
 
     // Separate cold grow method helps the JIT inline ensureCapacity's fast path
     private void grow(int needed) {
+        // Writing into a ByteBufferOutputStream: add what is written and let the stream grow its own array. The
+        // backpatch described below stays inside one reservation, so it is never split by a commit.
+        if (direct != null) {
+            commitToDirect();
+            buf = direct.reserve(needed);
+            return;
+        }
         // With a sink, write out what is buffered and reuse the buffer; grow only if one value does not fit in it.
         // Callers reserve a value's full size before writing it and only write at pos after this returns. The one
         // backpatch, of a non-ASCII text string's length header, stays inside that reservation, so draining is safe.
@@ -164,6 +187,10 @@ final class CborSerializer implements ShapeSerializer {
 
     @Override
     public void flush() {
+        if (direct != null) {
+            commitToDirect();
+            return;
+        }
         try {
             if (sink != null && pos > 0) {
                 sink.write(buf, 0, pos);
@@ -175,8 +202,21 @@ final class CborSerializer implements ShapeSerializer {
         }
     }
 
+    // Adds the bytes written into the ByteBufferOutputStream's array since the last commit to the stream.
+    private void commitToDirect() {
+        if (buf != null) {
+            direct.advance(pos - direct.size());
+        }
+    }
+
     @Override
     public void close() {
+        if (direct != null) {
+            // A later write fails instead of writing into the stream's array.
+            commitToDirect();
+            buf = null;
+            return;
+        }
         try {
             if (sink != null && pos > 0) {
                 sink.write(buf, 0, pos);
@@ -715,7 +755,7 @@ final class CborSerializer implements ShapeSerializer {
 
         @Override
         protected boolean canPool(CborSerializer s) {
-            return s.buf != null && s.sink == null;
+            return s.buf != null && s.sink == null && s.direct == null;
         }
 
         @Override

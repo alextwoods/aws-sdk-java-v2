@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.function.BiConsumer;
 import software.amazon.awssdk.annotations.SdkInternalApi;
+import software.amazon.awssdk.codecs.commons.ByteBufferOutputStream;
 import software.amazon.awssdk.codecs.commons.ByteBufferUtils;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
 import software.amazon.awssdk.codecs.commons.internal.NumberCodec;
@@ -53,7 +54,10 @@ import software.amazon.awssdk.schema.serde.document.Document;
  * sink that callers such as {@code HttpClientProtocol} have already sized for it. Because of that, a serializer with a
  * sink starts with a 1 KB buffer instead of smithy-java's 8 KB; the sink-less serializer keeps 8 KB. The 1 KB buffer is
  * lent by {@link SinkBufferPool} and returned on {@link #close}, so a serializer with a sink does not allocate it per
- * call; it must not be used after {@code close}.
+ * call; it must not be used after {@code close}. A {@link ByteBufferOutputStream} sink, which every SDK protocol uses,
+ * needs no buffer: the serializer writes into the stream's array ({@link ByteBufferOutputStream#reserve}) and adds the
+ * bytes on {@link #flush}, {@link #close} and when it needs more room ({@link ByteBufferOutputStream#advance}), so the
+ * body is not copied either.
  */
 @SdkInternalApi
 final class SmithyJsonSerializer implements ShapeSerializer {
@@ -67,7 +71,10 @@ final class SmithyJsonSerializer implements ShapeSerializer {
     // The "__type": field name token written before the members of a structure document with a discriminator.
     private static final byte[] TYPE_FIELD_NAME_BYTES = JsonWriteUtils.encodeFieldNameToken("__type");
 
+    // A sink other than a ByteBufferOutputStream, or null.
     private final OutputStream sink;
+    // A ByteBufferOutputStream sink, whose array is buf; bytes [direct.size(), pos) are written but not yet added.
+    private final ByteBufferOutputStream direct;
     private final JsonSettings settings;
     private final boolean useJsonName;
 
@@ -87,12 +94,21 @@ final class SmithyJsonSerializer implements ShapeSerializer {
     private byte[][] currentFieldNameTable;
 
     SmithyJsonSerializer(OutputStream sink, JsonSettings settings) {
-        this.sink = sink;
         this.settings = settings;
         this.useJsonName = settings.useJsonName();
-        // A serializer with a sink drains its buffer to the sink when full (see grow), so its small buffer only adds
-        // sink writes for large documents. The buffer is lent by SinkBufferPool until close().
-        this.buf = sink == null ? new byte[DEFAULT_BUF_SIZE] : SinkBufferPool.acquire();
+        if (sink instanceof ByteBufferOutputStream) {
+            // Writes go straight into the stream's array, from its current size; see commitToDirect.
+            this.direct = (ByteBufferOutputStream) sink;
+            this.sink = null;
+            this.pos = direct.size();
+            this.buf = direct.reserve(0);
+        } else {
+            // A serializer with another sink drains its buffer to the sink when full (see grow), so its small buffer
+            // only adds sink writes for large documents. The buffer is lent by SinkBufferPool until close().
+            this.direct = null;
+            this.sink = sink;
+            this.buf = sink == null ? new byte[DEFAULT_BUF_SIZE] : SinkBufferPool.acquire();
+        }
     }
 
     /**
@@ -119,6 +135,10 @@ final class SmithyJsonSerializer implements ShapeSerializer {
 
     @Override
     public void flush() {
+        if (direct != null) {
+            commitToDirect();
+            return;
+        }
         try {
             if (sink != null && pos > 0) {
                 sink.write(buf, 0, pos);
@@ -130,8 +150,20 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         }
     }
 
+    // Adds the bytes written into the ByteBufferOutputStream's array since the last commit to the stream.
+    private void commitToDirect() {
+        if (buf != null) {
+            direct.advance(pos - direct.size());
+        }
+    }
+
     @Override
     public void close() {
+        if (direct != null) {
+            commitToDirect();
+            buf = null;
+            return;
+        }
         try {
             if (sink != null && pos > 0) {
                 sink.write(buf, 0, pos);
@@ -363,6 +395,12 @@ final class SmithyJsonSerializer implements ShapeSerializer {
 
     // Separate cold grow method helps the JIT inline ensureCapacity's fast path
     private void grow(int needed) {
+        // Writing into a ByteBufferOutputStream: add what is written and let the stream grow its own array.
+        if (direct != null) {
+            commitToDirect();
+            buf = direct.reserve(needed);
+            return;
+        }
         // With a sink, write out what is buffered and reuse the buffer; grow only if one value does not fit in it.
         // Callers write at pos after this returns and never refer back to earlier positions, so draining is safe.
         if (sink != null && pos > 0) {

@@ -32,7 +32,9 @@ import software.amazon.awssdk.http.ContentStreamProvider;
  *
  * <p>Port of smithy-java {@code software.amazon.smithy.java.io.ByteBufferOutputStream}. The SDK adds
  * {@link #toContentStreamProvider()}, so a serialized body reaches the HTTP client through
- * {@link ContentStreamProvider#contentAsByteBufferOrNull()} with no copy.
+ * {@link ContentStreamProvider#contentAsByteBufferOrNull()} with no copy, and {@link #reserve(int)} and
+ * {@link #advance(int)}, so a serializer can write straight into the internal array instead of copying from a buffer
+ * of its own.
  *
  * <p><b>Sharing.</b> {@link #toByteBuffer()} and {@link #toContentStreamProvider()} share this stream's internal array
  * instead of copying it. Each one captures the bytes written so far. Bytes written afterwards are appended past the
@@ -175,6 +177,45 @@ public final class ByteBufferOutputStream extends OutputStream {
      */
     public byte[] array() {
         return buf;
+    }
+
+    /**
+     * Makes room for at least {@code length} more bytes and returns the internal array, so a writer can put them at
+     * indexes {@code size()} to {@code size() + length - 1} directly and then add them with {@link #advance(int)},
+     * instead of filling a buffer of its own and copying it in with {@link #write(byte[], int, int)}. The array may be
+     * a new one, holding the bytes written so far, and may have more room than requested; the contents past
+     * {@code size()} are undefined. A later {@code reserve}, write or {@link #reset()} may replace the array, so call
+     * {@code reserve} again before writing after any of them. SDK addition.
+     *
+     * @param length the number of bytes the caller will write
+     * @return the internal array, with at least {@code size() + length} bytes
+     * @throws IllegalArgumentException if {@code length} is negative
+     */
+    public byte[] reserve(int length) {
+        if (length < 0) {
+            throw new IllegalArgumentException("length must not be negative: " + length);
+        }
+        if (length > Integer.MAX_VALUE - count) {
+            throw new OutOfMemoryError("Required array length " + count + " + " + length + " is too large");
+        }
+        ensureCapacity(count + length);
+        return buf;
+    }
+
+    /**
+     * Adds {@code length} bytes that the caller wrote into the array returned by {@link #reserve(int)}, at indexes
+     * {@code size()} to {@code size() + length - 1}, to the stream. SDK addition.
+     *
+     * @param length the number of bytes written
+     * @throws IndexOutOfBoundsException if {@code length} is negative or more than the array holds after
+     *     {@code size()}
+     */
+    public void advance(int length) {
+        if (length < 0 || length > buf.length - count) {
+            throw new IndexOutOfBoundsException("Cannot advance " + length + " bytes: size " + count + ", capacity "
+                                                + buf.length);
+        }
+        count += length;
     }
 
     /**

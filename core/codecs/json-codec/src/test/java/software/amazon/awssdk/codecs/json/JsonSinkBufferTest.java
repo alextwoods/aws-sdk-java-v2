@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
@@ -36,9 +37,10 @@ import software.amazon.awssdk.schema.ShapeId;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
 
 /**
- * A serializer with a sink writes into a 1 KiB buffer lent by {@link SinkBufferPool} and returns it on close. The
- * output matches the sink-less serializer for documents below, at and above the buffer size and for a value larger
- * than the buffer, including when the lent buffer still holds an earlier, longer document.
+ * A serializer with a {@link ByteBufferOutputStream} sink writes straight into the stream's array; one with another
+ * sink writes into a 1 KiB buffer lent by {@link SinkBufferPool} and returns it on close. Both outputs match the
+ * sink-less serializer for documents below, at and above 1 KiB and for a value larger than that, including when the
+ * lent buffer still holds an earlier, longer document.
  */
 class JsonSinkBufferTest {
     private static final JsonCodec CODEC = JsonCodec.builder().build();
@@ -74,7 +76,65 @@ class JsonSinkBufferTest {
         Collections.reverse(order);
         order.addAll(docs);
         for (SerializableStruct doc : order) {
-            assertThat(viaSink(doc)).isEqualTo(bytes(CODEC.serialize(doc)));
+            byte[] expected = bytes(CODEC.serialize(doc));
+            assertThat(viaStream(doc)).as("ByteBufferOutputStream").isEqualTo(expected);
+            assertThat(viaOtherSink(doc)).as("other sink").isEqualTo(expected);
+        }
+    }
+
+    @Test
+    void byteBufferOutputStreamSink_isWrittenInPlaceAfterItsContent() {
+        SerializableStruct doc = doc("hello", Arrays.asList("a", "b"));
+        byte[] expected = bytes(CODEC.serialize(doc));
+        ByteBufferOutputStream out = new ByteBufferOutputStream(256);
+        out.write(new byte[] {'x', 'y'}, 0, 2);
+        byte[] array = out.array();
+        try (ShapeSerializer serializer = CODEC.createSerializer(out)) {
+            serializer.writeStruct(DOC, doc);
+            serializer.flush();
+            assertThat(out.size()).isEqualTo(2 + expected.length);
+        }
+        // Written into the stream's own array, after the two bytes already in it.
+        assertThat(out.array()).isSameAs(array);
+        assertThat(out.size()).isEqualTo(2 + expected.length);
+        assertThat(Arrays.copyOfRange(out.array(), 2, out.size())).isEqualTo(expected);
+        assertThat(out.array()[0]).isEqualTo((byte) 'x');
+    }
+
+    @Test
+    void byteBufferOutputStreamSink_growsTheStream() {
+        SerializableStruct doc = docOfSize(5000);
+        ByteBufferOutputStream out = new ByteBufferOutputStream(0);
+        try (ShapeSerializer serializer = CODEC.createSerializer(out)) {
+            serializer.writeStruct(DOC, doc);
+        }
+        assertThat(Arrays.copyOf(out.array(), out.size())).isEqualTo(bytes(CODEC.serialize(doc)));
+    }
+
+    @Test
+    void byteBufferOutputStreamSink_allocatesNoBuffer() {
+        com.sun.management.ThreadMXBean threads = allocationCounter();
+        SerializableStruct doc = doc("hello", Arrays.asList("a", "b"));
+        ByteBufferOutputStream out = new ByteBufferOutputStream(256);
+        for (int i = 0; i < 200; i++) {
+            writeTo(out, doc);
+        }
+        int rounds = 100;
+        long threadId = Thread.currentThread().getId();
+        long before = threads.getThreadAllocatedBytes(threadId);
+        for (int i = 0; i < rounds; i++) {
+            writeTo(out, doc);
+        }
+        long perDocument = (threads.getThreadAllocatedBytes(threadId) - before) / rounds;
+
+        // Only the serializer's own objects; no scratch buffer and no copy of the body.
+        assertThat(perDocument).isLessThan(SinkBufferPool.BUFFER_SIZE / 2);
+    }
+
+    private static void writeTo(ByteBufferOutputStream out, SerializableStruct doc) {
+        out.reset();
+        try (ShapeSerializer serializer = CODEC.createSerializer(out)) {
+            serializer.writeStruct(DOC, doc);
         }
     }
 
@@ -82,7 +142,7 @@ class JsonSinkBufferTest {
     void closeTwice_returnsTheBufferOnce() {
         List<byte[]> held = drainPool();
         try {
-            ShapeSerializer serializer = CODEC.createSerializer(new ByteBufferOutputStream());
+            ShapeSerializer serializer = CODEC.createSerializer(new ByteArrayOutputStream());
             serializer.writeStruct(DOC, doc("a", Collections.emptyList()));
             serializer.close();
             serializer.close();
@@ -98,15 +158,18 @@ class JsonSinkBufferTest {
 
     @Test
     void writeAfterClose_fails() {
-        ShapeSerializer serializer = CODEC.createSerializer(new ByteBufferOutputStream());
-        serializer.writeStruct(DOC, doc("a", Collections.emptyList()));
-        serializer.close();
-        assertThatThrownBy(() -> serializer.writeStruct(DOC, doc("b", Collections.emptyList())))
-            .isInstanceOf(RuntimeException.class);
+        for (OutputStream sink : Arrays.asList(new ByteBufferOutputStream(), new ByteArrayOutputStream())) {
+            ShapeSerializer serializer = CODEC.createSerializer(sink);
+            serializer.writeStruct(DOC, doc("a", Collections.emptyList()));
+            serializer.close();
+            assertThatThrownBy(() -> serializer.writeStruct(DOC, doc("b", Collections.emptyList())))
+                .as(sink.getClass().getSimpleName())
+                .isInstanceOf(RuntimeException.class);
+        }
     }
 
     @Test
-    void smallDocument_doesNotAllocateTheSinkBuffer() {
+    void otherSink_smallDocument_doesNotAllocateTheSinkBuffer() {
         com.sun.management.ThreadMXBean threads = allocationCounter();
         SerializableStruct doc = doc("hello", Arrays.asList("a", "b"));
         for (int i = 0; i < 200; i++) {
@@ -130,12 +193,20 @@ class JsonSinkBufferTest {
         }
     }
 
-    private static byte[] viaSink(SerializableStruct doc) {
+    private static byte[] viaStream(SerializableStruct doc) {
         ByteBufferOutputStream out = new ByteBufferOutputStream(16);
         try (ShapeSerializer serializer = CODEC.createSerializer(out)) {
             serializer.writeStruct(DOC, doc);
         }
         return Arrays.copyOf(out.array(), out.size());
+    }
+
+    private static byte[] viaOtherSink(SerializableStruct doc) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(16);
+        try (ShapeSerializer serializer = CODEC.createSerializer(out)) {
+            serializer.writeStruct(DOC, doc);
+        }
+        return out.toByteArray();
     }
 
     /**

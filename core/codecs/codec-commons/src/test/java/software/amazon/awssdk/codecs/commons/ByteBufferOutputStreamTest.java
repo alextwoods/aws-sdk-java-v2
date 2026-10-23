@@ -260,6 +260,57 @@ class ByteBufferOutputStreamTest {
         assertContent(second, "abcd");
     }
 
+    @Test
+    void reserveAndAdvance_writeIntoTheInternalArray() {
+        ByteBufferOutputStream out = new ByteBufferOutputStream(8);
+        out.write('a');
+        byte[] array = out.reserve(3);
+        assertThat(array).isSameAs(out.array());
+        array[1] = 'b';
+        array[2] = 'c';
+        out.advance(2);
+        assertThat(out.size()).isEqualTo(3);
+        assertThat(written(out)).isEqualTo("abc".getBytes(StandardCharsets.UTF_8));
+        assertThat(out.reserve(0)).isSameAs(array);
+    }
+
+    @Test
+    void reserve_growsAndKeepsTheBytesWritten() {
+        ByteBufferOutputStream out = new ByteBufferOutputStream(2);
+        out.write("ab".getBytes(StandardCharsets.UTF_8), 0, 2);
+        byte[] before = out.array();
+        byte[] array = out.reserve(100);
+        assertThat(array).isNotSameAs(before).isSameAs(out.array());
+        assertThat(array.length).isGreaterThanOrEqualTo(102);
+        System.arraycopy("cd".getBytes(StandardCharsets.UTF_8), 0, array, 2, 2);
+        out.advance(2);
+        assertThat(written(out)).isEqualTo("abcd".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void reserve_afterToByteBuffer_writesPastTheCapturedBytes() {
+        ByteBufferOutputStream out = new ByteBufferOutputStream(16);
+        out.write("ab".getBytes(StandardCharsets.UTF_8), 0, 2);
+        ByteBuffer captured = out.toByteBuffer();
+        byte[] array = out.reserve(2);
+        array[2] = 'c';
+        out.advance(1);
+        assertThat(bytes(captured)).isEqualTo("ab".getBytes(StandardCharsets.UTF_8));
+        assertThat(written(out)).isEqualTo("abc".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void reserveAndAdvance_rejectInvalidLengths() {
+        ByteBufferOutputStream out = new ByteBufferOutputStream(4);
+        out.write('a');
+        assertThatThrownBy(() -> out.reserve(-1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> out.advance(-1)).isInstanceOf(IndexOutOfBoundsException.class);
+        assertThatThrownBy(() -> out.advance(4)).isInstanceOf(IndexOutOfBoundsException.class);
+        out.advance(3);
+        assertThat(out.size()).isEqualTo(4);
+        assertThatThrownBy(() -> out.reserve(Integer.MAX_VALUE)).isInstanceOf(OutOfMemoryError.class);
+    }
+
     private static void assertContent(ContentStreamProvider provider, String expected) throws IOException {
         byte[] expectedBytes = expected.getBytes(StandardCharsets.US_ASCII);
         assertThat(bytes(provider.contentAsByteBufferOrNull())).isEqualTo(expectedBytes);
