@@ -91,8 +91,8 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 
 ### FU-15 Remaining response-path copies and parses
 - **Status:** Open
-- **Context:** Left by `4acbd0b03ae`: (a) the async `ResponseBodyAggregator` still grows from a fixed size for bodies of unknown length, because the transport has no operation to key the size hint on; (b) awsQuery parses the response body a second time to extract the request id, about 36% of `QueryUnmarshallBenchmark` CPU in the laptop profile (the A2 metadata work); (c) the `MarshallBufferSizeTracker.record` Javadoc still describes only serialized request bodies, though it now also records response sizes.
-- **Evidence:** `.agents/tasks/fix-response-body-copy/report.md` ("Remaining copies and why"); `.agents/tasks/serde-benchmark-comparison/comparability-matrix.md` item A2.
+- **Context:** Left by `4acbd0b03ae`: (a) the async `ResponseBodyAggregator` still grows from a fixed size for bodies of unknown length, because the transport has no operation to key the size hint on; (b) awsQuery parses the response body a second time to extract the request id, 36.5–37.2% of the feature's `QueryUnmarshallBenchmark` CPU in the metal profile `20261023-095831` (about 36% in the laptop profile); the serde report's comparable view counts this pass against the feature, because the legacy unmarshaller also extracts the request id in its timed method (`parseMetadata`); (c) the `MarshallBufferSizeTracker.record` Javadoc still describes only serialized request bodies, though it now also records response sizes.
+- **Evidence:** `.agents/tasks/fix-response-body-copy/report.md` ("Remaining copies and why"); `.agents/tasks/serde-benchmark-comparison/comparability-matrix.md` item A2; `docs/design/schema-serde/serde-perf-report.md` §2.4 and §4.1.
 - **Next step:** (b) is the largest: extract the request id during the main parse. Pass the operation's size hint into the async aggregator for (a). Fix the Javadoc for (c).
 
 ### FU-16 RpcV2Cbor `BinaryData_S` marshall is slower with the FU-12 change on metal
