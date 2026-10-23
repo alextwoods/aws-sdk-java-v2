@@ -89,8 +89,9 @@ final class SmithyJsonSerializer implements ShapeSerializer {
     private final ByteBufferOutputStream direct;
     // The size of direct after the serializer last added bytes to it or continued from it.
     private int committed;
+    // settings.useJsonName() is read where needed instead of being cached in a field, which keeps this object at
+    // 64 bytes with the committed field (the JIT zeroes small objects inline).
     private final JsonSettings settings;
-    private final boolean useJsonName;
 
     // Nesting state for comma insertion
     private final boolean[] needsComma = new boolean[MAX_DEPTH];
@@ -109,7 +110,6 @@ final class SmithyJsonSerializer implements ShapeSerializer {
 
     SmithyJsonSerializer(OutputStream sink, JsonSettings settings) {
         this.settings = settings;
-        this.useJsonName = settings.useJsonName();
         if (sink instanceof ByteBufferOutputStream) {
             // Writes go straight into the stream's array, from its size at the first write; see commitToDirect.
             this.direct = (ByteBufferOutputStream) sink;
@@ -359,7 +359,7 @@ final class SmithyJsonSerializer implements ShapeSerializer {
         Schema structSchema = schema.isMember() ? schema.memberTarget() : schema;
         SmithyJsonSchemaExtensions.NativeJsonExtension ext = structSchema.getExtension(SmithyJsonSchemaExtensions.KEY);
         if (ext != null) {
-            currentFieldNameTable = useJsonName ? ext.jsonFieldNameTable() : ext.memberFieldNameTable();
+            currentFieldNameTable = settings.useJsonName() ? ext.jsonFieldNameTable() : ext.memberFieldNameTable();
         } else {
             currentFieldNameTable = null;
         }
@@ -534,7 +534,7 @@ final class SmithyJsonSerializer implements ShapeSerializer {
             return table[idx];
         }
         SmithyJsonSchemaExtensions.NativeJsonExtension ext = schema.getExtension(SmithyJsonSchemaExtensions.KEY);
-        return useJsonName ? ext.jsonNameBytes() : ext.memberNameBytes();
+        return settings.useJsonName() ? ext.jsonNameBytes() : ext.memberNameBytes();
     }
 
     /**
