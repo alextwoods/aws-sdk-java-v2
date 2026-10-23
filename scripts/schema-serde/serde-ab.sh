@@ -39,8 +39,9 @@
 # serde_ab_summary.py summarize --null. Profiling (--profile, --profile-only): a separate async-profiler pass over
 # every class, param, arm and event, compared side by side by serde_ab_profile.py, which also checks the runtime code
 # path of every cpu profile (profile-path.tsv; a FAIL fails the run) and writes the work-boundary shares
-# (boundary.tsv: A1 per-call legacy marshaller construction, A2 response metadata, A5 Query form encoding). With
-# --profile after timing, summary.md is rewritten with serde_ab_summary.py summarize --boundary (serde-only estimate).
+# (boundary.tsv: A1-objects per-call legacy marshaller objects, A1-request request work in the legacy marshaller
+# constructor, A2 feature-only response handling, A5 Query form encoding). With --profile after timing, summary.md
+# is rewritten with serde_ab_summary.py summarize --boundary (comparable estimate).
 #
 # Output (<out>/<run-id>/): arms.tsv, params.tsv (with the selected params), benchmarks.tsv, payload-sizes.tsv,
 # runs.tsv, provenance/<label>.properties (the jar's record plus
@@ -770,10 +771,10 @@ if [[ $PROFILE -eq 1 ]]; then
     python3 "$SCRIPT_DIR/serde_ab_profile.py" "${COMPARE_ARGS[@]}" || FAILURES=$((FAILURES + 1))
     echo "Profile comparison: $RUNDIR/profile-comparison.md"
     if [[ $PROFILE_ONLY -eq 0 && "$NULL_EXPERIMENT" == false && -f "$RUNDIR/boundary.tsv" ]]; then
-        # The summary again, with the boundary flags and the serde-only estimate.
+        # The summary again, with the boundary flags and the comparable estimate.
         python3 "$SCRIPT_DIR/serde_ab_summary.py" summarize "$RUNDIR/serde-ab.json" \
             --boundary "$RUNDIR/boundary.tsv" > "$RUNDIR/summary.md"
-        echo "Summary with the serde-only estimate: $RUNDIR/summary.md"
+        echo "Summary with the comparable estimate: $RUNDIR/summary.md"
     fi
 fi
 echo "Run directory: $RUNDIR"

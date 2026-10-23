@@ -23,11 +23,13 @@ where time and allocation go. Python 3 standard library only; reuses hot_path_fr
 hot_frames) and serde_ab_summary.py (timing means).
 
 Usage:
-  serde_ab_profile.py compare RUNDIR [--timing RUN_JSON] [--out FILE]
-      Writes RUNDIR/profile-comparison.md (or FILE), RUNDIR/boundary.tsv and RUNDIR/profile-path.tsv (see below);
-      exits 1 if a runtime code-path check fails. --timing is a serde-ab.json of a timing run of the same jars
-      (serde_ab_summary.py collect); its mean ns/op and gc.alloc.rate.norm turn shares into ns/op and B/op per
-      category. Without it the profiling runs' own JMH results are used (perturbed by the profiler; marked).
+  serde_ab_profile.py compare RUNDIR [--timing RUN_JSON] [--out FILE] [--out-dir DIR]
+      Writes DIR/profile-comparison.md (or FILE), DIR/boundary.tsv and DIR/profile-path.tsv (see below); DIR
+      defaults to RUNDIR and is created if missing (inputs are always read from RUNDIR, so --out-dir recomputes a
+      fetched run without touching it). Exits 1 if a runtime code-path check fails. --timing is a serde-ab.json of a
+      timing run of the same jars (serde_ab_summary.py collect); its mean ns/op and gc.alloc.rate.norm turn shares
+      into ns/op and B/op per category. Without it the profiling runs' own JMH results are used (perturbed by the
+      profiler; marked).
   serde_ab_profile.py --self-test
       Runs the fixture tests below.
 
@@ -77,16 +79,52 @@ Every flag must be explained in the comparability matrix (expected architectural
 missing work).
 
 Work-boundary items (comparability-matrix.md): work inside one arm's timed method that the other arm's client does
-outside the serde call. Each sample belongs to at most one item, independently of its category:
-  A1  per-call legacy marshaller construction: category construction (baseline marshall).
-  A2  response metadata and status check: category metadata, or a HttpClientProtocol.isErrorResponse frame (feature
-      unmarshall).
-  A5  Query form percent-encoding: a QueryFormSerializer writeUrlEncoded / writeUrlEncodedAscii /
-      writePercentEncoded / percentEncode frame (feature Query marshall). A lower bound: appending the pairs to the
-      body buffer stays in, as the baseline's equivalent (putting them into the raw query map) does; the
-      Content-Length header put is not separated from the Content-Type put.
-compare writes their CPU and alloc shares per (class, param, arm) to RUNDIR/boundary.tsv, the input of
-serde_ab_summary.py summarize --boundary (the serde-only estimate), and a table to profile-comparison.md.
+outside the serde call (A1-objects, A2, A5), plus A1-request, work that both arms do but that the baseline does
+inside its legacy marshaller construction, kept separate so that it is not removed with A1-objects. Each sample
+belongs to at most one item, checked in this order (frames above the stub, the allocated type already dropped, so
+the allocation site decides):
+  A1-objects  per-call legacy marshaller objects (baseline marshall): a sample of category construction that no
+              A1-request rule matches. The marshaller, its builder and context (JsonProtocolMarshallerBuilder,
+              JsonProtocolMarshaller, JsonMarshallerContext, NullAsEmptyBodyProtocolRequestMarshaller,
+              Query/XmlProtocolMarshaller and their builders, XmlMarshallerContext), OperationInfo checks, the
+              endpoint lookup (BaseAwsJsonProtocolFactory.endpoint > SdkClientConfiguration.option) and VM frames
+              under them. The feature arm builds the equivalent once per client.
+  A1-request  request work the legacy marshaller constructor does that the feature arm also does inside its serde
+              call (baseline marshall): a sample of category construction with a frame that matches one of the
+              ordered A1_REQUEST_RULES. Rules are tried in order; the first rule whose regex matches ANY frame of the
+              sample names the part (a1_part):
+                generator  the JSON generator / XML writer the constructor creates:
+                           BaseAwsJsonProtocolFactory.createGenerator, *.createWriter, SdkJsonGenerator.<init>,
+                           Jackson JsonFactory / BufferRecycler frames, XmlGenerator.create, XmlWriter.<init>,
+                           SdkByteArrayOutputStream
+                request    the request builder, URI and static headers / query: *ProtocolMarshaller
+                           .fillBasicRequestParams, ProtocolUtils.createSdkHttpRequest /
+                           addStaticQueryParametersToRequest, (Default)SdkHttpFullRequest frames, LowCopyListMap,
+                           SdkHttpUtils (appendUri)
+              The generator rule comes first, so a sample under both (none are expected) counts as generator. A
+              legacy restJson1 marshaller's generator is never closed on a blob-payload operation (PutObject), so its
+              Jackson buffers are allocated per call; that stays in the baseline, as it does in a legacy client.
+  A2          feature-only response handling (feature unmarshall): a HttpClientProtocol.isErrorResponse or
+              HttpClientProtocol.responseMetadata frame, or a .responseMetadata / .sdkHttpResponse frame whose parent
+              frame is HttpClientProtocol.buildOutput or SchemaSerdeSupport.buildResponse (the setters that attach
+              the metadata and SdkHttpResponse). The legacy client does this in its response handler, outside the
+              timed method. The category metadata is no longer used: it also holds the awsQuery request-id read
+              (QueryClientProtocol.readRequestId on the feature, QueryProtocolUnmarshaller.parseMetadata on the
+              baseline), which both timed methods do, and the model getters that toBuilder() and the response
+              constructors call on both arms (POJO copying, under AwsResponse / SdkResponse(.BuilderImpl).<init>).
+              Those stay in both arms.
+  A5          Query form percent-encoding: a QueryFormSerializer writeUrlEncoded / writeUrlEncodedAscii /
+              writePercentEncoded / percentEncode frame (feature Query marshall). A lower bound: appending the pairs
+              to the body buffer stays in, as the baseline's equivalent (putting them into the raw query map) does;
+              the Content-Length header put is not separated from the Content-Type put. Key building
+              (QueryFormSerializer.writeKey) is not A5: the baseline builds the same keys.
+compare writes their CPU and alloc shares per (class, param, arm) to DIR/boundary.tsv and a table to
+profile-comparison.md. boundary.tsv format 2 (this version) has the columns benchmark class param arm cpu_samples
+alloc_bytes, then <item>_cpu_pct and <item>_alloc_pct for A1-objects, A1-request, A2 and A5; there are no A1_*
+columns, so a reader that sums every *_cpu_pct column still gets "every item" without double counting. Format 1
+(earlier versions) has A1_*, A2_* (the category-metadata rule) and A5_* columns instead; a file is format 2 when it
+has an A1-objects_cpu_pct column. serde_ab_summary.py summarize --boundary removes A1-objects + A2 + A5 for its
+comparable estimate (A1-request stays in the baseline) and every item for its serde-only reference.
 
 Runtime code path: when arms.tsv has an expect_path column (serde-ab.sh writes it), compare runs serde_ab_checks.py's
 path check over every cpu profile (every class, param and arm), writes RUNDIR/profile-path.tsv and a per-class table
@@ -198,14 +236,39 @@ WEAK_RULES = [
                            r"|javaTimeNanos|^org\.openjdk\.jmh\.")),
 ]
 
-# Work-boundary items: work one arm's timed method does that the other arm's client does outside the serde call
-# (comparability-matrix.md A1, A2, A5). Each sample belongs to at most one item, checked in this order.
+# Work-boundary items (comparability-matrix.md A1, A2, A5; A1 split in two). Each sample belongs to at most one
+# item, checked in this order. See the module docstring.
 BOUNDARY = OrderedDict([
-    ("A1", "per-call legacy marshaller construction (category construction)"),
-    ("A2", "response metadata and status check (category metadata, isErrorResponse)"),
+    ("A1-objects", "per-call legacy marshaller objects (marshaller, builder, context, config lookups)"),
+    ("A1-request", "request work the legacy marshaller constructor does that the feature does inside its serde call "
+                   "(request builder, URI, static headers and query, JSON generator / XML writer)"),
+    ("A2", "feature-only response handling (status check, response metadata and SdkHttpResponse attachment)"),
     ("A5", "Query form percent-encoding (QueryFormSerializer.writeUrlEncoded / percent-encode frames)"),
 ])
-BOUNDARY_A2_FRAME = re.compile(r"^" + _S + r"protocols\.client\.http\.HttpClientProtocol\.isErrorResponse$")
+# A1-request rules, in order: within category construction, the first rule whose regex matches any frame names the
+# part; no match = A1-objects.
+A1_REQUEST_RULES = OrderedDict([
+    ("generator", re.compile(
+        r"^" + _S + r"protocols\.json\.BaseAwsJsonProtocolFactory\.createGenerator$"
+        r"|StructuredJsonFactory\w*\.createWriter$|\.createWriter$"
+        r"|^" + _S + r"protocols\.json\.SdkJsonGenerator\.<init>$"
+        r"|^" + _S + r"thirdparty\.jackson\.core\.(JsonFactory|util\.BufferRecycler)\."
+        r"|^" + _S + r"protocols\.xml\.internal\.marshall\.(XmlGenerator\.create|XmlWriter\.<init>)$"
+        r"|SdkByteArrayOutputStream")),
+    ("request", re.compile(
+        r"ProtocolMarshaller\.fillBasicRequestParams$"
+        r"|^" + _S + r"protocols\.core\.ProtocolUtils\.(createSdkHttpRequest|addStaticQueryParametersToRequest)$"
+        r"|^" + _S + r"http\.(Default)?SdkHttpFullRequest"
+        r"|^" + _S + r"internal\.http\.LowCopyListMap"
+        r"|^" + _S + r"utils\.http\.SdkHttpUtils\.")),
+])
+# A2: a status-check / metadata frame of HttpClientProtocol, or a metadata setter called by the feature's output
+# builder (BOUNDARY_A2_CHILD directly under BOUNDARY_A2_PARENT).
+BOUNDARY_A2_FRAME = re.compile(r"^" + _S + r"protocols\.client\.http\.HttpClientProtocol\."
+                               r"(isErrorResponse|responseMetadata)$")
+BOUNDARY_A2_PARENT = re.compile(r"^" + _S + r"(protocols\.client\.http\.HttpClientProtocol\.buildOutput"
+                                r"|core\.schema\.SchemaSerdeSupport\.buildResponse)$")
+BOUNDARY_A2_CHILD = re.compile(r"\.(responseMetadata|sdkHttpResponse)$")
 BOUNDARY_A5_FRAME = re.compile(r"^" + _S + r"protocols\.client\.awsquery\.internal\.QueryFormSerializer\."
                                r"(writeUrlEncoded|writeUrlEncodedAscii|writePercentEncoded|percentEncode)$")
 
@@ -245,11 +308,29 @@ def categorize(hot):
     return "vm"
 
 
+def a1_part(hot):
+    """The A1_REQUEST_RULES part ("generator", "request") of a construction sample, or None (A1-objects)."""
+    for part, pattern in A1_REQUEST_RULES.items():
+        if any(pattern.search(f) for f in hot):
+            return part
+    return None
+
+
+def is_a2(hot):
+    """True if the sample is feature-only response handling (A2; see the module docstring)."""
+    for i, frame in enumerate(hot):
+        if BOUNDARY_A2_FRAME.search(frame):
+            return True
+        if i and BOUNDARY_A2_CHILD.search(frame) and BOUNDARY_A2_PARENT.search(hot[i - 1]):
+            return True
+    return False
+
+
 def boundary_item(hot, category):
-    """The work-boundary item (A1, A2, A5) of one sample, or None."""
+    """The work-boundary item (A1-objects, A1-request, A2, A5) of one sample, or None."""
     if category == "construction":
-        return "A1"
-    if category == "metadata" or any(BOUNDARY_A2_FRAME.search(f) for f in hot):
+        return "A1-request" if a1_part(hot) else "A1-objects"
+    if is_a2(hot):
         return "A2"
     if any(BOUNDARY_A5_FRAME.search(f) for f in hot):
         return "A5"
@@ -588,13 +669,15 @@ def boundary_rows(combos, arms):
 
 
 def boundary_section(combos, arms):
-    lines = ["## Work-boundary items (A1, A2, A5)", "",
-             "Work inside one arm's timed method that the other arm's client does outside the serde call "
-             "(`comparability-matrix.md`): "
+    lines = ["## Work-boundary items (A1-objects, A1-request, A2, A5)", "",
+             "Work inside one arm's timed method that the other arm's client does outside the serde call, plus "
+             "A1-request, work both arms do that the baseline does inside its legacy marshaller construction "
+             "(`comparability-matrix.md`; rules in the `serde_ab_profile.py` docstring): "
              + "; ".join(f"{b}: {d}" for b, d in BOUNDARY.items())
-             + ". Share of CPU samples and allocated bytes, and the estimate in ns/op and B/op (share x score / "
-             "norm). `serde_ab_summary.py summarize --boundary <run>/boundary.tsv` subtracts these shares for its "
-             "serde-only estimate. Rows where every item is below 1% on every arm are left out.", "",
+             + ". Share of CPU samples and allocated bytes (all items together), and the estimate in ns/op and B/op "
+             "(share x score / norm). `serde_ab_summary.py summarize --boundary <run>/boundary.tsv` removes "
+             "A1-objects + A2 + A5 for its comparable estimate and every item for its serde-only reference. Rows "
+             "where every item is below 1% on every arm are left out.", "",
              "| class | case |" + "".join(f" {a} CPU % | {a} ns/op | {a} alloc % | {a} B/op | {a} items |" for a in arms),
              "|---|---|" + "---:|---:|---:|---:|---|" * len(arms)]
     for (cls, param), (analysis, _) in combos.items():
@@ -704,7 +787,7 @@ def compare_main(argv):
     if not argv:
         raise SystemExit(__doc__)
     rundir, rest = argv[0], argv[1:]
-    opts = {"--timing": None, "--out": None}
+    opts = {"--timing": None, "--out": None, "--out-dir": None}
     i = 0
     while i < len(rest):
         if rest[i] in opts and i + 1 < len(rest):
@@ -717,16 +800,18 @@ def compare_main(argv):
     profiles = load_profiles(rundir)
     timing_doc = sab.load(opts["--timing"]) if opts["--timing"] else None
     combos = analyze_all(profiles, arms, timing_doc)
+    out_dir = opts["--out-dir"] or rundir
+    os.makedirs(out_dir, exist_ok=True)
     path_rows = None
     if arm_rows and "expect_path" in arm_rows[0]:
         path_rows = path_checks(profiles, {r["label"]: r["expect_path"] for r in arm_rows})
-        write_tsv(os.path.join(rundir, "profile-path.tsv"), path_rows, PATH_COLUMNS)
-    write_tsv(os.path.join(rundir, "boundary.tsv"), boundary_rows(combos, arms), BOUNDARY_COLUMNS)
-    out = opts["--out"] or os.path.join(rundir, "profile-comparison.md")
+        write_tsv(os.path.join(out_dir, "profile-path.tsv"), path_rows, PATH_COLUMNS)
+    write_tsv(os.path.join(out_dir, "boundary.tsv"), boundary_rows(combos, arms), BOUNDARY_COLUMNS)
+    out = opts["--out"] or os.path.join(out_dir, "profile-comparison.md")
     with open(out, "w") as f:
         f.write(render(rundir, combos, arms, timing_doc, path_rows))
-    print(f"Wrote {out}, {os.path.join(rundir, 'boundary.tsv')}"
-          + (f", {os.path.join(rundir, 'profile-path.tsv')}" if path_rows is not None else ""), file=sys.stderr)
+    print(f"Wrote {out}, {os.path.join(out_dir, 'boundary.tsv')}"
+          + (f", {os.path.join(out_dir, 'profile-path.tsv')}" if path_rows is not None else ""), file=sys.stderr)
     failed = [r for r in path_rows or [] if r["result"] != "PASS"]
     if failed:
         print(f"FAIL runtime code path: {len(failed)} of {len(path_rows)} cpu profiles; see {out}", file=sys.stderr)
@@ -888,9 +973,9 @@ def self_test():
                           ".writeString` 100.0%", text)
             self.assertIn("alloc check 1.00", text)  # 200 MB over 2 s vs 100 MB/s
             self.assertIn("score 1,000.0 ns/op (profile run)", text)
-            self.assertIn("## Work-boundary items (A1, A2, A5)", text)
-            # Baseline: construction 30% of CPU = 300 ns/op of A1.
-            self.assertIn("| RestJsonMarshallBenchmark | restJson1_PutObject_S | 30.0 | 300.0 | 0.0 | 0 | A1 "
+            self.assertIn("## Work-boundary items (A1-objects, A1-request, A2, A5)", text)
+            # Baseline: construction 30% of CPU = 300 ns/op of A1-objects (no request or generator frame).
+            self.assertIn("| RestJsonMarshallBenchmark | restJson1_PutObject_S | 30.0 | 300.0 | 0.0 | 0 | A1-objects "
                           "| 0.0 | 0.0 | 0.0 | 0 | - |", text)
             self.assertIn("Not run: `arms.tsv` has no `expect_path` column.", text)
 
@@ -899,7 +984,7 @@ def self_test():
                 hot = hot_stack(parse(stub + ";" + ";".join(frames) + " 1")[0], False)
                 return boundary_item(hot, categorize(hot))
             self.assertEqual(item(bench, "software/amazon/awssdk/protocols/json/internal/marshall/"
-                                         "JsonProtocolMarshallerBuilder.build"), "A1")
+                                         "JsonProtocolMarshallerBuilder.build"), "A1-objects")
             unm = "software/amazon/awssdk/benchmark/serde/QueryUnmarshallBenchmark.unmarshall"
             self.assertEqual(item(unm, "software/amazon/awssdk/protocols/client/http/HttpClientProtocol.responseMetadata",
                                   "java/util/TreeMap.get"), "A2")
@@ -910,6 +995,116 @@ def self_test():
                                   "java/lang/String.charAt"), "A5")
             self.assertIsNone(item(bench, qfs + "$ValueSerializer.writeString", qfs + ".writeKey"))
             self.assertIsNone(item(bench, "software/amazon/awssdk/codecs/json/internal/SmithyJsonSerializer.w"))
+
+        def test_boundaryItem_whenConstruction_splitsObjectsAndRequest(self):
+            def hot(*frames, alloc=False):
+                return hot_stack(parse(stub + ";" + ";".join(frames) + " 1")[0], alloc)
+
+            def item(*frames, alloc=False):
+                h = hot(*frames, alloc=alloc)
+                return boundary_item(h, categorize(h))
+            jm = "software/amazon/awssdk/protocols/json/internal/marshall/"
+            build = jm + "JsonProtocolMarshallerBuilder.build"
+            init = jm + "JsonProtocolMarshaller.<init>"
+            fill = jm + "JsonProtocolMarshaller.fillBasicRequestParams"
+            create = "software/amazon/awssdk/protocols/core/ProtocolUtils.createSdkHttpRequest"
+            self.assertEqual(item(bench, build, init, jm + "JsonMarshallerContext.builder"), "A1-objects")
+            self.assertEqual(item(bench, build, init, fill, create,
+                                  "software/amazon/awssdk/http/SdkHttpFullRequest.builder"), "A1-request")
+            self.assertEqual(a1_part(hot(bench, build, init, fill, create,
+                                         "software/amazon/awssdk/http/SdkHttpFullRequest.builder")), "request")
+            self.assertEqual(item(bench, build, init, fill,
+                                  "software/amazon/awssdk/http/SdkHttpFullRequest$Builder.putHeader",
+                                  "java/util/TreeMap.put"), "A1-request")
+            qm = "software/amazon/awssdk/protocols/query/internal/marshall/QueryProtocolMarshaller"
+            self.assertEqual(item(bench, qm + "$Builder.build", qm + ".<init>", qm + ".fillBasicRequestParams",
+                                  "software/amazon/awssdk/http/SdkHttpFullRequest$Builder.putRawQueryParameter"),
+                             "A1-request")
+            factory = "software/amazon/awssdk/protocols/json/BaseAwsJsonProtocolFactory"
+            generator = hot(bench, factory + ".createProtocolMarshaller", factory + ".createGenerator",
+                            "software/amazon/awssdk/protocols/json/SdkJsonGenerator.<init>",
+                            "software/amazon/awssdk/thirdparty/jackson/core/json/UTF8JsonGenerator.<init>",
+                            "software/amazon/awssdk/thirdparty/jackson/core/util/BufferRecycler.calloc")
+            self.assertEqual(boundary_item(generator, categorize(generator)), "A1-request")
+            self.assertEqual(a1_part(generator), "generator")
+            self.assertEqual(item(bench, factory + ".createProtocolMarshaller", factory + ".endpoint",
+                                  "software/amazon/awssdk/core/client/config/SdkClientConfiguration.option"),
+                             "A1-objects")
+            xml = "software/amazon/awssdk/protocols/xml/internal/marshall/"
+            writer = hot(bench, xml + "XmlGenerator.create", xml + "XmlWriter.<init>")
+            self.assertEqual(boundary_item(writer, categorize(writer)), "A1-request")
+            self.assertEqual(a1_part(writer), "generator")
+            # CPU VM leaves: the frames above them decide.
+            self.assertEqual(item(bench, build, init, fill, create,
+                                  "software/amazon/awssdk/http/SdkHttpFullRequest$Builder.uri", "zero_blocks"),
+                             "A1-request")
+            self.assertEqual(item(bench, build, "C2 Runtime new_instance", "OptoRuntime::new_instance_C"),
+                             "A1-objects")
+            # Allocation sample: the allocated type is dropped, so a request type alone does not make A1-request.
+            self.assertEqual(item(bench, build, "software/amazon/awssdk/http/DefaultSdkHttpFullRequest$Builder_[i]",
+                                  alloc=True), "A1-objects")
+
+        def test_boundaryItem_whenMetadata_onlyFeatureOnlyWorkIsA2(self):
+            def item(*frames):
+                h = hot_stack(parse(stub + ";" + ";".join(frames) + " 1")[0], False)
+                return boundary_item(h, categorize(h))
+            unm = "software/amazon/awssdk/benchmark/serde/QueryUnmarshallBenchmark.unmarshall"
+            hcp = "software/amazon/awssdk/protocols/client/http/HttpClientProtocol"
+            self.assertEqual(item(unm, hcp + ".buildOutput",
+                                  "software/amazon/awssdk/services/s/model/XResponse$BuilderImpl.responseMetadata"),
+                             "A2")
+            self.assertEqual(item(unm, "software/amazon/awssdk/core/schema/SchemaSerdeSupport.buildResponse",
+                                  "software/amazon/awssdk/core/SdkResponse$BuilderImpl.sdkHttpResponse"), "A2")
+            # Request-id extraction: both timed methods do it, so it is category metadata but no boundary item.
+            read_id = hot_stack(parse(stub + ";" + unm + ";software/amazon/awssdk/protocols/client/awsquery/"
+                                      "QueryClientProtocol.deserializeOutput;software/amazon/awssdk/protocols/client/"
+                                      "awsquery/QueryClientProtocol.readRequestId;software/amazon/awssdk/codecs/xml/"
+                                      "internal/SmithyXmlDeserializer.skipElement 1")[0], False)
+            self.assertEqual(categorize(read_id), "metadata")
+            self.assertIsNone(boundary_item(read_id, categorize(read_id)))
+            qu = "software/amazon/awssdk/protocols/query/internal/unmarshall/QueryProtocolUnmarshaller"
+            self.assertIsNone(item(unm, qu + ".unmarshall", qu + ".parseMetadata"))
+            # toBuilder() getters on both arms: POJO copying, not A2.
+            self.assertIsNone(item(unm, "software/amazon/awssdk/awscore/AwsResponse$BuilderImpl.<init>",
+                                   "software/amazon/awssdk/services/s/model/XResponse.responseMetadata"))
+
+        def test_compare_whenOutDirGiven_writesThereAndLeavesRunDir(self):
+            jm = "software/amazon/awssdk/protocols/json/internal/marshall/"
+            build = bench + ";" + jm + "JsonProtocolMarshallerBuilder.build;" + jm + "JsonProtocolMarshaller.<init>"
+            lines = {"cpu": [stub + ";" + build + ";" + jm + "JsonMarshallerContext.builder 25\n",
+                             stub + ";" + build + ";" + jm + "JsonProtocolMarshaller.fillBasicRequestParams;"
+                             "software/amazon/awssdk/http/SdkHttpFullRequest.builder 75\n"],
+                     "alloc": [stub + ";" + build + ";" + jm + "JsonMarshallerContext.builder;java/lang/Object 40\n",
+                               stub + ";" + build + ";" + jm + "JsonProtocolMarshaller.fillBasicRequestParams;"
+                               "java/util/TreeMap 60\n"]}
+            with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as parent:
+                out = os.path.join(parent, "new")
+                with open(os.path.join(d, "arms.tsv"), "w") as f:
+                    f.write("label\tref\nbaseline\tfc8b\nfeature\tHEAD\n")
+                rows = ["arm\tclass\tparam\tevent\tstatus\tdir"]
+                for arm in ("baseline", "feature"):
+                    for event in ("cpu", "alloc"):
+                        rel = f"profile/{arm}/RestJsonMarshallBenchmark/S/{event}"
+                        os.makedirs(os.path.join(d, rel))
+                        with open(os.path.join(d, rel, f"collapsed-{event}.csv"), "w") as f:
+                            f.writelines(lines[event])
+                        rows.append(f"{arm}\tRestJsonMarshallBenchmark\tS\t{event}\tok\t{rel}")
+                with open(os.path.join(d, "profile-runs.tsv"), "w") as f:
+                    f.write("\n".join(rows) + "\n")
+                self.assertEqual(compare_main([d, "--out-dir", out]), 0)
+                self.assertTrue(os.path.isfile(os.path.join(out, "profile-comparison.md")))
+                self.assertFalse(os.path.exists(os.path.join(d, "boundary.tsv")))
+                self.assertFalse(os.path.exists(os.path.join(d, "profile-comparison.md")))
+                with open(os.path.join(out, "boundary.tsv")) as f:
+                    header = f.readline().rstrip("\n").split("\t")
+                boundary = _read_tsv(os.path.join(out, "boundary.tsv"))
+            self.assertEqual(header, BOUNDARY_COLUMNS)
+            self.assertIn("A1-objects_cpu_pct", header)
+            self.assertNotIn("A1_cpu_pct", header)
+            row = boundary[0]
+            self.assertEqual((row["A1-objects_cpu_pct"], row["A1-request_cpu_pct"]), ("25.000", "75.000"))
+            self.assertEqual((row["A1-objects_alloc_pct"], row["A1-request_alloc_pct"]), ("40.000", "60.000"))
+            self.assertEqual((row["A2_cpu_pct"], row["A5_alloc_pct"]), ("0.000", "0.000"))
 
         def test_compare_whenExpectPathGiven_checksEveryCpuProfileAndWritesBoundaryTsv(self):
             legacy = stub + ";" + bench + ";software/amazon/awssdk/protocols/json/internal/marshall/" \

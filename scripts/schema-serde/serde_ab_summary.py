@@ -28,11 +28,23 @@ Usage:
       from the null experiment and a verdict; then per-class and overall geometric-mean ratios and the problems
       (failed runs, rows missing on an arm). A null-experiment run reports its floor per row instead, and the
       warmup/steady-state check of every row. --preliminary
-      adds a smoke-data banner. --boundary takes the boundary.tsv of serde_ab_profile.py compare (a profiling pass of
-      the same jars): the table then names, per row, the work-boundary items (A1 per-call legacy marshaller
-      construction, A2 response metadata and status check, A5 Query form percent-encoding) at >= 10% of either
-      arm's CPU or B/op, and a serde-only estimate follows: per row and as geometric means, each arm's values
-      scaled by 1 - the items' share (CPU share for ns/op, alloc share for B/op), with the same floor.
+      adds a smoke-data banner. The geometric means are given per class and per protocol (below). --boundary takes
+      the boundary.tsv of serde_ab_profile.py compare (a profiling pass of the same jars): the table then names,
+      per row, the work-boundary items of the file at >= 10% of either arm's CPU or B/op, and an estimate follows,
+      per row and as per-class and per-protocol geometric means: each arm's values scaled by 1 - the share of the
+      removed items (CPU share for ns/op, alloc share for B/op), with the same floor. Which estimate depends on the
+      file's format (serde_ab_profile.py docstring):
+        format 2 (A1-objects, A1-request, A2, A5 columns): the comparable estimate removes A1-objects (per-call
+          legacy marshaller objects), A2 (feature-only response handling) and A5 (Query form percent-encoding);
+          A1-request (request builder, URI, static headers, JSON generator / XML writer) stays in the baseline,
+          because the feature does that work inside its serde call. A reference table follows with every item
+          removed (serde-only, A1 fully removed), which overstates the baseline's removal.
+        format 1 (A1, A2, A5 columns, earlier versions): the serde-only estimate with every item removed, as
+          before, and a note that the comparable estimate needs a format-2 file.
+  Per-protocol geometric means: the protocol of a class is its name without MarshallBenchmark /
+  UnmarshallBenchmark, shown by its Smithy protocol name (PROTOCOL_NAMES). A protocol's value is the geometric
+  mean of its marshall-class and unmarshall-class geomeans; a protocol with one direction only shows "-" and is
+  left out of the aggregate, the geometric mean of the protocols.
   serde_ab_summary.py --self-test
       Runs the fixture tests below.
 
@@ -450,9 +462,11 @@ def render_summary(doc, null_doc=None, preliminary=False, boundary=None):
     for arm in arm_labels[1:]:
         lines += [f"## `{arm}` vs `{base}`", ""]
         if boundary is not None:
-            lines += [f"What each arm's timed method costs, work-boundary items included. Rows where an item (A1, A2, "
-                      f"A5) is at least {BOUNDARY_FLAG_PCT:g}% of either arm's CPU or B/op are named in the last "
-                      f"column; the serde-only estimate follows the geometric means.", ""]
+            estimate = "comparable" if boundary_format(boundary) == 2 else "serde-only"
+            lines += [f"What each arm's timed method costs, work-boundary items included. Rows where an item "
+                      f"({', '.join(boundary_items(boundary))}) is at least {BOUNDARY_FLAG_PCT:g}% of either arm's "
+                      f"CPU or B/op are named in the last column; the {estimate} estimate follows the geometric "
+                      "means.", ""]
         lines += [f"| class | case | {base} ns/op | {arm} ns/op | ratio | floor | verdict "
                   f"| {base} B/op | {arm} B/op | B/op ratio | B/op floor | B/op verdict |"
                   + (f" boundary ≥{BOUNDARY_FLAG_PCT:g}% |" if boundary is not None else ""),
@@ -486,6 +500,7 @@ def render_summary(doc, null_doc=None, preliminary=False, boundary=None):
             all_alloc += bucket["alloc"]
             lines.append(f"| {cls} | {len(bucket['score'])} | {_geo(bucket['score'])} | {_geo(bucket['alloc'])} |")
         lines += [f"| **all** | {len(all_score)} | {_geo(all_score)} | {_geo(all_alloc)} |", ""]
+        lines += [f"#### Per-protocol geometric means, `{arm}` / `{base}`", ""] + render_protocols(per_class)
         if boundary is not None:
             lines += render_boundary(analysis, boundary, base, arm)
     return "\n".join(lines)
@@ -534,11 +549,42 @@ def _pct(value):
     return "-" if value is None else f"{value:.0f}%"
 
 
-def _keep(b, metric):
-    """The fraction of an arm's measurement that is serde work: 1 - its boundary share, or None."""
-    if b is None or b[metric] is None or b[metric] >= 100.0:
+COMPARABLE_ITEMS = ("A1-objects", "A2", "A5")  # format 2: removed by the comparable estimate; A1-request stays
+
+
+def boundary_items(boundary):
+    """The work-boundary items of a loaded boundary.tsv, in column order."""
+    return list(OrderedDict.fromkeys(item for b in boundary.values() for item in b["items"]))
+
+
+def boundary_format(boundary):
+    """2 if the boundary.tsv splits A1 (an A1-objects item), else 1."""
+    return 2 if any("A1-objects" in b["items"] for b in boundary.values()) else 1
+
+
+def view_share(b, items, kind):
+    """The CPU (kind "cpu") or alloc ("alloc") share in percent of the listed items present in one boundary row
+    (every item if items is None); None without a row or if a present item's share is None (missing profile)."""
+    if b is None:
         return None
-    return 1.0 - b[metric] / 100.0
+    index = 0 if kind == "cpu" else 1
+    total = 0.0
+    for item, shares in b["items"].items():
+        if items is not None and item not in items:
+            continue
+        if shares[index] is None:
+            return None
+        total += shares[index]
+    return total
+
+
+def _keep(b, metric, items=None):
+    """The fraction of an arm's measurement that the estimate keeps: 1 - the share of the removed items (every item
+    if items is None), or None."""
+    removed = view_share(b, items, metric)
+    if removed is None or removed >= 100.0:
+        return None
+    return 1.0 - removed / 100.0
 
 
 def adjust_stats(s, keep):
@@ -561,54 +607,183 @@ def adjust_comparison(c, keep_base, keep_arm):
             "pairs": c["pairs"], "zero_alloc": False}
 
 
-def render_boundary(analysis, boundary, base, arm):
-    """The serde-only (boundary-adjusted) estimate of one arm against the baseline."""
-    metric_of = {"score": "cpu", "alloc": "alloc"}
-    lines = [f"### Serde-only estimate (boundary-adjusted), `{arm}` / `{base}`", "",
-             "Estimate, not a measurement: each arm's mean ns/op (B/op) is scaled by 1 - the CPU (alloc) share of the "
-             "work-boundary items A1 (per-call legacy marshaller construction), A2 (response metadata and status "
-             "check) and A5 (Query form percent-encoding) in the profiling pass (`boundary.tsv`; rules in "
-             "`serde_ab_profile.py`). Shares come from a different run than the timing, the same floor is applied, "
-             "and A5 is a lower bound. The table above is what each arm's timed method costs; this one is the serde "
-             "work alone.", "",
-             f"| class | case | {base} ns/op | {arm} ns/op | ratio | floor | verdict | {base} B/op | {arm} B/op "
-             f"| B/op ratio | B/op verdict | removed |",
-             "|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|---|"]
-    per_class, missing = OrderedDict(), 0
+_METRIC_SHARE = {"score": "cpu", "alloc": "alloc"}
+
+
+def adjusted_rows(analysis, boundary, base, arm, items=None):
+    """Per row, the boundary-adjusted comparison of one arm against the baseline with the listed items removed
+    (every item if None): [(key, e, bb, ba, {metric: (base stats, arm stats, comparison)} or None)], and the
+    per-class buckets of adjusted ratios {class: {"score": [...], "alloc": [...]}}."""
+    rows, per_class = [], OrderedDict()
     for key, e in analysis.items():
         bb, ba = _boundary_of(boundary, key, base), _boundary_of(boundary, key, arm)
         if bb is None or ba is None:
-            missing += 1
-            lines.append(f"| {_class(key)} | {_case(key)} | - | - | - | - | no profile row | - | - | - | - | - |")
+            rows.append((key, e, bb, ba, None))
             continue
-        cells, adjusted = [], {}
+        adjusted = {}
         for m in ("score", "alloc"):
-            kb, ka = _keep(bb, metric_of[m]), _keep(ba, metric_of[m])
-            c = adjust_comparison(e["vs_base"][arm][m], kb, ka)
-            adjusted[m] = c
-            f = e["floor"].get(m)
-            digits = 1 if m == "score" else 0
-            cells += [_mean_err(adjust_stats(e["arms"][base][m], kb), digits),
-                      _mean_err(adjust_stats(e["arms"][arm][m], ka), digits), _ratio(c)]
-            cells += [_floor(f, e["floor_inferred"].get(m)), verdict(c, f)] if m == "score" else [verdict(c, f)]
-        removed = "; ".join(f"{a} {_pct(b['cpu'])} CPU, {_pct(b['alloc'])} B" for a, b in ((base, bb), (arm, ba))
-                            if (b["cpu"] or 0) >= 1.0 or (b["alloc"] or 0) >= 1.0)
-        lines.append(f"| {_class(key)} | {_case(key)} | " + " | ".join(cells) + f" | {removed or '-'} |")
+            kb, ka = _keep(bb, _METRIC_SHARE[m], items), _keep(ba, _METRIC_SHARE[m], items)
+            adjusted[m] = (adjust_stats(e["arms"][base][m], kb), adjust_stats(e["arms"][arm][m], ka),
+                           adjust_comparison(e["vs_base"][arm][m], kb, ka))
+        rows.append((key, e, bb, ba, adjusted))
         bucket = per_class.setdefault(_class(key), {"score": [], "alloc": []})
-        if adjusted["score"] is not None:
-            bucket["score"].append(adjusted["score"]["ratio"])
-        if adjusted["alloc"] is not None and not adjusted["alloc"]["zero_alloc"]:
-            bucket["alloc"].append(adjusted["alloc"]["ratio"])
-    if missing:
-        lines += ["", f"**WARNING: {missing} rows have no boundary row for both arms; left out of the geomeans.**"]
-    lines += ["", f"#### Serde-only geometric-mean ratios (boundary-adjusted), `{arm}` / `{base}`", "",
-              "| class | rows | ns/op ratio | B/op ratio |", "|---|---:|---:|---:|"]
+        if adjusted["score"][2] is not None:
+            bucket["score"].append(adjusted["score"][2]["ratio"])
+        if adjusted["alloc"][2] is not None and not adjusted["alloc"][2]["zero_alloc"]:
+            bucket["alloc"].append(adjusted["alloc"][2]["ratio"])
+    return rows, per_class
+
+
+def _class_geomeans(per_class):
+    lines = ["| class | rows | ns/op ratio | B/op ratio |", "|---|---:|---:|---:|"]
     all_score, all_alloc = [], []
     for cls, bucket in per_class.items():
         all_score += bucket["score"]
         all_alloc += bucket["alloc"]
         lines.append(f"| {cls} | {len(bucket['score'])} | {_geo(bucket['score'])} | {_geo(bucket['alloc'])} |")
     return lines + [f"| **all** | {len(all_score)} | {_geo(all_score)} | {_geo(all_alloc)} |", ""]
+
+
+def _removed(view_items, arms_rows):
+    """The removed column: per arm, the view's items at >= 1% of CPU or B/op (every item summed if view_items is
+    None, the format-1 serde-only text)."""
+    parts = []
+    for a, b in arms_rows:
+        if view_items is None:
+            if (b["cpu"] or 0) >= 1.0 or (b["alloc"] or 0) >= 1.0:
+                parts.append(f"{a} {_pct(b['cpu'])} CPU, {_pct(b['alloc'])} B")
+            continue
+        for item, (cpu, alloc) in b["items"].items():
+            if item in view_items and ((cpu or 0) >= 1.0 or (alloc or 0) >= 1.0):
+                parts.append(f"{a} {item} {_pct(cpu)} CPU, {_pct(alloc)} B")
+    return "; ".join(parts)
+
+
+def _estimate_table(rows, base, arm, view_items):
+    lines = [f"| class | case | {base} ns/op | {arm} ns/op | ratio | floor | verdict | {base} B/op | {arm} B/op "
+             f"| B/op ratio | B/op verdict | removed |",
+             "|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|---|"]
+    missing = 0
+    for key, e, bb, ba, adjusted in rows:
+        if adjusted is None:
+            missing += 1
+            lines.append(f"| {_class(key)} | {_case(key)} | - | - | - | - | no profile row | - | - | - | - | - |")
+            continue
+        cells = []
+        for m in ("score", "alloc"):
+            sb, sa, c = adjusted[m]
+            f = e["floor"].get(m)
+            digits = 1 if m == "score" else 0
+            cells += [_mean_err(sb, digits), _mean_err(sa, digits), _ratio(c)]
+            cells += [_floor(f, e["floor_inferred"].get(m)), verdict(c, f)] if m == "score" else [verdict(c, f)]
+        removed = _removed(view_items, ((base, bb), (arm, ba)))
+        lines.append(f"| {_class(key)} | {_case(key)} | " + " | ".join(cells) + f" | {removed or '-'} |")
+    if missing:
+        lines += ["", f"**WARNING: {missing} rows have no boundary row for both arms; left out of the geomeans.**"]
+    return lines
+
+
+def render_boundary(analysis, boundary, base, arm):
+    """The boundary-adjusted estimate of one arm against the baseline: the comparable estimate and the serde-only
+    reference for a format-2 boundary.tsv, the serde-only estimate for format 1."""
+    if boundary_format(boundary) == 1:
+        rows, per_class = adjusted_rows(analysis, boundary, base, arm)
+        lines = [f"### Serde-only estimate (boundary-adjusted), `{arm}` / `{base}`", "",
+                 "Estimate, not a measurement: each arm's mean ns/op (B/op) is scaled by 1 - the CPU (alloc) share of "
+                 "the work-boundary items A1 (per-call legacy marshaller construction), A2 (response metadata and "
+                 "status check) and A5 (Query form percent-encoding) in the profiling pass (`boundary.tsv`; rules in "
+                 "`serde_ab_profile.py`). Shares come from a different run than the timing, the same floor is applied, "
+                 "and A5 is a lower bound. The table above is what each arm's timed method costs; this one is the "
+                 "serde work alone.", ""]
+        lines += _estimate_table(rows, base, arm, None)
+        lines += ["", f"#### Serde-only geometric-mean ratios (boundary-adjusted), `{arm}` / `{base}`", ""]
+        lines += _class_geomeans(per_class)
+        return lines + ["This boundary.tsv has no A1 split (format 1); the comparable estimate needs a boundary.tsv "
+                        "from this version's `serde_ab_profile.py compare`.", ""]
+    rows, per_class = adjusted_rows(analysis, boundary, base, arm, COMPARABLE_ITEMS)
+    lines = [f"### Comparable estimate (boundary-adjusted), `{arm}` / `{base}`", "",
+             "Estimate, not a measurement: each arm's mean ns/op (B/op) is scaled by 1 - its CPU (alloc) share of the "
+             "work-boundary items A1-objects (per-call legacy marshaller objects), A2 (feature-only response "
+             "handling: status check, response metadata and SdkHttpResponse attachment) and A5 (Query form "
+             "percent-encoding) in the profiling pass (`boundary.tsv`; rules in `serde_ab_profile.py`). A1-request "
+             "(the request builder, URI, static headers and JSON generator / XML writer that the legacy marshaller "
+             "creates in its constructor) stays in the baseline, because the feature does that work inside its "
+             "serde call. Shares come from a different run than the timing, the same floor is applied, and A5 is a "
+             "lower bound. The table above is what each arm's timed method costs; this one compares the same work "
+             "on both arms.", ""]
+    lines += _estimate_table(rows, base, arm, COMPARABLE_ITEMS)
+    lines += ["", f"#### Comparable geometric-mean ratios (boundary-adjusted), `{arm}` / `{base}`", ""]
+    lines += _class_geomeans(per_class)
+    lines += [f"#### Comparable per-protocol geometric means, `{arm}` / `{base}`", ""] + render_protocols(per_class)
+    _, full = adjusted_rows(analysis, boundary, base, arm)
+    lines += ["#### Reference: serde-only (A1 fully removed; overstates the baseline's removal)", "",
+              "Every item removed, A1-request included. This is not the estimate: A1-request is work the feature arm "
+              "also does inside its own serde call, so removing it from the baseline alone makes the feature look "
+              "costlier than it is.", ""]
+    lines += _class_geomeans(full)
+    return lines + render_protocols(full)
+
+
+# ==================== per-protocol geometric means ====================
+
+PROTOCOL_NAMES = OrderedDict([("JsonRpc10", "awsJson1_0"), ("Query", "awsQuery"), ("RestJson", "restJson1"),
+                              ("RestXml", "restXml"), ("RpcV2Cbor", "rpcv2Cbor")])
+_DIRECTIONS = (("UnmarshallBenchmark", "unmarshall"), ("MarshallBenchmark", "marshall"))
+
+
+def protocol_of(cls):
+    """(protocol name, "marshall" | "unmarshall" | None) of a benchmark class name."""
+    for suffix, direction in _DIRECTIONS:
+        if cls.endswith(suffix):
+            prefix = cls[:-len(suffix)]
+            return PROTOCOL_NAMES.get(prefix, prefix), direction
+    return PROTOCOL_NAMES.get(cls, cls), None
+
+
+def protocol_geomeans(per_class):
+    """{protocol: {"marshall": {metric: g}, "unmarshall": {...}, "protocol": {...}}} from per-class ratio buckets,
+    and {metric: (aggregate, number of protocols)}. A protocol's value is the geomean of its two class geomeans
+    (None with one direction); the aggregate is the geomean of the protocols' values."""
+    out = OrderedDict()
+    for cls, bucket in per_class.items():
+        protocol, direction = protocol_of(cls)
+        if direction is None:
+            continue
+        entry = out.setdefault(protocol, {"marshall": {}, "unmarshall": {}, "protocol": {}})
+        for m in ("score", "alloc"):
+            entry[direction][m] = geomean(bucket[m])
+    aggregate = {}
+    for m in ("score", "alloc"):
+        values = []
+        for entry in out.values():
+            mv, uv = entry["marshall"].get(m), entry["unmarshall"].get(m)
+            entry["protocol"][m] = geomean([mv, uv]) if mv is not None and uv is not None else None
+            if entry["protocol"][m] is not None:
+                values.append(entry["protocol"][m])
+        aggregate[m] = (geomean(values), len(values))
+    return out, aggregate
+
+
+def _g(value):
+    return "-" if value is None else f"{value:.3f}"
+
+
+def render_protocols(per_class):
+    """The per-protocol geomean table of per-class ratio buckets."""
+    protocols, aggregate = protocol_geomeans(per_class)
+    lines = ["| protocol | marshall ns/op | unmarshall ns/op | protocol ns/op | marshall B/op | unmarshall B/op "
+             "| protocol B/op |", "|---|---:|---:|---:|---:|---:|---:|"]
+    for protocol, entry in protocols.items():
+        cells = []
+        for m in ("score", "alloc"):
+            cells += [_g(entry["marshall"].get(m)), _g(entry["unmarshall"].get(m)), _g(entry["protocol"][m])]
+        lines.append(f"| {protocol} | " + " | ".join(cells) + " |")
+    (gs, ns), (ga, na) = aggregate["score"], aggregate["alloc"]
+    noun = "protocol" if max(ns, na) == 1 else "protocols"
+    count = f"{ns} {noun}" if ns == na else f"{ns} {noun} for ns/op, {na} for B/op"
+    lines.append(f"| **aggregate** (geomean of {count}) | | | {_g(gs)} | | | {_g(ga)} |")
+    return lines + ["", "Protocol = geometric mean of its marshall-class and unmarshall-class geomeans; aggregate = "
+                        "geometric mean of the protocols with both directions.", ""]
 
 
 # ==================== CLI ====================
@@ -750,6 +925,70 @@ def self_test():
             self.assertIn("WARNING: 2 rows have no boundary row for both arms", text)  # Z and the Query row
             self.assertIn("| RestJsonMarshallBenchmark | 1 | 1.280 | 0.750 |", text)
             self.assertNotIn("boundary ≥10%", render_summary(ab_doc, null_doc))
+            # Format 1: no comparable estimate, a note instead.
+            self.assertEqual(boundary_format(boundary), 1)
+            self.assertNotIn("Comparable estimate", text)
+            self.assertIn("This boundary.tsv has no A1 split (format 1); the comparable estimate needs a boundary.tsv "
+                          "from this version's `serde_ab_profile.py compare`.", text)
+
+        def test_render_whenBoundaryFormat2_addsComparableEstimateAndReference(self):
+            # Row S: baseline A1-objects 10% CPU / 25% B, A1-request 40% / 15%; feature A2 20% / 25%.
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "boundary.tsv")
+                with open(path, "w") as f:
+                    f.write("benchmark\tclass\tparam\tarm\tcpu_samples\talloc_bytes\tA1-objects_cpu_pct"
+                            "\tA1-objects_alloc_pct\tA1-request_cpu_pct\tA1-request_alloc_pct\tA2_cpu_pct"
+                            "\tA2_alloc_pct\tA5_cpu_pct\tA5_alloc_pct\n")
+                    f.write(f"{bench}\tRestJsonMarshallBenchmark\tS\tbaseline\t100\t100\t10.0\t25.0\t40.0\t15.0"
+                            "\t0\t0\t0\t0\n")
+                    f.write(f"{bench}\tRestJsonMarshallBenchmark\tS\tfeature\t100\t100\t0\t0\t0\t0\t20.0\t25.0"
+                            "\t0\t0\n")
+                boundary = load_boundary(path)
+            b = boundary[("RestJsonMarshallBenchmark", "S", "baseline")]
+            self.assertEqual(boundary_format(boundary), 2)
+            self.assertEqual((b["cpu"], b["alloc"]), (50.0, 40.0))  # totals: every item, as format 1
+            self.assertEqual(view_share(b, COMPARABLE_ITEMS, "cpu"), 10.0)
+            self.assertEqual(view_share(b, COMPARABLE_ITEMS, "alloc"), 25.0)
+            text = render_summary(ab_doc, null_doc, boundary=boundary)
+            self.assertIn("Rows where an item (A1-objects, A1-request, A2, A5) is at least 10%", text)
+            self.assertIn("the comparable estimate follows", text)
+            self.assertIn("baseline A1-objects 10% CPU, 25% B; baseline A1-request 40% CPU, 15% B; "
+                          "feature A2 20% CPU, 25% B |", text)
+            self.assertIn("### Comparable estimate (boundary-adjusted), `feature` / `baseline`", text)
+            self.assertNotIn("### Serde-only estimate", text)
+            # ns/op: 100 x 0.9 = 90 vs 80 x 0.8 = 64 -> 0.711; B/op: 500 x 0.75 = 375 vs 300 x 0.75 = 225 -> 0.600.
+            self.assertIn("| RestJsonMarshallBenchmark | S | 90.0 ± 0.0 (2) | 64.0 ± 0.0 (2) | 0.711 ±0.0% | 2.8% "
+                          "| faster | 375 ± 0 (2) | 225 ± 0 (2) | 0.600 ±0.0% | faster "
+                          "| baseline A1-objects 10% CPU, 25% B; feature A2 20% CPU, 25% B |", text)
+            comparable = text.split("#### Comparable geometric-mean ratios")[1].split("#### Reference")[0]
+            self.assertIn("| RestJsonMarshallBenchmark | 1 | 0.711 | 0.600 |", comparable)
+            self.assertIn("#### Comparable per-protocol geometric means, `feature` / `baseline`", comparable)
+            # Reference: A1 fully removed (baseline x 0.5 and x 0.6), as the format-1 serde-only estimate.
+            reference = text.split("#### Reference: serde-only (A1 fully removed; overstates the baseline's "
+                                   "removal)")[1]
+            self.assertIn("| RestJsonMarshallBenchmark | 1 | 1.280 | 0.750 |", reference)
+            self.assertNotIn("has no A1 split", text)
+
+        def test_render_protocolGeomeans_whenBothDirections_geomeanOfClassGeomeans(self):
+            rj_unbench = "software.amazon.awssdk.benchmark.serde.RestJsonUnmarshallBenchmark.unmarshall"
+            two_way = doc(["baseline", "feature"], [
+                run(1, 1, "baseline", "RestJsonMarshallBenchmark", [result(bench, "S", 100.0, 500.0)]),
+                run(2, 1, "feature", "RestJsonMarshallBenchmark", [result(bench, "S", 80.0, 300.0)]),
+                run(3, 1, "baseline", "RestJsonUnmarshallBenchmark", [result(rj_unbench, "U", 100.0, 1000.0)]),
+                run(4, 1, "feature", "RestJsonUnmarshallBenchmark", [result(rj_unbench, "U", 50.0, 250.0)]),
+                run(5, 1, "baseline", "QueryUnmarshallBenchmark", [result(unbench, "M", 1000.0, 9000.0)]),
+                run(6, 1, "feature", "QueryUnmarshallBenchmark", [result(unbench, "M", 900.0, 9000.0)]),
+            ])
+            self.assertEqual(protocol_of("RestJsonUnmarshallBenchmark"), ("restJson1", "unmarshall"))
+            self.assertEqual(protocol_of("JsonRpc10MarshallBenchmark"), ("awsJson1_0", "marshall"))
+            self.assertEqual(protocol_of("NewMarshallBenchmark"), ("New", "marshall"))
+            text = render_summary(two_way)
+            self.assertIn("#### Per-protocol geometric means, `feature` / `baseline`", text)
+            self.assertIn(f"| restJson1 | 0.800 | 0.500 | {math.sqrt(0.8 * 0.5):.3f} | 0.600 | 0.250 "
+                          f"| {math.sqrt(0.6 * 0.25):.3f} |", text)
+            self.assertIn("| awsQuery | - | 0.900 | - | - | 1.000 | - |", text)
+            self.assertIn(f"| **aggregate** (geomean of 1 protocol) | | | {math.sqrt(0.8 * 0.5):.3f} | | "
+                          f"| {math.sqrt(0.6 * 0.25):.3f} |", text)
 
         def test_render_whenNullRun_reportsFloors(self):
             text = render_summary(null_doc)

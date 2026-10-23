@@ -137,12 +137,23 @@ The legacy protocol modules are identical in both builds, so benchmarking them w
 measure the new codecs. Inputs and responses are built exactly as on the Baseline_Build.
 `SerdeBenchmarkEquivalenceTest` checks, for all 71 combinations, that the schema path
 produces the legacy path's output on the same input; its allowlist documents every
-accepted difference. Three work-boundary differences remain: the Baseline_Build builds
-its legacy marshaller inside the timed method on every call (A1), the feature's unmarshall
-also checks the status and attaches the `SdkHttpResponse` and the response metadata (A2),
-and the feature's Query marshall includes form encoding and Content-Length, which the
-legacy client does after its marshaller (A5). The profiling pass measures their share,
-and the summary can subtract it (see below).
+accepted difference. Three work-boundary differences remain, and the profiling pass
+measures each one (see below):
+
+- A1-objects: the Baseline_Build builds its legacy marshaller objects (marshaller,
+  builder, context, endpoint lookup) inside the timed method on every call; the feature
+  resolves its `ClientProtocol` once per trial.
+- A2: the feature's unmarshall also checks the status and attaches the `SdkHttpResponse`
+  and the response metadata, which the legacy client does in its response handler. The
+  awsQuery request-id read is in both timed methods (the legacy unmarshaller's
+  `parseMetadata`, the feature's `readRequestId`), so it is not A2.
+- A5: the feature's Query marshall includes form encoding and Content-Length, which the
+  legacy client does after its marshaller.
+
+The legacy marshaller constructor also does request work, recorded as A1-request: the
+`SdkHttpFullRequest` builder, URI, static headers and query parameters, and the JSON
+generator or XML writer. The feature does the same work inside `serializeRequest`, so
+A1-request is not a boundary difference and stays in the baseline.
 
 The script builds each commit in its own worktree (`$TMPDIR/aws-sdk-serde-ab-<sha12>`,
 Maven repository `<worktree>-m2` in front of `~/.m2/repository`) after overlaying
@@ -203,12 +214,20 @@ category (codec write, codec read, member traversal, HTTP request construction, 
 by side, the top frames, and flags for categories or frames present in one arm only or
 more than 2x apart. It also checks the runtime code path of every cpu profile (every class,
 param and arm; `profile-path.tsv`, and a failure fails the run) and writes the share of
-the work-boundary items A1, A2 and A5 per combination to `boundary.tsv`. Given that file,
+the work-boundary items A1-objects, A1-request, A2 and A5 per combination to
+`boundary.tsv` (format 2; the frame rules are in the `serde_ab_profile.py` docstring).
+`compare --out-dir DIR` writes these files to DIR instead of the run directory, to
+recompute a fetched run without changing it. Given that file,
 `serde_ab_summary.py summarize --boundary` names the rows where an item is at least 10%
-of either arm and adds a serde-only estimate: each arm's ns/op and B/op scaled by one
-minus the items' CPU and allocation share, per row and as geometric means. With
-`--profile` after timing, `summary.md` includes it. The estimate is approximate (the
-shares come from the profiling run, and the A5 rule covers percent-encoding only).
+of either arm and adds a comparable estimate: each arm's ns/op and B/op scaled by one
+minus its CPU and allocation share of A1-objects, A2 and A5 (A1-request stays in the
+baseline), per row and as per-class and per-protocol geometric means (a protocol is the
+geometric mean of its marshall and unmarshall class geomeans). A reference table with
+every item removed (serde-only, A1 fully removed) follows; it overstates the baseline's
+removal. A format-1 `boundary.tsv` from earlier versions (columns `A1_*`, `A2_*`, `A5_*`)
+still gives the old serde-only estimate. With `--profile` after timing, `summary.md`
+includes it. The estimate is approximate (the shares come from the profiling run, and the
+A5 rule covers percent-encoding only).
 
 ```bash
 scripts/schema-serde/serde-ab.sh --jar baseline=<out>/jars/baseline.jar \
