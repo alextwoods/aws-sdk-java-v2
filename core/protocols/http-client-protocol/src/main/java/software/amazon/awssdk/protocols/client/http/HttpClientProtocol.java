@@ -367,8 +367,23 @@ public abstract class HttpClientProtocol implements ClientProtocol<SdkHttpFullRe
      * @return the request content
      */
     protected final ContentStreamProvider finishRequestBody(ApiOperation<?, ?> operation, ByteBufferOutputStream body) {
-        bufferSizeHints.record(operation, body.size());
+        recordRequestBodySize(operation, body.size());
         return body.toContentStreamProvider();
+    }
+
+    /**
+     * Records the size of a serialized request body as the starting size of the operation's next buffer, for a body
+     * that is already in the request.
+     */
+    final void recordRequestBodySize(ApiOperation<?, ?> operation, int size) {
+        bufferSizeHints.record(operation, size);
+    }
+
+    /**
+     * Returns whether the operation's last request body recorded was empty.
+     */
+    final boolean lastRequestBodyWasEmpty(ApiOperation<?, ?> operation) {
+        return bufferSizeHints.lastSizeWasEmpty(operation);
     }
 
     /**

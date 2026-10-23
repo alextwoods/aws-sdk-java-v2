@@ -57,6 +57,26 @@ class MarshallBufferSizeTrackerTest {
     }
 
     @Test
+    void emptyBodyIsRememberedUntilANonEmptyOne() {
+        MarshallBufferSizeTracker hints = new MarshallBufferSizeTracker();
+        ApiOperation<?, ?> op = operation("A");
+        assertThat(hints.lastSizeWasEmpty(op)).isFalse();
+
+        hints.record(op, 0);
+        assertThat(hints.lastSizeWasEmpty(op)).isTrue();
+        assertThat(hints.initialCapacity(op)).isEqualTo(MarshallBufferSizeTracker.MIN_CAPACITY);
+
+        hints.record(op, 5);
+        assertThat(hints.lastSizeWasEmpty(op)).isFalse();
+        assertThat(hints.initialCapacity(op)).isEqualTo(MarshallBufferSizeTracker.MIN_CAPACITY);
+
+        hints.record(op, 400);
+        assertThat(hints.lastSizeWasEmpty(op)).isFalse();
+        assertThat(hints.initialCapacity(op)).isEqualTo(450);
+        assertThat(hints.lastSizeWasEmpty(operation("B"))).isFalse();
+    }
+
+    @Test
     void hintIsClamped() {
         assertThat(MarshallBufferSizeTracker.hintFor(0)).isEqualTo(MarshallBufferSizeTracker.MIN_CAPACITY);
         assertThat(MarshallBufferSizeTracker.hintFor(-5)).isEqualTo(MarshallBufferSizeTracker.MIN_CAPACITY);

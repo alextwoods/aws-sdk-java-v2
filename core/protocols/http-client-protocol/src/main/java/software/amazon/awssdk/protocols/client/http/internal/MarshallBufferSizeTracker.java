@@ -61,6 +61,9 @@ public final class MarshallBufferSizeTracker {
 
     private static final int INITIAL_SLOTS = 16;
 
+    // The hint stored when the last body was empty; 0 means no body was recorded.
+    private static final int EMPTY = -1;
+
     private static final AtomicReferenceFieldUpdater<MarshallBufferSizeTracker, Table> TABLE =
         AtomicReferenceFieldUpdater.newUpdater(MarshallBufferSizeTracker.class, Table.class, "table");
 
@@ -79,19 +82,34 @@ public final class MarshallBufferSizeTracker {
             return DEFAULT_CAPACITY;
         }
         int hint = current.hints[slot];
+        if (hint == EMPTY) {
+            return MIN_CAPACITY;
+        }
         return hint == 0 ? DEFAULT_CAPACITY : hint;
+    }
+
+    /**
+     * Returns whether the last body recorded for an operation was empty.
+     *
+     * @param operation the operation
+     * @return true only when the last {@link #record} call for the operation had a size of 0
+     */
+    public boolean lastSizeWasEmpty(ApiOperation<?, ?> operation) {
+        Table current = table;
+        int slot = current.find(operation);
+        return slot >= 0 && current.hints[slot] == EMPTY;
     }
 
     /**
      * Records the size of a body serialized for an operation. The next buffer starts at that size plus one eighth, so a
      * body of the same or a slightly larger size fits without growing, clamped to [{@link #MIN_CAPACITY},
-     * {@link #MAX_CAPACITY}].
+     * {@link #MAX_CAPACITY}]. A size of 0 is also remembered as an empty body (see {@link #lastSizeWasEmpty}).
      *
      * @param operation the operation
      * @param size the number of bytes serialized
      */
     public void record(ApiOperation<?, ?> operation, int size) {
-        int hint = hintFor(size);
+        int hint = size == 0 ? EMPTY : hintFor(size);
         while (true) {
             Table current = table;
             int slot = current.find(operation);

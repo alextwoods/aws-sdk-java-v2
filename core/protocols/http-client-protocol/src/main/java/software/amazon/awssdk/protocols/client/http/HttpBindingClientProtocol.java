@@ -132,7 +132,10 @@ public abstract class HttpBindingClientProtocol extends HttpClientProtocol {
     @Override
     protected final <I extends SerializableStruct, O extends SerializableStruct> SdkHttpFullRequest createRequest(
         ApiOperation<I, O> operation, I input, ExecutionAttributes context, URI endpoint) {
-        ByteBufferOutputStream body = newRequestBodyBuffer(operation);
+        // Whether the codec writes a body into the buffer depends only on the operation's input schema and this
+        // protocol's flags, so an operation whose last request wrote none (a blob payload, only bound members) gets no
+        // buffer. If one ever did write a body, the serializer would use a buffer of its own, which is only slower.
+        ByteBufferOutputStream body = lastRequestBodyWasEmpty(operation) ? null : newRequestBodyBuffer(operation);
         SdkHttpFullRequest request = httpBinding.requestSerializer()
                                                 .operation(operation)
                                                 .payloadCodec(payloadCodec())
@@ -144,9 +147,11 @@ public abstract class HttpBindingClientProtocol extends HttpClientProtocol {
                                                 .trimGreedyLabelLeadingSlash(trimGreedyLabelLeadingSlash())
                                                 .bodyBuffer(body)
                                                 .serializeRequest();
-        // The request already holds the body when the codec wrote one into the buffer; this only records its size as
-        // the next request's starting capacity.
-        finishRequestBody(operation, body);
+        // The request already holds the body when the codec wrote one into the buffer; record its size (0 when the
+        // codec wrote none) as the next request's starting capacity.
+        if (body != null) {
+            recordRequestBodySize(operation, body.size());
+        }
         if (isEventStream(operation.inputStreamMember())) {
             // The event stream is the @httpPayload, which the serializer skips; the other members are bound to the
             // request line and headers. The request pipeline sends the encoded events as the body.

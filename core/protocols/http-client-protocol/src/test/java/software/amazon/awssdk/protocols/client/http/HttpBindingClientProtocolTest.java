@@ -27,6 +27,7 @@ import static software.amazon.awssdk.protocols.client.http.TestShapes.response;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -102,6 +103,40 @@ class HttpBindingClientProtocolTest {
     private static final ApiOperation<SerializableStruct, SerializableStruct> CHAT =
         operation("Chat", new HttpTrait("POST", "/chat"), CHAT_SHAPE);
 
+    /**
+     * {@code PUT /blob}: a header and a string {@code @httpPayload}, sent as the raw body as a blob payload is.
+     */
+    private static final Schema BLOB_SHAPE = Schema.structureBuilder(ShapeId.fromParts(NS, "BlobShape"))
+                                                   .putMember("tag", PreludeSchemas.STRING,
+                                                              new HttpHeaderTrait("X-Tag"))
+                                                   .putMember("data", PreludeSchemas.STRING,
+                                                              HttpPayloadTrait.INSTANCE)
+                                                   .builderSupplier(() -> new Values(
+                                                       HttpBindingClientProtocolTest.BLOB_SHAPE))
+                                                   .build();
+
+    private static final ApiOperation<SerializableStruct, SerializableStruct> PUT_BLOB =
+        operation("PutBlob", new HttpTrait("PUT", "/blob"), BLOB_SHAPE);
+
+    private static final Schema BODY_ONLY = Schema.structureBuilder(ShapeId.fromParts(NS, "BodyOnly"))
+                                                  .putMember("message", PreludeSchemas.STRING)
+                                                  .builderSupplier(() -> new Values(
+                                                      HttpBindingClientProtocolTest.BODY_ONLY))
+                                                  .build();
+
+    /**
+     * {@code PUT /struct}: a header and a structure {@code @httpPayload}.
+     */
+    private static final Schema STRUCT_PAYLOAD_SHAPE =
+        Schema.structureBuilder(ShapeId.fromParts(NS, "StructPayloadShape"))
+              .putMember("tag", PreludeSchemas.STRING, new HttpHeaderTrait("X-Tag"))
+              .putMember("greeting", BODY_ONLY, HttpPayloadTrait.INSTANCE)
+              .builderSupplier(() -> new Values(HttpBindingClientProtocolTest.STRUCT_PAYLOAD_SHAPE))
+              .build();
+
+    private static final ApiOperation<SerializableStruct, SerializableStruct> PUT_STRUCT_PAYLOAD =
+        operation("PutStructPayload", new HttpTrait("PUT", "/struct"), STRUCT_PAYLOAD_SHAPE);
+
     private static final TestProtocol PROTOCOL = new TestProtocol();
 
     @Test
@@ -130,6 +165,59 @@ class HttpBindingClientProtocolTest {
         ByteBuffer body = request.contentStreamProvider().get().contentAsByteBufferOrNull();
         assertThat(body.remaining()).isPositive();
         assertThat(decode(HEADER_ONLY, body).values).isEmpty();
+    }
+
+    @Test
+    void serializeRequest_withoutACodecBody_skipsTheBodyBufferAndSendsTheSameRequest() {
+        TestProtocol protocol = new TestProtocol();
+        SerializableStruct headerOnly = new Values(HEADER_ONLY).set("tag", "t").build();
+        SerializableStruct blob = new Values(BLOB_SHAPE).set("tag", "t").set("data", "payload").build();
+
+        // The first request records that no codec body was written; the next ones get no buffer and are the same.
+        assertSameRequests(protocol, TAG, headerOnly);
+        assertThat(protocol.lastRequestBodyWasEmpty(TAG)).isTrue();
+        assertSameRequests(protocol, PUT_BLOB, blob);
+        assertThat(protocol.lastRequestBodyWasEmpty(PUT_BLOB)).isTrue();
+        assertThat(body(protocol.serializeRequest(PUT_BLOB, blob, new ExecutionAttributes(), ENDPOINT)))
+            .isEqualTo("payload");
+
+        SerializableStruct item = new Values(ITEM).set("key", "k").set("message", "hi").build();
+        assertSameRequests(protocol, PUT_ITEM, item);
+        assertThat(protocol.lastRequestBodyWasEmpty(PUT_ITEM)).isFalse();
+    }
+
+    @Test
+    void serializeRequest_whenAnOperationStartsWritingACodecBody_usesTheSerializersOwnBuffer() {
+        TestProtocol protocol = new TestProtocol();
+        protocol.omitEmptyPayload = true;
+        SdkHttpFullRequest none = protocol.serializeRequest(TAG, new Values(HEADER_ONLY).set("tag", "t").build(),
+                                                            new ExecutionAttributes(), ENDPOINT);
+        assertThat(none.contentStreamProvider()).isEmpty();
+        assertThat(protocol.lastRequestBodyWasEmpty(TAG)).isTrue();
+
+        // An input whose schema has a body member, sent through the same operation instance.
+        SdkHttpFullRequest withBody = protocol.serializeRequest(TAG, new Values(BODY_ONLY).set("message", "hi").build(),
+                                                                new ExecutionAttributes(), ENDPOINT);
+        ByteBuffer body = withBody.contentStreamProvider().get().contentAsByteBufferOrNull();
+        assertThat(withBody.firstMatchingHeader("Content-Length")).hasValue(String.valueOf(body.remaining()));
+        assertThat(decode(BODY_ONLY, body).values).containsExactly(entry("message", "hi"));
+    }
+
+    @Test
+    void serializeRequest_whenAllowEmptyStructPayloadFlips_sendsTheEmptyStructure() {
+        TestProtocol protocol = new TestProtocol();
+        SerializableStruct input = new Values(STRUCT_PAYLOAD_SHAPE).set("tag", "t").build();
+        SdkHttpFullRequest first = protocol.serializeRequest(PUT_STRUCT_PAYLOAD, input, new ExecutionAttributes(),
+                                                             ENDPOINT);
+        assertThat(first.contentStreamProvider()).isEmpty();
+
+        protocol.allowEmptyStructPayload = true;
+        SdkHttpFullRequest second = protocol.serializeRequest(PUT_STRUCT_PAYLOAD, input, new ExecutionAttributes(),
+                                                              ENDPOINT);
+        ByteBuffer body = second.contentStreamProvider().get().contentAsByteBufferOrNull();
+        assertThat(body.remaining()).isPositive();
+        assertThat(second.firstMatchingHeader("Content-Type")).hasValue("application/cbor");
+        assertThat(second.firstMatchingHeader("Content-Length")).hasValue(String.valueOf(body.remaining()));
     }
 
     @Test
@@ -204,6 +292,30 @@ class HttpBindingClientProtocolTest {
                                  .build();
     }
 
+    /**
+     * Serializes the input three times and checks the requests match: method, path, headers, query and body.
+     */
+    private static void assertSameRequests(TestProtocol protocol, ApiOperation<SerializableStruct, SerializableStruct> op,
+                                           SerializableStruct input) {
+        SdkHttpFullRequest first = protocol.serializeRequest(op, input, new ExecutionAttributes(), ENDPOINT);
+        for (int i = 2; i <= 3; i++) {
+            SdkHttpFullRequest next = protocol.serializeRequest(op, input, new ExecutionAttributes(), ENDPOINT);
+            assertThat(next.method()).as("call %s", i).isEqualTo(first.method());
+            assertThat(next.encodedPath()).as("call %s", i).isEqualTo(first.encodedPath());
+            assertThat(next.headers()).as("call %s", i).isEqualTo(first.headers());
+            assertThat(next.rawQueryParameters()).as("call %s", i).isEqualTo(first.rawQueryParameters());
+            assertThat(body(next)).as("call %s", i).isEqualTo(body(first));
+        }
+    }
+
+    private static String body(SdkHttpFullRequest request) {
+        if (!request.contentStreamProvider().isPresent()) {
+            return null;
+        }
+        ByteBuffer body = request.contentStreamProvider().get().contentAsByteBufferOrNull();
+        return StandardCharsets.ISO_8859_1.decode(body.duplicate()).toString();
+    }
+
     private static Values decode(Schema schema, ByteBuffer body) {
         return new Values(schema).deserialize(CODEC.createDeserializer(body.duplicate()));
     }
@@ -220,6 +332,8 @@ class HttpBindingClientProtocolTest {
      * A protocol with every hook at its default.
      */
     private static final class TestProtocol extends HttpBindingClientProtocol {
+        private boolean omitEmptyPayload;
+        private boolean allowEmptyStructPayload;
         private final HttpErrorDeserializer errors = HttpErrorDeserializer.builder()
                                                                           .codec(CODEC)
                                                                           .serviceId(SERVICE_ID)
@@ -247,6 +361,16 @@ class HttpBindingClientProtocolTest {
         @Override
         protected HttpErrorDeserializer errorDeserializer() {
             return errors;
+        }
+
+        @Override
+        protected boolean omitEmptyPayload() {
+            return omitEmptyPayload;
+        }
+
+        @Override
+        protected boolean allowEmptyStructPayload(Schema inputSchema) {
+            return allowEmptyStructPayload;
         }
     }
 
