@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import org.hamcrest.MatcherAssert;
 import org.junit.jupiter.api.BeforeAll;
@@ -48,6 +49,7 @@ import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeBuilder;
 import software.amazon.awssdk.schema.SmithyEnum;
+import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.serde.SpecificShapeSerializer;
 import software.amazon.awssdk.utils.builder.SdkBuilder;
 import software.amazon.smithy.model.Model;
@@ -229,11 +231,36 @@ class SchemaSerdeModelClassTest {
             invoke(builderType, requestBuilder, "names", java.util.Collection.class, Arrays.asList("a", "b"));
             invoke(builderType, requestBuilder, "color", String.class, "RED");
             invoke(builderType, requestBuilder, "when", Instant.class, Instant.EPOCH);
-            invoke(builderType, requestBuilder, "data", SdkBytes.class, SdkBytes.fromUtf8String("hi"));
+            SdkBytes data = SdkBytes.fromUtf8String("hi");
+            invoke(builderType, requestBuilder, "data", SdkBytes.class, data);
             Object request = ((SdkBuilder<?, ?>) requestBuilder).build();
             assertThat(request.toString())
                 .isEqualTo("GetThingRequest(Id=i-1, Token=t, Names=[a, b], Color=RED, When=1970-01-01T00:00:00Z, "
                            + "Data=SdkBytes(bytes=0x6869))");
+
+            // The blob member reaches writeBlob(Schema, byte[]) as the SdkBytes array itself, not a copy or a
+            // ByteBuffer (SpecificShapeSerializer rejects the ByteBuffer write).
+            List<byte[]> blobs = new ArrayList<>();
+            ((SerializableStruct) request).serializeMembers(new SpecificShapeSerializer() {
+                @Override
+                public void writeString(Schema schema, String value) {
+                }
+
+                @Override
+                public <T> void writeList(Schema schema, T listState, int size, BiConsumer<T, ShapeSerializer> consumer) {
+                }
+
+                @Override
+                public void writeTimestamp(Schema schema, Instant value) {
+                }
+
+                @Override
+                public void writeBlob(Schema schema, byte[] value) {
+                    blobs.add(value);
+                }
+            });
+            assertThat(blobs).hasSize(1);
+            assertThat(blobs.get(0)).isSameAs(data.asByteArrayUnsafe());
 
             List<SdkField<?>> fields = ((SdkPojo) request).sdkFields();
             assertThat(fields.stream().map(SdkField::memberName).collect(Collectors.toList()))

@@ -314,7 +314,7 @@ public final class GetThingRequest extends DemoRequest implements ToCopyableBuil
       serializer.writeTimestamp(M_WHEN, this.when);
     }
     if (this.data != null) {
-      serializer.writeBlob(M_DATA, this.data.asByteBuffer());
+      serializer.writeBlob(M_DATA, this.data.asByteArrayUnsafe());
     }
     if (this.nested != null) {
       serializer.writeStruct(M_NESTED, this.nested);

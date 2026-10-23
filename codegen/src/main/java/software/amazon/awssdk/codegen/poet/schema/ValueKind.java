@@ -97,12 +97,14 @@ public enum ValueKind {
 
     /**
      * Renders {@code serializer.write<Kind>(schema, value)} for a value that is not null. Lists and maps need their
-     * {@code <Svc>SharedSerde} writer ({@code writer}); other kinds ignore it.
+     * {@code <Svc>SharedSerde} writer ({@code writer}); other kinds ignore it. Blobs pass the {@code SdkBytes} array to
+     * {@code writeBlob(Schema, byte[])}, so the codecs read it without a copy; serializers that do not override that
+     * method get a read-only view of the array, as {@code asByteBuffer()} gave them.
      */
     public CodeBlock write(String serializer, CodeBlock schema, CodeBlock value, CodeBlock writer) {
         switch (this) {
             case BLOB:
-                return CodeBlock.of("$N.writeBlob($L, $L.asByteBuffer())", serializer, schema, value);
+                return CodeBlock.of("$N.writeBlob($L, $L.asByteArrayUnsafe())", serializer, schema, value);
             case DOCUMENT:
                 return CodeBlock.of("$N.writeDocument($L, $T.wrapLegacy($L))", serializer, schema,
                                     SchemaRuntimeType.SCHEMA_SERDE_SUPPORT, value);
