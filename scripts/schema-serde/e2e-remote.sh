@@ -73,7 +73,7 @@
 #                          host-info.txt
 #   stop SESSION           terminate that session's processes only (its setsid session); never other sessions
 #   --self-test            local checks of the session script this script writes (no host)
-# Options:
+# Options (before or after the command, but before a "--"):
 #   --target USER@HOST     ssh destination (default: $E2E_REMOTE_TARGET, else the task's metal host)
 #   --key PATH             ssh identity file (default: $E2E_REMOTE_KEY, else the task's key)
 #   --remote-dir DIR       remote root under the remote home (default e2e-racecar; serde-ab* is refused, those
@@ -197,7 +197,11 @@ self_test() {
 CMD=""
 ARGS=()
 while [[ $# -gt 0 ]]; do
-    if [[ -n "$CMD" ]]; then ARGS+=("$1"); shift; continue; fi
+    # The global options may also follow the command, up to a "--" (after which everything is the command's).
+    if [[ "$1" == "--" ]]; then ARGS+=("$@"); break; fi
+    if [[ -n "$CMD" && "$1" != --target && "$1" != --key && "$1" != --remote-dir && "$1" != --dest ]]; then
+        ARGS+=("$1"); shift; continue
+    fi
     case "$1" in
         --target) need "$@"; TARGET="$2"; shift 2 ;;
         --key) need "$@"; KEY="$2"; shift 2 ;;
@@ -406,7 +410,7 @@ case "$CMD" in
                      'bash bench-session.sh --self-test'; do
                 log=\"/tmp/e2e-remote-selftest-\$(echo \"\$t\" | tr -c 'A-Za-z0-9' '_').log\"
                 if PYTHONDONTWRITEBYTECODE=1 \$pin nice -n 19 \$t > \"\$log\" 2>&1; then
-                    echo \"  \$t: OK (\$(tail -1 \"\$log\"))\"
+                    echo \"  \$t: OK (\$(grep -E '^(OK|PASS|Ran )' \"\$log\" | tr '\\n' ' '))\"
                 else
                     echo \"  \$t: FAILED\"; tail -30 \"\$log\"; exit 1
                 fi
