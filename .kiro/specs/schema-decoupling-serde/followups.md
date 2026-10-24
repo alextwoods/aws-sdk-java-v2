@@ -129,6 +129,35 @@ Each item has an ID (`FU-n`), a status (`Open`, `Needs decision`, `Needs benchma
 - **Also:** `awsJson1_0_PutItemRequest_MixedItem_S`/`_M` are bimodal per fork on the laptop (for example 458–708 ns for one jar), and single-fork rounds put the interleaving fix up to 1.3x slower or faster than the previous branch tip; an interleaved 4-fork run had equal medians (583 vs 584, 2,332 vs 2,372 ns) and the CPU profiles show no samples in the new code.
 - **Next step:** Report these cases, before and after this branch, in the metal run. If the awsQuery slowdown reproduces there, profile it (CPU, `-XX:+DebugNonSafepoints`) on both jars.
 
+## smithy-java 1.8.0 port (round 2)
+
+Triage of smithy-java `142eecf4d..95df4c14f`; the ported optimizations are in `docs/design/schema-serde/porting-deviations.md` ("smithy-java 1.8.0 serde ports (round 2)").
+
+### FU-22 Output buffer pooling with leased request bodies (smithy-java `0e88c8e76`, `304e02511`)
+- **Status:** Needs decision
+- **Context:** smithy-java 1.8.0 serializes request bodies into pooled power-of-two arrays (4 KiB–1 MiB, `OutputBuffers`), hands them to the request as a leased `DataStream`, and releases them after the call completes, including retries; reads after release throw, and transports abandon a body they may still be sending. Our `fix/marshall-allocation` series (F1/FU-17, FU-4) already removed the copy upstream also removed, so the remaining gain is the body array itself (about one body size per request). In V2 the body reaches HTTP clients and interceptors as a `ContentStreamProvider` whose `contentAsByteBufferOrNull()` is a raw view, so a reused array could expose one request's bytes to a later request, and async clients may write after a timeout.
+- **Next step:** Decide whether V2 wants request-body leases (sync and async release points, interceptor and HTTP client contracts, a `retainRequest`-style copy for callers that keep the request); if so, measure `BinaryData_L` and `_M` marshall B/op first.
+
+### FU-23 smithy-java String-internals fast paths are not reachable from Java 8 code (`8c5cf2907`, `b11fd4417`, `be145fcab`)
+- **Status:** Needs decision
+- **Context:** Upstream reads `String.value`/`coder` and calls `StringCoding.countPositives` through a trusted lookup taken from `sun.misc.Unsafe` (`CompactStringAccess`). The CBOR text-string writer (claimed −11% to −25% on CBOR serialize of `ShallowMap_M`/`MixedItem_M`, PR #1393), the XML Latin-1 escape writer, and the endpoint SWAR validators depend on it. Our design never ports `CompactStringAccess`, and Java 8 public API cannot copy a String's bytes while also telling whether it had characters above U+00FF.
+- **Next step:** Decide whether a JDK 9+ code path (multi-release JAR or a runtime-selected implementation) is acceptable for the codecs; until then these upstream gains stay unavailable.
+
+### FU-24 `LazyXmlSerializer` writes after `close()` (`0e88c8e76`)
+- **Status:** Open
+- **Context:** smithy-java now marks the serializer closed and throws `IllegalStateException` on a write after `close()`. Ours already forgets its delegate before closing it, but a later write acquires a new pooled delegate and writes to the sink, and that delegate is never returned.
+- **Next step:** Throw on write after close, as upstream and our JSON and CBOR serializers do ("The serializer is closed"); confirm no caller writes after close.
+
+### FU-25 smithy-java 1.8.0 pipeline optimizations applicable to V2 core
+- **Status:** Open
+- **Context:** Not on the SERDE benchmarks' path. Each, with where it would go:
+  - `ebe122c96` skip interceptor hooks that are not overridden (`core/sdk-core/.../interceptor/ExecutionInterceptorChain.java`);
+  - `298b5d799` guard retry debug logging before the token bucket lookup and lambda capture (`core/retries/.../internal/BaseRetryStrategy.java`: `logAcquireInitialToken`, `logRefreshTokenSuccess`, `logRecordSuccess`);
+  - `1f68318ce` skip the auth scheme property merge when there are no overrides (`core/sdk-core/.../internal/http/AuthSchemeResolutionCache.java` `mergePreExistingAuthSchemeProperties`; racecar E13 covers `applyInterceptorModifiedProperties`);
+  - `c62499ffd` SigV4 byte-array canonicalization and caches (racecar F, `opt/F`);
+  - `0f0bedf59` app ID resolved once per client (legacy `ApplyUserAgentStage`; the schema pipeline already has `UserAgentHeaderCache`).
+- **Next step:** Measure with the e2e harness when the pipeline round starts.
+
 ## Still open from the spec (`design.md` §D.15)
 
 Not re-checked against the branch; listed so they aren't lost.
