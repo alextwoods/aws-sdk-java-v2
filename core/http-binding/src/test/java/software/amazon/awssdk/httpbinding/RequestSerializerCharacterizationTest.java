@@ -17,13 +17,13 @@ package software.amazon.awssdk.httpbinding;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static software.amazon.awssdk.httpbinding.RequestSerializerTest.CODEC;
 import static software.amazon.awssdk.httpbinding.RequestSerializerTest.WHEN;
 import static software.amazon.awssdk.httpbinding.RequestSerializerTest.body;
 
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -32,16 +32,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.function.BiConsumer;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
+import software.amazon.awssdk.httpbinding.internal.HttpBindingSerializer;
 import software.amazon.awssdk.schema.ApiOperation;
 import software.amazon.awssdk.schema.PreludeSchemas;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
-import software.amazon.awssdk.schema.serde.MapSerializer;
 import software.amazon.awssdk.schema.serde.ShapeSerializer;
 import software.amazon.awssdk.schema.traits.HttpHeaderTrait;
 import software.amazon.awssdk.schema.traits.HttpPayloadTrait;
@@ -103,23 +101,6 @@ class RequestSerializerCharacterizationTest {
     private static final List<String> QUERY_INPUT_ENTRIES = Arrays.asList(
         "lit=['1']", "bare=[null]", "q=['v']", "qs=['1', '2', ' ']", "multi=['a', 'b']", "extra=['e']",
         "Q=['upper']");
-
-    private static final Schema PREFIX_ONLY =
-        Schema.structureBuilder(TestModel.id("CharPrefixOnly"))
-              .putMember("meta", TestModel.STRING_MAP, new HttpPrefixHeadersTrait("X-Meta-"))
-              .build();
-    private static final ApiOperation<SerializableStruct, SerializableStruct> PREFIX_ONLY_OPERATION =
-        TestModel.operation("CharPrefixOnly", new HttpTrait("POST", "/m"), PREFIX_ONLY, PREFIX_ONLY);
-    // Non-capturing, so writing a map entry allocates nothing in the test code.
-    private static final BiConsumer<String[], ShapeSerializer> WRITE_VALUE =
-        (entry, s) -> s.writeString(TestModel.STRING_MAP.mapValueMember(), entry[1]);
-    private static final BiConsumer<String[][], MapSerializer> WRITE_ENTRIES = (entries, ms) -> {
-        for (String[] entry : entries) {
-            ms.writeEntry(TestModel.STRING_MAP.mapKeyMember(), entry[0], entry, WRITE_VALUE);
-        }
-    };
-    // Written by the putHeaders calibration so its lowercase names escape.
-    private static volatile String lowercaseName;
 
     @Test
     void headerMembersOfEveryKind() throws IOException {
@@ -281,84 +262,94 @@ class RequestSerializerCharacterizationTest {
 
     @Test
     void requestHeaders_areWrittenOnce() {
-        com.sun.management.ThreadMXBean threads = allocationCounter();
-        int entries = 32;
-        int rounds = 100;
-        String[][] meta = new String[entries][];
-        for (int i = 0; i < entries; i++) {
-            meta[i] = new String[] {"k" + i, "v" + i};
-        }
-        String[][] none = new String[0][];
-        SerializableStruct full = prefixOnly(meta);
-        SerializableStruct empty = prefixOnly(none);
+        Map<String, String> prefix = new LinkedHashMap<>();
+        prefix.put("Abc", "1");
+        prefix.put("Other", "o");
+        List<String> calls = new ArrayList<>();
+        HttpBindingSerializer serializer =
+            new HttpBindingSerializer(HEADERS_OPERATION.schema(), CODEC, "application/json",
+                                      recording(SdkHttpFullRequest.builder(), calls));
 
-        long perEntry = perEntryBytes(threads, entries, rounds, () -> serialize(full), () -> serialize(empty));
-        // The same header writes straight into a request builder, with the name concatenation and the lowercase name
-        // the serializer builds for its static-header check.
-        long calibration = perEntryBytes(threads, entries, rounds, () -> putHeaders(meta), () -> putHeaders(none));
+        SchemaStruct.builder(HEADERS)
+                    .set("str", "s")
+                    .set("num", 5)
+                    .set("flag", true)
+                    .set("when", WHEN)
+                    .set("json", "{}")
+                    .set("list", Arrays.asList("a", "b"))
+                    .set("prefix", prefix)
+                    .set("body", "n")
+                    .build()
+                    .serialize(serializer);
 
-        // The serializer also allocates one map-entry value serializer (24 B) per entry. Building the headers in a
-        // map and copying them into the request builder added a TreeMap entry and its value list per header.
-        assertThat(perEntry).as("per-entry bytes %s, calibration %s", perEntry, calibration)
-                            .isLessThanOrEqualTo(calibration + 40);
+        // One putHeader per header and no other builder call. Collecting the headers in a map and copying them into
+        // the request builder would show up as a headers(Map) call or as putHeader(String, List) calls.
+        assertThat(calls).containsExactlyInAnyOrder(
+            "putHeader[X-Str, s]",
+            "putHeader[X-Num, 5]",
+            "putHeader[x-flag, true]",
+            "putHeader[X-When, Tue, 29 Apr 2014 18:30:38 GMT]",
+            "putHeader[X-Json, e30=]",
+            "putHeader[X-List, a, b]",
+            "putHeader[X-Abc, 1]",
+            "putHeader[X-Other, o]",
+            "putHeader[Content-Type, application/json]");
     }
 
-    private static SdkHttpFullRequest serialize(SerializableStruct input) {
-        return serialize(PREFIX_ONLY_OPERATION, "https://example.com", input);
-    }
-
-    private static void putHeaders(String[][] entries) {
-        SdkHttpFullRequest.Builder builder = SdkHttpFullRequest.builder();
-        for (String[] entry : entries) {
-            String name = "X-Meta-" + entry[0];
-            // Stored so the JIT cannot drop the allocation; it sometimes removed part of it when only isEmpty() was
-            // checked, which lowered the calibration by 24 B per entry and failed the comparison.
-            lowercaseName = name.toLowerCase(Locale.ROOT);
-            builder.putHeader(name, entry[1]);
-        }
-    }
-
-    private static long perEntryBytes(com.sun.management.ThreadMXBean threads, int entries, int rounds, Runnable full,
-                                      Runnable empty) {
-        for (int i = 0; i < 200; i++) {
-            full.run();
-            empty.run();
-        }
-        long threadId = Thread.currentThread().getId();
-        long before = threads.getThreadAllocatedBytes(threadId);
-        for (int i = 0; i < rounds; i++) {
-            full.run();
-        }
-        long fullBytes = threads.getThreadAllocatedBytes(threadId) - before;
-        before = threads.getThreadAllocatedBytes(threadId);
-        for (int i = 0; i < rounds; i++) {
-            empty.run();
-        }
-        long emptyBytes = threads.getThreadAllocatedBytes(threadId) - before;
-        return (fullBytes - emptyBytes) / ((long) rounds * entries);
-    }
-
-    /**
-     * A {@code PREFIX_ONLY} input that writes its map without allocating per entry itself.
-     */
-    private static SerializableStruct prefixOnly(String[][] entries) {
-        Schema member = PREFIX_ONLY.member("meta");
-        return new SerializableStruct() {
+    @Test
+    void serializeRequest_writesHeadersIntoTheRequestBuilder() {
+        SerializableStruct input = SchemaStruct.builder(HEADERS).set("str", "s").build();
+        List<ShapeSerializer> serializers = new ArrayList<>();
+        SerializableStruct recordingInput = new SerializableStruct() {
             @Override
             public Schema sdkSchema() {
-                return PREFIX_ONLY;
+                return input.sdkSchema();
+            }
+
+            @Override
+            public void serialize(ShapeSerializer encoder) {
+                serializers.add(encoder);
+                input.serialize(encoder);
             }
 
             @Override
             public void serializeMembers(ShapeSerializer serializer) {
-                serializer.writeMap(member, entries, entries.length, WRITE_ENTRIES);
+                input.serializeMembers(serializer);
             }
 
             @Override
             public <T> T getMemberValue(Schema schema) {
-                return null;
+                return input.getMemberValue(schema);
             }
         };
+
+        SdkHttpFullRequest request = serialize(HEADERS_OPERATION, "https://example.com", recordingInput);
+
+        assertThat(request.firstMatchingHeader("X-Str")).hasValue("s");
+        // Only a serializer created with a request builder rejects headers(): it collects no header map to copy.
+        assertThat(serializers).singleElement().isInstanceOf(HttpBindingSerializer.class);
+        assertThatThrownBy(((HttpBindingSerializer) serializers.get(0))::headers)
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("writes into a request builder");
+    }
+
+    /**
+     * Returns a builder that records each call made on it as {@code name[arguments]} and passes it to
+     * {@code delegate}. Calls the delegate makes on itself are not recorded.
+     */
+    private static SdkHttpFullRequest.Builder recording(SdkHttpFullRequest.Builder delegate, List<String> calls) {
+        return (SdkHttpFullRequest.Builder) Proxy.newProxyInstance(
+            SdkHttpFullRequest.Builder.class.getClassLoader(), new Class<?>[] {SdkHttpFullRequest.Builder.class},
+            (proxy, method, args) -> {
+                calls.add(method.getName() + (args == null ? "[]" : Arrays.toString(args)));
+                Object result;
+                try {
+                    result = method.invoke(delegate, args);
+                } catch (InvocationTargetException e) {
+                    throw e.getCause();
+                }
+                return result == delegate ? proxy : result;
+            });
     }
 
     private static SerializableStruct queryInput() {
@@ -406,14 +397,6 @@ class RequestSerializerCharacterizationTest {
             entries.add(name + "=" + quoted);
         });
         return entries;
-    }
-
-    private static com.sun.management.ThreadMXBean allocationCounter() {
-        java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
-        assumeTrue(bean instanceof com.sun.management.ThreadMXBean);
-        com.sun.management.ThreadMXBean threads = (com.sun.management.ThreadMXBean) bean;
-        assumeTrue(threads.isThreadAllocatedMemorySupported() && threads.isThreadAllocatedMemoryEnabled());
-        return threads;
     }
 
     private static byte[] utf8(String s) {
