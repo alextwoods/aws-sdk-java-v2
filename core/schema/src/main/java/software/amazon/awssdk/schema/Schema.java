@@ -470,15 +470,23 @@ public abstract class Schema implements MemberLookup {
     /**
      * Ensures that this schema is a member that targets the given schema.
      *
-     * @param target the schema this member must target
+     * @param target the schema this member must target; must not be null
      * @return this schema
      * @throws IllegalStateException if this schema is not a member that targets {@code target}
      */
-    public Schema assertMemberTargetIs(Schema target) {
+    public final Schema assertMemberTargetIs(Schema target) {
         if (memberTarget() == target) {
             return this;
         }
-        throw new IllegalStateException("Expected a member schema that targets " + target.id() + ", found " + this);
+        throw memberTargetMismatch(target, this);
+    }
+
+    // Port of smithy-java 2fd0f976f: building the exception here keeps assertMemberTargetIs below C2's default
+    // 35-bytecode inlining limit (MaxInlineSize), so the generated deserializers that call it for every nested
+    // member can inline it.
+    private static IllegalStateException memberTargetMismatch(Schema target, Schema found) {
+        Validate.paramNotNull(target, "target");
+        return new IllegalStateException("Expected a member schema that targets " + target.id() + ", found " + found);
     }
 
     /**

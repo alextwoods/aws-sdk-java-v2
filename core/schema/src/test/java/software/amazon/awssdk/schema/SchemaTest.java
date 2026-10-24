@@ -294,17 +294,39 @@ class SchemaTest {
             .hasMessageContaining("com.example#S$a");
     }
 
+    // Ported from smithy-java 2fd0f976f (SchemaTest)
+
     @Test
-    void assertMemberTargetIs_checksTarget() {
+    void assertMemberTargetIs_returnsMemberWhenTargetMatches() {
         Schema struct = Schema.structureBuilder(id("S")).putMember("a", PreludeSchemas.STRING).build();
         Schema member = struct.member("a");
 
         assertThat(member.assertMemberTargetIs(PreludeSchemas.STRING)).isSameAs(member);
+    }
+
+    @Test
+    void assertMemberTargetIs_throwsOnMismatchedTarget() {
+        Schema struct = Schema.structureBuilder(id("S")).putMember("a", PreludeSchemas.STRING).build();
+        Schema member = struct.member("a");
+
         assertThatThrownBy(() -> member.assertMemberTargetIs(PreludeSchemas.INTEGER))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("smithy.api#Integer");
-        assertThatThrownBy(() -> struct.assertMemberTargetIs(PreludeSchemas.STRING))
-            .isInstanceOf(IllegalStateException.class);
+            .hasMessageStartingWith("Expected a member schema that targets smithy.api#Integer, found ");
+    }
+
+    @Test
+    void assertMemberTargetIs_throwsOnNonMemberSchema() {
+        assertThatThrownBy(() -> PreludeSchemas.STRING.assertMemberTargetIs(PreludeSchemas.INTEGER))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageStartingWith("Expected a member schema that targets smithy.api#Integer, found ");
+    }
+
+    @Test
+    void assertMemberTargetIs_rejectsNullTargetOnMember() {
+        Schema struct = Schema.structureBuilder(id("S")).putMember("a", PreludeSchemas.STRING).build();
+        Schema member = struct.member("a");
+
+        assertThatThrownBy(() -> member.assertMemberTargetIs(null)).isInstanceOf(NullPointerException.class);
     }
 
     // Requirements 3.7 and 3.8
