@@ -102,7 +102,9 @@ null run is missing.
 
 The suggested final decision after a REVERT works as follows:
 
-- **Rejected**: the targets were measured cleanly and showed no gain beyond the floor.
+- **Rejected**: no run failed, no floor is missing or wider than 5%, and no guard regressed, but
+  not every target gained beyond its floor. Some targets may have gained; the gain was too small or
+  too uneven to keep. A guard regression with no target gain is also Rejected.
 - **Stays Deferred (rework)**: a target gained, but a guard regressed.
 - **Stays Deferred (undecided)**: a floor is missing, a target floor is wider than 5%, or a run
   failed. Rerun on a quiet host before deciding.
