@@ -42,6 +42,25 @@ next candidate until the previous row has its final decision in the YAML.
    Prebuilt jars can be passed with `--feature-jar`, `--candidate-jar`, `--feature-jmh-jar` and
    `--candidate-jmh-jar`. `--skip-build` reuses jars from an earlier run when given the same `--out`
    directory. `--help` lists every option.
+
+   On a benchmark host, build the jars locally with `--build-only` and run the experiment with
+   `scripts/schema-serde/e2e-remote.sh experiment` (see "Running on a remote metal host" in
+   `test/sdk-standard-benchmarks/README.md`). With both `--feature-jar` and `--candidate-jar`
+   the script needs no git: the commits are the jars' `sdk.commit`. Two more options save host
+   time:
+   - `--null-run DIR` reuses an earlier null experiment instead of running a new one. The script
+     refuses unless the null run had the same settings (iterations, warmup, repetitions, clients,
+     scenarios, concurrency, metrics, JVM options and pinning) and the same feature jar
+     (sha256). Reuse it only while the feature code is unchanged; the record names the run it
+     reused.
+   - `--jmh-first` runs the JMH benchmarks before the e2e stages. If the JMH results alone give
+     REVERT, the e2e stages are skipped and the record says "e2e not run". This is safe because
+     the keep rule only adds reasons to revert: every target must gain and no guard may regress,
+     so e2e results can never turn a JMH REVERT into KEEP. When JMH does not decide REVERT, the
+     e2e stages run as usual.
+   - Ids `SJ-<sha>` are smithy-java items (FU-25 in `.kiro/specs/schema-decoupling-serde/followups.md`)
+     with `"source": "smithy-java"` in `targets.json`. They have no YAML row. The record names the
+     FU-25 clause to update instead of a YAML change.
 3. Apply the decision by hand. The script prints the YAML change and never edits the YAML itself.
    - **KEEP**: merge the candidate. Set the row's `decision` to `Applied (re-implemented here)`, set
      `classes` (the runtime classes that implement it) and `applied_in_phase: 5`, and set

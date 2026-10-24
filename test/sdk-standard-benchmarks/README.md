@@ -335,6 +335,61 @@ in the classes' SampleTime mode, arms alternating per repetition (4 repetitions)
 flags cap the GC and JIT threads (the JVM defaults on 64 cores are about 43 GC and 18
 compiler threads), and the pinning keeps every JVM on the same 16 cores.
 
+#### One session at a time: `~/bench.lock`
+
+Several workflows share one benchmark host, each under its own remote directory
+(`~/serde-ab*`, `~/e2e-racecar`). Two benchmark sessions on the host at once would
+perturb each other's numbers, so every session runs through
+`scripts/schema-serde/bench-session.sh`:
+
+1. While any benchmark process runs on the host, the session waits. It writes
+   `queued: ...` with the blocking command lines to `<session dir>/state` and checks again
+   every 60 s.
+2. It then takes `~/bench.lock` with `flock -n`, holds it for the whole session, and writes
+   the holder to `~/bench.lock.holder`. If another session holds the lock, it goes back to
+   step 1.
+3. It writes `running`, runs the session script, and writes `done exit=<status>`.
+
+A benchmark process is any process whose command line matches `BENCH_PATTERN` in
+`bench-session.sh`: `serde-ab.sh`, `paired-ab.sh`, `optimization_experiment.sh`/`.py`,
+`hot_path_check.sh`, the harness's `scripts/benchmark.sh`, a running
+`<remote dir>/sessions/<name>/session.sh`, `java ... -jar` of a jar under a `jars`, `e2e`,
+`benchmarks` or `jmh` path, JMH forks (`org.openjdk.jmh.runner.ForkedMain`) and the E2E
+harness classes (`software.amazon.awssdk.benchmark.e2e.*`). Queued sessions do not count,
+so two queued sessions do not block each other. `bench-session.sh --busy` prints what
+matches. The session's processes inherit the lock, so a stray JVM left behind keeps it and
+the next session waits instead of overlapping.
+
+The rule: start every session on the host with `serde-ab-remote.sh start` or
+`e2e-remote.sh start`/`experiment`, which both go through the wrapper. Do not start
+benchmarks on the host by hand. `serde-ab-remote.sh start` still refuses while its own
+remote directory has a session running, and otherwise queues behind sessions of other
+directories. `bash scripts/schema-serde/bench-session.sh --self-test` checks the pattern and
+(on Linux, with `flock`) the queue and the lock.
+
+#### E2E experiments on the host: `e2e-remote.sh`
+
+`scripts/schema-serde/e2e-remote.sh` runs `optimization_experiment.sh` and `paired-ab.sh`
+on the host in jar mode, from harness and JMH jars built locally with
+`optimization_experiment.sh --build-only`. It deploys the scripts and the two docs files
+they read to `~/e2e-racecar/repo/` at their repo paths. Each jar goes under a name that
+contains its sha256, so a deployed jar never changes. Every session runs from its own copy
+of `repo/`.
+
+```bash
+R=scripts/schema-serde/e2e-remote.sh   # host and key: $E2E_REMOTE_TARGET, $E2E_REMOTE_KEY
+bash $R setup --if-needed       # also re-applies the sysctls after a host restart
+bash $R deploy --jar /private/tmp/rce-exp/B1/jars/feature.jar --jar /private/tmp/rce-exp/B1/jars/candidate.jar
+bash $R experiment B1 --feature-jar e2e-<sdk12>-<sha12>.jar --candidate-jar e2e-<sdk12>-<sha12>.jar
+bash $R status; bash $R log 20
+bash $R wait 1700 <session>     # exit 0 done, 1 still queued/running, 4 unreachable, 5 ended unfinished
+bash $R fetch <session>         # out/<session>/ and the session dir, without jars
+```
+
+`experiment` uses the canonical settings: client on cores 32–47, server on 0–15, JMH on
+32–47, and the same JVM options for the client, the server and the JMH forks. Options after
+`--` are passed to `optimization_experiment.sh` (`--help` lists them).
+
 ## Schema Serde Benchmarks
 Benchmarks for the schema-based serde path (`software.amazon.awssdk.benchmark.schema`).
 They exist only on the feature branch, so they have no Baseline_Build counterpart; the

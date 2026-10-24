@@ -75,3 +75,5 @@ test/standalone-e2e-benchmarks/scripts/benchmark.sh --jar target/e2e-feature.jar
 
 Use `scripts/schema-serde/paired-ab.sh`, which builds each arm from a git ref, interleaves the runs and writes
 `paired-ab.json` for `scripts/schema-serde/paired_ab_summary.py`. See the header of each script.
+On a shared benchmark host, run them through `scripts/schema-serde/e2e-remote.sh`, which queues each session on
+`~/bench.lock` ("Running on a remote metal host" in `test/sdk-standard-benchmarks/README.md`).
