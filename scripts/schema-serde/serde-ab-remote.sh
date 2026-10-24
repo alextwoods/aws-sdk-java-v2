@@ -24,6 +24,9 @@
 #   itself with -n and its output discarded.
 #   Liveness. setsid forks and exits at once, so a pid captured at launch is useless. status, wait and start check
 #   for running sessions, serde-ab.sh, benchmark jars and JMH forks by process pattern.
+# Sessions run through bench-session.sh, the host-wide queue (see "Running on a remote metal host" in
+# test/sdk-standard-benchmarks/README.md): a session started while another remote dir's benchmark runs, or while
+# another session holds ~/bench.lock, waits (state "queued: ...") instead of overlapping it, and then holds the lock.
 # Run it with bash (it is a bash script; zsh mangles scp targets when ssh/scp are typed by hand). Nothing it starts
 # listens on a non-loopback address: the serde benchmarks run in-process, and JMH's runner-to-fork link binds
 # 127.0.0.1. setup records the host's listening TCP sockets in host-info.txt.
@@ -42,9 +45,11 @@
 #   deploy --jar PATH ...  copy the scripts and each jar with its .provenance.properties (required) and .resources.tsv;
 #                          a jar is skipped when the remote copy has the same sha256; then runs the Python self-tests
 #                          on the host
-#   start SCRIPT           ship a local bash script and run it detached as a session (cwd: the session directory);
-#                          refuses while a session, serde-ab.sh or a benchmark JVM is running
-#   status                 RUNNING or NOT-RUNNING, the matching processes, load, the newest runs and sessions
+#   start SCRIPT           ship a local bash script and run it detached as a session (cwd: the session directory)
+#                          through bench-session.sh; refuses while a session, serde-ab.sh or a benchmark JVM of this
+#                          remote dir is running, and queues while another benchmark on the host runs
+#   status                 RUNNING or NOT-RUNNING, the matching processes, load, the newest runs and sessions (with
+#                          the newest session's queue state)
 #   log [N]                the last N lines (default 40) of the newest session log
 #   wait SECONDS           poll every 60 s until nothing runs; exit 1 if something still runs after SECONDS (keep
 #                          SECONDS under the caller's own timeout and loop)
@@ -78,7 +83,7 @@ AP_SHA_ARM64="86ff97b4436accdb6d7bb65c1cf6e38a756f2037a921994d8fa1dcb97d1dc53c"
 AP_SHA_X64="1233f26fc95753e75ce32733bbcaf8f0bedc2c098b0e798af87935b08a63b24e"
 # What deploy copies: serde-ab.sh and everything it runs or imports.
 SCRIPTS=(serde-ab.sh serde_ab_checks.py serde_ab_summary.py serde_ab_profile.py SerdeWireDump.java
-         hot_path_frames.py optimization_experiment.py paired_ab_summary.py racecar_decisions.py)
+         hot_path_frames.py optimization_experiment.py paired_ab_summary.py racecar_decisions.py bench-session.sh)
 usage() { sed -n '/^# Usage:/,/^# Exit status/p' "$0" | sed 's/^# \{0,1\}//'; }
 fail_usage() { echo "$1" >&2; exit 2; }
 need() { [[ $# -ge 2 ]] || fail_usage "$1 needs a value"; }
@@ -244,7 +249,7 @@ REMOTE
         files=()
         for f in "${SCRIPTS[@]}"; do files+=("$SCRIPT_DIR/$f"); done
         rscp "${files[@]}" "$TARGET:$R/repo/scripts/schema-serde/"
-        rssh "chmod +x '$R/repo/scripts/schema-serde/serde-ab.sh'"
+        rssh "chmod +x '$R/repo/scripts/schema-serde/serde-ab.sh' '$R/repo/scripts/schema-serde/bench-session.sh'"
         for jar in ${JARS[@]+"${JARS[@]}"}; do
             name="$(basename "$jar")"
             local_sha="$(sha256_of "$jar")"
@@ -279,20 +284,23 @@ REMOTE
             echo "A serde A/B session is already running on $TARGET (see status); stop it or wait." >&2
             exit 1
         fi
+        WRAPPER="$R/repo/scripts/schema-serde/bench-session.sh"
+        rssh "test -f '$WRAPPER'" || fail_usage "$TARGET:$WRAPPER is missing; run deploy first"
         name="$base-$(date -u +%Y%m%d-%H%M%S)"
         dir="$R/sessions/$name"
         rssh "mkdir -p '$dir'"
         rscp "$script" "$TARGET:$dir/session.sh"
         # All three streams of the job and of ssh redirected, or ssh waits for the job. The background job must be
         # the redirected command alone: "cd D && job > log ... &" backgrounds the whole list in a subshell that keeps
-        # the ssh channel open until the job ends.
+        # the ssh channel open until the job ends. The wrapper's command line names .../sessions/<name>/session.sh,
+        # so ACTIVE_PATTERN matches a queued session too.
         ssh "${SSH_OPTS[@]}" -n "$TARGET" \
-            "cd \"\$HOME/$dir\" || exit 1; setsid nohup bash \"\$HOME/$dir/session.sh\" > session.log 2>&1 < /dev/null &" \
+            "cd \"\$HOME/$dir\" || exit 1; setsid nohup bash \"\$HOME/$WRAPPER\" \"\$HOME/$dir/session.sh\" > session.log 2>&1 < /dev/null &" \
             > /dev/null 2>&1 < /dev/null
         sleep 3
         echo "Started session $name on $TARGET; log: ~/$dir/session.log"
         active || echo "WARNING: nothing is running any more; the session ended or failed to start (see the log)." >&2
-        rssh "tail -5 '$dir/session.log' 2>/dev/null | sed 's/^/  /'" || true
+        rssh "echo \"  state: \$(cat '$dir/state' 2>/dev/null || echo unknown)\"; tail -5 '$dir/session.log' 2>/dev/null | sed 's/^/  /'" || true
         ;;
     status)
         rssh "
@@ -305,6 +313,10 @@ REMOTE
             echo \"  load: \$(cut -d' ' -f1-3 /proc/loadavg)\"
             echo '  newest runs:'; ls -1t '$R/out' 2>/dev/null | head -3 | sed 's/^/    /'
             echo '  newest sessions:'; ls -1t '$R/sessions' 2>/dev/null | head -3 | sed 's/^/    /'
+            d=\$(ls -1t '$R/sessions' 2>/dev/null | head -1)
+            if [ -n \"\$d\" ] && [ -f '$R/sessions/'\"\$d\"/state ]; then
+                echo \"  newest session state: \$(cut -c1-300 '$R/sessions/'\"\$d\"/state)\"
+            fi
             exit 0"
         ;;
     log)

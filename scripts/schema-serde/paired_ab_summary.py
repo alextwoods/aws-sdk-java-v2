@@ -38,6 +38,11 @@ Usage:
       (perf-notes.json, 37.10); cold start (34.7); and the RuntimeCodegenMode deferral (34.8, OD-6). Roles default
       to baseline = first arm, feature = last arm, racecar = an arm labelled "racecar". --strict exits 1 on any
       warning (a failed or undecidable criterion, or a missing note).
+  paired_ab_summary.py merge OUT_JSON RUN_JSON RUN_JSON...
+      Writes one paired-ab.json from runs of the same arms (labels, commits and jars) and harness commit with
+      different cases, for example the same arms under small-operation and batch settings. A case (client,
+      scenario) may appear in one run only. Params the runs share are kept; params that differ read
+      "mixed (see by_case)", and params.by_case maps "<client> <scenario>" to the params of the run it came from.
   paired_ab_summary.py --self-test
       Runs the unit tests below against fixture data.
 
@@ -247,6 +252,50 @@ def problems(doc):
         if len(seen) > 1:
             found.append("the null-experiment arms ran different request pipelines")
     return found
+
+
+# ==================== merge ====================
+
+MIXED = "mixed (see by_case)"
+
+
+def _arm_identity(arm):
+    return (arm["label"], arm.get("commit"), arm.get("jar_sha256") or arm.get("jar"))
+
+
+def merge(docs):
+    """One document from several runs with the same arms and harness commit and disjoint cases."""
+    if len(docs) < 2:
+        raise SystemExit("merge needs at least two runs")
+    first = docs[0]
+    run_ids = [str(d["params"].get("run_id", "?")) for d in docs]
+    for d, run_id in zip(docs[1:], run_ids[1:]):
+        if [_arm_identity(a) for a in d["arms"]] != [_arm_identity(a) for a in first["arms"]]:
+            raise SystemExit(f"merge: run {run_id} has other arms than run {run_ids[0]} "
+                             f"({[_arm_identity(a) for a in d['arms']]} vs {[_arm_identity(a) for a in first['arms']]})")
+        if d["params"].get("harness_commit") != first["params"].get("harness_commit"):
+            raise SystemExit(f"merge: run {run_id} has harness commit {d['params'].get('harness_commit')}, run "
+                             f"{run_ids[0]} {first['params'].get('harness_commit')}")
+        if is_null_experiment(d) != is_null_experiment(first):
+            raise SystemExit(f"merge: run {run_id} and run {run_ids[0]} are not both null experiments or both not")
+    seen = {}
+    by_case = OrderedDict()
+    runs = []
+    for d, run_id in zip(docs, run_ids):
+        for case in cases(d):
+            if case in seen:
+                raise SystemExit(f"merge: case {case[0]} {case[1]} is in run {seen[case]} and in run {run_id}")
+            seen[case] = run_id
+            by_case[f"{case[0]} {case[1]}"] = d["params"]
+        for r in d["runs"]:
+            runs.append(dict(r, run=len(runs) + 1, source_run_id=run_id, source_run=r["run"]))
+    params = OrderedDict()
+    for key in OrderedDict.fromkeys(k for d in docs for k in d["params"]):
+        values = {json.dumps(d["params"].get(key), sort_keys=True) for d in docs}
+        params[key] = first["params"].get(key) if len(values) == 1 else MIXED
+    params["run_id"] = "+".join(run_ids)
+    params["by_case"] = by_case
+    return {"schema_version": SCHEMA_VERSION, "params": params, "arms": first["arms"], "runs": runs}
 
 
 # ==================== Markdown ====================
@@ -669,6 +718,13 @@ def main(argv):
         return 0
     if argv[:1] == ["report"]:
         return report_main(argv[1:])
+    if len(argv) >= 4 and argv[0] == "merge":
+        doc = merge([load(path) for path in argv[2:]])
+        with open(argv[1], "w") as f:
+            json.dump(doc, f, indent=1, sort_keys=False)
+            f.write("\n")
+        print(f"Wrote {argv[1]} ({len(doc['runs'])} runs, run ids {doc['params']['run_id']})", file=sys.stderr)
+        return 0
     raise SystemExit(__doc__)
 
 
@@ -804,7 +860,44 @@ def self_test():
             self.assertNotIn("PRELIMINARY", noted)
             self.assertFalse(any("note" in w for w in warnings))
 
+    class MergeTest(unittest.TestCase):
+        @staticmethod
+        def run_doc(run_id, scenario, iterations, null=False, harness="h1", arms=("base", "cand")):
+            d = doc(list(arms), [run(1, 1, arms[0], scenario, 100.0, 1000), run(2, 1, arms[1], scenario, 110.0, 1000),
+                                 run(3, 2, arms[1], scenario, 110.0, 1000), run(4, 2, arms[0], scenario, 100.0, 1000)],
+                    null=null)
+            d["params"].update(run_id=run_id, iterations=iterations, harness_commit=harness)
+            return d
+
+        def test_merge_whenCasesDisjoint_unionsRunsAndKeepsParamsByCase(self):
+            small = self.run_doc("s1", "small-get", "150000")
+            batch = self.run_doc("b1", "batch-get", "80000")
+            merged = merge([small, batch])
+            self.assertEqual(cases(merged), [("v2-sync", "small-get"), ("v2-sync", "batch-get")])
+            self.assertEqual([r["run"] for r in merged["runs"]], list(range(1, 9)))
+            self.assertEqual(merged["runs"][4]["source_run_id"], "b1")
+            self.assertEqual(merged["params"]["run_id"], "s1+b1")
+            self.assertEqual(merged["params"]["iterations"], MIXED)
+            self.assertEqual(merged["params"]["harness_commit"], "h1")
+            self.assertEqual(merged["params"]["by_case"]["v2-sync batch-get"]["iterations"], "80000")
+            entry = analyze(merged)[("v2-sync", "batch-get")]["app_cpu_us_per_op"]
+            self.assertAlmostEqual(entry["vs_base"]["cand"]["ratio"], 1.1)
+            self.assertIn("s1+b1", render_summary(merged))
+
+        def test_merge_whenCaseTwiceOrArmsOrHarnessDiffer_refuses(self):
+            small = self.run_doc("s1", "small-get", "150000")
+            for other, message in ((self.run_doc("s2", "small-get", "150000"), "is in run s1 and in run s2"),
+                                   (self.run_doc("b1", "batch-get", "1", arms=("base", "other")), "other arms"),
+                                   (self.run_doc("b1", "batch-get", "1", harness="h2"), "harness commit h2"),
+                                   (self.run_doc("b1", "batch-get", "1", null=True), "null experiments")):
+                with self.assertRaises(SystemExit) as caught:
+                    merge([small, other])
+                self.assertIn(message, str(caught.exception))
+            with self.assertRaises(SystemExit):
+                merge([small])
+
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(PairedAbSummaryTest)
+    suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(MergeTest))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

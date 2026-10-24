@@ -35,11 +35,23 @@
 # Output (<out>/<run-id>/): arms.tsv, params.tsv, runs.tsv, runs/<n>.csv (one harness results row per run),
 # logs/, paired-ab.json (the input of paired_ab_summary.py) and summary.md.
 #
+# Harness commit: the last commit that touched test/standalone-e2e-benchmarks other than its Markdown files
+# (git log -1 -- <dir> ':(exclude)<dir>/*.md'), stamped into every jar this script builds; HEAD is recorded
+# separately as checkout_commit in params.tsv. Jars built at different docs-only commits therefore share a harness
+# commit, and a real harness change still separates them.
+# Jar-only mode: when every arm is --jar or --null LABEL=PATH, the script never calls git (a benchmark host needs
+# no checkout). The harness commit and dirty-file count then come from the jars' benchmark-provenance.properties
+# (git.commit, git.dirty.files), and the script exits 2 if the jars disagree.
+#
 # Usage: scripts/schema-serde/paired-ab.sh (--arm LABEL=REF ... | --null LABEL=REF) [options]
 #   --arm LABEL=REF     an arm built from git ref REF; repeat for each arm; the first arm is the baseline
 #   --null LABEL=REF    null experiment: REF as both arms (LABEL=PATH: a prebuilt harness jar as both arms)
 #   --jar LABEL=PATH    an arm from a prebuilt harness jar (no build); may be mixed with --arm
 #   --skip-build        reuse <out>/jars/<label>.jar from an earlier build of the same arms
+#   --build-only        build the arms' jars into <out>/jars/<label>.jar, write <run-id>/arms.tsv, and exit 0
+#                       before any run
+#   --print-params      print the run settings (the params.tsv keys a null experiment must share with the
+#                       comparison it floors) as key<TAB>value lines and exit 0; builds and checks nothing
 #   --iterations N      measured ops per run (default: 50000)
 #   --warmup N          warmup ops per run (default: 10000)
 #   --reps N            repetitions (default: 7, as racecar did for small ops)
@@ -56,12 +68,16 @@
 #   --online            let Maven download missing artifacts (default: offline, -o)
 #
 # Environment: PAIRED_AB_WORKTREE_ROOT (default: $TMPDIR or /tmp), MAVEN_LOCAL_REPO (default: ~/.m2/repository),
-# JAVA_HOME (the JDK for every build and run; default: the java on PATH).
+# JAVA_HOME (the JDK for every build and run; default: the java on PATH), PAIRED_AB_SDK_MODULES (the SDK modules
+# built per commit, -pl syntax; default :dynamodb,:apache5-client,:aws-crt-client).
 #
 set -euo pipefail
 ARMS=()
 NULL_SPEC=""
 SKIP_BUILD=0
+BUILD_ONLY=0
+PRINT_PARAMS=0
+SDK_MODULES="${PAIRED_AB_SDK_MODULES:-:dynamodb,:apache5-client,:aws-crt-client}"
 ITERATIONS=50000
 WARMUP=10000
 REPS=7
@@ -82,6 +98,8 @@ while [[ $# -gt 0 ]]; do
         --jar) ARMS+=("jar:$2"); shift 2 ;;
         --null) NULL_SPEC="$2"; shift 2 ;;
         --skip-build) SKIP_BUILD=1; shift ;;
+        --build-only) BUILD_ONLY=1; shift ;;
+        --print-params) PRINT_PARAMS=1; shift ;;
         --iterations) ITERATIONS="$2"; shift 2 ;;
         --warmup) WARMUP="$2"; shift 2 ;;
         --reps) REPS="$2"; shift 2 ;;
@@ -96,10 +114,29 @@ while [[ $# -gt 0 ]]; do
         --port) PORT="$2"; shift 2 ;;
         --out) OUT_ROOT="$2"; shift 2 ;;
         --online) OFFLINE=""; shift ;;
-        -h|--help) sed -n '16,62p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '16,/^set -euo pipefail/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
+# The settings a null experiment's floors depend on, in params.tsv order (optimization_experiment.sh --null-run
+# compares them).
+print_settings() {
+    printf 'iterations\t%s\n' "$ITERATIONS"
+    printf 'warmup\t%s\n' "$WARMUP"
+    printf 'reps\t%s\n' "$REPS"
+    printf 'clients\t%s\n' "$CLIENTS"
+    printf 'scenarios\t%s\n' "$SCENARIOS"
+    printf 'concurrency\t%s\n' "$CONCURRENCY"
+    printf 'metrics\t%s\n' "$([[ $METRICS -eq 1 ]] && echo true || echo false)"
+    printf 'jvm_args\t%s\n' "$JVM_ARGS"
+    printf 'server_jvm_args\t%s\n' "$SERVER_JVM_ARGS"
+    printf 'pin_client\t%s\n' "$PIN_CLIENT"
+    printf 'pin_server\t%s\n' "$PIN_SERVER"
+}
+if [[ $PRINT_PARAMS -eq 1 ]]; then
+    print_settings
+    exit 0
+fi
 NULL_EXPERIMENT=false
 if [[ -n "$NULL_SPEC" ]]; then
     if [[ ${#ARMS[@]} -gt 0 ]]; then
@@ -116,11 +153,43 @@ elif [[ ${#ARMS[@]} -lt 2 ]]; then
     echo "Need at least two arms (--arm/--jar), or --null LABEL=REF" >&2
     exit 2
 fi
-REPO_ROOT="$(git rev-parse --show-toplevel)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JAR_ONLY=true
+for spec in "${ARMS[@]}"; do
+    [[ "$spec" == jar:* ]] || JAR_ONLY=false
+done
+provenance() {  # <jar> <key>
+    unzip -p "$1" benchmark-provenance.properties | sed -n "s/^$2=//p" | head -1
+}
+sha256_of() { if command -v sha256sum > /dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+if [[ "$JAR_ONLY" == true ]]; then
+    # No git: the scripts may run from a copy of the repo paths on a benchmark host.
+    REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    CHECKOUT_COMMIT="none (jar-only)"
+    HARNESS_COMMIT=""
+    HARNESS_DIRTY=""
+    for spec in "${ARMS[@]}"; do
+        target="${spec#*=}"
+        [[ -f "$target" ]] || { echo "Jar not found: $target" >&2; exit 2; }
+        commit="$(provenance "$target" git.commit)"
+        dirty="$(provenance "$target" git.dirty.files)"
+        if [[ -z "$HARNESS_COMMIT" ]]; then
+            HARNESS_COMMIT="$commit"
+            HARNESS_DIRTY="$dirty"
+        elif [[ "$commit" != "$HARNESS_COMMIT" || "$dirty" != "$HARNESS_DIRTY" ]]; then
+            echo "The jars were built from different harness commits ($HARNESS_COMMIT dirty=$HARNESS_DIRTY;" \
+                 "$target: $commit dirty=$dirty); rebuild them from one harness commit" >&2
+            exit 2
+        fi
+    done
+else
+    REPO_ROOT="$(git rev-parse --show-toplevel)"
+    CHECKOUT_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+    HARNESS_PATHS=(test/standalone-e2e-benchmarks ':(exclude)test/standalone-e2e-benchmarks/*.md')
+    HARNESS_COMMIT="$(git -C "$REPO_ROOT" log -1 --format=%H -- "${HARNESS_PATHS[@]}")"
+    HARNESS_DIRTY="$(git -C "$REPO_ROOT" status --porcelain -- "${HARNESS_PATHS[@]}" | wc -l | tr -d ' ')"
+fi
 HARNESS_SRC="$REPO_ROOT/test/standalone-e2e-benchmarks"
-HARNESS_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
-HARNESS_DIRTY="$(git -C "$REPO_ROOT" status --porcelain -- test/standalone-e2e-benchmarks | wc -l | tr -d ' ')"
 SHARED_REPO="${MAVEN_LOCAL_REPO:-$HOME/.m2/repository}"
 WT_ROOT="${PAIRED_AB_WORKTREE_ROOT:-${TMPDIR:-/tmp}}"
 WT_ROOT="${WT_ROOT%/}"
@@ -155,7 +224,7 @@ build_sdk() {  # <sha> -> prints "<worktree>\t<m2>\t<sdk version>"
         local log="$RUNDIR/logs/sdk-build-$id.log"
         echo "Building the SDK at $id ($version) in $wt; log: $log" >&2
         (cd "$wt" && mvn -B $OFFLINE -Dmaven.repo.local="$m2" -Dmaven.repo.local.tail="$SHARED_REPO" \
-            clean install -P quick -pl :dynamodb,:apache5-client,:aws-crt-client -am) > "$log" 2>&1 || {
+            clean install -P quick -pl "$SDK_MODULES" -am) > "$log" 2>&1 || {
             tail -n 40 "$log" >&2
             echo "SDK build failed at $sha; see $log" >&2
             return 1
@@ -184,7 +253,7 @@ build_harness() {  # <label> <sha> <m2> <version> -> builds $JARDIR/<label>.jar
 }
 LABELS=()
 JARS=()
-printf 'label\tref\tcommit\tsdk_version\tjar\n' > "$RUNDIR/arms.tsv"
+printf 'label\tref\tcommit\tsdk_version\tjar\tjar_sha256\n' > "$RUNDIR/arms.tsv"
 for spec in "${ARMS[@]}"; do
     kind="${spec%%:*}"
     body="${spec#*:}"
@@ -212,19 +281,25 @@ for spec in "${ARMS[@]}"; do
         fi
         jar="$JARDIR/$label.jar"
     fi
+    jar_sha="$(sha256_of "$jar")"
     if [[ "$NULL_EXPERIMENT" == true ]]; then
         # One build, one jar, two arm labels: the arms are byte-identical by construction.
         for suffix in a b; do
             LABELS+=("$label-$suffix")
             JARS+=("$jar")
-            printf '%s\t%s\t%s\t%s\t%s\n' "$label-$suffix" "$ref" "$sha" "$version" "$jar" >> "$RUNDIR/arms.tsv"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$label-$suffix" "$ref" "$sha" "$version" "$jar" "$jar_sha" \
+                >> "$RUNDIR/arms.tsv"
         done
     else
         LABELS+=("$label")
         JARS+=("$jar")
-        printf '%s\t%s\t%s\t%s\t%s\n' "$label" "$ref" "$sha" "$version" "$jar" >> "$RUNDIR/arms.tsv"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$label" "$ref" "$sha" "$version" "$jar" "$jar_sha" >> "$RUNDIR/arms.tsv"
     fi
 done
+if [[ $BUILD_ONLY -eq 1 ]]; then
+    echo "Build only: jars in $JARDIR; arms in $RUNDIR/arms.tsv (harness commit $HARNESS_COMMIT)"
+    exit 0
+fi
 # ---- Parameters and environment ----
 if [[ "$(uname)" == "Darwin" ]]; then
     HW_CPU="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
@@ -239,17 +314,8 @@ fi
     printf 'null_experiment\t%s\n' "$NULL_EXPERIMENT"
     printf 'harness_commit\t%s\n' "$HARNESS_COMMIT"
     printf 'harness_dirty_files\t%s\n' "$HARNESS_DIRTY"
-    printf 'iterations\t%s\n' "$ITERATIONS"
-    printf 'warmup\t%s\n' "$WARMUP"
-    printf 'reps\t%s\n' "$REPS"
-    printf 'clients\t%s\n' "$CLIENTS"
-    printf 'scenarios\t%s\n' "$SCENARIOS"
-    printf 'concurrency\t%s\n' "$CONCURRENCY"
-    printf 'metrics\t%s\n' "$([[ $METRICS -eq 1 ]] && echo true || echo false)"
-    printf 'jvm_args\t%s\n' "$JVM_ARGS"
-    printf 'server_jvm_args\t%s\n' "$SERVER_JVM_ARGS"
-    printf 'pin_client\t%s\n' "$PIN_CLIENT"
-    printf 'pin_server\t%s\n' "$PIN_SERVER"
+    printf 'checkout_commit\t%s\n' "$CHECKOUT_COMMIT"
+    print_settings
     printf 'java\t%s\n' "$(java -version 2>&1 | head -1)"
     printf 'host\t%s\n' "$(hostname), $(uname -sm)"
     printf 'hardware\t%s\n' "$HW_CPU, $HW_CORES logical cores"

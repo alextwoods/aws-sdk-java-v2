@@ -22,14 +22,26 @@ Usage:
   optimization_experiment.py plan ID [--targets TARGETS_JSON] [--yaml DECISIONS_YAML]
       Checks that ID is a racecar id in the decision YAML and in the targets mapping, and prints the plan as
       tab-separated lines for the shell: "decision", "task", "jmh_module", "jmh_include" and one "jmh_param" line
-      per JMH -p value (no jmh_* lines when the id has no JMH benchmarks).
-  optimization_experiment.py verdict ID --null NULL_JSON --ab AB_JSON --out RECORD_MD
-                        [--jmh-null-a JSON --jmh-null-b JSON --jmh-candidate JSON]
+      per JMH -p value (no jmh_* lines when the id has no JMH benchmarks). An id whose targets entry has
+      "source": "smithy-java" (SJ-<sha>, a FU-25 item) needs no YAML row; its decision line is
+      "none (smithy-java FU-25 item)".
+  optimization_experiment.py verdict ID (--null NULL_JSON --ab AB_JSON | --no-e2e) --out RECORD_MD
+                        [--jmh-null-a JSON --jmh-null-b JSON --jmh-candidate JSON] [--null-reused RUN_DIR]
                         [--feature-ref REF --candidate-ref REF] [--targets TARGETS_JSON] [--yaml DECISIONS_YAML]
                         [--preliminary]
       Applies the keep rule to the e2e runs (paired-ab.json of the null experiment and of the A/B) and, if given,
       the JMH runs (-rf json results of the feature jar, the candidate jar and the feature jar again), writes the
-      experiment record and prints the YAML change for a human to apply. Exit status 0 for KEEP, 3 for REVERT.
+      experiment record and prints the YAML change for a human to apply (for an SJ id: the FU-25 clause to update).
+      Exit status 0 for KEEP, 3 for REVERT. --no-e2e decides from the JMH runs alone; it is an error unless they
+      give REVERT (e2e results can only add reasons to revert, so they cannot turn a JMH REVERT into KEEP).
+      --null-reused names the earlier paired-ab run directory the null experiment was taken from.
+  optimization_experiment.py jmh-check ID --jmh-null-a JSON --jmh-null-b JSON --jmh-candidate JSON
+                        [--targets TARGETS_JSON]
+      Exit status 3 when the JMH runs alone give REVERT (optimization_experiment.sh --jmh-first then skips the e2e
+      stages), 0 when they do not decide it.
+  optimization_experiment.py check-null RUN_DIR --expected PARAMS_TSV --feature-jar JAR
+      Checks that the null experiment in paired-ab run directory RUN_DIR can be reused: its params.tsv has the same
+      run settings as PARAMS_TSV (paired-ab.sh --print-params) and its jar has JAR's sha256. Exit status 0 or 2.
   optimization_experiment.py --self-test
       Runs the verdict-rule tests on fixture data.
 
@@ -42,6 +54,8 @@ Keep rule (lower is better for every metric):
   the feature jar run twice: max(|b/a - 1|, each run's relative 99.9% error). A JMH B/op baseline below 1 B/op is
   compared absolutely: the candidate regresses if it allocates 1 B/op or more.
 """
+import csv
+import hashlib
 import json
 import math
 import os
@@ -62,6 +76,13 @@ CANDIDATE = "candidate"
 WIDE_FLOOR = pab.INCONCLUSIVE_FLOOR  # a target floor above this is too wide to reject on
 ZERO_ALLOC = 1.0                     # B/op below this counts as no allocation (ZeroAllocationBenchmarkTest)
 KEEP, REVERT = "KEEP", "REVERT"
+SMITHY_JAVA = "smithy-java"          # targets.json "source" of an SJ-<sha> id (a FU-25 item, no YAML row)
+SJ_DECISION = "none (smithy-java FU-25 item)"
+FOLLOWUPS = ".kiro/specs/schema-decoupling-serde/followups.md"
+# The params.tsv keys a reused null experiment must share with the comparison (paired-ab.sh --print-params).
+NULL_SETTINGS = ("iterations", "warmup", "reps", "clients", "scenarios", "concurrency", "metrics", "jvm_args",
+                 "server_jvm_args", "pin_client", "pin_server")
+NO_E2E_NOTE = "e2e not run: the JMH result decides REVERT, and e2e cannot turn a REVERT into KEEP"
 
 
 class ExperimentError(Exception):
@@ -78,11 +99,55 @@ def load_targets(path, racecar_id):
     return doc["targets"][racecar_id], doc["guard_metrics"]
 
 
-def decision_entry(yaml_path, racecar_id):
+def is_smithy_java(spec):
+    return spec.get("source") == SMITHY_JAVA
+
+
+def decision_entry(yaml_path, racecar_id, spec=None):
+    """The YAML row of a racecar id, or a stand-in row for a smithy-java (SJ-<sha>) id, which has none."""
+    if spec is not None and is_smithy_java(spec):
+        return {"id": racecar_id, "decision": SJ_DECISION,
+                "optimization": spec.get("optimization", f"smithy-java {racecar_id[3:]}")}
     for entry in rd.parse(yaml_path):
         if entry.get("id") == racecar_id:
             return entry
     raise ExperimentError(f"{racecar_id!r} is not a racecar id in {yaml_path}")
+
+
+def _read_tsv_map(path):
+    with open(path, newline="") as f:
+        return {row[0]: (row[1] if len(row) > 1 else "") for row in csv.reader(f, delimiter="\t") if row}
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def null_reuse_problems(run_dir, expected, feature_jar):
+    """Reasons the null experiment in run_dir cannot floor a comparison with settings expected and jar feature_jar."""
+    found = []
+    params_path = os.path.join(run_dir, "params.tsv")
+    for path in (params_path, os.path.join(run_dir, "arms.tsv"), os.path.join(run_dir, "paired-ab.json")):
+        if not os.path.isfile(path):
+            return [f"{path} is missing"]
+    params = _read_tsv_map(params_path)
+    if params.get("null_experiment") != "true":
+        found.append(f"{run_dir} is not a null experiment (null_experiment={params.get('null_experiment')!r})")
+    for key in NULL_SETTINGS:
+        if params.get(key, "") != expected.get(key, ""):
+            found.append(f"{key}: the null run has {params.get(key, '')!r}, this run {expected.get(key, '')!r}")
+    with open(os.path.join(run_dir, "arms.tsv"), newline="") as f:
+        arms = list(csv.DictReader(f, delimiter="\t"))
+    want = _sha256(feature_jar)
+    for arm in arms:
+        have = arm.get("jar_sha256") or (_sha256(arm["jar"]) if os.path.isfile(arm.get("jar", "")) else None)
+        if have != want:
+            found.append(f"arm {arm.get('label')}: jar sha256 {have or 'unknown'} is not --feature-jar's {want}")
+    return found
 
 
 def _num(value):
@@ -214,6 +279,13 @@ def decide(items, problems=()):
     return REVERT, reasons, suggestion
 
 
+def jmh_decides_revert(items):
+    """True when JMH items alone give REVERT. decide() only adds reasons per item, so e2e items cannot undo it."""
+    if not any(i["target"] for i in items):
+        return False
+    return decide(items)[0] == REVERT
+
+
 def _name(item):
     return f"{item['source']} {item['case']} {item['metric']}"
 
@@ -275,26 +347,42 @@ def yaml_change(entry, verdict, suggestion, record_rel, items):
     return lines
 
 
+def fu25_change(racecar_id, verdict, record_rel):
+    sha = racecar_id[3:] if racecar_id.startswith("SJ-") else racecar_id
+    return [f"Update the `{sha}` clause of FU-25 in `{FOLLOWUPS}`: decision {verdict}, record `{record_rel}`."
+            + (" Add a `porting-deviations.md` row for the port." if verdict == KEEP else "")]
+
+
 def render_record(racecar_id, entry, spec, verdict, reasons, suggestion, items, null_doc, ab_doc, record_rel,
-                  jmh_files=None, preliminary=False, refs=None, jmh_runs=None):
-    labels = {a["label"]: a for a in ab_doc["arms"]}
-    params = ab_doc["params"]
-    lines = [f"# Optimization experiment: racecar {racecar_id}", ""]
+                  jmh_files=None, preliminary=False, refs=None, jmh_runs=None, null_reused=None, jmh_commits=None):
+    sj = is_smithy_java(spec)
+    labels = {a["label"]: a for a in ab_doc["arms"]} if ab_doc else {}
+    lines = [f"# Optimization experiment: {'smithy-java' if sj else 'racecar'} {racecar_id}", ""]
     if preliminary:
         lines += ["> **PRELIMINARY — smoke data, not measurements.** Tiny settings on an unquiet host; the verdict "
-                  "below only shows that the procedure runs end to end. Do not apply its YAML change.", ""]
-    lines += [f"Racecar {racecar_id}: {entry['optimization']}. Task {spec.get('task', entry.get('task', '?'))}. "
-              f"Current decision: {entry['decision']}.", "",
+                  "below only shows that the procedure runs end to end. Do not apply its "
+                  f"{'FU-25' if sj else 'YAML'} change.", ""]
+    lines += [f"{'smithy-java' if sj else 'Racecar'} {racecar_id}: {entry['optimization']}. "
+              f"Task {spec.get('task', entry.get('task', '?'))}. Current decision: {entry['decision']}.", "",
               "| arm | ref | commit | SDK version |", "|---|---|---|---|"]
     for label in (FEATURE, CANDIDATE):
         a = labels.get(label, {})
         ref = (refs or {}).get(label) or a.get("ref", "?")
-        lines.append(f"| `{label}` | `{ref}` | `{a.get('commit', '?')[:12]}` "
+        commit = a.get("commit") or (jmh_commits or {}).get(label) or "?"
+        lines.append(f"| `{label}` | `{ref}` | `{commit[:12]}` "
                      f"| {a.get('sdk_version', '?')} |")
-    lines += ["", f"E2E: reps {params.get('reps')}, iterations {params.get('iterations')}, warmup "
-              f"{params.get('warmup')}, clients {params.get('clients')}, scenarios {params.get('scenarios')}, "
-              f"{params.get('java', '?')}, {params.get('host', '?')}, {params.get('hardware', '?')}. "
-              f"Null run `{null_doc['params'].get('run_id')}`, A/B run `{params.get('run_id')}`.", ""]
+    lines.append("")
+    if ab_doc:
+        params = ab_doc["params"]
+        lines += [f"E2E: reps {params.get('reps')}, iterations {params.get('iterations')}, warmup "
+                  f"{params.get('warmup')}, clients {params.get('clients')}, scenarios {params.get('scenarios')}, "
+                  f"{params.get('java', '?')}, {params.get('host', '?')}, {params.get('hardware', '?')}. "
+                  f"Null run `{null_doc['params'].get('run_id')}`, A/B run `{params.get('run_id')}`.", ""]
+        if null_reused:
+            lines += [f"Null experiment reused from run `{null_doc['params'].get('run_id')}` (experiment "
+                      f"`{os.path.dirname(os.path.normpath(null_reused))}`).", ""]
+    else:
+        lines += [f"E2E: {NO_E2E_NOTE}.", ""]
     if jmh_files:
         lines += ["JMH: " + ", ".join(f"{k} `{os.path.basename(v)}`" for k, v in jmh_files.items()) + ".", ""]
     if spec.get("note"):
@@ -303,17 +391,22 @@ def render_record(racecar_id, entry, spec, verdict, reasons, suggestion, items, 
     lines += [f"- {r}" for r in reasons] + [""]
     lines += ["## Targets", ""] + _table([i for i in items if i["target"]]) + [""]
     lines += ["## Other scenarios and benchmarks (guards)", ""] + _table([i for i in items if not i["target"]])
-    lines += ["", "## YAML change", "",
-              "Apply by hand to `docs/design/schema-serde/racecar-decisions.yaml`, then run "
-              "`python3 scripts/schema-serde/racecar_decisions.py` to regenerate the Markdown (and `--check`).", "",
-              "```yaml"] + yaml_change(entry, verdict, suggestion, record_rel, items) + ["```", ""]
+    if sj:
+        lines += ["", "## FU-25 change", "", "This smithy-java item has no row in `racecar-decisions.yaml`.", ""]
+        lines += fu25_change(racecar_id, verdict, record_rel) + [""]
+    else:
+        lines += ["", "## YAML change", "",
+                  "Apply by hand to `docs/design/schema-serde/racecar-decisions.yaml`, then run "
+                  "`python3 scripts/schema-serde/racecar_decisions.py` to regenerate the Markdown (and `--check`).",
+                  "", "```yaml"] + yaml_change(entry, verdict, suggestion, record_rel, items) + ["```", ""]
     if verdict == REVERT:
         lines += ["The candidate is not kept: do not merge its commit (or `git revert` it if it is already on the "
                   "branch) before the next optimization is tried.", ""]
     if jmh_runs:
         lines += _jmh_table(*jmh_runs)
-    lines += ["## Null experiment (e2e)", "", _demote(pab.render_summary(null_doc)), "",
-              "## Paired A/B (e2e)", "", _demote(pab.render_summary(ab_doc, null_doc)), ""]
+    if ab_doc:
+        lines += ["## Null experiment (e2e)", "", _demote(pab.render_summary(null_doc)), "",
+                  "## Paired A/B (e2e)", "", _demote(pab.render_summary(ab_doc, null_doc)), ""]
     return "\n".join(lines)
 
 
@@ -336,8 +429,8 @@ def _opts(argv, names, flags=()):
 
 def plan_main(racecar_id, argv):
     opts, _ = _opts(argv, ("--targets", "--yaml"))
-    entry = decision_entry(opts["--yaml"] or DEFAULT_YAML, racecar_id)
     spec, _ = load_targets(opts["--targets"] or DEFAULT_TARGETS, racecar_id)
+    entry = decision_entry(opts["--yaml"] or DEFAULT_YAML, racecar_id, spec)
     print(f"decision\t{entry['decision']}")
     print(f"task\t{spec.get('task', '')}")
     jmh = spec.get("jmh")
@@ -349,37 +442,108 @@ def plan_main(racecar_id, argv):
     return 0
 
 
-def verdict_main(racecar_id, argv):
-    opts, flags = _opts(argv, ("--null", "--ab", "--out", "--jmh-null-a", "--jmh-null-b", "--jmh-candidate",
-                               "--targets", "--yaml", "--feature-ref", "--candidate-ref"),
-                        ("--preliminary",))
-    if not opts["--null"] or not os.path.isfile(opts["--null"]):
-        raise ExperimentError("verdict needs the null experiment's paired-ab.json (--null)")
-    for required in ("--ab", "--out"):
-        if not opts[required]:
-            raise ExperimentError(f"verdict needs {required}")
-    yaml_path = opts["--yaml"] or DEFAULT_YAML
-    entry = decision_entry(yaml_path, racecar_id)
-    spec, guards = load_targets(opts["--targets"] or DEFAULT_TARGETS, racecar_id)
-    null_doc, ab_doc = pab.load(opts["--null"]), pab.load(opts["--ab"])
-    if not pab.is_null_experiment(null_doc):
-        raise ExperimentError(f"{opts['--null']} is not a null experiment (paired-ab.sh --null)")
-    items = e2e_items(spec, guards["e2e"], null_doc, ab_doc)
-    jmh_keys = ("--jmh-null-a", "--jmh-null-b", "--jmh-candidate")
-    jmh_files = OrderedDict((k[2:], opts[k]) for k in jmh_keys if opts[k])
-    if jmh_files and len(jmh_files) != 3:
+JMH_KEYS = ("--jmh-null-a", "--jmh-null-b", "--jmh-candidate")
+
+
+def _jmh_inputs(opts):
+    """(files, runs) of the three JMH result files, or (empty, None) when none was given."""
+    files = OrderedDict((k[2:], opts[k]) for k in JMH_KEYS if opts.get(k))
+    if files and len(files) != 3:
         raise ExperimentError("JMH needs all of --jmh-null-a, --jmh-null-b and --jmh-candidate")
-    jmh_runs = None
-    if jmh_files:
-        jmh_runs = [load_jmh(opts[k]) for k in jmh_keys]
-        items += jmh_items(spec, guards["jmh"], *jmh_runs)
-        jmh_runs = (jmh_runs[0], jmh_runs[1], jmh_runs[2])
-    problems = [f"null run: {p}" for p in pab.problems(null_doc)] + [f"A/B run: {p}" for p in pab.problems(ab_doc)]
+    if not files:
+        return files, None
+    runs = [load_jmh(opts[k]) for k in JMH_KEYS]
+    return files, (runs[0], runs[1], runs[2])
+
+
+def _jmh_commits(files):
+    """{arm: commit} from the <jar>.commit files next to the JMH result files' jars ($OUT/jmh/<arm>.jar.commit)."""
+    out = {}
+    for key, arm in (("jmh-null-a", FEATURE), ("jmh-candidate", CANDIDATE)):
+        path = files.get(key)
+        commit_file = os.path.join(os.path.dirname(path), f"{arm}.jar.commit") if path else None
+        if commit_file and os.path.isfile(commit_file):
+            out[arm] = _read_properties(commit_file).get("commit", "")
+    return out
+
+
+def _read_properties(path):
+    with open(path) as f:
+        return dict(line.rstrip("\n").split("=", 1) for line in f if "=" in line)
+
+
+def jmh_check_main(racecar_id, argv):
+    opts, _ = _opts(argv, JMH_KEYS + ("--targets",))
+    spec, guards = load_targets(opts["--targets"] or DEFAULT_TARGETS, racecar_id)
+    files, runs = _jmh_inputs(opts)
+    if not runs:
+        raise ExperimentError("jmh-check needs --jmh-null-a, --jmh-null-b and --jmh-candidate")
+    items = jmh_items(spec, guards["jmh"], *runs)
+    if jmh_decides_revert(items):
+        print(f"JMH decides REVERT for {racecar_id}:")
+        for r in decide(items)[1]:
+            print(f"  - {r}")
+        return 3
+    print(f"JMH does not decide {racecar_id} on its own; the e2e stages run.")
+    return 0
+
+
+def check_null_main(run_dir, argv):
+    opts, _ = _opts(argv, ("--expected", "--feature-jar"))
+    if not opts["--expected"] or not opts["--feature-jar"]:
+        raise ExperimentError("check-null needs --expected PARAMS_TSV and --feature-jar JAR")
+    found = null_reuse_problems(run_dir, _read_tsv_map(opts["--expected"]), opts["--feature-jar"])
+    if found:
+        print(f"Cannot reuse the null experiment {run_dir}:", file=sys.stderr)
+        for p in found:
+            print(f"  - {p}", file=sys.stderr)
+        return 2
+    print(f"Null experiment {run_dir} matches this run's settings and feature jar.")
+    return 0
+
+
+def verdict_main(racecar_id, argv):
+    opts, flags = _opts(argv, ("--null", "--ab", "--out", "--targets", "--yaml", "--feature-ref", "--candidate-ref",
+                               "--null-reused") + JMH_KEYS,
+                        ("--preliminary", "--no-e2e"))
+    no_e2e = "--no-e2e" in flags
+    if no_e2e and (opts["--null"] or opts["--ab"]):
+        raise ExperimentError("--no-e2e cannot be combined with --null or --ab")
+    if not no_e2e:
+        if not opts["--null"] or not os.path.isfile(opts["--null"]):
+            raise ExperimentError("verdict needs the null experiment's paired-ab.json (--null)")
+        if not opts["--ab"]:
+            raise ExperimentError("verdict needs --ab")
+    if not opts["--out"]:
+        raise ExperimentError("verdict needs --out")
+    yaml_path = opts["--yaml"] or DEFAULT_YAML
+    spec, guards = load_targets(opts["--targets"] or DEFAULT_TARGETS, racecar_id)
+    entry = decision_entry(yaml_path, racecar_id, spec)
+    jmh_files, jmh_runs = _jmh_inputs(opts)
+    null_doc = ab_doc = None
+    items, problems = [], []
+    if not no_e2e:
+        null_doc, ab_doc = pab.load(opts["--null"]), pab.load(opts["--ab"])
+        if not pab.is_null_experiment(null_doc):
+            raise ExperimentError(f"{opts['--null']} is not a null experiment (paired-ab.sh --null)")
+        items = e2e_items(spec, guards["e2e"], null_doc, ab_doc)
+        problems = ([f"null run: {p}" for p in pab.problems(null_doc)]
+                    + [f"A/B run: {p}" for p in pab.problems(ab_doc)])
+    if jmh_runs:
+        jmh_only = jmh_items(spec, guards["jmh"], *jmh_runs)
+        if no_e2e and not jmh_decides_revert(jmh_only):
+            raise ExperimentError("--no-e2e needs JMH results that decide REVERT on their own; run the e2e stages")
+        items += jmh_only
+    elif no_e2e:
+        raise ExperimentError("--no-e2e needs the JMH results (--jmh-null-a, --jmh-null-b, --jmh-candidate)")
     verdict, reasons, suggestion = decide(items, problems)
+    if no_e2e:
+        reasons.append(NO_E2E_NOTE)
     record_rel = os.path.relpath(os.path.abspath(opts["--out"]), os.path.dirname(os.path.abspath(yaml_path)))
     text = render_record(racecar_id, entry, spec, verdict, reasons, suggestion, items, null_doc, ab_doc,
                          record_rel, jmh_files, "--preliminary" in flags,
-                         {FEATURE: opts["--feature-ref"], CANDIDATE: opts["--candidate-ref"]}, jmh_runs)
+                         {FEATURE: opts["--feature-ref"], CANDIDATE: opts["--candidate-ref"]}, jmh_runs,
+                         opts["--null-reused"], _jmh_commits(jmh_files))
     os.makedirs(os.path.dirname(os.path.abspath(opts["--out"])), exist_ok=True)
     with open(opts["--out"], "w") as f:
         f.write(text)
@@ -387,10 +551,13 @@ def verdict_main(racecar_id, argv):
     print(f"Verdict: {verdict}. Suggested decision: {suggestion}.")
     for r in reasons:
         print(f"  - {r}")
-    print("\nYAML change to apply by hand to " + os.path.relpath(yaml_path, REPO_ROOT) +
-          ", then run: python3 scripts/schema-serde/racecar_decisions.py && "
-          "python3 scripts/schema-serde/racecar_decisions.py --check")
-    print("\n".join(yaml_change(entry, verdict, suggestion, record_rel, items)))
+    if is_smithy_java(spec):
+        print("\n" + "\n".join(fu25_change(racecar_id, verdict, record_rel)))
+    else:
+        print("\nYAML change to apply by hand to " + os.path.relpath(yaml_path, REPO_ROOT) +
+              ", then run: python3 scripts/schema-serde/racecar_decisions.py && "
+              "python3 scripts/schema-serde/racecar_decisions.py --check")
+        print("\n".join(yaml_change(entry, verdict, suggestion, record_rel, items)))
     return 0 if verdict == KEEP else 3
 
 
@@ -402,6 +569,10 @@ def main(argv):
             return plan_main(argv[1], argv[2:])
         if len(argv) >= 2 and argv[0] == "verdict":
             return verdict_main(argv[1], argv[2:])
+        if len(argv) >= 2 and argv[0] == "jmh-check":
+            return jmh_check_main(argv[1], argv[2:])
+        if len(argv) >= 2 and argv[0] == "check-null":
+            return check_null_main(argv[1], argv[2:])
     except (ExperimentError, rd.InvalidDecisions) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
@@ -529,7 +700,109 @@ def self_test():
             self.assertIn("applied_in_phase: 5", text)
             self.assertIn("## Null experiment (e2e)", text)
 
+    def jmh_json(score, alloc):
+        return [{"benchmark": "b.Marshall.run", "params": {"protocol": "AWS_JSON_1_0"},
+                 "primaryMetric": {"score": score, "scoreError": 0.5},
+                 "secondaryMetrics": {"\u00b7gc.alloc.rate.norm": {"score": alloc, "scoreError": 0.0}}}]
+
+    def write_json(d, name, content):
+        path = os.path.join(d, name)
+        with open(path, "w") as f:
+            json.dump(content, f)
+        return path
+
+    class RemoteModesTest(unittest.TestCase):
+        def test_planAndVerdict_whenSmithyJavaId_needNoYamlRowAndNameTheFu25Clause(self):
+            sj = dict(spec, source=SMITHY_JAVA, optimization="skip unused interceptor hooks", jmh=None)
+            with tempfile.TemporaryDirectory() as d:
+                targets = write_json(d, "targets.json", {"guard_metrics": guards, "targets": {"SJ-ebe122c96": sj}})
+                yaml_path = os.path.join(d, "racecar-decisions.yaml")  # absent: an SJ id must not read it
+                null_path = write_json(d, "null.json", null_doc)
+                ab_path = write_json(d, "ab.json", ab(90.0, 200.0))
+                out = os.path.join(d, "optimizations", "SJ-ebe122c96.md")
+                import io
+                import contextlib
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    self.assertEqual(plan_main("SJ-ebe122c96", ["--targets", targets, "--yaml", yaml_path]), 0)
+                    status = verdict_main("SJ-ebe122c96", ["--null", null_path, "--ab", ab_path, "--out", out,
+                                                           "--targets", targets, "--yaml", yaml_path])
+                with open(out) as f:
+                    text = f.read()
+            self.assertIn(f"decision\t{SJ_DECISION}", buf.getvalue())
+            self.assertEqual(status, 0)
+            self.assertIn("# Optimization experiment: smithy-java SJ-ebe122c96", text)
+            self.assertIn("## FU-25 change", text)
+            self.assertIn("Update the `ebe122c96` clause of FU-25", text)
+            self.assertNotIn("## YAML change", text)
+            with self.assertRaises(ExperimentError):  # a racecar id still needs its YAML row
+                decision_entry(DEFAULT_YAML, "SJ-nope", spec)
+
+        def test_verdictMain_whenNoE2e_needsAJmhRevert(self):
+            jspec = {"task": "9.21", "e2e": [], "jmh": spec["jmh"]}
+            with tempfile.TemporaryDirectory() as d:
+                targets = write_json(d, "targets.json", {"guard_metrics": guards, "targets": {"E6": jspec}})
+                a = write_json(d, "feature-a.json", jmh_json(100.0, 2000.0))
+                b = write_json(d, "feature-b.json", jmh_json(100.5, 2000.0))
+                gain = write_json(d, "gain.json", jmh_json(90.0, 2000.0))
+                flat = write_json(d, "flat.json", jmh_json(99.8, 2000.0))
+                with open(os.path.join(d, "feature.jar.commit"), "w") as f:
+                    f.write("commit=" + "f" * 40 + "\nmodule=m\n")
+                out = os.path.join(d, "E6.md")
+                common = ["--targets", targets, "--jmh-null-a", a, "--jmh-null-b", b]
+                import io
+                import contextlib
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(jmh_check_main("E6", common + ["--jmh-candidate", flat]), 3)
+                    self.assertEqual(jmh_check_main("E6", common + ["--jmh-candidate", gain]), 0)
+                    status = verdict_main("E6", common + ["--jmh-candidate", flat, "--no-e2e", "--out", out])
+                    with self.assertRaises(ExperimentError):  # a JMH gain: e2e must still run
+                        verdict_main("E6", common + ["--jmh-candidate", gain, "--no-e2e", "--out", out])
+                    with self.assertRaises(ExperimentError):  # --no-e2e without JMH results
+                        verdict_main("E6", ["--targets", targets, "--no-e2e", "--out", out])
+                with open(out) as f:
+                    text = f.read()
+            self.assertEqual(status, 3)
+            self.assertIn("## Verdict: REVERT", text)
+            self.assertIn(NO_E2E_NOTE, text)
+            self.assertIn("`" + "f" * 12 + "`", text)  # the feature commit from feature.jar.commit
+            self.assertNotIn("## Null experiment (e2e)", text)
+
+        def test_nullReuseProblems_whenSettingsOrJarDiffer_reportsEach(self):
+            with tempfile.TemporaryDirectory() as d:
+                run = os.path.join(d, "20261024-170000")
+                os.makedirs(run)
+                jar = os.path.join(d, "feature.jar")
+                other = os.path.join(d, "other.jar")
+                for path, content in ((jar, b"feature"), (other, b"other")):
+                    with open(path, "wb") as f:
+                        f.write(content)
+                settings = {k: "x" for k in NULL_SETTINGS}
+                settings.update(reps="7", jvm_args="-Xmx2g")
+                with open(os.path.join(run, "params.tsv"), "w") as f:
+                    f.write("key\tvalue\nrun_id\t20261024-170000\nnull_experiment\ttrue\n")
+                    f.writelines(f"{k}\t{v}\n" for k, v in settings.items())
+                with open(os.path.join(run, "arms.tsv"), "w") as f:
+                    f.write("label\tref\tcommit\tsdk_version\tjar\tjar_sha256\n")
+                    for label in ("feature-a", "feature-b"):
+                        f.write(f"{label}\tr\t{'c' * 40}\tv\t/host/jar\t{_sha256(jar)}\n")
+                write_json(run, "paired-ab.json", null_doc)
+                self.assertEqual(null_reuse_problems(run, settings, jar), [])
+                found = null_reuse_problems(run, dict(settings, reps="5", pin_client="32-47"), other)
+                self.assertTrue(any(p.startswith("reps: the null run has '7', this run '5'") for p in found))
+                self.assertTrue(any(p.startswith("pin_client:") for p in found))
+                self.assertEqual(sum(1 for p in found if "is not --feature-jar's" in p), 2)
+                expected = os.path.join(d, "expected.tsv")
+                with open(expected, "w") as f:
+                    f.writelines(f"{k}\t{v}\n" for k, v in dict(settings, warmup="1").items())
+                import io
+                import contextlib
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    self.assertEqual(check_null_main(run, ["--expected", expected, "--feature-jar", jar]), 2)
+                self.assertIn("warmup: the null run has 'x', this run '1'", err.getvalue())
+
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(VerdictRulesTest)
+    suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(RemoteModesTest))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 
