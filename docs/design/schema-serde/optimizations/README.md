@@ -102,12 +102,13 @@ null run is missing.
 
 The suggested final decision after a REVERT works as follows:
 
-- **Rejected**: no run failed, no floor is missing or wider than 5%, and no guard regressed, but
-  not every target gained beyond its floor. Some targets may have gained; the gain was too small or
-  too uneven to keep. A guard regression with no target gain is also Rejected.
+- **Rejected**: neither run reports a problem, every case was measured and has a floor, no target
+  floor is wider than 5%, and no guard regressed, but not every target gained beyond its floor.
+  Some targets may have gained; the gain was too small or too uneven to keep. A guard regression
+  with no target gain is also Rejected. Guard floors wider than 5% do not block this decision.
 - **Stays Deferred (rework)**: a target gained, but a guard regressed.
-- **Stays Deferred (undecided)**: a floor is missing, a target floor is wider than 5%, or a run
-  failed. Rerun on a quiet host before deciding.
+- **Stays Deferred (undecided)**: a run reports a problem, a case was not measured or has no floor,
+  or a target floor is wider than 5%. Rerun on a quiet host before deciding.
 
 **Floors.**
 - E2E floors come from the null experiment: max(|ratio − 1|, the spread of the paired ratios), per
