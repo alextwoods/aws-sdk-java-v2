@@ -33,11 +33,12 @@
 
 - id: "B1"
   optimization: "Shallow header copy-on-write (`LowCopyListMap`)"
-  decision: "Deferred (later individual optimization)"
-  component: "`http-client-spi` request and response builders"
-  reason: "Framework micro-optimization, not needed by the new path. `headers()` and `Builder.headers()` keep today's behavior (H1 stays deferred)"
+  decision: "Rejected"
+  component: "—"
+  reason: "Framework micro-optimization, not needed by the new path. `headers()` and `Builder.headers()` keep today's behavior (H1 stays deferred); 9.19 experiment: v2-sync small-get alloc_bytes_per_op -0.6% (floor 0.5%); v2-async small-get alloc_bytes_per_op -0.9% (floor 0.2%); v2-sync small-put alloc_bytes_per_op -0.3% (floor 0.4%); v2-async small-put alloc_bytes_per_op -1.2% (floor 0.3%)"
   task: "9.23"
-  note: "candidate on branch opt/B1 (fe81b1f809f), measurement pending (user decision)"
+  ab_record: "optimizations/B1.md"
+  note: "measured on the m6g.metal host (cand/B1 71972d89df5, the cherry-pick of opt/B1 fe81b1f809f): REVERT, because the v2-sync small-put target saved 146 B/op, inside its 0.4% floor; not merged"
 
 - id: "A"
   optimization: "Materialized-body zero-copy contract (`ContentStreamProvider.contentAsByteBufferOrNull`, wrapper propagation, Apache5 `ByteArrayEntity`, `SimpleHttpContentPublisher`)"

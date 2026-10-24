@@ -17,8 +17,8 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 |---|---:|
 | Applied (re-implemented here) | 13 |
 | Superseded | 9 |
-| Deferred (later individual optimization) | 16 |
-| Rejected | 6 |
+| Deferred (later individual optimization) | 15 |
+| Rejected | 7 |
 | Total | 44 |
 
 ## Decisions
@@ -26,7 +26,7 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 | Phase | Optimization | Decision | Component or replacing mechanism | Reason | Task |
 |---|---|---|---|---|---|
 | F | SigV4 fast-path header signer (`FastV4HeaderSigner`, `V4SigningResources`, `V4SigningKeyCache`) | Deferred (later individual optimization) | `core/http-auth-aws` signer (`DefaultAwsV4HttpSigner`), unchanged by this design | Independent of serde and of the new path; −41% signer time in racecar | 9.20 |
-| B1 | Shallow header copy-on-write (`LowCopyListMap`) | Deferred (later individual optimization) | `http-client-spi` request and response builders | Framework micro-optimization, not needed by the new path. `headers()` and `Builder.headers()` keep today's behavior (H1 stays deferred) | 9.23 |
+| B1 | Shallow header copy-on-write (`LowCopyListMap`) | Rejected ([A/B record](optimizations/B1.md)) | — | Framework micro-optimization, not needed by the new path. `headers()` and `Builder.headers()` keep today's behavior (H1 stays deferred); 9.19 experiment: v2-sync small-get alloc_bytes_per_op -0.6% (floor 0.5%); v2-async small-get alloc_bytes_per_op -0.9% (floor 0.2%); v2-sync small-put alloc_bytes_per_op -0.3% (floor 0.4%); v2-async small-put alloc_bytes_per_op -1.2% (floor 0.3%) | 9.23 |
 | A | Materialized-body zero-copy contract (`ContentStreamProvider.contentAsByteBufferOrNull`, wrapper propagation, Apache5 `ByteArrayEntity`, `SimpleHttpContentPublisher`) | Applied (re-implemented here) | Codec `ByteBufferOutputStream.toContentStreamProvider()` → `ContentStreamProvider.contentAsByteBufferOrNull()` → `SdkHttpClientTransport` (body passed unwrapped) and `SdkAsyncHttpClientTransport` (`SimpleHttpContentPublisher`); `Apache5HttpRequestFactory` sends the buffer as a `ByteArrayEntity` | Requirement 13.6 | Phase 2 (3.4, 3.17) |
 | E1 | Marshall buffer sized from history (`MarshallBufferSizeHints`) | Applied (re-implemented here) | `HttpClientProtocol.newRequestBodyBuffer`/`finishRequestBody`, backed by `MarshallBufferSizeTracker`: per protocol instance, an identity hash table of operations with a parallel `int[]` of size hints for `ByteBufferOutputStream` | −42% batch-put allocation in racecar | Phase 2 (3.19) |
 | D1 | User-agent prefix built once; Apache5 header filter loop | Deferred (later individual optimization) | `Apache5HttpRequestFactory` | The new path's cached user agent is covered by H9; the Apache5 loop is an HTTP client micro-optimization | 9.24 |
@@ -83,7 +83,7 @@ Where the implementation differs from D.6, the table above records the implement
 Notes:
 
 - **F**: candidate on branch opt/F (d1161cfc5ac), measurement pending (user decision).
-- **B1**: candidate on branch opt/B1 (fe81b1f809f), measurement pending (user decision).
+- **B1**: measured on the m6g.metal host (cand/B1 71972d89df5, the cherry-pick of opt/B1 fe81b1f809f): REVERT, because the v2-sync small-put target saved 146 B/op, inside its 0.4% floor; not merged.
 - **E1**: D.6 indexes the `int[]` by operation ordinal. `ApiOperation` has no ordinal, so each protocol instance assigns slots in an identity hash table (task 3.19). awsQuery and ec2Query size their form body from a tracker of their own (`QueryClientProtocol`, the capacity the last body needed, FU-4). A recorded size of 0 is an empty-body marker: HTTP binding operations whose last request wrote no codec body get no buffer (fix/marshall-allocation).
 - **D1**: candidate on branch opt/D1 (90d38512d28), measurement pending (user decision).
 - **B2.b**: Observable difference that D.6 does not list: `RetryPolicyContext.request()` and the DEBUG `Sending Request:` entry now show the `amz-sdk-request` header (task 3.25).
