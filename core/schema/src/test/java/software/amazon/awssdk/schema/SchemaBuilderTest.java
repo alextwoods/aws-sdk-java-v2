@@ -199,6 +199,27 @@ class SchemaBuilderTest {
     }
 
     @Test
+    void deferredMember_tracksResolutionOfTarget() {
+        // Port of smithy-java SchemaTest.memberTargetTracksResolutionOfTarget (534de7824). Our deferred member reads
+        // the builder's built schema instead of building it, so B is built (not resolved) before the first access.
+        SchemaBuilder aBuilder = Schema.structureBuilder(id("A"));
+        SchemaBuilder bBuilder = Schema.structureBuilder(id("B"));
+        aBuilder.putMember("b", bBuilder);
+        bBuilder.putMember("a", aBuilder);
+
+        Schema a = aBuilder.build().resolve();
+        Schema unresolvedB = bBuilder.build();
+        assertThat(a.member("b").memberTarget()).isSameAs(unresolvedB);
+        Schema b = unresolvedB.resolve();
+
+        assertThat(unresolvedB).isNotSameAs(b);
+        assertThat(a.member("b").memberTarget()).isSameAs(b);
+        assertThat(a.member("b").memberTarget()).isSameAs(b);
+        assertThat(a.member("b").assertMemberTargetIs(b)).isSameAs(a.member("b"));
+        assertThat(b.member("a").memberTarget()).isSameAs(a);
+    }
+
+    @Test
     void recursionThroughListAndMap_resolves() {
         SchemaBuilder treeBuilder = Schema.structureBuilder(id("Tree"));
         Schema children = Schema.listBuilder(id("Children")).putMember("member", treeBuilder).build();
@@ -253,6 +274,9 @@ class SchemaBuilderTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("com.example#Later");
         assertThatThrownBy(member::members)
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("com.example#Later");
+        assertThatThrownBy(member::memberTarget)
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("com.example#Later");
 
