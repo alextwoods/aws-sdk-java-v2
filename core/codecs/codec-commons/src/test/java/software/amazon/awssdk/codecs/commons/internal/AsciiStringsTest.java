@@ -23,7 +23,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * SDK tests for {@link AsciiStrings}: the hibyte constructor must give the same string as the ISO-8859-1 and US-ASCII
- * charset constructors that the JSON and XML readers used before.
+ * charset constructors that the JSON and XML readers used before (US-ASCII only for bytes below 0x80; ISO-8859-1 for
+ * every byte value, as the Javadoc states).
  */
 class AsciiStringsTest {
 
@@ -43,6 +44,22 @@ class AsciiStringsTest {
                     String actual = AsciiStrings.fromAscii(bytes, off, len);
                     assertThat(actual).isEqualTo(expected)
                                       .isEqualTo(new String(bytes, off, len, StandardCharsets.US_ASCII));
+                }
+            }
+        }
+    }
+
+    @Test
+    void fromAscii_everyByteValueIncludingNonAscii_matchesIso88591Constructor() {
+        byte[] bytes = new byte[MAX_OFFSET + MAX_LENGTH];
+        for (int first = 0; first <= 0xFF; first++) {
+            for (int i = 0; i < bytes.length; i++) {
+                bytes[i] = (byte) (first + i);
+            }
+            for (int off = 0; off <= MAX_OFFSET; off++) {
+                for (int len = 0; len <= MAX_LENGTH; len++) {
+                    assertThat(AsciiStrings.fromAscii(bytes, off, len))
+                        .isEqualTo(new String(bytes, off, len, StandardCharsets.ISO_8859_1));
                 }
             }
         }
