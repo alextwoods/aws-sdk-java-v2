@@ -59,7 +59,7 @@
       "task": "9.26",
       "e2e": [{"scenarios": ["small-get", "small-put"], "metrics": ["alloc_bytes_per_op"]}],
       "jmh": null,
-      "note": "The rebuild happens on an AuthSchemeResolutionCache miss; if the warm cache hides it, the gain is within the floor and the row becomes Rejected."
+      "note": "The copy runs on every call, not on an AuthSchemeResolutionCache miss: EndpointResolution calls AuthSchemeResolver.applyInterceptorModifiedProperties after every resolve (E13-smoke.md). Smithy-java 1f68318ce (skip the override merge when there are no overrides) maps to mergePreExistingAuthSchemeProperties; on the harness calls that merge must add the placeholder's null ChecksumAlgorithm, which the resolved option lacks, so it copies on every call and only E13 is measured (E13.md)."
     }
   }
 }
