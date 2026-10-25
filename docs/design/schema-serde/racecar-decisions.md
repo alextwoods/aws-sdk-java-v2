@@ -15,9 +15,9 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 
 | Decision | Rows |
 |---|---:|
-| Applied (re-implemented here) | 13 |
+| Applied (re-implemented here) | 14 |
 | Superseded | 9 |
-| Deferred (later individual optimization) | 15 |
+| Deferred (later individual optimization) | 14 |
 | Rejected | 7 |
 | Total | 44 |
 
@@ -53,7 +53,7 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 | E9 | `getChars` bulk extraction | Rejected | — | Mixed results | — |
 | E10 | Single-copy async response aggregation (`BufferedResponseBody`) | Applied (re-implemented here) | `ResponseBodyAggregator` in `SdkAsyncHttpClientTransport`: each chunk is copied once into an array presized from `Content-Length` | −128 KB/op on batch-get in racecar | Phase 2 (3.17) |
 | E11 | Parse the owned async buffer directly | Applied (re-implemented here) | `ResponseBodies.asByteBuffer` returns the async transport's buffer (`OwnedResponseBody`) without a copy, then `Codec.createDeserializer(ByteBuffer)` | 0 B/op body copy | Phase 2 (3.17, 3.19) |
-| E12 | Direct CRT header array | Deferred (later individual optimization) | `aws-crt-client` request adapter | HTTP client micro-optimization | 9.25 |
+| E12 | Direct CRT header array | Applied (re-implemented here) ([A/B record](optimizations/E12.md)) | `aws-crt-client` request adapter | HTTP client micro-optimization; 9.19 experiment: v2-async small-get alloc_bytes_per_op -4.3% (floor 0.2%); v2-async small-put alloc_bytes_per_op -4.7% (floor 0.3%) | Phase 5 (9.25) |
 | E13 | Lazy auth-property rebuild | Deferred (later individual optimization) | `AuthSchemeResolutionCache` (rebuild auth-scheme properties only on a cache miss) | Micro-optimization; H7 caching covers the common case | 9.26 |
 | E14 | Unions read without a builder (`beginStruct`/`nextMember`, direct factories) | Deferred (later individual optimization) | Generated union `BuilderImpl` and its `InnerDeserializer` | The schema deserializer owns the member loop, but the generated union reader still sets the variant through the builder's fluent setters, which track it in an `EnumSet`. Reading through the direct `fromX` factories is not implemented; measure against racecar's −16% first | — |
 | E15 | Latin-1 + SWAR string write | Rejected | — | Needs `Unsafe`; Java 8 release | — |
@@ -91,7 +91,7 @@ Notes:
 - **E6**: candidate on branch opt/E6 (b5b8def9cdf), measurement pending (user decision).
 - **E7**: candidate on branch opt/E7 (49205e395d8), measurement pending (user decision).
 - **E11**: The owned-buffer marker is `OwnedResponseBody` in `core.client.protocol` (`@SdkProtectedApi`), not a transport-internal type, because the protocol modules read it (task 3.17).
-- **E12**: candidate on branch opt/E12 (d5afded9407), measurement pending (user decision).
+- **E12**: measured on the m6g.metal host (cand/E12 7cd6a5db432, the cherry-pick of opt/E12 d5afded9407): KEEP, both CRT targets saved about 2.4 KB/op; merged.
 - **E13**: candidate on branch opt/E13 (d96199de214), measurement pending (user decision). D.6 names `AuthSchemeResolver`, and the candidate changes `AuthSchemeResolver.applyInterceptorModifiedProperties`, as racecar did: it runs on every call after endpoint resolution, not only on an `AuthSchemeResolutionCache` miss (task 9.26).
 - **E14**: D.6 records E14 as Superseded by a union `ShapeBuilder` whose `InnerDeserializer` calls the direct `fromX` factory with no `EnumSet`. Task 3.7 generated the builder-based reader instead (golden file `codegen/src/test/resources/.../poet/model/schemaserde/choice.java`), so the optimization is not in the code.
 - **H4**: D.6 records H4 as Applied. Task 3.25 added the per-client placeholder, but tasks 3.26 and 3.28 left `RESOLVED_CHECKSUM_SPECS` to the context factory and deferred the call to the phase 5 pipeline optimizations, which have no task for it yet.

@@ -253,11 +253,14 @@
 
 - id: "E12"
   optimization: "Direct CRT header array"
-  decision: "Deferred (later individual optimization)"
+  decision: "Applied (re-implemented here)"
   component: "`aws-crt-client` request adapter"
-  reason: "HTTP client micro-optimization"
+  reason: "HTTP client micro-optimization; 9.19 experiment: v2-async small-get alloc_bytes_per_op -4.3% (floor 0.2%); v2-async small-put alloc_bytes_per_op -4.7% (floor 0.3%)"
+  classes: ["software.amazon.awssdk.http.crt.internal.request.CrtRequestAdapter"]
+  applied_in_phase: 5
   task: "9.25"
-  note: "candidate on branch opt/E12 (d5afded9407), measurement pending (user decision)"
+  ab_record: "optimizations/E12.md"
+  note: "measured on the m6g.metal host (cand/E12 7cd6a5db432, the cherry-pick of opt/E12 d5afded9407): KEEP, both CRT targets saved about 2.4 KB/op; merged"
 
 - id: "E13"
   optimization: "Lazy auth-property rebuild"
