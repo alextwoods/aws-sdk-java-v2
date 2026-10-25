@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
+import software.amazon.awssdk.codecs.commons.internal.AsciiStrings;
 import software.amazon.awssdk.codecs.commons.internal.ByteArrays;
 import software.amazon.awssdk.codecs.commons.internal.NumberCodec;
 import software.amazon.awssdk.codecs.commons.internal.TimestampCodec;
@@ -630,7 +631,7 @@ final class SmithyXmlDeserializer implements ShapeDeserializer, XmlErrorCodePars
                 return "";
             }
             if (isCleanAscii(start, pos)) {
-                return new String(buf, start, len, StandardCharsets.ISO_8859_1);
+                return AsciiStrings.fromAscii(buf, start, len);
             }
             return readTextContentSlow(start, len);
         }
@@ -738,7 +739,7 @@ final class SmithyXmlDeserializer implements ShapeDeserializer, XmlErrorCodePars
                         return "";
                     }
                     if (isCleanAscii(start, textEnd)) {
-                        return new String(buf, start, textLen, StandardCharsets.ISO_8859_1);
+                        return AsciiStrings.fromAscii(buf, start, textLen);
                     }
                     return readTextContentSlow(start, textLen);
                 }

@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
+import software.amazon.awssdk.codecs.commons.internal.AsciiStrings;
 import software.amazon.awssdk.codecs.commons.internal.ByteArrays;
 import software.amazon.awssdk.codecs.commons.internal.NumberCodec;
 import software.amazon.awssdk.codecs.json.JsonDocuments;
@@ -114,7 +115,7 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
      * Decodes an unescaped ASCII string, deduplicating strings of at most 8 bytes through the per-document cache.
      */
     String decodeAsciiCached(byte[] bytes, int start, int len) {
-        // ISO-8859-1 is identical for ASCII and avoids UTF-8's multi-byte scan.
+        // The hibyte (Latin-1) constructor is identical for ASCII and skips charset dispatch.
         return decodeCached(bytes, start, len, true);
     }
 
@@ -624,7 +625,7 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
         }
         if (len > 8) {
             return ascii
-                   ? new String(bytes, start, len, StandardCharsets.ISO_8859_1)
+                   ? AsciiStrings.fromAscii(bytes, start, len)
                    : new String(bytes, start, len, StandardCharsets.UTF_8);
         }
 
@@ -650,7 +651,7 @@ final class SmithyJsonDeserializer implements ShapeDeserializer {
             return vals[slot];
         }
         String s = ascii
-                   ? new String(bytes, start, len, StandardCharsets.ISO_8859_1)
+                   ? AsciiStrings.fromAscii(bytes, start, len)
                    : new String(bytes, start, len, StandardCharsets.UTF_8);
         keys[slot] = key;
         vals[slot] = s;
