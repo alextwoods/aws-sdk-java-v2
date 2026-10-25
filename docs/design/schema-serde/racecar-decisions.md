@@ -17,8 +17,8 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 |---|---:|
 | Applied (re-implemented here) | 14 |
 | Superseded | 9 |
-| Deferred (later individual optimization) | 14 |
-| Rejected | 7 |
+| Deferred (later individual optimization) | 13 |
+| Rejected | 8 |
 | Total | 44 |
 
 ## Decisions
@@ -54,7 +54,7 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 | E10 | Single-copy async response aggregation (`BufferedResponseBody`) | Applied (re-implemented here) | `ResponseBodyAggregator` in `SdkAsyncHttpClientTransport`: each chunk is copied once into an array presized from `Content-Length` | −128 KB/op on batch-get in racecar | Phase 2 (3.17) |
 | E11 | Parse the owned async buffer directly | Applied (re-implemented here) | `ResponseBodies.asByteBuffer` returns the async transport's buffer (`OwnedResponseBody`) without a copy, then `Codec.createDeserializer(ByteBuffer)` | 0 B/op body copy | Phase 2 (3.17, 3.19) |
 | E12 | Direct CRT header array | Applied (re-implemented here) ([A/B record](optimizations/E12.md)) | `aws-crt-client` request adapter | HTTP client micro-optimization; 9.19 experiment: v2-async small-get alloc_bytes_per_op -4.3% (floor 0.2%); v2-async small-put alloc_bytes_per_op -4.7% (floor 0.3%) | Phase 5 (9.25) |
-| E13 | Lazy auth-property rebuild | Deferred (later individual optimization) | `AuthSchemeResolutionCache` (rebuild auth-scheme properties only on a cache miss) | Micro-optimization; H7 caching covers the common case | 9.26 |
+| E13 | Lazy auth-property rebuild | Rejected ([A/B record](optimizations/E13.md)) | — | Micro-optimization; H7 caching covers the common case; 9.19 experiment: v2-sync small-get alloc_bytes_per_op -0.2% (floor 0.5%); v2-async small-get alloc_bytes_per_op -0.5% (floor 0.2%); v2-sync small-put alloc_bytes_per_op -0.1% (floor 0.9%); v2-async small-put alloc_bytes_per_op -0.4% (floor 0.2%) | 9.26 |
 | E14 | Unions read without a builder (`beginStruct`/`nextMember`, direct factories) | Deferred (later individual optimization) | Generated union `BuilderImpl` and its `InnerDeserializer` | The schema deserializer owns the member loop, but the generated union reader still sets the variant through the builder's fluent setters, which track it in an `EnumSet`. Reading through the direct `fromX` factories is not implemented; measure against racecar's −16% first | — |
 | E15 | Latin-1 + SWAR string write | Rejected | — | Needs `Unsafe`; Java 8 release | — |
 | E16 | smithy-java HTTP client as SDK transport | Rejected | — | Java 21, Netty internals | — |
@@ -92,7 +92,7 @@ Notes:
 - **E7**: candidate on branch opt/E7 (49205e395d8), measurement pending (user decision).
 - **E11**: The owned-buffer marker is `OwnedResponseBody` in `core.client.protocol` (`@SdkProtectedApi`), not a transport-internal type, because the protocol modules read it (task 3.17).
 - **E12**: measured on the m6g.metal host (cand/E12 7cd6a5db432, the cherry-pick of opt/E12 d5afded9407): KEEP, both CRT targets saved about 2.4 KB/op; merged.
-- **E13**: candidate on branch opt/E13 (d96199de214), measurement pending (user decision). D.6 names `AuthSchemeResolver`, and the candidate changes `AuthSchemeResolver.applyInterceptorModifiedProperties`, as racecar did: it runs on every call after endpoint resolution, not only on an `AuthSchemeResolutionCache` miss (task 9.26).
+- **E13**: measured on the m6g.metal host (cand/E13 ead9adec9b1, the cherry-pick of opt/E13 d96199de214, which changes `AuthSchemeResolver.applyInterceptorModifiedProperties`, run on every call after endpoint resolution): REVERT, because the v2-sync targets saved 123 and 51 B/op, inside their 0.5% and 0.9% floors; not merged. Smithy-java 1f68318ce was not combined: the matching merge copies on every harness call either way (E13.md).
 - **E14**: D.6 records E14 as Superseded by a union `ShapeBuilder` whose `InnerDeserializer` calls the direct `fromX` factory with no `EnumSet`. Task 3.7 generated the builder-based reader instead (golden file `codegen/src/test/resources/.../poet/model/schemaserde/choice.java`), so the optimization is not in the code.
 - **H4**: D.6 records H4 as Applied. Task 3.25 added the per-client placeholder, but tasks 3.26 and 3.28 left `RESOLVED_CHECKSUM_SPECS` to the context factory and deferred the call to the phase 5 pipeline optimizations, which have no task for it yet.
 - **H10**: D.6 records H10 as Applied. Task 3.26 applies the template, but task 3.28 deferred trimming the context factory to the phase 5 pipeline optimizations, which have no task for it yet.

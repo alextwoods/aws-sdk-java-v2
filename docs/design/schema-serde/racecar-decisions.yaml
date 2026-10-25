@@ -264,11 +264,12 @@
 
 - id: "E13"
   optimization: "Lazy auth-property rebuild"
-  decision: "Deferred (later individual optimization)"
-  component: "`AuthSchemeResolutionCache` (rebuild auth-scheme properties only on a cache miss)"
-  reason: "Micro-optimization; H7 caching covers the common case"
+  decision: "Rejected"
+  component: "—"
+  reason: "Micro-optimization; H7 caching covers the common case; 9.19 experiment: v2-sync small-get alloc_bytes_per_op -0.2% (floor 0.5%); v2-async small-get alloc_bytes_per_op -0.5% (floor 0.2%); v2-sync small-put alloc_bytes_per_op -0.1% (floor 0.9%); v2-async small-put alloc_bytes_per_op -0.4% (floor 0.2%)"
   task: "9.26"
-  note: "candidate on branch opt/E13 (d96199de214), measurement pending (user decision). D.6 names `AuthSchemeResolver`, and the candidate changes `AuthSchemeResolver.applyInterceptorModifiedProperties`, as racecar did: it runs on every call after endpoint resolution, not only on an `AuthSchemeResolutionCache` miss (task 9.26)"
+  ab_record: "optimizations/E13.md"
+  note: "measured on the m6g.metal host (cand/E13 ead9adec9b1, the cherry-pick of opt/E13 d96199de214, which changes `AuthSchemeResolver.applyInterceptorModifiedProperties`, run on every call after endpoint resolution): REVERT, because the v2-sync targets saved 123 and 51 B/op, inside their 0.5% and 0.9% floors; not merged. Smithy-java 1f68318ce was not combined: the matching merge copies on every harness call either way (E13.md)"
 
 - id: "E14"
   optimization: "Unions read without a builder (`beginStruct`/`nextMember`, direct factories)"
