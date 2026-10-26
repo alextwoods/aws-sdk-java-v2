@@ -226,6 +226,13 @@
             <artifactId>aws-query-client-protocol</artifactId>
             <version>${awsjavasdk.version}</version>
         </dependency>
+        <!-- EventStreamCodecBenchmark (smithy-java 1.8.0 port, round 2 P5): the AWS event stream encoder and decoder
+             factories. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>http-client-protocol</artifactId>
+            <version>${awsjavasdk.version}</version>
+        </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>json-codec</artifactId>
