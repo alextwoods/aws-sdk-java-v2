@@ -9,12 +9,12 @@
       "task": "9.20",
       "e2e": [{"scenarios": ["small-get", "small-put"], "metrics": ["app_cpu_us_per_op"]}],
       "jmh": {
-        "module": "sdk-benchmarks",
-        "include": "benchmark\\.signer\\.(AwsV4HttpSignerBenchmark|Sigv4SignerBenchmark)",
+        "module": "sdk-standard-benchmarks",
+        "include": "benchmark\\.signer\\.AwsV4HttpSignerBenchmark",
         "params": [],
         "targets": [{"benchmark": "benchmark\\.signer\\.AwsV4HttpSignerBenchmark\\.", "metrics": ["score"]}]
       },
-      "note": "9.20's fast path sits in DefaultAwsV4HttpSigner, above the internal V4RequestSigner that Sigv4SignerBenchmark calls, so the target is AwsV4HttpSignerBenchmark (the public signer, added in the candidate commit on opt/F) and Sigv4SignerBenchmark is a guard. Both arms' benchmarks.jar must contain AwsV4HttpSignerBenchmark: bring the benchmark class to the feature build before the measurement."
+      "note": "9.20's fast path sits in DefaultAwsV4HttpSigner, above the internal V4RequestSigner, so the target is AwsV4HttpSignerBenchmark (the public signer). It is in sdk-standard-benchmarks on both arms (its own commit before the candidate): sdk-benchmarks does not build on this branch (ec2 and cloudfront are in the off-by-default fleet-services profile, and protocol-tests is no longer a module). Sigv4SignerBenchmark (sdk-benchmarks, internal V4RequestSigner) was a guard and is dropped with it: F leaves that path unchanged apart from making three V4CanonicalRequest helpers package-private, so the e2e CPU and B/op guards cover the request path. Measured with smithy-java c62499ffd's Java 8 ideas folded in."
     },
     "E6": {
       "task": "9.21",
@@ -59,7 +59,7 @@
       "task": "9.26",
       "e2e": [{"scenarios": ["small-get", "small-put"], "metrics": ["alloc_bytes_per_op"]}],
       "jmh": null,
-      "note": "The copy runs on every call, not on an AuthSchemeResolutionCache miss: EndpointResolution calls AuthSchemeResolver.applyInterceptorModifiedProperties after every resolve (E13-smoke.md). Smithy-java 1f68318ce (skip the override merge when there are no overrides) maps to mergePreExistingAuthSchemeProperties; on the harness calls that merge must add the placeholder's null ChecksumAlgorithm, which the resolved option lacks, so it copies on every call and only E13 is measured (E13.md)."
+      "note": "The copy runs on every call, not on an AuthSchemeResolutionCache miss: EndpointResolution calls AuthSchemeResolver.applyInterceptorModifiedProperties after every resolve (E13-smoke.md). Smithy-java 1f68318ce (skip the override merge when there are no overrides) maps to mergePreExistingAuthSchemeProperties; on the harness calls that merge must add the placeholder's null ChecksumAlgorithm, which the resolved option lacks, so it copies on every call and only E13 is measured."
     }
   }
 }
