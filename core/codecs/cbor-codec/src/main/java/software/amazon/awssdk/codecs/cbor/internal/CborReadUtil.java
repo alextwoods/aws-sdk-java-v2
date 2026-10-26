@@ -31,7 +31,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import software.amazon.awssdk.annotations.SdkInternalApi;
-import software.amazon.awssdk.codecs.commons.internal.AsciiStrings;
 
 /**
  * Reads CBOR integers, big numbers, decimal fractions and (possibly chunked) strings from a byte array.
@@ -42,13 +41,6 @@ import software.amazon.awssdk.codecs.commons.internal.AsciiStrings;
  */
 @SdkInternalApi
 final class CborReadUtil {
-
-    /**
-     * Longest definite-length text string, in bytes, that {@link #readTextString} scans for ASCII before decoding.
-     * smithy-java's gain is largest at 4 to 16 bytes and small at 128 (PR #1393); a scalar scan costs about one cycle per
-     * byte, so beyond a few dozen bytes it cancels the saved dispatch.
-     */
-    static final int ASCII_SCAN_LIMIT = 32;
 
     private CborReadUtil() {
     }
@@ -231,35 +223,12 @@ final class CborReadUtil {
         return new BigDecimal(unscaled, -intExponent);
     }
 
-    /**
-     * Decodes a UTF-8 text string. A definite-length string of at most {@link #ASCII_SCAN_LIMIT} bytes that is all
-     * ASCII is built with {@link AsciiStrings#fromAscii}, which skips the UTF-8 constructor's charset dispatch; any
-     * other string goes through the UTF-8 constructor, so malformed input decodes to the same replacement characters.
-     *
-     * <p>smithy-java checks for ASCII with the JDK {@code StringCoding.countPositives} intrinsic, at any length, and
-     * only when that intrinsic is reachable through {@code CompactStringAccess}. Java 8 API cannot reach it, so this
-     * port scans in a plain loop and only short strings, where the saved dispatch outweighs the scan; on JDK 9+ the
-     * UTF-8 constructor runs the intrinsic itself for longer strings.
-     */
     static String readTextString(byte[] buffer, int off, int len) {
         if (CborDeserializer.isIndefinite(len)) {
             return new String(readBytesIndefinite(buffer, off, CborDeserializer.itemLength(len)),
                               StandardCharsets.UTF_8);
         }
-        if (len <= ASCII_SCAN_LIMIT && isAscii(buffer, off, len)) {
-            return AsciiStrings.fromAscii(buffer, off, len);
-        }
         return new String(buffer, off, len, StandardCharsets.UTF_8);
-    }
-
-    private static boolean isAscii(byte[] buffer, int off, int len) {
-        int limit = off + len;
-        for (int i = off; i < limit; i++) {
-            if (buffer[i] < 0) {
-                return false;
-            }
-        }
-        return true;
     }
 
     static byte[] readByteString(byte[] buffer, int off, int len) {
