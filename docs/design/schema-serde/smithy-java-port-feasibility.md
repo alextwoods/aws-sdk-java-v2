@@ -36,13 +36,16 @@ and the payoff per release depends on what upstream optimized.
   1.017. G is the port / previous geomean over each port's targeted cases; lower is faster.
 - **What did not port.** Upstream's largest stated serde numbers are on the write side of `8c5cf2907` (CBOR
   serialize `ShallowMap_M` −25.0%, `MixedItem_M` −11.2%, PR #1393). They need `String` internals through
-  `sun.misc.Unsafe`, which Java 8 public API does not offer (FU-23). P4 showed that a Java 8 substitute for the
+  `sun.misc.Unsafe`, which Java 8 public API does not offer (FU-23). Those two numbers are x86; the same PR reported
+  `ShallowMap_S` serialize +6–8% on Apple silicon, and our laptop and metal host are both ARM, so the gain behind
+  FU-23 is not certain for us (`triage.md`, `8c5cf2907` row). P4 showed that a Java 8 substitute for the
   matching read-side intrinsic loses time. Output buffer pooling (`0e88c8e76`) would hand pooled arrays to V2 HTTP
   clients and interceptors, which is a request lifecycle change, not a codec port (FU-22).
 - **Expected effect on the serde benchmark headline.** Small. P1 to P3 were neutral on the laptop, and P5 is outside
   the 71 serde cases, because none of them covers event streams. The metal round decides (section 7).
-- **Where the time went.** Measurement, not porting. Each port took 49 to 298 minutes of active time, and the code
-  commit came within the first 2.5 to 22 of them. The rest went to shared checks, JMH rounds and reruns
+- **Where the time went.** Measurement, not porting. Each port took 49 to 269 minutes of wall clock with the
+  recorded idle, sleep and reboot gaps removed (P1 179, P2 about 201, P3 about 269, P4 about 99, P5 about 49), and
+  the code commit came within the first 2.5 to 22 of them. The rest went to shared checks, JMH rounds and reruns
   on a noisy laptop (section 3).
 
 ## 2. Triage of all 40 upstream commits
@@ -111,13 +114,13 @@ changelog describes the rest without numbers (`triage.md`, "claimed gain" column
 
 ### 3.1 Overview
 
-| port | upstream | adaptation | agent time to code commit | active time, whole port | upstream diff main / tests | our diff main / tests | laptop G (port / prev) | matched upstream's claim? | outcome |
+| port | upstream | adaptation | agent time to code commit | whole port, wall clock with recorded gaps removed | upstream diff main / tests | our diff main / tests | laptop G (port / prev) | matched upstream's claim? | outcome |
 |---|---|---|---:|---:|---|---|---:|---|---|
-| P1 | `2fd0f976f` | mechanical (line for line) | about 6 min | 179 min | +12/−5 / +33/−0 | +11/−3 / +26/−4 | 0.998 | mechanism yes (JIT log); no upstream number | kept (neutral) |
-| P2 | `534de7824` | mechanical, on diverged code | about 2.5 min | 298 min (includes about 100 min lost to a reboot) | +10/−1 / +19/−0 | +23/−3 / +24/−0 | 0.992 | smaller saving by design; no upstream number | kept (neutral) |
-| P3 | `8c5cf2907` (JSON and XML decode) | mechanical, Java 8 fallback dropped | 22 min (the edit a few minutes; the rest module builds) | about 269 min awake (1,304 wall clock, laptop asleep about 1,035) | ported part: about 14 lines of `CompactStringAccess`, JSON +3/−2, XML +3/−6, one test | +56/−5 / +73/−0, then +18/−1 test follow-up | 0.999 | partly: mechanism yes, number not reproduced | kept (neutral) |
-| P4 | `8c5cf2907` (CBOR decode) | redesign (no intrinsic on Java 8) | 4 min | about 99 min active (289 wall clock, idle gap about 190) | `CborReadUtil` +7/−2 plus most of `CompactStringAccess` +89/−8; no read-path unit test | +31/−0 / +143/−0, then reverted | 1.017 | no | reverted |
-| P5 | `8e892b96c` | mechanical, five behavior-preserving deviations, new benchmark | 12 min (benchmark 5, port 7) | about 49 min active (758 wall clock, idle gap about 709) | +292/−117 / +165/−1, JMH +239 | +414/−93 / +276/−0, benchmark +355 | 0.876 | yes in direction; no upstream number | kept (win) |
+| P1 | `2fd0f976f` | mechanical (line for line) | about 6 min | 179 min (no gap recorded; 16:13Z to 16:49Z is not accounted for) | +12/−5 / +33/−0 | +11/−3 / +26/−4 | 0.998 | mechanism yes (JIT log); no upstream number | kept (neutral) |
+| P2 | `534de7824` | mechanical, on diverged code | about 2.5 min | about 201 min (298 wall clock, less 97 min from the first confirm attempt at 21:06Z to the rebuild at 22:43Z, lost to a reboot) | +10/−1 / +19/−0 | +23/−3 / +24/−0 | 0.992 | smaller saving by design; no upstream number | kept (neutral) |
+| P3 | `8c5cf2907` (JSON and XML decode) | mechanical, Java 8 fallback dropped | 22 min (the edit a few minutes; the rest module builds) | about 269 min (1,304 wall clock, less about 1,035 with the laptop asleep) | ported part: about 14 lines of `CompactStringAccess`, JSON +3/−2, XML +3/−6, one test | +56/−5 / +73/−0, then +18/−1 test follow-up | 0.999 | partly: mechanism yes, number not reproduced | kept (neutral) |
+| P4 | `8c5cf2907` (CBOR decode) | redesign (no intrinsic on Java 8) | 4 min | about 99 min (289 wall clock, less an idle gap of about 190) | `CborReadUtil` +7/−2 plus most of `CompactStringAccess` +89/−8; no read-path unit test | +31/−0 / +143/−0, then reverted | 1.017 | no | reverted |
+| P5 | `8e892b96c` | mechanical, five behavior-preserving deviations, new benchmark | 12 min (benchmark 5, port 7) | about 49 min (758 wall clock, less an idle gap of about 709) | +292/−117 / +165/−1, JMH +239 | +414/−93 / +276/−0, benchmark +355 | 0.876 | yes in direction; no upstream number | kept (win) |
 
 Times are from the "Time" section of each `ports/P<n>.md`: start, code commit and end timestamps, with idle and
 sleep gaps called out there. The gaps were periods when the session was not running or the laptop was asleep, not
@@ -142,7 +145,8 @@ decide whether a port is kept, not what gain we report.
 - JMH options for every port: `-f 2 -wi 3 -w 1s -i 4 -r 1s -prof gc`, from the plan. (The P1 step prompt suggested
   `-f 1 -i 3`; the agent kept the plan's settings, `P1.md`.)
 - Jars: `prev` is the jar of the last applied port, `port` the jar with this port. The agent checked that only the
-  intended classes differ between each pair.
+  intended classes differ between each pair for P2–P5; for P1 it compared the bytecode of `assertMemberTargetIs`
+  only (`P1.md`).
 - Rounds: at least five. P1 ran base then port in every round. From P2's confirm rounds on, prev and port ran back
   to back per benchmark set, the order was reversed in even rounds, the one-minute load average was logged each
   minute, and no build ran alongside. These rules were added to the plan after the P1 and P2 reviews.
@@ -186,7 +190,8 @@ decide whether a port is kept, not what gain we report.
   plain-field race is safe (every field the cached schema exposes is final or a documented racy cache). Bytecode
   64 → 16 bytes.
 - **Tests.** Upstream's resolution-tracking test, adapted because our member throws on an unbuilt builder, plus a
-  repeated-throw assertion; `schema` 687 tests; `dynamic-client` 494; shared checks unchanged.
+  repeated-throw assertion; `schema` 687 tests; `dynamic-client` 494; equivalence and protocol tests unchanged.
+  The architecture tests were not rerun for P2, which adds no type, package or API (`P2.md`).
 - **Laptop.** 28 cases (DynamoDB `PutItem`/`GetItem` marshall and unmarshall for awsJson 1.0 and CBOR, and
   `SchemaMarshall`/`SchemaUnmarshall` as a control that never reaches the class). Five quiet, paired confirm rounds:
   G = 0.992. Per class 0.971–0.989 on the DynamoDB classes, against 0.997 and 1.042 on the controls, so the gains are
@@ -362,7 +367,8 @@ a misquoted upstream number (P3) and kept a misleading micro benchmark geomean o
 
 **Decide FU-23 first.** A JDK 9+ code path for the codecs (a multi-release JAR or a runtime-selected
 implementation) is what would make upstream's `String` fast paths available. Without it, every future upstream
-change built on `CompactStringAccess` will land in FU-23.
+change built on `CompactStringAccess` will land in FU-23. Measure upstream's CBOR write change on ARM before building
+that path: upstream's only ARM number for it is a regression (section 1).
 
 ## 6. Risks and limits
 
@@ -376,7 +382,8 @@ change built on `CompactStringAccess` will land in FU-23.
   `awsJson1_0_GetItemOutputBinary_L`, P4 `GetItemOutputBinary_L`) and the P5 `bodyAndHeader` rise. None comes from an
   allocation the ports add or remove; they are on the metal checklist.
 - **No Java 8 runtime run.** Gate 6 checked compilation and API signatures only.
-- **The branch was rebased after the gates.** The base moved 14 commits; the only main-code change among them is
+- **The branch was rebased after the gates.** The base moved 13 commits (`git rev-list --count
+  a8557684f83..fae161e1f79`), and the 14 port commits were rebased onto it; the only main-code change among them is
   `CrtRequestAdapter` in `aws-crt-client`, which the serde benchmarks do not call. The port modules' unit tests were
   rerun on the rebased branch (`merge.md`); the full gate set was not.
 - **The agent reviewed the agent.** Triage, ports, reviews and verification were all done by agents. The reviews found
@@ -403,7 +410,9 @@ What will be filled in here:
 
 1. **Run 1** (`20261026-180212`): all 71 serde cases on three arms, `--reps 3`, `-f 2 -wi 5 -w 2s -i 5 -r 2s`, cores
    32–47. The per-protocol and aggregate geomeans of feature-marshall / baseline and feature-port / baseline, with
-   the null floors. The port effect on serde is the change between the two.
+   the null floors. The port effect on serde is the change between the two. The null floors were measured with
+   `--reps 4` and run 1 uses `--reps 3`, so run 1's own spread is slightly wider and a case near its floor needs
+   care (`metal-status.md`, "Reps 3, not 4").
 2. **Run 2** (profiling pass, id assigned when run 1 ends): CPU and allocation profiles for the three arms, the work
    boundary for the comparable view, and `profile-comparison.md`, to check that the ports change no work outside the
    code they touch.
