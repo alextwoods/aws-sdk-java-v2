@@ -15,9 +15,9 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 
 | Decision | Rows |
 |---|---:|
-| Applied (re-implemented here) | 14 |
+| Applied (re-implemented here) | 15 |
 | Superseded | 9 |
-| Deferred (later individual optimization) | 13 |
+| Deferred (later individual optimization) | 12 |
 | Rejected | 8 |
 | Total | 44 |
 
@@ -25,7 +25,7 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 
 | Phase | Optimization | Decision | Component or replacing mechanism | Reason | Task |
 |---|---|---|---|---|---|
-| F | SigV4 fast-path header signer (`FastV4HeaderSigner`, `V4SigningResources`, `V4SigningKeyCache`) | Deferred (later individual optimization) | `core/http-auth-aws` signer (`DefaultAwsV4HttpSigner`), unchanged by this design | Independent of serde and of the new path; −41% signer time in racecar | 9.20 |
+| F | SigV4 fast-path header signer (`FastV4HeaderSigner`, `V4SigningResources`, `V4SigningKeyCache`) | Applied (re-implemented here) ([A/B record](optimizations/F.md)) | `core/http-auth-aws` signer (`DefaultAwsV4HttpSigner`), unchanged by this design | Independent of serde and of the new path; −41% signer time in racecar; 9.19 experiment: v2-sync small-get app_cpu_us_per_op -13.6% (floor 4.0%); v2-async small-get app_cpu_us_per_op -10.9% (floor 3.4%); v2-sync small-put app_cpu_us_per_op -13.2% (floor 2.2%); v2-async small-put app_cpu_us_per_op -9.9% (floor 3.3%); signer.AwsV4HttpSignerBenchmark.sign [credentials=session] score -41.5% (floor 14.4%); signer.AwsV4HttpSignerBenchmark.sign [credentials=basic] score -36.9% (floor 13.9%) | Phase 5 (9.20) |
 | B1 | Shallow header copy-on-write (`LowCopyListMap`) | Rejected ([A/B record](optimizations/B1.md)) | — | Framework micro-optimization, not needed by the new path. `headers()` and `Builder.headers()` keep today's behavior (H1 stays deferred); 9.19 experiment: v2-sync small-get alloc_bytes_per_op -0.6% (floor 0.5%); v2-async small-get alloc_bytes_per_op -0.9% (floor 0.2%); v2-sync small-put alloc_bytes_per_op -0.3% (floor 0.4%); v2-async small-put alloc_bytes_per_op -1.2% (floor 0.3%) | 9.23 |
 | A | Materialized-body zero-copy contract (`ContentStreamProvider.contentAsByteBufferOrNull`, wrapper propagation, Apache5 `ByteArrayEntity`, `SimpleHttpContentPublisher`) | Applied (re-implemented here) | Codec `ByteBufferOutputStream.toContentStreamProvider()` → `ContentStreamProvider.contentAsByteBufferOrNull()` → `SdkHttpClientTransport` (body passed unwrapped) and `SdkAsyncHttpClientTransport` (`SimpleHttpContentPublisher`); `Apache5HttpRequestFactory` sends the buffer as a `ByteArrayEntity` | Requirement 13.6 | Phase 2 (3.4, 3.17) |
 | E1 | Marshall buffer sized from history (`MarshallBufferSizeHints`) | Applied (re-implemented here) | `HttpClientProtocol.newRequestBodyBuffer`/`finishRequestBody`, backed by `MarshallBufferSizeTracker`: per protocol instance, an identity hash table of operations with a parallel `int[]` of size hints for `ByteBufferOutputStream` | −42% batch-put allocation in racecar | Phase 2 (3.19) |
@@ -54,7 +54,7 @@ Edit `racecar-decisions.yaml` and regenerate this file with `python3 scripts/sch
 | E10 | Single-copy async response aggregation (`BufferedResponseBody`) | Applied (re-implemented here) | `ResponseBodyAggregator` in `SdkAsyncHttpClientTransport`: each chunk is copied once into an array presized from `Content-Length` | −128 KB/op on batch-get in racecar | Phase 2 (3.17) |
 | E11 | Parse the owned async buffer directly | Applied (re-implemented here) | `ResponseBodies.asByteBuffer` returns the async transport's buffer (`OwnedResponseBody`) without a copy, then `Codec.createDeserializer(ByteBuffer)` | 0 B/op body copy | Phase 2 (3.17, 3.19) |
 | E12 | Direct CRT header array | Applied (re-implemented here) ([A/B record](optimizations/E12.md)) | `aws-crt-client` request adapter | HTTP client micro-optimization; 9.19 experiment: v2-async small-get alloc_bytes_per_op -4.3% (floor 0.2%); v2-async small-put alloc_bytes_per_op -4.7% (floor 0.3%) | Phase 5 (9.25) |
-| E13 | Lazy auth-property rebuild | Rejected ([A/B record](optimizations/E13.md)) | — | Micro-optimization; H7 caching covers the common case; 9.19 experiment: v2-sync small-get alloc_bytes_per_op -0.2% (floor 0.5%); v2-async small-get alloc_bytes_per_op -0.5% (floor 0.2%); v2-sync small-put alloc_bytes_per_op -0.1% (floor 0.9%); v2-async small-put alloc_bytes_per_op -0.4% (floor 0.2%) | 9.26 |
+| E13 | Lazy auth-property rebuild | Rejected ([A/B record](optimizations/E13.md)) | — | Micro-optimization; the copy runs on every call but saves 0.1-0.5% B/op; 9.19 experiment: v2-sync small-get alloc_bytes_per_op -0.2% (floor 0.5%); v2-async small-get alloc_bytes_per_op -0.5% (floor 0.2%); v2-sync small-put alloc_bytes_per_op -0.1% (floor 0.9%); v2-async small-put alloc_bytes_per_op -0.4% (floor 0.2%) | 9.26 |
 | E14 | Unions read without a builder (`beginStruct`/`nextMember`, direct factories) | Deferred (later individual optimization) | Generated union `BuilderImpl` and its `InnerDeserializer` | The schema deserializer owns the member loop, but the generated union reader still sets the variant through the builder's fluent setters, which track it in an `EnumSet`. Reading through the direct `fromX` factories is not implemented; measure against racecar's −16% first | — |
 | E15 | Latin-1 + SWAR string write | Rejected | — | Needs `Unsafe`; Java 8 release | — |
 | E16 | smithy-java HTTP client as SDK transport | Rejected | — | Java 21, Netty internals | — |
@@ -82,7 +82,7 @@ Where the implementation differs from D.6, the table above records the implement
 
 Notes:
 
-- **F**: candidate on branch opt/F (d1161cfc5ac), measurement pending (user decision).
+- **F**: measured on the m6g.metal host (cand/F 282d21499ae: opt/F d1161cfc5ac plus smithy-java c62499ffd's HMAC pad state and two-digit hex table): KEEP, about -10 to -14% application CPU and 15-16 KB/op less allocation on the small operations; merged.
 - **B1**: measured on the m6g.metal host (cand/B1 71972d89df5, the cherry-pick of opt/B1 fe81b1f809f): REVERT, because the v2-sync small-put target saved 146 B/op, inside its 0.4% floor; not merged.
 - **E1**: D.6 indexes the `int[]` by operation ordinal. `ApiOperation` has no ordinal, so each protocol instance assigns slots in an identity hash table (task 3.19). awsQuery and ec2Query size their form body from a tracker of their own (`QueryClientProtocol`, the capacity the last body needed, FU-4). A recorded size of 0 is an empty-body marker: HTTP binding operations whose last request wrote no codec body get no buffer (fix/marshall-allocation).
 - **D1**: candidate on branch opt/D1 (90d38512d28), measurement pending (user decision).
