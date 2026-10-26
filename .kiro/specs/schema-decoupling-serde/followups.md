@@ -153,9 +153,9 @@ Triage of smithy-java `142eecf4d..95df4c14f`; the ported optimizations are in `d
 - **Context:** Not on the SERDE benchmarks' path. Each, with where it would go:
   - `ebe122c96` skip interceptor hooks that are not overridden (`core/sdk-core/.../interceptor/ExecutionInterceptorChain.java`);
   - `298b5d799` guard retry debug logging before the token bucket lookup and lambda capture (`core/retries/.../internal/BaseRetryStrategy.java`: `logAcquireInitialToken`, `logRefreshTokenSuccess`, `logRecordSuccess`);
-  - `1f68318ce` skip the auth scheme property merge when there are no overrides (`core/sdk-core/.../internal/http/AuthSchemeResolutionCache.java` `mergePreExistingAuthSchemeProperties`; racecar E13 covers `applyInterceptorModifiedProperties`);
-  - `c62499ffd` SigV4 byte-array canonicalization and caches (racecar F, `opt/F`);
-  - `0f0bedf59` app ID resolved once per client (legacy `ApplyUserAgentStage`; the schema pipeline already has `UserAgentHeaderCache`).
+  - `1f68318ce` skip the auth scheme property merge when there are no overrides (`core/sdk-core/.../internal/http/AuthSchemeResolutionCache.java` `mergePreExistingAuthSchemeProperties`; racecar E13 covers `applyInterceptorModifiedProperties`): not combined with racecar E13: the V2 merge must add the placeholder's null ChecksumAlgorithm on every harness call; E13 Rejected, record `docs/design/schema-serde/optimizations/E13.md`;
+  - `c62499ffd` SigV4 byte-array canonicalization and caches (racecar F, `opt/F`): applied with racecar F (Applied, phase 5): the HMAC pad state per signing key and the two-digit hex table were added to F; the memoized header order is not needed, and the SWAR and Latin-1 paths need JDK 9+. Record `docs/design/schema-serde/optimizations/F.md`;
+  - `0f0bedf59` app ID resolved once per client (legacy `ApplyUserAgentStage`; the schema pipeline already has `UserAgentHeaderCache`): DEFERRED-NOT-APPLICABLE, V2 already resolves the app ID once per client; record `docs/design/schema-serde/optimizations/SJ-0f0bedf59.md`.
 - **Next step:** Measure with the e2e harness when the pipeline round starts.
 
 ## Still open from the spec (`design.md` §D.15)
