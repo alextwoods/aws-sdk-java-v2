@@ -25,6 +25,8 @@ import java.util.function.Supplier;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.Codec;
 import software.amazon.awssdk.codecs.commons.TimestampFormatter;
+import software.amazon.awssdk.protocols.client.http.internal.EventStreamSchemaExtensions;
+import software.amazon.awssdk.protocols.client.http.internal.EventStreamSchemaExtensions.EventStreamExt;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableShape;
 import software.amazon.awssdk.schema.SerializableStruct;
@@ -58,6 +60,10 @@ import software.amazon.eventstream.Message;
  *     instead of through the codec.</li>
  *     <li>An empty payload is not given to the codec.</li>
  * </ul>
+ *
+ * <p>The header and event payload members of each structure are precomputed once by
+ * {@link EventStreamSchemaExtensions} (port of smithy-java {@code 8e892b96c}) instead of found with {@code hasTrait} on
+ * every message.
  */
 @SdkInternalApi
 final class AwsEventShapeDecoder implements EventDecoder<AwsEventFrame> {
@@ -180,23 +186,33 @@ final class AwsEventShapeDecoder implements EventDecoder<AwsEventFrame> {
 
         @Override
         public <T> void readStruct(Schema schema, T builder, StructMemberConsumer<T> consumer) {
-            boolean payloadWritten = false;
-            for (Schema member : schema.members()) {
-                if (member.hasTrait(TraitKey.EVENT_HEADER_TRAIT)
-                    && headersDeserializer.headers.containsKey(member.memberName())) {
+            EventStreamExt ext = EventStreamSchemaExtensions.extensionOf(schema);
+            Schema eventPayloadMember = ext.eventPayloadMember();
+            // The event payload member is read at its declaration position among the header members, as the member
+            // walk this replaces did, so the same member fails first when several are malformed. -1: read or none.
+            int eventPayloadIndex = eventPayloadMember == null ? -1 : eventPayloadMember.memberIndex();
+            for (Schema member : ext.headerMembers()) {
+                if (eventPayloadIndex >= 0 && member.memberIndex() > eventPayloadIndex) {
+                    readEventPayload(eventPayloadMember, builder, consumer);
+                    eventPayloadIndex = -1;
+                }
+                if (headersDeserializer.headers.containsKey(member.memberName())) {
                     consumer.accept(builder, member, headersDeserializer);
-                } else if (member.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT)) {
-                    if (message.getPayload().length > 0) {
-                        consumer.accept(builder, member, payloadDeserializer(member));
-                    }
-                    payloadWritten = true;
                 }
             }
-            // Deserialize from the payload if still needed.
-            if (!payloadWritten && message.getPayload().length > 0) {
+            if (eventPayloadIndex >= 0) {
+                readEventPayload(eventPayloadMember, builder, consumer);
+            } else if (eventPayloadMember == null && message.getPayload().length > 0) {
+                // Deserialize the other members from the payload.
                 try (ShapeDeserializer codecDeserializer = codec.createDeserializer(message.getPayload())) {
                     codecDeserializer.readStruct(schema, builder, consumer);
                 }
+            }
+        }
+
+        private <T> void readEventPayload(Schema member, T builder, StructMemberConsumer<T> consumer) {
+            if (message.getPayload().length > 0) {
+                consumer.accept(builder, member, payloadDeserializer(member));
             }
         }
 

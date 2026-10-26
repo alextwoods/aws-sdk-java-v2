@@ -26,9 +26,13 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import software.amazon.awssdk.annotations.SdkInternalApi;
 import software.amazon.awssdk.codecs.commons.Codec;
+import software.amazon.awssdk.protocols.client.http.internal.EventStreamSchemaExtensions;
+import software.amazon.awssdk.protocols.client.http.internal.EventStreamSchemaExtensions.Binding;
+import software.amazon.awssdk.protocols.client.http.internal.EventStreamSchemaExtensions.BindingExcludingStruct;
+import software.amazon.awssdk.protocols.client.http.internal.EventStreamSchemaExtensions.BindingFilteredStruct;
+import software.amazon.awssdk.protocols.client.http.internal.EventStreamSchemaExtensions.EventStreamExt;
 import software.amazon.awssdk.schema.Schema;
 import software.amazon.awssdk.schema.SerializableStruct;
 import software.amazon.awssdk.schema.ShapeId;
@@ -53,6 +57,9 @@ import software.amazon.eventstream.Message;
  * {@link #encode(SerializableStruct)} also accepts an event whose shape is the target of exactly one union member, and
  * {@link #encodeEvent(String, SerializableStruct)} takes the member name explicitly (the generated
  * {@code sdkEventType()}); a modeled exception is a {@link Throwable} that is also a {@link SerializableStruct}.
+ *
+ * <p>The member partition of each structure is precomputed once by {@link EventStreamSchemaExtensions} (port of
+ * smithy-java {@code 8e892b96c}) instead of walking the members and calling {@code hasTrait} on every message.
  */
 @SdkInternalApi
 final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
@@ -83,7 +90,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     public AwsEventFrame encode(SerializableStruct item) {
         Validate.paramNotNull(item, "item");
         Schema schema = item.sdkSchema();
-        if (isInitialRequest(schema)) {
+        if (isInitialEvent(schema)) {
             return encodeMessage(item, null);
         }
         if (schema.id().equals(eventSchema.id())) {
@@ -147,10 +154,12 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         if (member != null) {
             typeHolder.set(member.memberName());
             baseSerializer.writeStruct(member, item);
-        } else if (isInitialRequest(item.sdkSchema())) {
+        } else if (isInitialEvent(item.sdkSchema())) {
             // The initial event is serialized fully instead of a single member as for events.
             typeHolder.set(initialEventType.value());
-            filtered(item.sdkSchema(), item, AwsEventShapeEncoder::excludeEventStreamMember).serialize(baseSerializer);
+            Schema schema = item.sdkSchema();
+            Binding[] bindings = EventStreamSchemaExtensions.extensionOf(schema).bindings();
+            new BindingExcludingStruct(schema, item, bindings, Binding.STREAMING).serialize(baseSerializer);
         } else {
             item.serializeMembers(new SpecificShapeSerializer() {
                 @Override
@@ -221,79 +230,10 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     /**
      * Returns true if the schema is of the initial request or response: a structure with an event stream member.
      */
-    static boolean isInitialRequest(Schema schema) {
-        for (Schema member : schema.members()) {
-            if (isEventStreamMember(member)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    static boolean excludeEventStreamMember(Schema schema) {
-        return !isEventStreamMember(schema);
-    }
-
-    static boolean isEventStreamMember(Schema schema) {
-        return schema.isMember() && schema.memberTarget().hasTrait(TraitKey.STREAMING_TRAIT);
-    }
-
-    static boolean hasPayloadMembers(Schema struct) {
-        for (Schema member : struct.members()) {
-            if (isPayloadMember(member)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    static boolean isPayloadMember(Schema member) {
-        return !isHeadersMember(member) && !isEventStreamMember(member) && !isEventPayload(member);
-    }
-
-    static boolean hasEventPayloadMember(Schema struct) {
-        for (Schema member : struct.members()) {
-            if (isEventPayload(member)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    static boolean isEventPayload(Schema member) {
-        return member.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT);
-    }
-
-    static boolean isHeadersMember(Schema member) {
-        return member.hasTrait(TraitKey.EVENT_HEADER_TRAIT);
-    }
-
-    /**
-     * Port of smithy-java {@code ShapeUtils.withFilteredMembers}: a view of {@code struct} that writes only the members
-     * that match the predicate.
-     */
-    static SerializableStruct filtered(Schema schema, SerializableStruct struct, Predicate<Schema> memberPredicate) {
-        return new SerializableStruct() {
-            @Override
-            public Schema sdkSchema() {
-                return schema;
-            }
-
-            @Override
-            public void serializeMembers(ShapeSerializer serializer) {
-                struct.serializeMembers(new InterceptingSerializer() {
-                    @Override
-                    protected ShapeSerializer before(Schema member) {
-                        return memberPredicate.test(member) ? serializer : ShapeSerializer.nullSerializer();
-                    }
-                });
-            }
-
-            @Override
-            public <T> T getMemberValue(Schema member) {
-                return memberPredicate.test(member) ? struct.getMemberValue(member) : null;
-            }
-        };
+    private static boolean isInitialEvent(Schema schema) {
+        // Not extensionOf: a schema that is not a structure or union has no partition, and is not an initial event.
+        EventStreamExt ext = schema.getExtension(EventStreamSchemaExtensions.KEY);
+        return ext != null && ext.isInitialEvent();
     }
 
     /**
@@ -317,18 +257,29 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
         @Override
         public void writeStruct(Schema schema, SerializableStruct struct) {
-            if (hasEventPayloadMember(schema)) {
+            // The body choice comes from the schema written (the union member's target), the member filters from the
+            // structure's own schema, whose members it writes, as the trait walk this replaces did. Both are the same
+            // partition unless the event passed for the member has another shape.
+            EventStreamExt ext = EventStreamSchemaExtensions.extensionOf(schema);
+            EventStreamExt structExt = EventStreamSchemaExtensions.extensionOf(struct.sdkSchema());
+            Binding[] bindings = structExt.bindings();
+            if (ext.hasEventPayload()) {
                 try (EventPayloadSerializer serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
-                    filtered(schema, struct, AwsEventShapeEncoder::isEventPayload).serializeMembers(serializer);
+                    new BindingFilteredStruct(schema, struct, bindings, Binding.EVENT_PAYLOAD)
+                        .serializeMembers(serializer);
                 }
-            } else if (emitEmptyPayload || hasPayloadMembers(schema)) {
+            } else if (emitEmptyPayload || ext.hasPayloadMembers()) {
+                // Keeps writing through the codec serializer into the frame's stream (upstream serializes to a buffer
+                // with codec.serialize() and copies it): the serializer takes a pooled buffer for this sink (FU-17).
                 try (ShapeSerializer serializer = codec.createSerializer(out)) {
-                    filtered(schema, struct, AwsEventShapeEncoder::isPayloadMember).serialize(serializer);
+                    new BindingFilteredStruct(schema, struct, bindings, Binding.PAYLOAD).serialize(serializer);
                 }
             } else {
                 contentTypeHolder.set(null);
             }
-            filtered(schema, struct, AwsEventShapeEncoder::isHeadersMember).serialize(headerSerializer);
+            if (structExt.hasHeaderMembers()) {
+                new BindingFilteredStruct(schema, struct, bindings, Binding.HEADER).serialize(headerSerializer);
+            }
         }
     }
 

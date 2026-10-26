@@ -112,6 +112,32 @@ class AwsEventCodecTest {
         assertThat(new String(message.getPayload(), StandardCharsets.UTF_8)).isEqualTo("{}");
     }
 
+    /**
+     * Port of smithy-java {@code testEncodeHeadersOnlyMemberWithEmitEmptyPayload} ({@code 8e892b96c}): the empty body
+     * and content type are added, and the header members are still written.
+     */
+    @Test
+    void encode_headersOnlyEventWithEmitEmptyPayload_keepsTheHeaders() {
+        Message message = encoder(true).encode(struct(HEADERS_ONLY_EVENT, "sequence", 5L)).unwrap();
+
+        assertThat(message.getHeaders()).isEqualTo(HeadersBuilder.forEvent().contentType(JSON).eventType("headersOnly")
+                                                                 .put("sequence", 5L).build());
+        assertThat(new String(message.getPayload(), StandardCharsets.UTF_8)).isEqualTo("{}");
+    }
+
+    /**
+     * An event of another shape than the member's target: the member's target decides how the body is written, the
+     * event's own members' traits which members are written, as before the member partition was precomputed.
+     */
+    @Test
+    void encodeEvent_eventOfAnotherShape_isFilteredByItsOwnMembers() {
+        Message message = encoder(false).encodeEvent("blob", struct(STRING_EVENT, "text", "plain")).unwrap();
+
+        assertThat(message.getHeaders()).isEqualTo(HeadersBuilder.forEvent().contentType("text/plain")
+                                                                 .eventType("blob").build());
+        assertThat(message.getPayload()).isEqualTo("plain".getBytes(StandardCharsets.UTF_8));
+    }
+
     @Test
     void encode_eventWhoseShapeSeveralMembersTarget_fails() {
         assertThatThrownBy(() -> encoder(false).encode(bodyAndHeader()))
